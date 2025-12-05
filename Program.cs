@@ -1,3 +1,4 @@
+using Dashboard;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -50,4 +51,5 @@ public class LogEntry
 
 // --- The UI Component (The "HTML" part) ---
 // Usually this is in a separate .razor file, but we can put it here for simplicity!
+
 // We will rely on a basic 'App.razor' structure next.
