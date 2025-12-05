@@ -35,21 +35,8 @@ app.MapRazorComponents<App>()
 
 app.Run();
 
-// --- Simple Database Objects ---
-public class AppDbContext : DbContext
-{
-    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
-    public DbSet<LogEntry> LogEntries { get; set; }
-}
-
-public class LogEntry
-{
-    public int Id { get; set; }
-    public string Message { get; set; } = "";
-    public DateTime CreatedAt { get; set; } = DateTime.Now;
-}
-
 // --- The UI Component (The "HTML" part) ---
 // Usually this is in a separate .razor file, but we can put it here for simplicity!
 
 // We will rely on a basic 'App.razor' structure next.
+
