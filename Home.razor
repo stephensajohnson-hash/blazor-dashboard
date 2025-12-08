@@ -1,102 +1,310 @@
 @page "/"
 @using Dashboard
 @using Microsoft.EntityFrameworkCore
+@inject HttpClient Http
 
-<style>
-    body { background-color: #f0f2f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-    .dashboard-container { max-width: 1400px; margin: 0 auto; padding: 20px; }
-    
-    /* Countdowns */
-    .countdown-card { text-align: center; border: none; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: transform 0.2s; }
-    .countdown-card:hover { transform: translateY(-3px); }
-    .countdown-img { height: 100px; width: 100%; object-fit: cover; }
-    .countdown-days { font-size: 2rem; font-weight: bold; color: #d9534f; }
-    
-    /* Link Groups */
-    .group-card { border: none; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); height: 100%; }
-    .group-header { padding: 10px 15px; font-weight: bold; font-size: 1.1rem; border-radius: 10px 10px 0 0; color: white; }
-    
-    /* Colors based on your JSON */
-    .bg-blue { background-color: #0d6efd; }
-    .bg-green { background-color: #198754; }
-    .bg-red { background-color: #dc3545; }
-    .bg-yellow { background-color: #ffc107; color: black !important; }
-    .bg-purple { background-color: #6f42c1; }
-    .bg-teal { background-color: #20c997; }
-    .bg-gray { background-color: #6c757d; }
-    
-    /* Links */
-    .link-item { display: flex; align-items: center; padding: 8px 10px; text-decoration: none; color: #333; transition: background 0.2s; border-bottom: 1px solid #f8f9fa; }
-    .link-item:hover { background-color: #f8f9fa; color: #000; }
-    .link-icon { width: 24px; height: 24px; border-radius: 4px; margin-right: 10px; object-fit: contain; }
-</style>
-
-<div class="dashboard-container">
-    
-    @if (Countdowns.Any())
-    {
-        <h5 class="text-muted mb-3">Upcoming Events</h5>
-        <div class="row mb-4">
-            @foreach (var c in Countdowns)
+<div class="p-4 sm:p-8">
+    <nav class="fixed top-0 left-0 right-0 bg-gray-800 border-b border-gray-700 shadow-xl z-30 p-2 flex items-center justify-between">
+        <div class="flex items-center">
+            <button class="p-2 rounded-full bg-gray-700 hover:bg-gray-600 focus:outline-none mr-4" @onclick="ToggleMenu">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
+            </button>
+            <div class="text-sm sm:text-base font-medium">
+                <span class="text-gray-400">@DateTime.Now.ToString("M/d/yyyy")</span>
+                <span class="text-blue-300 ml-1">@DateTime.Now.ToString("h:mm tt").ToLower()</span>
+            </div>
+        </div>
+        
+        <div class="text-sm flex items-center bg-gray-700 px-3 py-1 rounded-full border border-gray-600">
+            @if (CurrentWeather != null)
             {
-                var daysLeft = (c.TargetDate - DateTime.Now).Days;
-                <div class="col-md-3 col-6 mb-3">
-                    <div class="card countdown-card">
-                        @if (!string.IsNullOrEmpty(c.Img)) { <img src="@c.Img" class="countdown-img" /> }
-                        <div class="p-2">
-                            <div class="countdown-days">@daysLeft days</div>
-                            <small>until @c.Name</small>
-                        </div>
-                    </div>
-                </div>
+                <span class="flex items-center">
+                    <span class="text-lg font-bold mr-3 @GetTempColor(CurrentWeather.main.temp)">@Math.Round(CurrentWeather.main.temp)°</span>
+                    <span class="low-temp-offset mr-1 text-xs text-sky-300">@Math.Round(TodayLow)°</span>
+                    <span class="mr-1 text-xl">@GetWeatherEmoji(CurrentWeather.weather[0].icon)</span>
+                    <span class="high-temp-offset text-xs text-red-400">@Math.Round(TodayHigh)°</span>
+                </span>
             }
+            else
+            {
+                <span class="text-xs text-gray-400">Loading...</span>
+            }
+        </div>
+    </nav>
+
+    @if (IsMenuOpen)
+    {
+        <div class="fixed top-[4rem] left-4 z-40 max-w-xs transition-all duration-300 ease-out">
+            <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 shadow-2xl w-64">
+                <div class="flex justify-between items-center mb-3 border-b border-gray-700 pb-2">
+                    <h3 class="text-xl font-semibold text-white">Menu</h3>
+                    <button class="text-gray-400 hover:text-white p-1" @onclick="ToggleMenu">X</button>
+                </div>
+                
+                <a href="#" class="block w-full text-left py-2 px-3 rounded-lg text-gray-200 hover:bg-gray-700 mb-2 transition duration-150 border-l-4 border-purple-500 bg-gray-700/30">Bullet Calendar</a>
+                <a href="#" class="block w-full text-left py-2 px-3 rounded-lg text-gray-200 hover:bg-gray-700 mb-2 transition duration-150 border-l-4 border-blue-500 bg-gray-700/30">Recipes</a>
+                <a href="#" class="block w-full text-left py-2 px-3 rounded-lg text-gray-200 hover:bg-gray-700 mb-2 transition duration-150 border-l-4 border-green-500 bg-gray-700/30">Budget</a>
+                
+                <div class="border-b border-gray-700 my-2"></div>
+                <p class="text-sm font-mono text-gray-500 pt-2">Stephens' Dashboard V1.0</p>
+            </div>
         </div>
     }
 
-    <h5 class="text-muted mb-3">Applications</h5>
-    <div class="row">
-        @foreach (var group in Groups)
-        {
-            <div class="col-xl-2 col-lg-3 col-md-4 col-sm-6 mb-4">
-                <div class="card group-card">
-                    <div class="group-header bg-@group.Color.ToLower()">
-                        @group.Name
-                    </div>
-                    <div class="list-group list-group-flush">
+    <main class="pt-16 pb-8 max-w-7xl mx-auto">
+        
+        <div class="mb-10 w-full h-48 relative flex items-center justify-center">
+            <button @onclick="PrevSlide" class="absolute left-0 z-10 p-3 text-gray-400 hover:text-white hover:bg-gray-700 rounded-full bg-gray-800/50 border border-gray-600"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg></button>
+            
+            <div class="w-full h-full flex items-center justify-center max-w-5xl overflow-hidden relative rounded-xl border border-gray-700/50 bg-gray-800/50 backdrop-blur-sm p-4">
+                @if (CarouselItems.Any())
+                {
+                    var item = CarouselItems[CurrentSlideIndex];
+                    
+                    @if (item.Type == "forecast")
+                    {
+                        <div class="flex items-stretch justify-between w-full h-full px-4 gap-2">
+                            @foreach(var day in ForecastDays)
+                            {
+                                <div class="flex flex-col items-center justify-center h-full flex-1 border-r border-gray-700/50 last:border-0">
+                                    <div class="text-sm font-bold uppercase tracking-wider text-gray-400 mb-2">@day.Date.ToString("ddd")</div>
+                                    <div class="text-4xl mb-3">@GetWeatherEmoji(day.Icon)</div>
+                                    <div class="text-sm font-bold">
+                                        <span class="@GetTempColor(day.High)">@Math.Round(day.High)°</span> 
+                                        <span class="text-gray-600">/</span> 
+                                        <span class="@GetTempColor(day.Low)">@Math.Round(day.Low)°</span>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else if (item.Type == "stocks")
+                    {
+                        <div class="flex items-center justify-around w-full h-full px-4 gap-4">
+                            @foreach(var s in StockData)
+                            {
+                                <div class="flex flex-col items-center">
+                                    <div class="font-bold text-gray-200 text-lg">@s.Symbol</div>
+                                    <div class="text-2xl font-mono font-bold @GetStockColor(s.Change)">@s.Price.ToString("F2")</div>
+                                    <div class="text-xs @GetStockColor(s.Change)">
+                                        @(s.Change > 0 ? "+" : "")@s.Change.ToString("F2") (@s.PercentChange.ToString("F2")%)
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else if (item.Type == "countdown")
+                    {
+                        var c = (Countdown)item.Data;
+                        <a href="@c.LinkUrl" target="_blank" class="flex items-center justify-center w-full h-full px-8 gap-8 hover:bg-white/5 transition duration-200">
+                            @if (!string.IsNullOrEmpty(c.Img)) { <img src="@c.Img" class="w-24 h-24 rounded-xl object-cover shadow-lg border border-gray-600" /> }
+                            <div class="flex flex-col justify-center">
+                                <div class="text-4xl font-black text-white tracking-tight">@c.Name</div>
+                                <div class="text-sm text-gray-400 uppercase tracking-widest font-semibold mt-1">@c.TargetDate.ToString("M/d/yyyy")</div>
+                            </div>
+                            <div class="text-right pl-8">
+                                <div class="text-6xl font-mono text-blue-400 font-bold">@GetDaysRemaining(c.TargetDate)</div>
+                                <div class="text-sm font-mono text-gray-400 mt-1">@GetDetailedTime(c.TargetDate)</div>
+                            </div>
+                        </a>
+                    }
+                }
+                else
+                {
+                    <p class="text-gray-400 animate-pulse">Loading Dashboard...</p>
+                }
+            </div>
+
+            <button @onclick="NextSlide" class="absolute right-0 z-10 p-3 text-gray-400 hover:text-white hover:bg-gray-700 rounded-full bg-gray-800/50 border border-gray-600"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg></button>
+        </div>
+
+        <div class="flex flex-wrap justify-center gap-6 items-start">
+            @foreach (var group in Groups)
+            {
+                <div class="flex-1 min-w-[300px] max-w-[400px] rounded-2xl border p-5 shadow-xl backdrop-blur-sm @GetGroupColorClass(group.Color)">
+                    <h3 class="text-lg font-bold tracking-wide mb-4 text-white">@group.Name</h3>
+                    <div class="grid grid-cols-3 gap-4">
                         @foreach (var link in group.Links)
                         {
-                            <a href="@link.Url" target="_blank" class="link-item">
-                                @if (!string.IsNullOrEmpty(link.Img))
-                                {
-                                    <img src="@link.Img" class="link-icon" onError="this.style.display='none'" />
-                                }
-                                <span class="text-truncate">@link.Name</span>
+                            <a href="@link.Url" target="_blank" class="flex flex-col items-center text-center hover:scale-105 transition duration-200 group/link">
+                                <div class="w-24 h-24 bg-gray-900/50 rounded-xl mb-2 p-3 flex items-center justify-center shadow-inner border border-white/5 relative">
+                                    @if (!string.IsNullOrEmpty(link.Img))
+                                    {
+                                        <img src="@link.Img" class="w-full h-full object-contain rounded-md" onerror="this.style.display='none';this.nextElementSibling.style.display='block'" />
+                                        <span class="hidden text-3xl font-bold text-gray-500">@link.Name.FirstOrDefault()</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-3xl font-bold text-gray-500">@link.Name.FirstOrDefault()</span>
+                                    }
+                                </div>
+                                <span class="text-sm font-medium truncate w-full text-gray-300 group-hover/link:text-white">@link.Name</span>
                             </a>
                         }
                     </div>
                 </div>
-            </div>
-        }
-    </div>
+            }
+        </div>
+    </main>
 </div>
 
 @code {
-    [Microsoft.AspNetCore.Components.Inject]
-    public Dashboard.AppDbContext Db { get; set; } = default!;
+    [Inject] public AppDbContext Db { get; set; } = default!;
 
-    private List<Dashboard.LinkGroup> Groups = new();
-    private List<Dashboard.Countdown> Countdowns = new();
+    // UI State
+    private bool IsMenuOpen = false;
+    private int CurrentSlideIndex = 0;
+    private List<CarouselItem> CarouselItems = new();
+    
+    // Data
+    private List<LinkGroup> Groups = new();
+    private List<Countdown> Countdowns = new();
+    private List<Stock> Stocks = new();
+    
+    // API Data
+    private WeatherData? CurrentWeather;
+    private List<ForecastDay> ForecastDays = new();
+    private double TodayHigh = 0;
+    private double TodayLow = 0;
+    private List<StockQuote> StockData = new();
 
     protected override async Task OnInitializedAsync()
     {
-        // Fetch Groups with Links
-        Groups = await Db.LinkGroups
-            .Include(g => g.Links)
-            .ToListAsync();
+        // 1. Load DB Data
+        Groups = await Db.LinkGroups.Include(g => g.Links).OrderBy(g => g.Id).ToListAsync();
+        Countdowns = await Db.Countdowns.OrderBy(c => c.TargetDate).ToListAsync();
+        Stocks = await Db.Stocks.ToListAsync();
 
-        // Fetch Countdowns
-        Countdowns = await Db.Countdowns
-            .OrderBy(c => c.TargetDate)
-            .ToListAsync();
+        // 2. Build Carousel
+        CarouselItems.Add(new CarouselItem { Type = "forecast" });
+        if (Stocks.Any()) CarouselItems.Add(new CarouselItem { Type = "stocks" });
+        foreach (var c in Countdowns) CarouselItems.Add(new CarouselItem { Type = "countdown", Data = c });
+
+        // 3. Fetch APIs (Fire and Forget to not block UI)
+        _ = FetchWeather();
+        _ = FetchStocks();
+        
+        // 4. Start Clock
+        var timer = new System.Threading.Timer((_) => { InvokeAsync(StateHasChanged); }, null, 0, 1000);
     }
+
+    private void ToggleMenu() => IsMenuOpen = !IsMenuOpen;
+    private void NextSlide() => CurrentSlideIndex = (CurrentSlideIndex + 1) % CarouselItems.Count;
+    private void PrevSlide() => CurrentSlideIndex = (CurrentSlideIndex - 1 + CarouselItems.Count) % CarouselItems.Count;
+
+    // --- Weather Logic ---
+    private async Task FetchWeather()
+    {
+        try {
+            var zip = "75482,us";
+            var key = "87256fe2710631542ff491e4c5d73306"; // User's key
+            
+            // Current
+            var wRes = await Http.GetFromJsonAsync<WeatherResponse>($"https://api.openweathermap.org/data/2.5/weather?zip={zip}&units=imperial&appid={key}");
+            if(wRes != null) CurrentWeather = wRes;
+
+            // Forecast
+            var fRes = await Http.GetFromJsonAsync<ForecastResponse>($"https://api.openweathermap.org/data/2.5/forecast?zip={zip}&units=imperial&appid={key}");
+            if(fRes != null) {
+                // Group by day and take next 5 days
+                ForecastDays = fRes.list
+                    .GroupBy(x => DateTimeOffset.FromUnixTimeSeconds(x.dt).Date)
+                    .Take(5)
+                    .Select(g => new ForecastDay {
+                        Date = g.Key,
+                        High = g.Max(x => x.main.temp_max),
+                        Low = g.Min(x => x.main.temp_min),
+                        Icon = g.First().weather[0].icon
+                    }).ToList();
+                
+                // Set today's high/low
+                var today = ForecastDays.FirstOrDefault();
+                if(today != null) { TodayHigh = today.High; TodayLow = today.Low; }
+            }
+            await InvokeAsync(StateHasChanged);
+        } catch {}
+    }
+
+    // --- Stock Logic ---
+    private async Task FetchStocks()
+    {
+        try {
+            var token = "d4geo7pr01qm5b359cugd4geo7pr01qm5b359cv0"; // User's key
+            foreach(var s in Stocks) {
+                var res = await Http.GetFromJsonAsync<StockResponse>($"https://finnhub.io/api/v1/quote?symbol={s.Symbol}&token={token}");
+                if(res != null && res.c != 0) {
+                    StockData.Add(new StockQuote { Symbol = s.Symbol, Price = res.c, Change = res.d, PercentChange = res.dp });
+                }
+            }
+            await InvokeAsync(StateHasChanged);
+        } catch {}
+    }
+
+    // --- Helpers ---
+    private string GetDaysRemaining(DateTime target) {
+        var diff = (target.Date - DateTime.Now.Date).TotalDays;
+        return diff <= 0 ? "Today!" : diff.ToString();
+    }
+
+    private string GetDetailedTime(DateTime target) {
+        var today = DateTime.Now.Date;
+        var diff = target.Date - today;
+        if(diff.TotalDays <= 0) return "It's here!";
+
+        // Logic to calculate Years/Months/Days
+        int years = target.Year - today.Year;
+        int months = target.Month - today.Month;
+        int days = target.Day - today.Day;
+
+        if (days < 0) {
+            months--;
+            days += DateTime.DaysInMonth(today.Year, today.Month);
+        }
+        if (months < 0) {
+            years--;
+            months += 12;
+        }
+
+        var parts = new List<string>();
+        if (years > 0) parts.Add($"{years} Years");
+        if (months > 0) parts.Add($"{months} Months");
+        if (days > 0) parts.Add($"{days} Days");
+        
+        return string.Join(" ", parts);
+    }
+
+    private string GetGroupColorClass(string color) => color.ToLower() switch {
+        "blue" => "bg-blue-900/20 border-blue-800/50",
+        "green" => "bg-green-900/20 border-green-800/50",
+        "red" => "bg-red-900/20 border-red-800/50",
+        "purple" => "bg-purple-900/20 border-purple-800/50",
+        "yellow" => "bg-yellow-900/20 border-yellow-800/50",
+        "teal" => "bg-teal-900/20 border-teal-800/50",
+        _ => "bg-gray-800 border-gray-700"
+    };
+
+    private string GetTempColor(double t) => t >= 80 ? "text-red-500" : t > 70 ? "text-green-400" : t >= 60 ? "text-green-400/80" : t < 50 ? "text-sky-300" : "text-white";
+    private string GetStockColor(double c) => c > 0 ? "text-green-400" : c < 0 ? "text-red-400" : "text-gray-400";
+    
+    private string GetWeatherEmoji(string icon) {
+        if(icon.Contains("01")) return "☀️";
+        if(icon.Contains("02")) return "🌤️";
+        if(icon.Contains("03")) return "🌥️";
+        if(icon.Contains("09") || icon.Contains("10")) return "🌧️";
+        if(icon.Contains("13")) return "❄️";
+        return "☁️";
+    }
+
+    // --- Classes ---
+    class CarouselItem { public string Type { get; set; } = ""; public object? Data { get; set; } }
+    class ForecastDay { public DateTime Date { get; set; } public double High { get; set; } public double Low { get; set; } public string Icon { get; set; } = ""; }
+    class StockQuote { public string Symbol { get; set; } = ""; public double Price { get; set; } public double Change { get; set; } public double PercentChange { get; set; } }
+    
+    // API Models
+    class WeatherResponse { public MainData main { get; set; } public List<WeatherIcon> weather { get; set; } }
+    class ForecastResponse { public List<ForecastItem> list { get; set; } }
+    class ForecastItem { public long dt { get; set; } public MainData main { get; set; } public List<WeatherIcon> weather { get; set; } }
+    class MainData { public double temp { get; set; } public double temp_min { get; set; } public double temp_max { get; set; } }
+    class WeatherIcon { public string icon { get; set; } = ""; }
+    class StockResponse { public double c { get; set; } public double d { get; set; } public double dp { get; set; } }
 }
