@@ -94,22 +94,27 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// --- ADD THIS BLOCK ---
+// --- UPDATE THIS BLOCK ---
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
+    // Get the logger factory
+    var logger = services.GetRequiredService<ILogger<Program>>();
+    
     try
     {
+        logger.LogInformation("--- APPLICATION STARTING ---");
         var context = services.GetRequiredService<AppDbContext>();
-        // Run the check/seed
-        DbInitializer.Initialize(context);
+        
+        // Pass the logger to the initializer
+        DbInitializer.Initialize(context, logger);
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"[DB ERROR] An error occurred while checking the DB: {ex.Message}");
+        logger.LogError(ex, "--- ERROR IN PROGRAM STARTUP ---");
     }
 }
-// ----------------------
+// -------------------------
 
 // Configure the HTTP request pipeline...
 // (Your existing middleware code)
@@ -142,5 +147,6 @@ class JsonCountdown {
 class JsonStock {
     public string Symbol { get; set; } = "";
 }
+
 
 
