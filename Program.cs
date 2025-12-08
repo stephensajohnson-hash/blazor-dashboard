@@ -12,6 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // 1. Add Services
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
+builder.Services.AddHttpClient(); // <--- NEW: Allows us to fetch Weather/Stocks
 
 // 2. Database Setup
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -30,61 +31,31 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    // db.Database.EnsureDeleted(); // UNCOMMENT THIS ONCE if you need to wipe bad data and re-import
     db.Database.EnsureCreated();
 
-    // Check if empty. If yes, import the JSON file!
     if (!db.LinkGroups.Any() && File.Exists("seed.json"))
     {
         Console.WriteLine("SEEDING DATABASE FROM JSON FILE...");
         var jsonContent = File.ReadAllText("seed.json");
-        
-        // Deserialize using a temporary structure that matches the JSON exactly
         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
         var importData = JsonSerializer.Deserialize<JsonRoot>(jsonContent, options);
 
         if (importData != null)
         {
-            // 1. Import Groups and Links
             foreach (var g in importData.LinkGroups)
             {
-                var newGroup = new LinkGroup 
-                { 
-                    Name = g.Name, 
-                    Color = g.Color, 
-                    IsStatic = g.IsStatic 
-                };
-
-                foreach (var l in g.Links)
-                {
-                    newGroup.Links.Add(new Link 
-                    { 
-                        Name = l.Name, 
-                        Url = l.Url, 
-                        Img = l.Img 
-                    });
-                }
+                var newGroup = new LinkGroup { Name = g.Name, Color = g.Color, IsStatic = g.IsStatic };
+                foreach (var l in g.Links) newGroup.Links.Add(new Link { Name = l.Name, Url = l.Url, Img = l.Img });
                 db.LinkGroups.Add(newGroup);
             }
-
-            // 2. Import Countdowns
             foreach (var c in importData.Countdowns)
             {
-                db.Countdowns.Add(new Countdown 
-                { 
-                    Name = c.Name, 
-                    TargetDate = c.TargetDate, 
-                    LinkUrl = c.LinkUrl, 
-                    Img = c.Img 
-                });
+                db.Countdowns.Add(new Countdown { Name = c.Name, TargetDate = c.TargetDate, LinkUrl = c.LinkUrl, Img = c.Img });
             }
-
-            // 3. Import Stocks
             foreach (var s in importData.Stocks)
             {
                 db.Stocks.Add(new Stock { Symbol = s.Symbol });
             }
-
             db.SaveChanges();
             Console.WriteLine("SEEDING COMPLETE!");
         }
@@ -95,7 +66,6 @@ using (var scope = app.Services.CreateScope())
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error");
-    // app.UseHsts(); // Disabled for Render
 }
 
 app.UseStaticFiles();
@@ -104,11 +74,9 @@ app.UseAntiforgery();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-// app.MapGet("/", () => Results.Redirect("/dashboard")); // Redirect root to dashboard if needed, or handle in App.razor
-
 app.Run();
 
-// --- Helper Classes for JSON Import (These match your JSON file structure) ---
+// --- Helper Classes for JSON Import ---
 class JsonRoot {
     public List<JsonGroup> LinkGroups { get; set; } = new();
     public List<JsonCountdown> Countdowns { get; set; } = new();
@@ -134,4 +102,3 @@ class JsonCountdown {
 class JsonStock {
     public string Symbol { get; set; } = "";
 }
-
