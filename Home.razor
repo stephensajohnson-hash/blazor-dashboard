@@ -1,11 +1,8 @@
 @page "/"
-@rendermode @(new InteractiveServerRenderMode(prerender: false))
-@using Microsoft.AspNetCore.Components
-@using Microsoft.AspNetCore.Components.Web
-@using Microsoft.AspNetCore.Components.Forms
+@using Dashboard
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.JSInterop
-@using Dashboard
+@using Microsoft.AspNetCore.Components.Web
 @inject HttpClient Http
 @inject IJSRuntime JS
 
@@ -52,14 +49,13 @@
                     <h3 class="text-xl font-semibold text-white">Menu</h3>
                     <button class="text-gray-400 hover:text-white p-1" @onclick="ToggleMenu">X</button>
                 </div>
-                
                 <div class="space-y-2">
                     <button @onclick="OpenAddGroupModal" class="w-full text-left py-2 px-3 rounded-lg text-gray-200 hover:bg-gray-700 border border-gray-600 bg-gray-700/30">+ Add Link Group</button>
                     <button @onclick="OpenAddCountdownModal" class="w-full text-left py-2 px-3 rounded-lg text-gray-200 hover:bg-gray-700 border border-gray-600 bg-gray-700/30">+ Add Countdown</button>
                     <button @onclick="OpenAddStockModal" class="w-full text-left py-2 px-3 rounded-lg text-gray-200 hover:bg-gray-700 border border-gray-600 bg-gray-700/30">+ Add Stock</button>
                 </div>
                 <div class="border-b border-gray-700 my-4"></div>
-                <p class="text-sm font-mono text-gray-500">Stephens' Dashboard V2.0.1</p>
+                <p class="text-sm font-mono text-gray-500">Stephens' Dashboard V2.0.2</p>
             </div>
         </div>
     }
@@ -67,14 +63,11 @@
     <main class="pt-16 pb-8 max-w-7xl mx-auto">
         <div class="mb-10 w-full h-48 relative flex items-center justify-center group/carousel">
             <button @onclick="PrevSlide" class="absolute left-0 z-40 p-3 text-gray-400 hover:text-white hover:bg-gray-700 rounded-full bg-gray-800/50 border border-gray-600"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg></button>
-            
             <div class="w-full h-full flex items-center justify-center max-w-5xl overflow-hidden relative rounded-xl border border-gray-700/50 bg-gray-800/50 backdrop-blur-sm p-4">
                 @if (CarouselItems.Any())
                 {
                     var item = CarouselItems[CurrentSlideIndex];
-                    
-                    @if (item.Type == "forecast" && ForecastDays.Any())
-                    {
+                    @if (item.Type == "forecast" && ForecastDays.Any()) {
                         <div class="flex items-stretch justify-between w-full h-full px-4 gap-2">
                             @foreach(var day in ForecastDays) {
                                 <div class="flex flex-col items-center justify-center h-full flex-1 border-r border-gray-700/50 last:border-0">
@@ -85,8 +78,7 @@
                             }
                         </div>
                     }
-                    else if (item.Type == "stocks" && Stocks.Any())
-                    {
+                    else if (item.Type == "stocks" && Stocks.Any()) {
                         <div class="flex items-center justify-around w-full h-full px-4 gap-4 relative">
                             @foreach(var dbStock in Stocks) {
                                 var quote = StockData.FirstOrDefault(q => q.Symbol == dbStock.Symbol);
@@ -99,7 +91,7 @@
                                             </div>
                                         }
                                         
-                                        <a href="@dbStock.LinkUrl" target="_blank" class="flex flex-col items-center hover:opacity-80 transition">
+                                        <a href="@(string.IsNullOrEmpty(dbStock.LinkUrl) ? "#" : dbStock.LinkUrl)" target="_blank" class="flex flex-col items-center hover:opacity-80 transition">
                                             <div class="flex items-center gap-2 mb-1">
                                                 @if(!string.IsNullOrEmpty(dbStock.ImgUrl)) {
                                                     <img src="@dbStock.ImgUrl" class="w-6 h-6 rounded-full object-cover" />
@@ -111,7 +103,7 @@
                                             
                                             @if(dbStock.Shares > 0) {
                                                 <div class="mt-2 text-sm text-gray-400 font-mono bg-gray-900/50 px-2 py-1 rounded-md">
-                                                    Holdings: <span class="text-blue-300">$@((dbStock.Shares * quote.Price).ToString("N2"))</span>
+                                                    Val: <span class="text-blue-300">$@((dbStock.Shares * quote.Price).ToString("N2"))</span>
                                                 </div>
                                             }
                                         </a>
@@ -120,8 +112,7 @@
                             }
                         </div>
                     }
-                    else if (item.Type == "countdown" && item.Data is Countdown c)
-                    {
+                    else if (item.Type == "countdown" && item.Data is Countdown c) {
                         <div class="relative w-full h-full flex items-center justify-center">
                             @if(IsEditMode) { 
                                 <button @onclick="() => DeleteCountdown(c)" class="absolute top-0 right-0 bg-red-900/80 p-2 rounded text-white hover:bg-red-700 z-50">Delete</button> 
@@ -193,67 +184,6 @@
         </div>
     </main>
 
-    @if (ShowLinkModal)
-    {
-        <div class="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
-            <div class="bg-gray-800 rounded-2xl p-6 w-full max-w-md border border-gray-700 shadow-2xl">
-                <h2 class="text-2xl font-bold text-white mb-4">@(EditingLink.Id == 0 ? "Add Link" : "Edit Link")</h2>
-                <div class="space-y-4">
-                    <input class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" placeholder="Name" @bind="EditingLink.Name" />
-                    <input class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" placeholder="URL (https://...)" @bind="EditingLink.Url" />
-                    <input class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" placeholder="Image URL or /images/..." @bind="EditingLink.Img" />
-                    <div class="flex justify-end gap-2 mt-4">
-                        <button @onclick="CloseLinkModal" class="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
-                        <button @onclick="SaveLink" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded">Save</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    }
-
-    @if (ShowGroupModal)
-    {
-        <div class="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
-            <div class="bg-gray-800 rounded-2xl p-6 w-full max-w-md border border-gray-700 shadow-2xl">
-                <h2 class="text-2xl font-bold text-white mb-4">@(EditingGroup.Id == 0 ? "Add Group" : "Edit Group")</h2>
-                <div class="space-y-4">
-                    <input class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" placeholder="Group Name" @bind="EditingGroup.Name" />
-                    <select class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" @bind="EditingGroup.Color">
-                        <option value="blue">Blue</option>
-                        <option value="green">Green</option>
-                        <option value="red">Red</option>
-                        <option value="purple">Purple</option>
-                        <option value="yellow">Yellow</option>
-                        <option value="teal">Teal</option>
-                        <option value="gray">Gray</option>
-                    </select>
-                    <div class="flex justify-end gap-2 mt-4">
-                        <button @onclick="CloseGroupModal" class="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
-                        <button @onclick="SaveGroup" class="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded">Save</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    }
-
-    @if (ShowCountdownModal)
-    {
-        <div class="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
-            <div class="bg-gray-800 rounded-2xl p-6 w-full max-w-md border border-gray-700 shadow-2xl">
-                <h2 class="text-2xl font-bold text-white mb-4">@(EditingCountdown.Id == 0 ? "Add Countdown" : "Edit Countdown")</h2>
-                <div class="space-y-4">
-                    <input class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" placeholder="Event Name" @bind="EditingCountdown.Name" />
-                    <input type="date" class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" @bind="EditingCountdown.TargetDate" />
-                    <input class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" placeholder="Image URL" @bind="EditingCountdown.Img" />
-                    <div class="flex justify-end gap-2 mt-4">
-                        <button @onclick="CloseCountdownModal" class="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
-                        <button @onclick="SaveCountdown" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded">Save</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    }
-
     @if (ShowStockModal)
     {
         <div class="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
@@ -285,18 +215,18 @@
             </div>
         </div>
     }
+
+    @if (ShowLinkModal) { <div class="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4"><div class="bg-gray-800 rounded p-6 w-full max-w-md"><input class="w-full bg-gray-700 p-2 text-white mb-2" @bind="EditingLink.Name" placeholder="Name" /><input class="w-full bg-gray-700 p-2 text-white mb-2" @bind="EditingLink.Url" placeholder="URL" /><input class="w-full bg-gray-700 p-2 text-white mb-2" @bind="EditingLink.Img" placeholder="Image URL" /><button @onclick="SaveLink" class="bg-blue-600 text-white p-2 rounded">Save</button><button @onclick="CloseLinkModal" class="ml-2 text-gray-400">Cancel</button></div></div> }
+    @if (ShowGroupModal) { <div class="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4"><div class="bg-gray-800 rounded p-6 w-full max-w-md"><input class="w-full bg-gray-700 p-2 text-white mb-2" @bind="EditingGroup.Name" placeholder="Name" /><select class="w-full bg-gray-700 p-2 text-white mb-2" @bind="EditingGroup.Color"><option value="blue">Blue</option><option value="green">Green</option><option value="red">Red</option><option value="gray">Gray</option></select><button @onclick="SaveGroup" class="bg-green-600 text-white p-2 rounded">Save</button><button @onclick="CloseGroupModal" class="ml-2 text-gray-400">Cancel</button></div></div> }
+    @if (ShowCountdownModal) { <div class="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4"><div class="bg-gray-800 rounded p-6 w-full max-w-md"><input class="w-full bg-gray-700 p-2 text-white mb-2" @bind="EditingCountdown.Name" placeholder="Name" /><input type="date" class="w-full bg-gray-700 p-2 text-white mb-2" @bind="EditingCountdown.TargetDate" /><input class="w-full bg-gray-700 p-2 text-white mb-2" @bind="EditingCountdown.Img" placeholder="Image URL" /><button @onclick="SaveCountdown" class="bg-purple-600 text-white p-2 rounded">Save</button><button @onclick="CloseCountdownModal" class="ml-2 text-gray-400">Cancel</button></div></div> }
 </div>
 
 @code {
     [Inject] public AppDbContext Db { get; set; } = default!;
     
     // UI State
-    private bool IsMenuOpen = false;
-    private bool IsEditMode = false;
-    private bool ShowLinkModal = false;
-    private bool ShowGroupModal = false;
-    private bool ShowCountdownModal = false;
-    private bool ShowStockModal = false;
+    private bool IsMenuOpen = false, IsEditMode = false;
+    private bool ShowLinkModal = false, ShowGroupModal = false, ShowCountdownModal = false, ShowStockModal = false;
     private int CurrentSlideIndex = 0;
     private string ErrorMessage = "";
     
@@ -304,7 +234,7 @@
     private Link EditingLink = new();
     private LinkGroup EditingGroup = new();
     private Countdown EditingCountdown = new();
-    private Stock EditingStock = new(); // Changed from just Symbol string
+    private Stock EditingStock = new();
 
     // Data
     private List<CarouselItem> CarouselItems = new();
@@ -314,19 +244,16 @@
     private WeatherResponse? CurrentWeather;
     private List<ForecastDay> ForecastDays = new();
     private List<StockQuote> StockData = new();
-    private double TodayHigh;
-    private double TodayLow;
+    private double TodayHigh, TodayLow;
 
     protected override async Task OnInitializedAsync() {
         await LoadData();
-        _ = FetchWeather(); // Safe async
-        _ = FetchStocks();  // Safe async
+        _ = FetchWeather();
+        _ = FetchStocks();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender) {
-        if(firstRender) {
-            try { await JS.InvokeVoidAsync("startLocalClock"); } catch {}
-        }
+        if(firstRender) { try { await JS.InvokeVoidAsync("startLocalClock"); } catch {} }
     }
 
     private async Task LoadData() {
@@ -336,9 +263,7 @@
             Countdowns = await Db.Countdowns.OrderBy(c => c.TargetDate).ToListAsync();
             Stocks = await Db.Stocks.ToListAsync();
             RebuildCarousel();
-        } catch (Exception ex) {
-            ErrorMessage = "Database Error: " + ex.Message;
-        }
+        } catch (Exception ex) { ErrorMessage = "Database Error: " + ex.Message; }
     }
 
     private void RebuildCarousel() {
@@ -355,36 +280,26 @@
     private void NextSlide() => CurrentSlideIndex = (CurrentSlideIndex + 1) % CarouselItems.Count;
     private void PrevSlide() => CurrentSlideIndex = (CurrentSlideIndex - 1 + CarouselItems.Count) % CarouselItems.Count;
 
-    // CRUD Ops
+    // CRUD
     private void OpenLinkModal(Link link) { EditingLink = link; ShowLinkModal = true; }
     private void OpenAddLinkModal(int gId) { EditingLink = new Link { LinkGroupId = gId }; ShowLinkModal = true; }
     private void CloseLinkModal() => ShowLinkModal = false;
-    private async Task SaveLink() { 
-        if(EditingLink.Id == 0) Db.Links.Add(EditingLink); else Db.Links.Update(EditingLink);
-        await Db.SaveChangesAsync(); ShowLinkModal = false; await LoadData(); 
-    }
-    private async Task DeleteLink(Link l) { if(await Confirm($"Delete {l.Name}?")) { Db.Links.Remove(l); await Db.SaveChangesAsync(); await LoadData(); } }
+    private async Task SaveLink() { if(EditingLink.Id==0)Db.Links.Add(EditingLink); else Db.Links.Update(EditingLink); await Db.SaveChangesAsync(); ShowLinkModal=false; await LoadData(); }
+    private async Task DeleteLink(Link l) { if(await Confirm($"Delete {l.Name}?")){Db.Links.Remove(l); await Db.SaveChangesAsync(); await LoadData();} }
 
-    private void OpenGroupModal(LinkGroup? g = null) { EditingGroup = g ?? new LinkGroup { Color = "gray" }; ShowGroupModal = true; IsMenuOpen = false; }
+    private void OpenGroupModal(LinkGroup? g = null) { EditingGroup = g ?? new LinkGroup{Color="gray"}; ShowGroupModal=true; IsMenuOpen=false; }
     private void OpenAddGroupModal() { OpenGroupModal(null); }
     private void CloseGroupModal() => ShowGroupModal = false;
-    private async Task SaveGroup() { 
-        if(EditingGroup.Id == 0) Db.LinkGroups.Add(EditingGroup); else Db.LinkGroups.Update(EditingGroup);
-        await Db.SaveChangesAsync(); ShowGroupModal = false; await LoadData(); 
-    }
-    private async Task DeleteGroup(LinkGroup g) { if(await Confirm($"Delete {g.Name}?")) { Db.LinkGroups.Remove(g); await Db.SaveChangesAsync(); await LoadData(); } }
+    private async Task SaveGroup() { if(EditingGroup.Id==0)Db.LinkGroups.Add(EditingGroup); else Db.LinkGroups.Update(EditingGroup); await Db.SaveChangesAsync(); ShowGroupModal=false; await LoadData(); }
+    private async Task DeleteGroup(LinkGroup g) { if(await Confirm($"Delete {g.Name}?")){Db.LinkGroups.Remove(g); await Db.SaveChangesAsync(); await LoadData();} }
 
-    private void OpenCountdownModal(Countdown? c = null) { EditingCountdown = c ?? new Countdown { TargetDate = DateTime.Now }; ShowCountdownModal = true; IsMenuOpen = false; }
+    private void OpenCountdownModal(Countdown? c = null) { EditingCountdown = c ?? new Countdown{TargetDate=DateTime.Now}; ShowCountdownModal=true; IsMenuOpen=false; }
     private void OpenEditCountdownModal(Countdown c) { OpenCountdownModal(c); }
     private void OpenAddCountdownModal() { OpenCountdownModal(null); }
     private void CloseCountdownModal() => ShowCountdownModal = false;
-    private async Task SaveCountdown() { 
-        if(EditingCountdown.Id == 0) Db.Countdowns.Add(EditingCountdown); else Db.Countdowns.Update(EditingCountdown);
-        await Db.SaveChangesAsync(); ShowCountdownModal = false; await LoadData(); 
-    }
-    private async Task DeleteCountdown(Countdown c) { if(await Confirm($"Delete {c.Name}?")) { Db.Countdowns.Remove(c); await Db.SaveChangesAsync(); await LoadData(); } }
+    private async Task SaveCountdown() { if(EditingCountdown.Id==0)Db.Countdowns.Add(EditingCountdown); else Db.Countdowns.Update(EditingCountdown); await Db.SaveChangesAsync(); ShowCountdownModal=false; await LoadData(); }
+    private async Task DeleteCountdown(Countdown c) { if(await Confirm($"Delete {c.Name}?")){Db.Countdowns.Remove(c); await Db.SaveChangesAsync(); await LoadData();} }
 
-    // STOCK CRUD (UPDATED)
     private void OpenStockModal(Stock? s = null) { EditingStock = s ?? new Stock(); ShowStockModal = true; IsMenuOpen = false; }
     private void OpenEditStockModal(Stock s) { OpenStockModal(s); }
     private void OpenAddStockModal() { OpenStockModal(null); }
@@ -393,72 +308,53 @@
         if(!string.IsNullOrWhiteSpace(EditingStock.Symbol)) {
             EditingStock.Symbol = EditingStock.Symbol.ToUpper();
             if(EditingStock.Id == 0) Db.Stocks.Add(EditingStock); else Db.Stocks.Update(EditingStock);
-            await Db.SaveChangesAsync(); 
-            await FetchStocks(); // Refresh quotes for new/changed symbol
-            await LoadData();
+            await Db.SaveChangesAsync(); await FetchStocks(); await LoadData();
         }
         ShowStockModal = false; 
     }
     private async Task DeleteStock(Stock s) { 
-        if(await Confirm($"Delete {s.Symbol}?")) { 
-            Db.Stocks.Remove(s); 
-            await Db.SaveChangesAsync(); 
-            await LoadData(); 
-            // Remove from live data cache if no other entries use this symbol
-            if(!Stocks.Any(dbS => dbS.Symbol == s.Symbol)) {
-                 StockData.RemoveAll(x=>x.Symbol==s.Symbol);
-            }
-        } 
+        if(await Confirm($"Delete {s.Symbol}?")) { Db.Stocks.Remove(s); await Db.SaveChangesAsync(); await LoadData(); if(!Stocks.Any(x=>x.Symbol==s.Symbol)) StockData.RemoveAll(x=>x.Symbol==s.Symbol); } 
     }
 
     private async Task<bool> Confirm(string msg) => await JS.InvokeAsync<bool>("confirm", msg);
 
-    // Weather/Stocks API (Safe)
+    // Weather/Stocks
     private async Task FetchWeather() {
         try {
-            var zip = "75482,us"; var key = "87256fe2710631542ff491e4c5d73306";
-            var w = await Http.GetFromJsonAsync<WeatherResponse>($"https://api.openweathermap.org/data/2.5/weather?zip={zip}&units=imperial&appid={key}");
-            if(w!=null) CurrentWeather = w;
-            var f = await Http.GetFromJsonAsync<ForecastResponse>($"https://api.openweathermap.org/data/2.5/forecast?zip={zip}&units=imperial&appid={key}");
+            var zip="75482,us"; var key="87256fe2710631542ff491e4c5d73306";
+            var w=await Http.GetFromJsonAsync<WeatherResponse>($"https://api.openweathermap.org/data/2.5/weather?zip={zip}&units=imperial&appid={key}");
+            if(w!=null)CurrentWeather=w;
+            var f=await Http.GetFromJsonAsync<ForecastResponse>($"https://api.openweathermap.org/data/2.5/forecast?zip={zip}&units=imperial&appid={key}");
             if(f?.list!=null) {
-                ForecastDays = f.list.Where(x=>x.main!=null).GroupBy(x=>DateTimeOffset.FromUnixTimeSeconds(x.dt).Date).Take(5)
+                ForecastDays=f.list.Where(x=>x.main!=null).GroupBy(x=>DateTimeOffset.FromUnixTimeSeconds(x.dt).Date).Take(5)
                     .Select(g=>new ForecastDay{Date=g.Key, High=g.Max(x=>x.main!.temp_max), Low=g.Min(x=>x.main!.temp_min), Icon=g.First().weather?[0].icon??""}).ToList();
-                var t = ForecastDays.FirstOrDefault(); if(t!=null){TodayHigh=t.High; TodayLow=t.Low;}
+                var t=ForecastDays.FirstOrDefault(); if(t!=null){TodayHigh=t.High; TodayLow=t.Low;}
             }
             StateHasChanged();
         } catch {}
     }
     private async Task FetchStocks() {
         try {
-            var token = "d4geo7pr01qm5b359cugd4geo7pr01qm5b359cv0";
-            // Only fetch quotes for symbols stored in DB
-            var distinctSymbols = Stocks.Select(s => s.Symbol).Distinct();
-            foreach(var symbol in distinctSymbols) {
-                if(StockData.Any(x=>x.Symbol==symbol)) continue; // Skip if already have quote
-                var r = await Http.GetFromJsonAsync<StockResponse>($"https://finnhub.io/api/v1/quote?symbol={symbol}&token={token}");
-                if(r!=null && r.c!=0) StockData.Add(new StockQuote{Symbol=symbol, Price=r.c, Change=r.d, PercentChange=r.dp});
+            var token="d4geo7pr01qm5b359cugd4geo7pr01qm5b359cv0";
+            var distinctSymbols = Stocks.Select(s=>s.Symbol).Distinct();
+            foreach(var s in distinctSymbols) {
+                if(StockData.Any(x=>x.Symbol==s)) continue;
+                var r=await Http.GetFromJsonAsync<StockResponse>($"https://finnhub.io/api/v1/quote?symbol={s}&token={token}");
+                if(r!=null && r.c!=0) StockData.Add(new StockQuote{Symbol=s, Price=r.c, Change=r.d, PercentChange=r.dp});
             }
             StateHasChanged();
         } catch {}
     }
 
-    // Helper Methods
-    private string GetEditButtonClass() {
-        return "p-2 rounded-full " + (IsEditMode ? "bg-yellow-600 text-white animate-pulse" : "bg-gray-700 text-gray-400 hover:text-white");
-    }
-    
-    private string GetSafeInitial(string? name) {
-        if (string.IsNullOrEmpty(name)) return "?";
-        return name.Substring(0, 1);
-    }
-
+    // Helpers
+    private string GetEditButtonClass() => "p-2 rounded-full " + (IsEditMode ? "bg-yellow-600 text-white animate-pulse" : "bg-gray-700 text-gray-400 hover:text-white");
+    private string GetSafeInitial(string? n) => string.IsNullOrEmpty(n) ? "?" : n.Substring(0, 1);
     private string GetDaysRemaining(DateTime t) => (t.Date-DateTime.Now.Date).TotalDays<=0?"Today!":(t.Date-DateTime.Now.Date).TotalDays.ToString();
-    
     private string GetDetailedTime(DateTime t) {
-        var n = DateTime.Now.Date; var d = t.Date-n; if(d.TotalDays<=0) return "It's here!";
+        var n=DateTime.Now.Date; var d=t.Date-n; if(d.TotalDays<=0) return "It's here!";
         int y=t.Year-n.Year, m=t.Month-n.Month, da=t.Day-n.Day;
         if(da<0){m--; da+=DateTime.DaysInMonth(n.Year, n.Month);} if(m<0){y--; m+=12;}
-        var p = new List<string>(); if(y>0)p.Add($"{y} Years"); if(m>0)p.Add($"{m} Months"); if(da>0)p.Add($"{da} Days");
+        var p=new List<string>(); if(y>0)p.Add($"{y} Years"); if(m>0)p.Add($"{m} Months"); if(da>0)p.Add($"{da} Days");
         return string.Join(" ", p);
     }
     private string GetGroupColorClass(string c) => c.ToLower() switch { "blue"=>"bg-blue-900/20 border-blue-800/50", "green"=>"bg-green-900/20 border-green-800/50", "red"=>"bg-red-900/20 border-red-800/50", "purple"=>"bg-purple-900/20 border-purple-800/50", "yellow"=>"bg-yellow-900/20 border-yellow-800/50", "teal"=>"bg-teal-900/20 border-teal-800/50", _=>"bg-gray-800 border-gray-700" };
