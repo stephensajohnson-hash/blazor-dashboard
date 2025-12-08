@@ -1,13 +1,13 @@
 @page "/"
-@using Microsoft.AspNetCore.Components.Web
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Dashboard
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.JSInterop
+@using static Microsoft.AspNetCore.Components.Web.RenderMode
 @inject HttpClient Http
 @inject IJSRuntime JS
 
-<div class="p-4 sm:p-8">
+<div class="p-4 sm:p-8 relative">
     <nav class="fixed top-0 left-0 right-0 bg-gray-800 border-b border-gray-700 shadow-xl z-30 p-2 flex items-center justify-between">
         <div class="flex items-center">
             <button class="p-2 rounded-full bg-gray-700 hover:bg-gray-600 focus:outline-none mr-4 z-50 relative" @onclick="ToggleMenu">
@@ -18,20 +18,20 @@
             </div>
         </div>
         
-        <div class="text-sm flex items-center bg-gray-700 px-3 py-1 rounded-full border border-gray-600">
-            @if (CurrentWeather?.main != null && CurrentWeather.weather != null && CurrentWeather.weather.Count > 0)
-            {
-                <span class="flex items-center">
-                    <span class="text-lg font-bold mr-3 @GetTempColor(CurrentWeather.main.temp)">@Math.Round(CurrentWeather.main.temp)°</span>
-                    <span class="low-temp-offset mr-1 text-xs text-sky-300">@Math.Round(TodayLow)°</span>
-                    <span class="mr-1 text-xl">@GetWeatherEmoji(CurrentWeather.weather[0].icon)</span>
-                    <span class="high-temp-offset text-xs text-red-400">@Math.Round(TodayHigh)°</span>
-                </span>
-            }
-            else
-            {
-                <span class="text-xs text-gray-400">@WeatherStatus</span>
-            }
+        <div class="flex items-center gap-4">
+            <button @onclick="ToggleEditMode" class="p-2 rounded-full @(IsEditMode ? "bg-yellow-600 text-white animate-pulse" : "bg-gray-700 text-gray-400 hover:text-white")" title="Toggle Edit Mode">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+            </button>
+
+            <div class="text-sm flex items-center bg-gray-700 px-3 py-1 rounded-full border border-gray-600 hidden sm:flex">
+                @if (CurrentWeather?.main != null)
+                {
+                    <span class="flex items-center">
+                        <span class="text-lg font-bold mr-3 @GetTempColor(CurrentWeather.main.temp)">@Math.Round(CurrentWeather.main.temp)°</span>
+                        <span class="mr-1 text-xl">@GetWeatherEmoji(CurrentWeather.weather?[0].icon ?? "")</span>
+                    </span>
+                }
+            </div>
         </div>
     </nav>
 
@@ -44,18 +44,20 @@
                     <button class="text-gray-400 hover:text-white p-1" @onclick="ToggleMenu">X</button>
                 </div>
                 
-                <a href="#" class="block w-full text-left py-2 px-3 rounded-lg text-gray-200 hover:bg-gray-700 mb-2 transition duration-150 border-l-4 border-purple-500 bg-gray-700/30">Bullet Calendar</a>
-                <a href="#" class="block w-full text-left py-2 px-3 rounded-lg text-gray-200 hover:bg-gray-700 mb-2 transition duration-150 border-l-4 border-blue-500 bg-gray-700/30">Recipes</a>
-                <a href="#" class="block w-full text-left py-2 px-3 rounded-lg text-gray-200 hover:bg-gray-700 mb-2 transition duration-150 border-l-4 border-green-500 bg-gray-700/30">Budget</a>
+                <div class="space-y-2">
+                    <button @onclick="() => OpenGroupModal()" class="w-full text-left py-2 px-3 rounded-lg text-gray-200 hover:bg-gray-700 border border-gray-600 bg-gray-700/30">+ Add Link Group</button>
+                    <button @onclick="() => OpenCountdownModal()" class="w-full text-left py-2 px-3 rounded-lg text-gray-200 hover:bg-gray-700 border border-gray-600 bg-gray-700/30">+ Add Countdown</button>
+                    <button @onclick="() => OpenStockModal()" class="w-full text-left py-2 px-3 rounded-lg text-gray-200 hover:bg-gray-700 border border-gray-600 bg-gray-700/30">+ Add Stock</button>
+                </div>
                 
-                <div class="border-b border-gray-700 my-2"></div>
-                <p class="text-sm font-mono text-gray-500 pt-2">Stephens' Dashboard V1.2</p>
+                <div class="border-b border-gray-700 my-4"></div>
+                <p class="text-sm font-mono text-gray-500">Stephens' Dashboard V1.3</p>
             </div>
         </div>
     }
 
     <main class="pt-16 pb-8 max-w-7xl mx-auto">
-        <div class="mb-10 w-full h-48 relative flex items-center justify-center">
+        <div class="mb-10 w-full h-48 relative flex items-center justify-center group/carousel">
             <button @onclick="PrevSlide" class="absolute left-0 z-40 p-3 text-gray-400 hover:text-white hover:bg-gray-700 rounded-full bg-gray-800/50 border border-gray-600"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg></button>
             
             <div class="w-full h-full flex items-center justify-center max-w-5xl overflow-hidden relative rounded-xl border border-gray-700/50 bg-gray-800/50 backdrop-blur-sm p-4">
@@ -66,91 +68,168 @@
                     @if (item.Type == "forecast" && ForecastDays.Any())
                     {
                         <div class="flex items-stretch justify-between w-full h-full px-4 gap-2">
-                            @foreach(var day in ForecastDays)
-                            {
+                            @foreach(var day in ForecastDays) {
                                 <div class="flex flex-col items-center justify-center h-full flex-1 border-r border-gray-700/50 last:border-0">
                                     <div class="text-sm font-bold uppercase tracking-wider text-gray-400 mb-2">@day.Date.ToString("ddd")</div>
                                     <div class="text-4xl mb-3">@GetWeatherEmoji(day.Icon)</div>
-                                    <div class="text-sm font-bold">
-                                        <span class="@GetTempColor(day.High)">@Math.Round(day.High)°</span> 
-                                        <span class="text-gray-600">/</span> 
-                                        <span class="@GetTempColor(day.Low)">@Math.Round(day.Low)°</span>
-                                    </div>
+                                    <div class="text-sm font-bold"><span class="@GetTempColor(day.High)">@Math.Round(day.High)°</span> <span class="text-gray-600">/</span> <span class="@GetTempColor(day.Low)">@Math.Round(day.Low)°</span></div>
                                 </div>
                             }
                         </div>
                     }
                     else if (item.Type == "stocks" && StockData.Any())
                     {
-                        <div class="flex items-center justify-around w-full h-full px-4 gap-4">
-                            @foreach(var s in StockData)
-                            {
-                                <div class="flex flex-col items-center">
+                        <div class="flex items-center justify-around w-full h-full px-4 gap-4 relative">
+                            @if(IsEditMode) { <div class="absolute top-0 right-0 text-xs text-gray-500 italic">Delete individual stocks via DB/Menu for now</div> }
+                            @foreach(var s in StockData) {
+                                <div class="flex flex-col items-center relative group/stock">
+                                    @if(IsEditMode) { <button @onclick="() => DeleteStock(s.Symbol)" class="absolute -top-4 -right-2 text-red-500 hover:text-red-300">×</button> }
                                     <div class="font-bold text-gray-200 text-lg">@s.Symbol</div>
                                     <div class="text-2xl font-mono font-bold @GetStockColor(s.Change)">@s.Price.ToString("F2")</div>
-                                    <div class="text-xs @GetStockColor(s.Change)">
-                                        @(s.Change > 0 ? "+" : "")@s.Change.ToString("F2") (@s.PercentChange.ToString("F2")%)
-                                    </div>
+                                    <div class="text-xs @GetStockColor(s.Change)">@(s.Change > 0 ? "+" : "")@s.Change.ToString("F2") (@s.PercentChange.ToString("F2")%)</div>
                                 </div>
                             }
                         </div>
                     }
                     else if (item.Type == "countdown" && item.Data is Countdown c)
                     {
-                        <a href="@c.LinkUrl" target="_blank" class="flex items-center justify-center w-full h-full px-8 gap-8 hover:bg-white/5 transition duration-200">
-                            @if (!string.IsNullOrEmpty(c.Img)) { <img src="@c.Img" class="w-24 h-24 rounded-xl object-cover shadow-lg border border-gray-600" /> }
-                            <div class="flex flex-col justify-center">
-                                <div class="text-4xl font-black text-white tracking-tight">@c.Name</div>
-                                <div class="text-sm text-gray-400 uppercase tracking-widest font-semibold mt-1">@c.TargetDate.ToString("M/d/yyyy")</div>
-                            </div>
-                            <div class="text-right pl-8">
-                                <div class="text-6xl font-mono text-blue-400 font-bold">@GetDaysRemaining(c.TargetDate)</div>
-                                <div class="text-sm font-mono text-gray-400 mt-1">@GetDetailedTime(c.TargetDate)</div>
-                            </div>
-                        </a>
-                    }
-                    else 
-                    {
-                        <p class="text-gray-400 animate-pulse">Loading Data...</p>
+                        <div class="relative w-full h-full flex items-center justify-center">
+                            @if(IsEditMode) { 
+                                <button @onclick="() => DeleteCountdown(c)" class="absolute top-0 right-0 bg-red-900/80 p-2 rounded text-white hover:bg-red-700 z-50">Delete</button> 
+                                <button @onclick="() => OpenCountdownModal(c)" class="absolute top-0 right-20 bg-blue-900/80 p-2 rounded text-white hover:bg-blue-700 z-50">Edit</button> 
+                            }
+                            <a href="@c.LinkUrl" target="_blank" class="flex items-center justify-center w-full h-full px-8 gap-8 hover:bg-white/5 transition duration-200">
+                                @if (!string.IsNullOrEmpty(c.Img)) { <img src="@c.Img" class="w-24 h-24 rounded-xl object-cover shadow-lg border border-gray-600" /> }
+                                <div class="flex flex-col justify-center">
+                                    <div class="text-4xl font-black text-white tracking-tight">@c.Name</div>
+                                    <div class="text-sm text-gray-400 uppercase tracking-widest font-semibold mt-1">@c.TargetDate.ToString("M/d/yyyy")</div>
+                                </div>
+                                <div class="text-right pl-8">
+                                    <div class="text-6xl font-mono text-blue-400 font-bold">@GetDaysRemaining(c.TargetDate)</div>
+                                    <div class="text-sm font-mono text-gray-400 mt-1">@GetDetailedTime(c.TargetDate)</div>
+                                </div>
+                            </a>
+                        </div>
                     }
                 }
-                else
-                {
-                    <p class="text-gray-400 animate-pulse">Loading Dashboard...</p>
-                }
+                else { <p class="text-gray-400 animate-pulse">Loading...</p> }
             </div>
-
             <button @onclick="NextSlide" class="absolute right-0 z-40 p-3 text-gray-400 hover:text-white hover:bg-gray-700 rounded-full bg-gray-800/50 border border-gray-600"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg></button>
         </div>
 
         <div class="flex flex-wrap justify-center gap-6 items-start">
             @foreach (var group in Groups)
             {
-                <div class="flex-1 min-w-[300px] max-w-[400px] rounded-2xl border p-5 shadow-xl backdrop-blur-sm @GetGroupColorClass(group.Color)">
-                    <h3 class="text-lg font-bold tracking-wide mb-4 text-white">@group.Name</h3>
+                <div class="flex-1 min-w-[300px] max-w-[400px] rounded-2xl border p-5 shadow-xl backdrop-blur-sm @GetGroupColorClass(group.Color) relative group/card">
+                    <div class="flex justify-between items-start mb-4">
+                        <h3 class="text-lg font-bold tracking-wide text-white">@group.Name</h3>
+                        @if(IsEditMode) {
+                            <div class="flex gap-2">
+                                <button @onclick="() => OpenGroupModal(group)" class="text-blue-300 hover:text-white"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg></button>
+                                <button @onclick="() => DeleteGroup(group)" class="text-red-400 hover:text-white"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
+                            </div>
+                        }
+                    </div>
+                    
                     <div class="grid grid-cols-3 gap-4">
                         @foreach (var link in group.Links)
                         {
-                            <a href="@link.Url" target="_blank" class="flex flex-col items-center text-center hover:scale-105 transition duration-200 group/link">
-                                <div class="w-24 h-24 bg-gray-900/50 rounded-xl mb-2 p-3 flex items-center justify-center shadow-inner border border-white/5 relative">
-                                    @if (!string.IsNullOrEmpty(link.Img))
-                                    {
-                                        <img src="@link.Img" class="w-full h-full object-contain rounded-md" onerror="this.style.display='none';this.nextElementSibling.style.display='block'" />
-                                        <span class="hidden text-3xl font-bold text-gray-500">@link.Name.FirstOrDefault()</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="text-3xl font-bold text-gray-500">@link.Name.FirstOrDefault()</span>
-                                    }
-                                </div>
-                                <span class="text-sm font-medium truncate w-full text-gray-300 group-hover/link:text-white">@link.Name</span>
-                            </a>
+                            <div class="relative group/link">
+                                @if(IsEditMode) {
+                                    <div class="absolute -top-2 -right-2 z-10 flex bg-gray-900 rounded-full border border-gray-600 scale-75">
+                                        <button @onclick="() => OpenLinkModal(link)" class="p-1 text-blue-400 hover:text-white"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg></button>
+                                        <button @onclick="() => DeleteLink(link)" class="p-1 text-red-400 hover:text-white"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                                    </div>
+                                }
+                                <a href="@link.Url" target="_blank" class="flex flex-col items-center text-center hover:scale-105 transition duration-200">
+                                    <div class="w-24 h-24 bg-gray-900/50 rounded-xl mb-2 p-3 flex items-center justify-center shadow-inner border border-white/5 relative">
+                                        @if (!string.IsNullOrEmpty(link.Img)) {
+                                            <img src="@link.Img" class="w-full h-full object-contain rounded-md" onerror="this.style.display='none';this.nextElementSibling.style.display='block'" />
+                                            <span class="hidden text-3xl font-bold text-gray-500">@link.Name.FirstOrDefault()</span>
+                                        } else { <span class="text-3xl font-bold text-gray-500">@link.Name.FirstOrDefault()</span> }
+                                    </div>
+                                    <span class="text-sm font-medium truncate w-full text-gray-300 group-hover/link:text-white">@link.Name</span>
+                                </a>
+                            </div>
+                        }
+                        @if(IsEditMode) {
+                            <button @onclick="() => OpenLinkModal(null, group.Id)" class="flex flex-col items-center justify-center text-center opacity-50 hover:opacity-100 border-2 border-dashed border-gray-600 rounded-xl w-24 h-24 mb-6">
+                                <span class="text-4xl text-gray-400">+</span>
+                            </button>
                         }
                     </div>
                 </div>
             }
         </div>
     </main>
+
+    @if (ShowLinkModal) {
+        <div class="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
+            <div class="bg-gray-800 rounded-2xl p-6 w-full max-w-md border border-gray-700 shadow-2xl">
+                <h2 class="text-2xl font-bold text-white mb-4">@(EditingLink.Id == 0 ? "Add Link" : "Edit Link")</h2>
+                <div class="space-y-4">
+                    <input class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" placeholder="Name" @bind="EditingLink.Name" />
+                    <input class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" placeholder="URL (https://...)" @bind="EditingLink.Url" />
+                    <input class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" placeholder="Image URL or /images/..." @bind="EditingLink.Img" />
+                    <div class="flex justify-end gap-2 mt-4">
+                        <button @onclick="() => ShowLinkModal = false" class="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
+                        <button @onclick="SaveLink" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded">Save</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (ShowGroupModal) {
+        <div class="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
+            <div class="bg-gray-800 rounded-2xl p-6 w-full max-w-md border border-gray-700 shadow-2xl">
+                <h2 class="text-2xl font-bold text-white mb-4">@(EditingGroup.Id == 0 ? "Add Group" : "Edit Group")</h2>
+                <div class="space-y-4">
+                    <input class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" placeholder="Group Name" @bind="EditingGroup.Name" />
+                    <select class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" @bind="EditingGroup.Color">
+                        <option value="blue">Blue</option><option value="green">Green</option><option value="red">Red</option>
+                        <option value="purple">Purple</option><option value="yellow">Yellow</option><option value="teal">Teal</option><option value="gray">Gray</option>
+                    </select>
+                    <div class="flex justify-end gap-2 mt-4">
+                        <button @onclick="() => ShowGroupModal = false" class="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
+                        <button @onclick="SaveGroup" class="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded">Save</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (ShowCountdownModal) {
+        <div class="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
+            <div class="bg-gray-800 rounded-2xl p-6 w-full max-w-md border border-gray-700 shadow-2xl">
+                <h2 class="text-2xl font-bold text-white mb-4">@(EditingCountdown.Id == 0 ? "Add Countdown" : "Edit Countdown")</h2>
+                <div class="space-y-4">
+                    <input class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" placeholder="Event Name" @bind="EditingCountdown.Name" />
+                    <input type="date" class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" @bind="EditingCountdown.TargetDate" />
+                    <input class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" placeholder="Image URL" @bind="EditingCountdown.Img" />
+                    <div class="flex justify-end gap-2 mt-4">
+                        <button @onclick="() => ShowCountdownModal = false" class="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
+                        <button @onclick="SaveCountdown" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded">Save</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (ShowStockModal) {
+        <div class="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
+            <div class="bg-gray-800 rounded-2xl p-6 w-full max-w-md border border-gray-700 shadow-2xl">
+                <h2 class="text-2xl font-bold text-white mb-4">Add Stock</h2>
+                <div class="space-y-4">
+                    <input class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white uppercase" placeholder="Symbol (e.g. MSFT)" @bind="NewStockSymbol" />
+                    <div class="flex justify-end gap-2 mt-4">
+                        <button @onclick="() => ShowStockModal = false" class="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
+                        <button @onclick="SaveStock" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded">Add</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
 </div>
 
 @code {
@@ -158,10 +237,23 @@
 
     // UI State
     private bool IsMenuOpen = false;
+    private bool IsEditMode = false;
     private int CurrentSlideIndex = 0;
     private List<CarouselItem> CarouselItems = new();
-    private string WeatherStatus = "Init...";
     
+    // Modal State
+    private bool ShowLinkModal = false;
+    private Link EditingLink = new();
+    
+    private bool ShowGroupModal = false;
+    private LinkGroup EditingGroup = new();
+
+    private bool ShowCountdownModal = false;
+    private Countdown EditingCountdown = new();
+
+    private bool ShowStockModal = false;
+    private string NewStockSymbol = "";
+
     // Data
     private List<LinkGroup> Groups = new();
     private List<Countdown> Countdowns = new();
@@ -176,99 +268,157 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadData();
+        _ = FetchWeather();
+        _ = FetchStocks();
+    }
+
+    private async Task LoadData() {
         Groups = await Db.LinkGroups.Include(g => g.Links).OrderBy(g => g.Id).ToListAsync();
         Countdowns = await Db.Countdowns.OrderBy(c => c.TargetDate).ToListAsync();
         Stocks = await Db.Stocks.ToListAsync();
+        RebuildCarousel();
+    }
 
+    private void RebuildCarousel() {
+        CarouselItems.Clear();
         CarouselItems.Add(new CarouselItem { Type = "forecast" });
         if (Stocks.Any()) CarouselItems.Add(new CarouselItem { Type = "stocks" });
         foreach (var c in Countdowns) CarouselItems.Add(new CarouselItem { Type = "countdown", Data = c });
+        if (CurrentSlideIndex >= CarouselItems.Count) CurrentSlideIndex = 0;
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            await JS.InvokeVoidAsync("startLocalClock");
-            await FetchWeather();
-            await FetchStocks();
-        }
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) await JS.InvokeVoidAsync("startLocalClock");
     }
 
-    private void ToggleMenu() 
-    {
-        IsMenuOpen = !IsMenuOpen;
-        StateHasChanged(); 
-    }
-    
+    // --- ACTIONS ---
+    private void ToggleMenu() => IsMenuOpen = !IsMenuOpen;
+    private void ToggleEditMode() => IsEditMode = !IsEditMode;
     private void NextSlide() => CurrentSlideIndex = (CurrentSlideIndex + 1) % CarouselItems.Count;
     private void PrevSlide() => CurrentSlideIndex = (CurrentSlideIndex - 1 + CarouselItems.Count) % CarouselItems.Count;
 
-    private async Task FetchWeather()
-    {
-        try {
-            var zip = "75482,us";
-            var key = "87256fe2710631542ff491e4c5d73306"; 
-            
-            WeatherStatus = "Loading...";
-            StateHasChanged();
+    // --- CRUD: Links ---
+    private void OpenLinkModal(Link? link, int groupId = 0) {
+        EditingLink = link ?? new Link { LinkGroupId = groupId };
+        ShowLinkModal = true;
+    }
+    private async Task SaveLink() {
+        if(EditingLink.Id == 0) Db.Links.Add(EditingLink);
+        else Db.Links.Update(EditingLink);
+        await Db.SaveChangesAsync();
+        ShowLinkModal = false;
+        await LoadData();
+    }
+    private async Task DeleteLink(Link link) {
+        if(!await JS.InvokeAsync<bool>("confirm", $"Delete {link.Name}?")) return;
+        Db.Links.Remove(link);
+        await Db.SaveChangesAsync();
+        await LoadData();
+    }
 
-            var wRes = await Http.GetFromJsonAsync<WeatherResponse>($"https://api.openweathermap.org/data/2.5/weather?zip={zip}&units=imperial&appid={key}");
-            if(wRes != null) CurrentWeather = wRes;
+    // --- CRUD: Groups ---
+    private void OpenGroupModal(LinkGroup? group = null) {
+        EditingGroup = group ?? new LinkGroup { Color = "gray" };
+        ShowGroupModal = true;
+        IsMenuOpen = false;
+    }
+    private async Task SaveGroup() {
+        if(EditingGroup.Id == 0) Db.LinkGroups.Add(EditingGroup);
+        else Db.LinkGroups.Update(EditingGroup);
+        await Db.SaveChangesAsync();
+        ShowGroupModal = false;
+        await LoadData();
+    }
+    private async Task DeleteGroup(LinkGroup group) {
+        if(!await JS.InvokeAsync<bool>("confirm", $"Delete group {group.Name} and all links?")) return;
+        Db.LinkGroups.Remove(group);
+        await Db.SaveChangesAsync();
+        await LoadData();
+    }
 
-            var fRes = await Http.GetFromJsonAsync<ForecastResponse>($"https://api.openweathermap.org/data/2.5/forecast?zip={zip}&units=imperial&appid={key}");
-            if (fRes?.list != null) {
-                ForecastDays = fRes.list
-                    .Where(x => x.main != null && x.weather != null)
-                    .GroupBy(x => DateTimeOffset.FromUnixTimeSeconds(x.dt).Date)
-                    .Take(5)
-                    .Select(g => new ForecastDay {
-                        Date = g.Key,
-                        High = g.Max(x => x.main!.temp_max),
-                        Low = g.Min(x => x.main!.temp_min),
-                        Icon = g.First().weather![0].icon
-                    }).ToList();
-                
-                var today = ForecastDays.FirstOrDefault();
-                if(today != null) { TodayHigh = today.High; TodayLow = today.Low; }
-            }
-            WeatherStatus = "Done";
-            StateHasChanged();
-        } 
-        catch (Exception ex) 
-        {
-            Console.WriteLine($"Weather Error: {ex.Message}");
-            WeatherStatus = "Error";
-            StateHasChanged();
+    // --- CRUD: Countdowns ---
+    private void OpenCountdownModal(Countdown? c = null) {
+        EditingCountdown = c ?? new Countdown { TargetDate = DateTime.Now.AddDays(7) };
+        ShowCountdownModal = true;
+        IsMenuOpen = false;
+    }
+    private async Task SaveCountdown() {
+        if(EditingCountdown.Id == 0) Db.Countdowns.Add(EditingCountdown);
+        else Db.Countdowns.Update(EditingCountdown);
+        await Db.SaveChangesAsync();
+        ShowCountdownModal = false;
+        await LoadData();
+        RebuildCarousel();
+    }
+    private async Task DeleteCountdown(Countdown c) {
+        if(!await JS.InvokeAsync<bool>("confirm", $"Delete {c.Name}?")) return;
+        Db.Countdowns.Remove(c);
+        await Db.SaveChangesAsync();
+        await LoadData();
+    }
+
+    // --- CRUD: Stocks ---
+    private void OpenStockModal() {
+        NewStockSymbol = "";
+        ShowStockModal = true;
+        IsMenuOpen = false;
+    }
+    private async Task SaveStock() {
+        if(!string.IsNullOrWhiteSpace(NewStockSymbol)) {
+            Db.Stocks.Add(new Stock { Symbol = NewStockSymbol.ToUpper() });
+            await Db.SaveChangesAsync();
+            await FetchStocks(); // Refresh quotes
+            await LoadData();
+        }
+        ShowStockModal = false;
+    }
+    private async Task DeleteStock(string symbol) {
+        var s = await Db.Stocks.FirstOrDefaultAsync(x => x.Symbol == symbol);
+        if(s != null) {
+            Db.Stocks.Remove(s);
+            await Db.SaveChangesAsync();
+            await LoadData();
+            // Manually remove from cached StockData to update UI immediately
+            StockData.RemoveAll(x => x.Symbol == symbol); 
         }
     }
 
-    private async Task FetchStocks()
-    {
+    // --- Weather & Stock Logic (Kept same) ---
+    private async Task FetchWeather() {
         try {
-            var token = "d4geo7pr01qm5b359cugd4geo7pr01qm5b359cv0";
-            foreach(var s in Stocks) {
-                var res = await Http.GetFromJsonAsync<StockResponse>($"https://finnhub.io/api/v1/quote?symbol={s.Symbol}&token={token}");
-                if(res != null && res.c != 0) {
-                    StockData.Add(new StockQuote { Symbol = s.Symbol, Price = res.c, Change = res.d, PercentChange = res.dp });
-                }
+            var zip = "75482,us"; var key = "87256fe2710631542ff491e4c5d73306"; 
+            var wRes = await Http.GetFromJsonAsync<WeatherResponse>($"https://api.openweathermap.org/data/2.5/weather?zip={zip}&units=imperial&appid={key}");
+            if(wRes != null) CurrentWeather = wRes;
+            var fRes = await Http.GetFromJsonAsync<ForecastResponse>($"https://api.openweathermap.org/data/2.5/forecast?zip={zip}&units=imperial&appid={key}");
+            if (fRes?.list != null) {
+                ForecastDays = fRes.list.Where(x => x.main != null && x.weather != null).GroupBy(x => DateTimeOffset.FromUnixTimeSeconds(x.dt).Date).Take(5)
+                    .Select(g => new ForecastDay { Date = g.Key, High = g.Max(x => x.main!.temp_max), Low = g.Min(x => x.main!.temp_min), Icon = g.First().weather![0].icon }).ToList();
+                var today = ForecastDays.FirstOrDefault();
+                if(today != null) { TodayHigh = today.High; TodayLow = today.Low; }
             }
             StateHasChanged();
         } catch {}
     }
 
-    private string GetDaysRemaining(DateTime target) {
-        var diff = (target.Date - DateTime.Now.Date).TotalDays;
-        return diff <= 0 ? "Today!" : diff.ToString();
+    private async Task FetchStocks() {
+        try {
+            var token = "d4geo7pr01qm5b359cugd4geo7pr01qm5b359cv0";
+            foreach(var s in Stocks) {
+                if(StockData.Any(x => x.Symbol == s.Symbol)) continue; // Don't re-fetch if we have it
+                var res = await Http.GetFromJsonAsync<StockResponse>($"https://finnhub.io/api/v1/quote?symbol={s.Symbol}&token={token}");
+                if(res != null && res.c != 0) StockData.Add(new StockQuote { Symbol = s.Symbol, Price = res.c, Change = res.d, PercentChange = res.dp });
+            }
+            StateHasChanged();
+        } catch {}
     }
 
+    // --- Helpers ---
+    private string GetDaysRemaining(DateTime target) { var diff = (target.Date - DateTime.Now.Date).TotalDays; return diff <= 0 ? "Today!" : diff.ToString(); }
     private string GetDetailedTime(DateTime target) {
-        var today = DateTime.Now.Date;
-        var diff = target.Date - today;
+        var today = DateTime.Now.Date; var diff = target.Date - today;
         if(diff.TotalDays <= 0) return "It's here!";
-        int years = target.Year - today.Year;
-        int months = target.Month - today.Month;
-        int days = target.Day - today.Day;
+        int years = target.Year - today.Year; int months = target.Month - today.Month; int days = target.Day - today.Day;
         if (days < 0) { months--; days += DateTime.DaysInMonth(today.Year, today.Month); }
         if (months < 0) { years--; months += 12; }
         var parts = new List<string>();
@@ -277,34 +427,15 @@
         if (days > 0) parts.Add($"{days} Days");
         return string.Join(" ", parts);
     }
-
-    private string GetGroupColorClass(string color) => color.ToLower() switch {
-        "blue" => "bg-blue-900/20 border-blue-800/50",
-        "green" => "bg-green-900/20 border-green-800/50",
-        "red" => "bg-red-900/20 border-red-800/50",
-        "purple" => "bg-purple-900/20 border-purple-800/50",
-        "yellow" => "bg-yellow-900/20 border-yellow-800/50",
-        "teal" => "bg-teal-900/20 border-teal-800/50",
-        _ => "bg-gray-800 border-gray-700"
-    };
-
+    private string GetGroupColorClass(string color) => color.ToLower() switch { "blue" => "bg-blue-900/20 border-blue-800/50", "green" => "bg-green-900/20 border-green-800/50", "red" => "bg-red-900/20 border-red-800/50", "purple" => "bg-purple-900/20 border-purple-800/50", "yellow" => "bg-yellow-900/20 border-yellow-800/50", "teal" => "bg-teal-900/20 border-teal-800/50", _ => "bg-gray-800 border-gray-700" };
     private string GetTempColor(double t) => t >= 80 ? "text-red-500" : t > 70 ? "text-green-400" : t >= 60 ? "text-green-400/80" : t < 50 ? "text-sky-300" : "text-white";
     private string GetStockColor(double c) => c > 0 ? "text-green-400" : c < 0 ? "text-red-400" : "text-gray-400";
-    
-    private string GetWeatherEmoji(string icon) {
-        if(icon.Contains("01")) return "☀️";
-        if(icon.Contains("02")) return "🌤️";
-        if(icon.Contains("03")) return "🌥️";
-        if(icon.Contains("09") || icon.Contains("10")) return "🌧️";
-        if(icon.Contains("13")) return "❄️";
-        return "☁️";
-    }
+    private string GetWeatherEmoji(string icon) { if(icon.Contains("01")) return "☀️"; if(icon.Contains("02")) return "🌤️"; if(icon.Contains("03")) return "🌥️"; if(icon.Contains("09") || icon.Contains("10")) return "🌧️"; if(icon.Contains("13")) return "❄️"; return "☁️"; }
 
     class CarouselItem { public string Type { get; set; } = ""; public object? Data { get; set; } }
     class ForecastDay { public DateTime Date { get; set; } public double High { get; set; } public double Low { get; set; } public string Icon { get; set; } = ""; }
     class StockQuote { public string Symbol { get; set; } = ""; public double Price { get; set; } public double Change { get; set; } public double PercentChange { get; set; } }
     
-    // API Models - Null Safe
     public class WeatherResponse { public MainData? main { get; set; } public List<WeatherIcon>? weather { get; set; } }
     public class ForecastResponse { public List<ForecastItem>? list { get; set; } }
     public class ForecastItem { public long dt { get; set; } public MainData? main { get; set; } public List<WeatherIcon>? weather { get; set; } }
