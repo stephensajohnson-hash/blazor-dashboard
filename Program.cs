@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.HttpOverrides; // NEW: Required for Render Proxies
 using System.Text.Json;
 using System.IO;
 using System.Collections.Generic;
@@ -11,8 +12,9 @@ using System.Linq;
 var builder = WebApplication.CreateBuilder(args);
 
 // 1. Add Services
-builder.Services.AddRazorComponents().AddInteractiveServerComponents();
-builder.Services.AddHttpClient(); // <--- NEW: Allows us to fetch Weather/Stocks
+builder.Services.AddRazorComponents()
+    .AddInteractiveServerComponents(); // Enable Interactivity
+builder.Services.AddHttpClient();
 
 // 2. Database Setup
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -27,7 +29,30 @@ else
 
 var app = builder.Build();
 
-// 3. AUTO-MIGRATION & IMPORTING JSON
+// 3. FIX FOR RENDER: Forwarded Headers
+// This tells the app "Trust the HTTPS signal from Render's Load Balancer"
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
+
+// 4. Configure Pipeline
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/Error");
+    // The default HSTS value is 30 days. You may want to change this for production scenarios.
+    app.UseHsts();
+}
+
+app.UseHttpsRedirection(); // Force HTTPS now that headers are fixed
+
+app.UseStaticFiles();
+app.UseAntiforgery();
+
+app.MapRazorComponents<App>()
+    .AddInteractiveServerRenderMode(); // Turn on the Engine
+
+// 5. Database Seeder (Keep your existing data logic)
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -35,48 +60,42 @@ using (var scope = app.Services.CreateScope())
 
     if (!db.LinkGroups.Any() && File.Exists("seed.json"))
     {
-        Console.WriteLine("SEEDING DATABASE FROM JSON FILE...");
-        var jsonContent = File.ReadAllText("seed.json");
-        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-        var importData = JsonSerializer.Deserialize<JsonRoot>(jsonContent, options);
-
-        if (importData != null)
+        Console.WriteLine("SEEDING DATABASE...");
+        try 
         {
-            foreach (var g in importData.LinkGroups)
+            var jsonContent = File.ReadAllText("seed.json");
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var importData = JsonSerializer.Deserialize<JsonRoot>(jsonContent, options);
+
+            if (importData != null)
             {
-                var newGroup = new LinkGroup { Name = g.Name, Color = g.Color, IsStatic = g.IsStatic };
-                foreach (var l in g.Links) newGroup.Links.Add(new Link { Name = l.Name, Url = l.Url, Img = l.Img });
-                db.LinkGroups.Add(newGroup);
+                foreach (var g in importData.LinkGroups)
+                {
+                    var newGroup = new LinkGroup { Name = g.Name, Color = g.Color, IsStatic = g.IsStatic };
+                    foreach (var l in g.Links) newGroup.Links.Add(new Link { Name = l.Name, Url = l.Url, Img = l.Img });
+                    db.LinkGroups.Add(newGroup);
+                }
+                foreach (var c in importData.Countdowns)
+                {
+                    db.Countdowns.Add(new Countdown { Name = c.Name, TargetDate = c.TargetDate, LinkUrl = c.LinkUrl, Img = c.Img });
+                }
+                foreach (var s in importData.Stocks)
+                {
+                    db.Stocks.Add(new Stock { Symbol = s.Symbol });
+                }
+                db.SaveChanges();
             }
-            foreach (var c in importData.Countdowns)
-            {
-                db.Countdowns.Add(new Countdown { Name = c.Name, TargetDate = c.TargetDate, LinkUrl = c.LinkUrl, Img = c.Img });
-            }
-            foreach (var s in importData.Stocks)
-            {
-                db.Stocks.Add(new Stock { Symbol = s.Symbol });
-            }
-            db.SaveChanges();
-            Console.WriteLine("SEEDING COMPLETE!");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Seeding Error: {ex.Message}");
         }
     }
 }
 
-// 4. Configure Pipeline
-if (!app.Environment.IsDevelopment())
-{
-    app.UseExceptionHandler("/Error");
-}
-
-app.UseStaticFiles();
-app.UseAntiforgery();
-
-app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
-
 app.Run();
 
-// --- Helper Classes for JSON Import ---
+// --- Helper Classes ---
 class JsonRoot {
     public List<JsonGroup> LinkGroups { get; set; } = new();
     public List<JsonCountdown> Countdowns { get; set; } = new();
