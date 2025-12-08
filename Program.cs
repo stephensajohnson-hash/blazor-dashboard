@@ -40,5 +40,17 @@ app.UseAntiforgery();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
+// ... existing code ...
+
+app.MapRazorComponents<App>()
+    .AddInteractiveServerRenderMode();
+
+// FIX: Add this simple endpoint to verify the server works
+// This forces the server to say "Hello" even if Blazor routing fails.
+app.MapGet("/", () => Results.Content(
+    "<html><body><h1>IT WORKS!</h1><p>The Render server is running correctly.</p></body></html>", 
+    "text/html"));
+
 app.Run();
+
 
