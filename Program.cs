@@ -17,6 +17,9 @@ builder.Services.AddRazorComponents()
     .AddCircuitOptions(options => options.DetailedErrors = true); // <--- SHOW ME THE ERROR
 builder.Services.AddHttpClient();
 
+// Add this line so your pages can talk to your API
+builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri("https://dashboard-app-rmm4.onrender.com/") });
+
 // 2. Database Setup
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (!string.IsNullOrEmpty(connectionString))
@@ -147,6 +150,7 @@ class JsonCountdown {
 class JsonStock {
     public string Symbol { get; set; } = "";
 }
+
 
 
 
