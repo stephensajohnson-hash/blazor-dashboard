@@ -1,45 +1,88 @@
 using System;
+using System.IO;
 using System.Linq;
-using Dashboard; // Make sure this matches your namespace
+using System.Text.Json;
+using System.Collections.Generic;
+using Dashboard; // Ensure this matches your namespace
 
 public static class DbInitializer
 {
     public static void Initialize(AppDbContext context)
     {
-        // 1. Ensure the DB is created
-        context.Database.EnsureCreated();
-
-        // 2. DIAGNOSTIC: Print counts to the Console (Check Render Logs for this!)
-        int groupCount = context.LinkGroups.Count();
-        int linkCount = context.Links.Count();
-        Console.WriteLine($"[DB CHECK] LinkGroups found: {groupCount}");
-        Console.WriteLine($"[DB CHECK] Links found: {linkCount}");
-
-        // 3. If data exists, do nothing
-        if (context.LinkGroups.Any())
+        try 
         {
-            return; 
+            // 1. Ensure the DB is created
+            context.Database.EnsureCreated();
+
+            // 2. DIAGNOSTIC: Force print to console
+            int groupCount = context.LinkGroups.Count();
+            int stockCount = context.Stocks.Count();
+
+            Console.WriteLine("**************************************************");
+            Console.WriteLine($"[DB CHECK] EXISTING DATA FOUND: {groupCount} Groups, {stockCount} Stocks");
+            
+            if (groupCount > 0)
+            {
+                Console.WriteLine("[DB CHECK] SKIPPING SEED (Data already exists)");
+                Console.WriteLine("**************************************************");
+                return; 
+            }
+
+            Console.WriteLine("[DB CHECK] DATABASE IS EMPTY. ATTEMPTING TO LOAD seed.json...");
+
+            // 3. Read JSON File
+            string filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "seed.json");
+            
+            if (!File.Exists(filePath))
+            {
+                 // Fallback: Try looking in current directory if BaseDirectory fails
+                 filePath = "seed.json";
+                 if (!File.Exists(filePath))
+                 {
+                    Console.WriteLine($"[DB ERROR] seed.json NOT FOUND at {Path.GetFullPath(filePath)}");
+                    return;
+                 }
+            }
+
+            string jsonString = File.ReadAllText(filePath);
+            
+            // 4. Deserialize
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var seedData = JsonSerializer.Deserialize<SeedDataWrapper>(jsonString, options);
+
+            // 5. Add to DB
+            if (seedData != null)
+            {
+                if (seedData.LinkGroups != null) context.LinkGroups.AddRange(seedData.LinkGroups);
+                if (seedData.Stocks != null) context.Stocks.AddRange(seedData.Stocks);
+                if (seedData.Countdowns != null) context.Countdowns.AddRange(seedData.Countdowns);
+
+                context.SaveChanges();
+                Console.WriteLine("[DB CHECK] SUCCESS! DATA LOADED FROM JSON.");
+            }
+            else 
+            {
+                Console.WriteLine("[DB ERROR] JSON file was found but returned null data.");
+            }
         }
-
-        // 4. If empty, ADD DATA (Seeding)
-        Console.WriteLine("[DB CHECK] Database is empty. Seeding data...");
-
-        var newsGroup = new LinkGroup { Name = "News", Color = "blue", IsStatic = false };
-        var financeGroup = new LinkGroup { Name = "Finance", Color = "green", IsStatic = false };
-
-        context.LinkGroups.AddRange(newsGroup, financeGroup);
-        context.SaveChanges(); // Save groups first to get IDs
-
-        var links = new Link[]
+        catch (Exception ex)
         {
-            new Link { Name = "CNN", Url = "https://cnn.com", LinkGroupId = newsGroup.Id },
-            new Link { Name = "Fox", Url = "https://foxnews.com", LinkGroupId = newsGroup.Id },
-            new Link { Name = "Google Finance", Url = "https://google.com/finance", LinkGroupId = financeGroup.Id }
-        };
+            Console.WriteLine($"[DB CRITICAL ERROR] {ex.Message}");
+            if(ex.InnerException != null) Console.WriteLine($"[Inner] {ex.InnerException.Message}");
+        }
+        finally
+        {
+            Console.WriteLine("**************************************************");
+            // FORCE the logs to write to Render console immediately
+            Console.Out.Flush(); 
+        }
+    }
 
-        context.Links.AddRange(links);
-        context.SaveChanges();
-        
-        Console.WriteLine("[DB CHECK] Data seeded successfully.");
+    // Helper class to match the JSON structure
+    private class SeedDataWrapper
+    {
+        public List<LinkGroup>? LinkGroups { get; set; }
+        public List<Stock>? Stocks { get; set; }
+        public List<Countdown>? Countdowns { get; set; }
     }
 }
