@@ -3,6 +3,10 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
+using System.IO;
+using System.Collections.Generic;
+using System.Linq;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,27 +26,68 @@ else
 
 var app = builder.Build();
 
-// 3. AUTO-MIGRATION & SEEDING (The Magic Step)
-// This forces the database to create the tables if they don't exist.
+// 3. AUTO-MIGRATION & IMPORTING JSON
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.EnsureCreated(); // Creates tables!
+    // db.Database.EnsureDeleted(); // UNCOMMENT THIS ONCE if you need to wipe bad data and re-import
+    db.Database.EnsureCreated();
 
-    // Seed Data: If no groups exist, add some defaults so you see something cool.
-    if (!db.LinkGroups.Any())
+    // Check if empty. If yes, import the JSON file!
+    if (!db.LinkGroups.Any() && File.Exists("seed.json"))
     {
-        var finance = new LinkGroup { Name = "Finance", SortOrder = 1 };
-        var news = new LinkGroup { Name = "News", SortOrder = 2 };
+        Console.WriteLine("SEEDING DATABASE FROM JSON FILE...");
+        var jsonContent = File.ReadAllText("seed.json");
         
-        db.LinkGroups.AddRange(finance, news);
-        db.SaveChanges(); // Save groups to get IDs
+        // Deserialize using a temporary structure that matches the JSON exactly
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        var importData = JsonSerializer.Deserialize<JsonRoot>(jsonContent, options);
 
-        db.Links.Add(new Link { Title = "My Budget", Url = "https://mint.com", LinkGroupId = finance.Id });
-        db.Links.Add(new Link { Title = "Stock Market", Url = "https://finance.yahoo.com", LinkGroupId = finance.Id });
-        db.Links.Add(new Link { Title = "CNN", Url = "https://cnn.com", LinkGroupId = news.Id });
-        
-        db.SaveChanges();
+        if (importData != null)
+        {
+            // 1. Import Groups and Links
+            foreach (var g in importData.LinkGroups)
+            {
+                var newGroup = new LinkGroup 
+                { 
+                    Name = g.Name, 
+                    Color = g.Color, 
+                    IsStatic = g.IsStatic 
+                };
+
+                foreach (var l in g.Links)
+                {
+                    newGroup.Links.Add(new Link 
+                    { 
+                        Name = l.Name, 
+                        Url = l.Url, 
+                        Img = l.Img 
+                    });
+                }
+                db.LinkGroups.Add(newGroup);
+            }
+
+            // 2. Import Countdowns
+            foreach (var c in importData.Countdowns)
+            {
+                db.Countdowns.Add(new Countdown 
+                { 
+                    Name = c.Name, 
+                    TargetDate = c.TargetDate, 
+                    LinkUrl = c.LinkUrl, 
+                    Img = c.Img 
+                });
+            }
+
+            // 3. Import Stocks
+            foreach (var s in importData.Stocks)
+            {
+                db.Stocks.Add(new Stock { Symbol = s.Symbol });
+            }
+
+            db.SaveChanges();
+            Console.WriteLine("SEEDING COMPLETE!");
+        }
     }
 }
 
@@ -50,7 +95,7 @@ using (var scope = app.Services.CreateScope())
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error");
-    app.UseHsts();
+    // app.UseHsts(); // Disabled for Render
 }
 
 app.UseStaticFiles();
@@ -59,4 +104,33 @@ app.UseAntiforgery();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
+app.MapGet("/", () => Results.Redirect("/dashboard")); // Redirect root to dashboard if needed, or handle in App.razor
+
 app.Run();
+
+// --- Helper Classes for JSON Import (These match your JSON file structure) ---
+class JsonRoot {
+    public List<JsonGroup> LinkGroups { get; set; } = new();
+    public List<JsonCountdown> Countdowns { get; set; } = new();
+    public List<JsonStock> Stocks { get; set; } = new();
+}
+class JsonGroup {
+    public string Name { get; set; } = "";
+    public string Color { get; set; } = "";
+    public bool IsStatic { get; set; }
+    public List<JsonLink> Links { get; set; } = new();
+}
+class JsonLink {
+    public string Name { get; set; } = "";
+    public string Url { get; set; } = "";
+    public string Img { get; set; } = "";
+}
+class JsonCountdown {
+    public string Name { get; set; } = "";
+    public DateTime TargetDate { get; set; }
+    public string LinkUrl { get; set; } = "";
+    public string Img { get; set; } = "";
+}
+class JsonStock {
+    public string Symbol { get; set; } = "";
+}
