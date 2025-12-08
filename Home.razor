@@ -1,6 +1,7 @@
 @page "/"
 @using Dashboard
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.JSInterop  
 @inject HttpClient Http
 @inject IJSRuntime JS
 
@@ -149,7 +150,7 @@
 </div>
 
 <script>
-    function startLocalClock() {
+    window.startLocalClock = function() {
         function update() {
             const el = document.getElementById('local-clock');
             if (el) {
@@ -157,8 +158,8 @@
                 el.innerText = now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase();
             }
         }
-        setInterval(update, 1000); // Update every second
-        update(); // Run immediately
+        setInterval(update, 1000); 
+        update(); 
     }
 </script>
 
@@ -190,14 +191,10 @@
         Countdowns = await Db.Countdowns.OrderBy(c => c.TargetDate).ToListAsync();
         Stocks = await Db.Stocks.ToListAsync();
 
-        // 2. Build Carousel (Order matters!)
-        // We add forecast first, but it won't show until data loads
+        // 2. Build Carousel
         CarouselItems.Add(new CarouselItem { Type = "forecast" });
         if (Stocks.Any()) CarouselItems.Add(new CarouselItem { Type = "stocks" });
         foreach (var c in Countdowns) CarouselItems.Add(new CarouselItem { Type = "countdown", Data = c });
-
-        // 3. Trigger JS Clock
-        // We defer this slightly to let the DOM render
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -205,7 +202,6 @@
         if (firstRender)
         {
             await JS.InvokeVoidAsync("startLocalClock");
-            // Load APIs after render to prevent UI blocking
             await FetchWeather();
             await FetchStocks();
         }
@@ -214,7 +210,7 @@
     private void ToggleMenu() 
     {
         IsMenuOpen = !IsMenuOpen;
-        StateHasChanged(); // Force UI update
+        StateHasChanged(); 
     }
     
     private void NextSlide() => CurrentSlideIndex = (CurrentSlideIndex + 1) % CarouselItems.Count;
@@ -230,11 +226,9 @@
             WeatherStatus = "Loading...";
             StateHasChanged();
 
-            // Current
             var wRes = await Http.GetFromJsonAsync<WeatherResponse>($"https://api.openweathermap.org/data/2.5/weather?zip={zip}&units=imperial&appid={key}");
             if(wRes != null) CurrentWeather = wRes;
 
-            // Forecast
             var fRes = await Http.GetFromJsonAsync<ForecastResponse>($"https://api.openweathermap.org/data/2.5/forecast?zip={zip}&units=imperial&appid={key}");
             if(fRes != null) {
                 ForecastDays = fRes.list
