@@ -9,29 +9,48 @@ var builder = WebApplication.CreateBuilder(args);
 // 1. Add Services
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 
-// 2. Database Setup (Render PostgreSQL)
+// 2. Database Setup
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-
-// If we are on Render, use Postgres.
 if (!string.IsNullOrEmpty(connectionString))
 {
-    builder.Services.AddDbContext<AppDbContext>(options =>
-        options.UseNpgsql(connectionString));
+    builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
 }
 else
 {
-    // Fallback for now so the app starts even without a DB
-    builder.Services.AddDbContext<AppDbContext>(options =>
-        options.UseInMemoryDatabase("TempDb"));
+    builder.Services.AddDbContext<AppDbContext>(options => options.UseInMemoryDatabase("TempDb"));
 }
 
 var app = builder.Build();
 
-// 3. Configure Pipeline
+// 3. AUTO-MIGRATION & SEEDING (The Magic Step)
+// This forces the database to create the tables if they don't exist.
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.EnsureCreated(); // Creates tables!
+
+    // Seed Data: If no groups exist, add some defaults so you see something cool.
+    if (!db.LinkGroups.Any())
+    {
+        var finance = new LinkGroup { Name = "Finance", SortOrder = 1 };
+        var news = new LinkGroup { Name = "News", SortOrder = 2 };
+        
+        db.LinkGroups.AddRange(finance, news);
+        db.SaveChanges(); // Save groups to get IDs
+
+        db.Links.Add(new Link { Title = "My Budget", Url = "https://mint.com", LinkGroupId = finance.Id });
+        db.Links.Add(new Link { Title = "Stock Market", Url = "https://finance.yahoo.com", LinkGroupId = finance.Id });
+        db.Links.Add(new Link { Title = "CNN", Url = "https://cnn.com", LinkGroupId = news.Id });
+        
+        db.SaveChanges();
+    }
+}
+
+// 4. Configure Pipeline
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error");
-    // app.UseHsts();
+    app.UseHsts();
 }
 
 app.UseStaticFiles();
@@ -40,17 +59,4 @@ app.UseAntiforgery();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-// ... existing code ...
-
-app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
-
-// FIX: Add this simple endpoint to verify the server works
-// This forces the server to say "Hello" even if Blazor routing fails.
-app.MapGet("/", () => Results.Content(
-    "<html><body><h1>IT WORKS!</h1><p>The Render server is running correctly.</p></body></html>", 
-    "text/html"));
-
 app.Run();
-
-
