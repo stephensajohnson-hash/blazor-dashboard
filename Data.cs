@@ -44,7 +44,11 @@ public class Countdown
 }
 
 public class Stock
-{
-    public int Id { get; set; }
-    public string Symbol { get; set; } = "";
-}
+    {
+        [Key]
+        public int Id { get; set; }
+        public string Symbol { get; set; } = "";
+        public string ImgUrl { get; set; } = ""; // New: Logo image
+        public string LinkUrl { get; set; } = ""; // New: Link to broker/news
+        public double Shares { get; set; } = 0;   // New: Number of shares owned
+    }
