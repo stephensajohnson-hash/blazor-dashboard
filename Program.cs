@@ -6,20 +6,28 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Add services (Make Blazor work)
+// 1. Add Services
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 
-// 2. Add Database (The "Hello World" data connection)
-// In a real app, we pull this from a secure config file.
-// For this test, paste your connection string below.
-var connectionString = "Server=SQLxxxx.site4now.net;Database=...;Uid=...;Pwd=...";
+// 2. Database Setup (Render PostgreSQL)
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(connectionString));
+// If we are on Render, use Postgres.
+if (!string.IsNullOrEmpty(connectionString))
+{
+    builder.Services.AddDbContext<AppDbContext>(options =>
+        options.UseNpgsql(connectionString));
+}
+else
+{
+    // Fallback for now so the app starts even without a DB
+    builder.Services.AddDbContext<AppDbContext>(options =>
+        options.UseInMemoryDatabase("TempDb"));
+}
 
 var app = builder.Build();
 
-// 3. Configure the HTTP request pipeline.
+// 3. Configure Pipeline
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error");
@@ -29,14 +37,7 @@ if (!app.Environment.IsDevelopment())
 app.UseStaticFiles();
 app.UseAntiforgery();
 
-// 4. Create the "Hello World" Page
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.Run();
-
-// --- The UI Component (The "HTML" part) ---
-// Usually this is in a separate .razor file, but we can put it here for simplicity!
-
-// We will rely on a basic 'App.razor' structure next.
-
