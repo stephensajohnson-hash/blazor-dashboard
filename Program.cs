@@ -13,7 +13,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 // 1. Add Services
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents(); // Enable Interactivity
+    .AddInteractiveServerComponents()
+    .AddCircuitOptions(options => options.DetailedErrors = true); // <--- SHOW ME THE ERROR
 builder.Services.AddHttpClient();
 
 // 2. Database Setup
@@ -121,3 +122,4 @@ class JsonCountdown {
 class JsonStock {
     public string Symbol { get; set; } = "";
 }
+
