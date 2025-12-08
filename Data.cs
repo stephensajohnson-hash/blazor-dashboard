@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using System.Collections.Generic;
 using System;
-using System.ComponentModel.DataAnnotations; // <--- This fixes the [Key] error
 
 namespace Dashboard;
 
@@ -19,7 +18,7 @@ public class LinkGroup
 {
     public int Id { get; set; }
     public string Name { get; set; } = "";
-    public string Color { get; set; } = "blue"; 
+    public string Color { get; set; } = "blue"; // New: blue, red, green, etc.
     public bool IsStatic { get; set; }
     public List<Link> Links { get; set; } = new();
 }
@@ -27,9 +26,9 @@ public class LinkGroup
 public class Link
 {
     public int Id { get; set; }
-    public string Name { get; set; } = "";
+    public string Name { get; set; } = ""; // Renamed from Title to match JSON
     public string Url { get; set; } = "";
-    public string Img { get; set; } = "";  
+    public string Img { get; set; } = "";  // New: Image URL
     
     public int LinkGroupId { get; set; }
     public LinkGroup? LinkGroup { get; set; }
@@ -46,10 +45,6 @@ public class Countdown
 
 public class Stock
 {
-    [Key]
     public int Id { get; set; }
     public string Symbol { get; set; } = "";
-    public string ImgUrl { get; set; } = ""; // New field
-    public string LinkUrl { get; set; } = ""; // New field
-    public double Shares { get; set; } = 0;   // New field
 }
