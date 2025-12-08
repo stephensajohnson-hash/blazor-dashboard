@@ -2,16 +2,16 @@
 @using Dashboard
 @using Microsoft.EntityFrameworkCore
 @inject HttpClient Http
+@inject IJSRuntime JS
 
 <div class="p-4 sm:p-8">
     <nav class="fixed top-0 left-0 right-0 bg-gray-800 border-b border-gray-700 shadow-xl z-30 p-2 flex items-center justify-between">
         <div class="flex items-center">
-            <button class="p-2 rounded-full bg-gray-700 hover:bg-gray-600 focus:outline-none mr-4" @onclick="ToggleMenu">
+            <button class="p-2 rounded-full bg-gray-700 hover:bg-gray-600 focus:outline-none mr-4 z-50 relative" @onclick="ToggleMenu">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
             </button>
             <div class="text-sm sm:text-base font-medium">
-                <span class="text-gray-400">@DateTime.Now.ToString("M/d/yyyy")</span>
-                <span class="text-blue-300 ml-1">@DateTime.Now.ToString("h:mm tt").ToLower()</span>
+                <span id="local-clock" class="text-blue-300 ml-1">Loading...</span>
             </div>
         </div>
         
@@ -27,14 +27,14 @@
             }
             else
             {
-                <span class="text-xs text-gray-400">Loading...</span>
+                <span class="text-xs text-gray-400">@WeatherStatus</span>
             }
         </div>
     </nav>
 
     @if (IsMenuOpen)
     {
-        <div class="fixed top-[4rem] left-4 z-40 max-w-xs transition-all duration-300 ease-out">
+        <div class="fixed top-[4rem] left-4 z-50 max-w-xs transition-all duration-300 ease-out">
             <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 shadow-2xl w-64">
                 <div class="flex justify-between items-center mb-3 border-b border-gray-700 pb-2">
                     <h3 class="text-xl font-semibold text-white">Menu</h3>
@@ -46,7 +46,7 @@
                 <a href="#" class="block w-full text-left py-2 px-3 rounded-lg text-gray-200 hover:bg-gray-700 mb-2 transition duration-150 border-l-4 border-green-500 bg-gray-700/30">Budget</a>
                 
                 <div class="border-b border-gray-700 my-2"></div>
-                <p class="text-sm font-mono text-gray-500 pt-2">Stephens' Dashboard V1.0</p>
+                <p class="text-sm font-mono text-gray-500 pt-2">Stephens' Dashboard V1.1</p>
             </div>
         </div>
     }
@@ -111,7 +111,7 @@
                 }
                 else
                 {
-                    <p class="text-gray-400 animate-pulse">Loading Dashboard...</p>
+                    <p class="text-gray-400 animate-pulse">Loading Dashboard... (Widgets: @CarouselItems.Count)</p>
                 }
             </div>
 
@@ -148,6 +148,20 @@
     </main>
 </div>
 
+<script>
+    function startLocalClock() {
+        function update() {
+            const el = document.getElementById('local-clock');
+            if (el) {
+                const now = new Date();
+                el.innerText = now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+            }
+        }
+        setInterval(update, 1000); // Update every second
+        update(); // Run immediately
+    }
+</script>
+
 @code {
     [Inject] public AppDbContext Db { get; set; } = default!;
 
@@ -155,6 +169,7 @@
     private bool IsMenuOpen = false;
     private int CurrentSlideIndex = 0;
     private List<CarouselItem> CarouselItems = new();
+    private string WeatherStatus = "Init...";
     
     // Data
     private List<LinkGroup> Groups = new();
@@ -162,7 +177,7 @@
     private List<Stock> Stocks = new();
     
     // API Data
-    private WeatherResponse? CurrentWeather; // FIXED: Changed type from WeatherData to WeatherResponse
+    private WeatherResponse? CurrentWeather;
     private List<ForecastDay> ForecastDays = new();
     private double TodayHigh = 0;
     private double TodayLow = 0;
@@ -175,20 +190,33 @@
         Countdowns = await Db.Countdowns.OrderBy(c => c.TargetDate).ToListAsync();
         Stocks = await Db.Stocks.ToListAsync();
 
-        // 2. Build Carousel
+        // 2. Build Carousel (Order matters!)
+        // We add forecast first, but it won't show until data loads
         CarouselItems.Add(new CarouselItem { Type = "forecast" });
         if (Stocks.Any()) CarouselItems.Add(new CarouselItem { Type = "stocks" });
         foreach (var c in Countdowns) CarouselItems.Add(new CarouselItem { Type = "countdown", Data = c });
 
-        // 3. Fetch APIs (Fire and Forget to not block UI)
-        _ = FetchWeather();
-        _ = FetchStocks();
-        
-        // 4. Start Clock
-        var timer = new System.Threading.Timer((_) => { InvokeAsync(StateHasChanged); }, null, 0, 1000);
+        // 3. Trigger JS Clock
+        // We defer this slightly to let the DOM render
     }
 
-    private void ToggleMenu() => IsMenuOpen = !IsMenuOpen;
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("startLocalClock");
+            // Load APIs after render to prevent UI blocking
+            await FetchWeather();
+            await FetchStocks();
+        }
+    }
+
+    private void ToggleMenu() 
+    {
+        IsMenuOpen = !IsMenuOpen;
+        StateHasChanged(); // Force UI update
+    }
+    
     private void NextSlide() => CurrentSlideIndex = (CurrentSlideIndex + 1) % CarouselItems.Count;
     private void PrevSlide() => CurrentSlideIndex = (CurrentSlideIndex - 1 + CarouselItems.Count) % CarouselItems.Count;
 
@@ -197,8 +225,11 @@
     {
         try {
             var zip = "75482,us";
-            var key = "87256fe2710631542ff491e4c5d73306"; // User's key
+            var key = "87256fe2710631542ff491e4c5d73306"; 
             
+            WeatherStatus = "Loading...";
+            StateHasChanged();
+
             // Current
             var wRes = await Http.GetFromJsonAsync<WeatherResponse>($"https://api.openweathermap.org/data/2.5/weather?zip={zip}&units=imperial&appid={key}");
             if(wRes != null) CurrentWeather = wRes;
@@ -206,7 +237,6 @@
             // Forecast
             var fRes = await Http.GetFromJsonAsync<ForecastResponse>($"https://api.openweathermap.org/data/2.5/forecast?zip={zip}&units=imperial&appid={key}");
             if(fRes != null) {
-                // Group by day and take next 5 days
                 ForecastDays = fRes.list
                     .GroupBy(x => DateTimeOffset.FromUnixTimeSeconds(x.dt).Date)
                     .Take(5)
@@ -217,27 +247,35 @@
                         Icon = g.First().weather[0].icon
                     }).ToList();
                 
-                // Set today's high/low
                 var today = ForecastDays.FirstOrDefault();
                 if(today != null) { TodayHigh = today.High; TodayLow = today.Low; }
             }
-            await InvokeAsync(StateHasChanged);
-        } catch {}
+            WeatherStatus = "Done";
+            StateHasChanged();
+        } 
+        catch (Exception ex) 
+        {
+            Console.WriteLine($"Weather Error: {ex.Message}");
+            WeatherStatus = "Error";
+            StateHasChanged();
+        }
     }
 
     // --- Stock Logic ---
     private async Task FetchStocks()
     {
         try {
-            var token = "d4geo7pr01qm5b359cugd4geo7pr01qm5b359cv0"; // User's key
+            var token = "d4geo7pr01qm5b359cugd4geo7pr01qm5b359cv0";
             foreach(var s in Stocks) {
                 var res = await Http.GetFromJsonAsync<StockResponse>($"https://finnhub.io/api/v1/quote?symbol={s.Symbol}&token={token}");
                 if(res != null && res.c != 0) {
                     StockData.Add(new StockQuote { Symbol = s.Symbol, Price = res.c, Change = res.d, PercentChange = res.dp });
                 }
             }
-            await InvokeAsync(StateHasChanged);
-        } catch {}
+            StateHasChanged();
+        } catch (Exception ex) {
+             Console.WriteLine($"Stock Error: {ex.Message}");
+        }
     }
 
     // --- Helpers ---
@@ -250,26 +288,15 @@
         var today = DateTime.Now.Date;
         var diff = target.Date - today;
         if(diff.TotalDays <= 0) return "It's here!";
-
-        // Logic to calculate Years/Months/Days
         int years = target.Year - today.Year;
         int months = target.Month - today.Month;
         int days = target.Day - today.Day;
-
-        if (days < 0) {
-            months--;
-            days += DateTime.DaysInMonth(today.Year, today.Month);
-        }
-        if (months < 0) {
-            years--;
-            months += 12;
-        }
-
+        if (days < 0) { months--; days += DateTime.DaysInMonth(today.Year, today.Month); }
+        if (months < 0) { years--; months += 12; }
         var parts = new List<string>();
         if (years > 0) parts.Add($"{years} Years");
         if (months > 0) parts.Add($"{months} Months");
         if (days > 0) parts.Add($"{days} Days");
-        
         return string.Join(" ", parts);
     }
 
