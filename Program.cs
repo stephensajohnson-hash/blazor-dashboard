@@ -104,7 +104,7 @@ app.UseAntiforgery();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-app.MapGet("/", () => Results.Redirect("/dashboard")); // Redirect root to dashboard if needed, or handle in App.razor
+// app.MapGet("/", () => Results.Redirect("/dashboard")); // Redirect root to dashboard if needed, or handle in App.razor
 
 app.Run();
 
@@ -134,3 +134,4 @@ class JsonCountdown {
 class JsonStock {
     public string Symbol { get; set; } = "";
 }
+
