@@ -59,7 +59,7 @@
                     <button @onclick="OpenAddStockModal" class="w-full text-left py-2 px-3 rounded-lg text-gray-200 hover:bg-gray-700 border border-gray-600 bg-gray-700/30">+ Add Stock</button>
                 </div>
                 <div class="border-b border-gray-700 my-4"></div>
-                <p class="text-sm font-mono text-gray-500">Stephens' Dashboard V1.5</p>
+                <p class="text-sm font-mono text-gray-500">Stephens' Dashboard V2.0.1</p>
             </div>
         </div>
     }
@@ -85,17 +85,38 @@
                             }
                         </div>
                     }
-                    else if (item.Type == "stocks" && StockData.Any())
+                    else if (item.Type == "stocks" && Stocks.Any())
                     {
                         <div class="flex items-center justify-around w-full h-full px-4 gap-4 relative">
-                            @if(IsEditMode) { <div class="absolute top-0 right-0 text-xs text-gray-500 italic">Manage via Menu</div> }
-                            @foreach(var s in StockData) {
-                                <div class="flex flex-col items-center relative group/stock">
-                                    @if(IsEditMode) { <button @onclick="() => DeleteStock(s.Symbol)" class="absolute -top-4 -right-2 text-red-500 hover:text-red-300">×</button> }
-                                    <div class="font-bold text-gray-200 text-lg">@s.Symbol</div>
-                                    <div class="text-2xl font-mono font-bold @GetStockColor(s.Change)">@s.Price.ToString("F2")</div>
-                                    <div class="text-xs @GetStockColor(s.Change)">@(s.Change > 0 ? "+" : "")@s.Change.ToString("F2")</div>
-                                </div>
+                            @foreach(var dbStock in Stocks) {
+                                var quote = StockData.FirstOrDefault(q => q.Symbol == dbStock.Symbol);
+                                if(quote != null) {
+                                     <div class="flex flex-col items-center relative group/stock">
+                                        @if(IsEditMode) { 
+                                            <div class="absolute -top-4 -right-6 flex z-50 scale-90">
+                                                <button @onclick="() => OpenEditStockModal(dbStock)" class="text-blue-400 hover:text-white mr-1">✎</button>
+                                                <button @onclick="() => DeleteStock(dbStock)" class="text-red-500 hover:text-red-300">×</button>
+                                            </div>
+                                        }
+                                        
+                                        <a href="@dbStock.LinkUrl" target="_blank" class="flex flex-col items-center hover:opacity-80 transition">
+                                            <div class="flex items-center gap-2 mb-1">
+                                                @if(!string.IsNullOrEmpty(dbStock.ImgUrl)) {
+                                                    <img src="@dbStock.ImgUrl" class="w-6 h-6 rounded-full object-cover" />
+                                                }
+                                                <div class="font-bold text-gray-200 text-lg">@dbStock.Symbol</div>
+                                            </div>
+                                            <div class="text-2xl font-mono font-bold @GetStockColor(quote.Change)">@quote.Price.ToString("F2")</div>
+                                            <div class="text-xs @GetStockColor(quote.Change)">@(quote.Change > 0 ? "+" : "")@quote.Change.ToString("F2") (@quote.PercentChange.ToString("F2")%)</div>
+                                            
+                                            @if(dbStock.Shares > 0) {
+                                                <div class="mt-2 text-sm text-gray-400 font-mono bg-gray-900/50 px-2 py-1 rounded-md">
+                                                    Holdings: <span class="text-blue-300">$@((dbStock.Shares * quote.Price).ToString("N2"))</span>
+                                                </div>
+                                            }
+                                        </a>
+                                    </div>
+                                }
                             }
                         </div>
                     }
@@ -237,12 +258,28 @@
     {
         <div class="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
             <div class="bg-gray-800 rounded-2xl p-6 w-full max-w-md border border-gray-700 shadow-2xl">
-                <h2 class="text-2xl font-bold text-white mb-4">Add Stock</h2>
+                <h2 class="text-2xl font-bold text-white mb-4">@(EditingStock.Id == 0 ? "Add Stock" : "Edit Stock")</h2>
                 <div class="space-y-4">
-                    <input class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white uppercase" placeholder="Symbol (e.g. MSFT)" @bind="NewStockSymbol" />
+                    <div>
+                        <label class="text-xs text-gray-400">Symbol</label>
+                        <input class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white uppercase" placeholder="e.g. MSFT" @bind="EditingStock.Symbol" />
+                    </div>
+                     <div>
+                        <label class="text-xs text-gray-400">Shares Owned (Optional)</label>
+                        <input type="number" step="any" class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" placeholder="0.00" @bind="EditingStock.Shares" />
+                    </div>
+                     <div>
+                        <label class="text-xs text-gray-400">Image URL (Optional)</label>
+                        <input class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" placeholder="https://..." @bind="EditingStock.ImgUrl" />
+                    </div>
+                     <div>
+                        <label class="text-xs text-gray-400">Link URL (Optional)</label>
+                        <input class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" placeholder="https://..." @bind="EditingStock.LinkUrl" />
+                    </div>
+                    
                     <div class="flex justify-end gap-2 mt-4">
                         <button @onclick="CloseStockModal" class="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
-                        <button @onclick="SaveStock" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded">Add</button>
+                        <button @onclick="SaveStock" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded">Save</button>
                     </div>
                 </div>
             </div>
@@ -267,7 +304,7 @@
     private Link EditingLink = new();
     private LinkGroup EditingGroup = new();
     private Countdown EditingCountdown = new();
-    private string NewStockSymbol = "";
+    private Stock EditingStock = new(); // Changed from just Symbol string
 
     // Data
     private List<CarouselItem> CarouselItems = new();
@@ -318,7 +355,7 @@
     private void NextSlide() => CurrentSlideIndex = (CurrentSlideIndex + 1) % CarouselItems.Count;
     private void PrevSlide() => CurrentSlideIndex = (CurrentSlideIndex - 1 + CarouselItems.Count) % CarouselItems.Count;
 
-    // CRUD Ops (Simplified Method Calls)
+    // CRUD Ops
     private void OpenLinkModal(Link link) { EditingLink = link; ShowLinkModal = true; }
     private void OpenAddLinkModal(int gId) { EditingLink = new Link { LinkGroupId = gId }; ShowLinkModal = true; }
     private void CloseLinkModal() => ShowLinkModal = false;
@@ -347,21 +384,36 @@
     }
     private async Task DeleteCountdown(Countdown c) { if(await Confirm($"Delete {c.Name}?")) { Db.Countdowns.Remove(c); await Db.SaveChangesAsync(); await LoadData(); } }
 
-    private void OpenStockModal() { NewStockSymbol = ""; ShowStockModal = true; IsMenuOpen = false; }
-    private void OpenAddStockModal() { OpenStockModal(); }
+    // STOCK CRUD (UPDATED)
+    private void OpenStockModal(Stock? s = null) { EditingStock = s ?? new Stock(); ShowStockModal = true; IsMenuOpen = false; }
+    private void OpenEditStockModal(Stock s) { OpenStockModal(s); }
+    private void OpenAddStockModal() { OpenStockModal(null); }
     private void CloseStockModal() => ShowStockModal = false;
     private async Task SaveStock() { 
-        if(!string.IsNullOrWhiteSpace(NewStockSymbol)) { Db.Stocks.Add(new Stock{Symbol=NewStockSymbol.ToUpper()}); await Db.SaveChangesAsync(); await FetchStocks(); await LoadData(); }
+        if(!string.IsNullOrWhiteSpace(EditingStock.Symbol)) {
+            EditingStock.Symbol = EditingStock.Symbol.ToUpper();
+            if(EditingStock.Id == 0) Db.Stocks.Add(EditingStock); else Db.Stocks.Update(EditingStock);
+            await Db.SaveChangesAsync(); 
+            await FetchStocks(); // Refresh quotes for new/changed symbol
+            await LoadData();
+        }
         ShowStockModal = false; 
     }
-    private async Task DeleteStock(string s) { 
-        var st = await Db.Stocks.FirstOrDefaultAsync(x=>x.Symbol==s); 
-        if(st!=null && await Confirm($"Delete {s}?")) { Db.Stocks.Remove(st); await Db.SaveChangesAsync(); await LoadData(); StockData.RemoveAll(x=>x.Symbol==s); } 
+    private async Task DeleteStock(Stock s) { 
+        if(await Confirm($"Delete {s.Symbol}?")) { 
+            Db.Stocks.Remove(s); 
+            await Db.SaveChangesAsync(); 
+            await LoadData(); 
+            // Remove from live data cache if no other entries use this symbol
+            if(!Stocks.Any(dbS => dbS.Symbol == s.Symbol)) {
+                 StockData.RemoveAll(x=>x.Symbol==s.Symbol);
+            }
+        } 
     }
 
     private async Task<bool> Confirm(string msg) => await JS.InvokeAsync<bool>("confirm", msg);
 
-    // Weather/Stocks (Safe)
+    // Weather/Stocks API (Safe)
     private async Task FetchWeather() {
         try {
             var zip = "75482,us"; var key = "87256fe2710631542ff491e4c5d73306";
@@ -379,10 +431,12 @@
     private async Task FetchStocks() {
         try {
             var token = "d4geo7pr01qm5b359cugd4geo7pr01qm5b359cv0";
-            foreach(var s in Stocks) {
-                if(StockData.Any(x=>x.Symbol==s.Symbol)) continue;
-                var r = await Http.GetFromJsonAsync<StockResponse>($"https://finnhub.io/api/v1/quote?symbol={s.Symbol}&token={token}");
-                if(r!=null && r.c!=0) StockData.Add(new StockQuote{Symbol=s.Symbol, Price=r.c, Change=r.d, PercentChange=r.dp});
+            // Only fetch quotes for symbols stored in DB
+            var distinctSymbols = Stocks.Select(s => s.Symbol).Distinct();
+            foreach(var symbol in distinctSymbols) {
+                if(StockData.Any(x=>x.Symbol==symbol)) continue; // Skip if already have quote
+                var r = await Http.GetFromJsonAsync<StockResponse>($"https://finnhub.io/api/v1/quote?symbol={symbol}&token={token}");
+                if(r!=null && r.c!=0) StockData.Add(new StockQuote{Symbol=symbol, Price=r.c, Change=r.d, PercentChange=r.dp});
             }
             StateHasChanged();
         } catch {}
