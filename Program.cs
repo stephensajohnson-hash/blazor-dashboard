@@ -94,6 +94,26 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
+// --- ADD THIS BLOCK ---
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        var context = services.GetRequiredService<AppDbContext>();
+        // Run the check/seed
+        DbInitializer.Initialize(context);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[DB ERROR] An error occurred while checking the DB: {ex.Message}");
+    }
+}
+// ----------------------
+
+// Configure the HTTP request pipeline...
+// (Your existing middleware code)
+
 app.Run();
 
 // --- Helper Classes ---
@@ -122,4 +142,5 @@ class JsonCountdown {
 class JsonStock {
     public string Symbol { get; set; } = "";
 }
+
 
