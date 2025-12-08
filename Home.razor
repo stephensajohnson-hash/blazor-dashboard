@@ -1,7 +1,11 @@
 @page "/"
-@using Dashboard
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.JSInterop
+@using Dashboard
 @inject HttpClient Http
 @inject IJSRuntime JS
 
@@ -50,12 +54,12 @@
                 </div>
                 
                 <div class="space-y-2">
-                    <button @onclick="() => OpenGroupModal()" class="w-full text-left py-2 px-3 rounded-lg text-gray-200 hover:bg-gray-700 border border-gray-600 bg-gray-700/30">+ Add Link Group</button>
-                    <button @onclick="() => OpenCountdownModal()" class="w-full text-left py-2 px-3 rounded-lg text-gray-200 hover:bg-gray-700 border border-gray-600 bg-gray-700/30">+ Add Countdown</button>
-                    <button @onclick="() => OpenStockModal()" class="w-full text-left py-2 px-3 rounded-lg text-gray-200 hover:bg-gray-700 border border-gray-600 bg-gray-700/30">+ Add Stock</button>
+                    <button @onclick="OpenAddGroupModal" class="w-full text-left py-2 px-3 rounded-lg text-gray-200 hover:bg-gray-700 border border-gray-600 bg-gray-700/30">+ Add Link Group</button>
+                    <button @onclick="OpenAddCountdownModal" class="w-full text-left py-2 px-3 rounded-lg text-gray-200 hover:bg-gray-700 border border-gray-600 bg-gray-700/30">+ Add Countdown</button>
+                    <button @onclick="OpenAddStockModal" class="w-full text-left py-2 px-3 rounded-lg text-gray-200 hover:bg-gray-700 border border-gray-600 bg-gray-700/30">+ Add Stock</button>
                 </div>
                 <div class="border-b border-gray-700 my-4"></div>
-                <p class="text-sm font-mono text-gray-500">Stephens' Dashboard V1.4</p>
+                <p class="text-sm font-mono text-gray-500">Stephens' Dashboard V1.5</p>
             </div>
         </div>
     }
@@ -100,7 +104,7 @@
                         <div class="relative w-full h-full flex items-center justify-center">
                             @if(IsEditMode) { 
                                 <button @onclick="() => DeleteCountdown(c)" class="absolute top-0 right-0 bg-red-900/80 p-2 rounded text-white hover:bg-red-700 z-50">Delete</button> 
-                                <button @onclick="() => OpenCountdownModal(c)" class="absolute top-0 right-20 bg-blue-900/80 p-2 rounded text-white hover:bg-blue-700 z-50">Edit</button> 
+                                <button @onclick="() => OpenEditCountdownModal(c)" class="absolute top-0 right-20 bg-blue-900/80 p-2 rounded text-white hover:bg-blue-700 z-50">Edit</button> 
                             }
                             <a href="@c.LinkUrl" target="_blank" class="flex items-center justify-center w-full h-full px-8 gap-8 hover:bg-white/5 transition duration-200">
                                 @if (!string.IsNullOrEmpty(c.Img)) { <img src="@c.Img" class="w-24 h-24 rounded-xl object-cover shadow-lg border border-gray-600" /> }
@@ -158,7 +162,7 @@
                             </div>
                         }
                         @if(IsEditMode) {
-                            <button @onclick="() => OpenLinkModal(null, group.Id)" class="flex flex-col items-center justify-center text-center opacity-50 hover:opacity-100 border-2 border-dashed border-gray-600 rounded-xl w-24 h-24 mb-6">
+                            <button @onclick="() => OpenAddLinkModal(group.Id)" class="flex flex-col items-center justify-center text-center opacity-50 hover:opacity-100 border-2 border-dashed border-gray-600 rounded-xl w-24 h-24 mb-6">
                                 <span class="text-4xl text-gray-400">+</span>
                             </button>
                         }
@@ -178,7 +182,7 @@
                     <input class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" placeholder="URL (https://...)" @bind="EditingLink.Url" />
                     <input class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" placeholder="Image URL or /images/..." @bind="EditingLink.Img" />
                     <div class="flex justify-end gap-2 mt-4">
-                        <button @onclick="() => ShowLinkModal = false" class="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
+                        <button @onclick="CloseLinkModal" class="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
                         <button @onclick="SaveLink" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded">Save</button>
                     </div>
                 </div>
@@ -203,7 +207,7 @@
                         <option value="gray">Gray</option>
                     </select>
                     <div class="flex justify-end gap-2 mt-4">
-                        <button @onclick="() => ShowGroupModal = false" class="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
+                        <button @onclick="CloseGroupModal" class="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
                         <button @onclick="SaveGroup" class="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded">Save</button>
                     </div>
                 </div>
@@ -221,7 +225,7 @@
                     <input type="date" class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" @bind="EditingCountdown.TargetDate" />
                     <input class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white" placeholder="Image URL" @bind="EditingCountdown.Img" />
                     <div class="flex justify-end gap-2 mt-4">
-                        <button @onclick="() => ShowCountdownModal = false" class="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
+                        <button @onclick="CloseCountdownModal" class="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
                         <button @onclick="SaveCountdown" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded">Save</button>
                     </div>
                 </div>
@@ -237,7 +241,7 @@
                 <div class="space-y-4">
                     <input class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white uppercase" placeholder="Symbol (e.g. MSFT)" @bind="NewStockSymbol" />
                     <div class="flex justify-end gap-2 mt-4">
-                        <button @onclick="() => ShowStockModal = false" class="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
+                        <button @onclick="CloseStockModal" class="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
                         <button @onclick="SaveStock" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded">Add</button>
                     </div>
                 </div>
@@ -314,8 +318,10 @@
     private void NextSlide() => CurrentSlideIndex = (CurrentSlideIndex + 1) % CarouselItems.Count;
     private void PrevSlide() => CurrentSlideIndex = (CurrentSlideIndex - 1 + CarouselItems.Count) % CarouselItems.Count;
 
-    // CRUD Ops (Wrapped in Try/Catch for safety)
-    private void OpenLinkModal(Link? l, int gId = 0) { EditingLink = l ?? new Link { LinkGroupId = gId }; ShowLinkModal = true; }
+    // CRUD Ops (Simplified Method Calls)
+    private void OpenLinkModal(Link link) { EditingLink = link; ShowLinkModal = true; }
+    private void OpenAddLinkModal(int gId) { EditingLink = new Link { LinkGroupId = gId }; ShowLinkModal = true; }
+    private void CloseLinkModal() => ShowLinkModal = false;
     private async Task SaveLink() { 
         if(EditingLink.Id == 0) Db.Links.Add(EditingLink); else Db.Links.Update(EditingLink);
         await Db.SaveChangesAsync(); ShowLinkModal = false; await LoadData(); 
@@ -323,6 +329,8 @@
     private async Task DeleteLink(Link l) { if(await Confirm($"Delete {l.Name}?")) { Db.Links.Remove(l); await Db.SaveChangesAsync(); await LoadData(); } }
 
     private void OpenGroupModal(LinkGroup? g = null) { EditingGroup = g ?? new LinkGroup { Color = "gray" }; ShowGroupModal = true; IsMenuOpen = false; }
+    private void OpenAddGroupModal() { OpenGroupModal(null); }
+    private void CloseGroupModal() => ShowGroupModal = false;
     private async Task SaveGroup() { 
         if(EditingGroup.Id == 0) Db.LinkGroups.Add(EditingGroup); else Db.LinkGroups.Update(EditingGroup);
         await Db.SaveChangesAsync(); ShowGroupModal = false; await LoadData(); 
@@ -330,6 +338,9 @@
     private async Task DeleteGroup(LinkGroup g) { if(await Confirm($"Delete {g.Name}?")) { Db.LinkGroups.Remove(g); await Db.SaveChangesAsync(); await LoadData(); } }
 
     private void OpenCountdownModal(Countdown? c = null) { EditingCountdown = c ?? new Countdown { TargetDate = DateTime.Now }; ShowCountdownModal = true; IsMenuOpen = false; }
+    private void OpenEditCountdownModal(Countdown c) { OpenCountdownModal(c); }
+    private void OpenAddCountdownModal() { OpenCountdownModal(null); }
+    private void CloseCountdownModal() => ShowCountdownModal = false;
     private async Task SaveCountdown() { 
         if(EditingCountdown.Id == 0) Db.Countdowns.Add(EditingCountdown); else Db.Countdowns.Update(EditingCountdown);
         await Db.SaveChangesAsync(); ShowCountdownModal = false; await LoadData(); 
@@ -337,6 +348,8 @@
     private async Task DeleteCountdown(Countdown c) { if(await Confirm($"Delete {c.Name}?")) { Db.Countdowns.Remove(c); await Db.SaveChangesAsync(); await LoadData(); } }
 
     private void OpenStockModal() { NewStockSymbol = ""; ShowStockModal = true; IsMenuOpen = false; }
+    private void OpenAddStockModal() { OpenStockModal(); }
+    private void CloseStockModal() => ShowStockModal = false;
     private async Task SaveStock() { 
         if(!string.IsNullOrWhiteSpace(NewStockSymbol)) { Db.Stocks.Add(new Stock{Symbol=NewStockSymbol.ToUpper()}); await Db.SaveChangesAsync(); await FetchStocks(); await LoadData(); }
         ShowStockModal = false; 
