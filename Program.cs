@@ -3,24 +3,32 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.HttpOverrides; // NEW: Required for Render Proxies
-using System.Text.Json;
-using System.IO;
-using System.Collections.Generic;
-using System.Linq;
+using Microsoft.AspNetCore.HttpOverrides;
+using System;
+using System.Net.Http;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Add Services
+// =========================================================
+// 1. SERVICES (The Setup)
+// =========================================================
+
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
-    .AddCircuitOptions(options => options.DetailedErrors = true); // <--- SHOW ME THE ERROR
+    .AddCircuitOptions(options => options.DetailedErrors = true);
+
 builder.Services.AddHttpClient();
 
-// Add this line so your pages can talk to your API
-builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri("https://dashboard-app-rmm4.onrender.com/") });
+// FIX A: Register Controllers so the Admin API works
+builder.Services.AddControllers(); 
 
-// 2. Database Setup
+// FIX B: Allow the app to talk to itself (for the Admin Buttons)
+// Note: When testing locally, you might need to change this URL to localhost
+builder.Services.AddScoped(sp => new HttpClient { 
+    BaseAddress = new Uri("https://dashboard-app-rmm4.onrender.com/") 
+});
+
+// Database Connection
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (!string.IsNullOrEmpty(connectionString))
 {
@@ -33,75 +41,43 @@ else
 
 var app = builder.Build();
 
-// 3. FIX FOR RENDER: Forwarded Headers
-// This tells the app "Trust the HTTPS signal from Render's Load Balancer"
+// =========================================================
+// 2. MIDDLEWARE (The Pipeline)
+// =========================================================
+
+// Render Proxy Fix
 app.UseForwardedHeaders(new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
 });
 
-// 4. Configure Pipeline
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error");
-    // The default HSTS value is 30 days. You may want to change this for production scenarios.
     app.UseHsts();
 }
 
-app.UseHttpsRedirection(); // Force HTTPS now that headers are fixed
-
+app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseAntiforgery();
 
+// =========================================================
+// 3. ROUTING (The Map)
+// =========================================================
+
 app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode(); // Turn on the Engine
+    .AddInteractiveServerRenderMode();
 
-// 5. Database Seeder (Keep your existing data logic)
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.EnsureCreated();
+// FIX C: Actually map the controllers so /api/admin works
+app.MapControllers(); 
 
-    if (!db.LinkGroups.Any() && File.Exists("seed.json"))
-    {
-        Console.WriteLine("SEEDING DATABASE...");
-        try 
-        {
-            var jsonContent = File.ReadAllText("seed.json");
-            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            var importData = JsonSerializer.Deserialize<JsonRoot>(jsonContent, options);
+// =========================================================
+// 4. STARTUP TASKS (The Seeder)
+// =========================================================
 
-            if (importData != null)
-            {
-                foreach (var g in importData.LinkGroups)
-                {
-                    var newGroup = new LinkGroup { Name = g.Name, Color = g.Color, IsStatic = g.IsStatic };
-                    foreach (var l in g.Links) newGroup.Links.Add(new Link { Name = l.Name, Url = l.Url, Img = l.Img });
-                    db.LinkGroups.Add(newGroup);
-                }
-                foreach (var c in importData.Countdowns)
-                {
-                    db.Countdowns.Add(new Countdown { Name = c.Name, TargetDate = c.TargetDate, LinkUrl = c.LinkUrl, Img = c.Img });
-                }
-                foreach (var s in importData.Stocks)
-                {
-                    db.Stocks.Add(new Stock { Symbol = s.Symbol });
-                }
-                db.SaveChanges();
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Seeding Error: {ex.Message}");
-        }
-    }
-}
-
-// --- UPDATE THIS BLOCK ---
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
-    // Get the logger factory
     var logger = services.GetRequiredService<ILogger<Program>>();
     
     try
@@ -109,7 +85,7 @@ using (var scope = app.Services.CreateScope())
         logger.LogInformation("--- APPLICATION STARTING ---");
         var context = services.GetRequiredService<AppDbContext>();
         
-        // Pass the logger to the initializer
+        // This calls your DbInitializer.cs file
         DbInitializer.Initialize(context, logger);
     }
     catch (Exception ex)
@@ -117,40 +93,5 @@ using (var scope = app.Services.CreateScope())
         logger.LogError(ex, "--- ERROR IN PROGRAM STARTUP ---");
     }
 }
-// -------------------------
-
-// Configure the HTTP request pipeline...
-// (Your existing middleware code)
 
 app.Run();
-
-// --- Helper Classes ---
-class JsonRoot {
-    public List<JsonGroup> LinkGroups { get; set; } = new();
-    public List<JsonCountdown> Countdowns { get; set; } = new();
-    public List<JsonStock> Stocks { get; set; } = new();
-}
-class JsonGroup {
-    public string Name { get; set; } = "";
-    public string Color { get; set; } = "";
-    public bool IsStatic { get; set; }
-    public List<JsonLink> Links { get; set; } = new();
-}
-class JsonLink {
-    public string Name { get; set; } = "";
-    public string Url { get; set; } = "";
-    public string Img { get; set; } = "";
-}
-class JsonCountdown {
-    public string Name { get; set; } = "";
-    public DateTime TargetDate { get; set; }
-    public string LinkUrl { get; set; } = "";
-    public string Img { get; set; } = "";
-}
-class JsonStock {
-    public string Symbol { get; set; } = "";
-}
-
-
-
-
