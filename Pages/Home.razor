@@ -33,10 +33,10 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v1.7.2 (Login Loop Fixed)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v1.8.0 (User Profile)</div>
                 </div>
 
-                <div class="flex items-center gap-6 text-right">
+                <div class="flex items-center gap-8 text-right">
                     @if (weather != null)
                     {
                         <div class="flex items-center gap-6">
@@ -63,15 +63,39 @@
                         </div>
                     }
 
-                    <div class="relative group">
-                        <button class="text-[10px] uppercase font-bold text-gray-600 hover:text-gray-400 border border-transparent hover:border-gray-700 rounded px-2 py-1 transition">System</button>
-                        <div class="absolute right-0 top-full mt-2 w-32 bg-gray-800 border border-gray-700 rounded shadow-xl p-2 hidden group-hover:block z-50">
-                            <button type="button" @onclick="ClearDb" class="w-full text-left text-xs text-red-400 hover:bg-gray-700 p-2 rounded mb-1">Wipe DB</button>
-                            <button type="button" @onclick="SeedDb" class="w-full text-left text-xs text-green-400 hover:bg-gray-700 p-2 rounded mb-1">Seed DB</button>
-                            <button type="button" @onclick="FixOrder" class="w-full text-left text-xs text-blue-400 hover:bg-gray-700 p-2 rounded mb-1">Fix Order</button>
-                            <button type="button" @onclick="UpgradeUsers" class="w-full text-left text-xs text-yellow-400 hover:bg-gray-700 p-2 rounded">Init Users</button>
+                    <div class="relative group z-50">
+                        <button class="flex items-center gap-3 focus:outline-none">
+                            <div class="text-right hidden md:block">
+                                <div class="text-sm font-bold text-white">@(currentUser?.Username ?? "Loading...")</div>
+                                <div class="text-[10px] text-gray-500 uppercase">Admin</div>
+                            </div>
+                            <img src="@(currentUser?.AvatarUrl ?? "https://i.imgur.com/7Y5j5Yx.png")" 
+                                 class="w-10 h-10 rounded-full border-2 border-gray-700 group-hover:border-blue-500 transition object-cover bg-gray-800" />
+                        </button>
+
+                        <div class="absolute right-0 top-full mt-2 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 hidden group-hover:block transform origin-top-right transition-all">
+                            <div class="px-2 py-1 text-[10px] uppercase text-gray-500 font-bold tracking-wider mb-1">System Tools</div>
+                            <button type="button" @onclick="FixOrder" class="w-full text-left text-xs text-blue-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2">
+                                <span>🔧</span> Fix Sort Order
+                            </button>
+                            <button type="button" @onclick="UpgradeUsers" class="w-full text-left text-xs text-yellow-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2">
+                                <span>👥</span> Init Users
+                            </button>
+                            <button type="button" @onclick="SeedDb" class="w-full text-left text-xs text-green-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2">
+                                <span>🌱</span> Seed Data
+                            </button>
+                            <button type="button" @onclick="ClearDb" class="w-full text-left text-xs text-red-400 hover:bg-gray-700 p-2 rounded mb-2 transition flex items-center gap-2">
+                                <span>🗑️</span> Wipe DB
+                            </button>
+                            
+                            <div class="border-t border-gray-700 my-1"></div>
+                            
+                            <button type="button" @onclick="Logout" class="w-full text-left text-xs text-red-500 font-bold hover:bg-gray-700 p-2 rounded transition flex items-center gap-2">
+                                <span>🚪</span> Logout
+                            </button>
                         </div>
                     </div>
+
                 </div>
             </div>
 
@@ -249,6 +273,7 @@
     private int clientOffsetMinutes = 0;
     
     private bool isDbError = false;
+    private User? currentUser;
 
     // Modals
     private Stock? editingStock = null;
@@ -288,16 +313,24 @@
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
                 if (string.IsNullOrEmpty(json)) { Nav.NavigateTo("/login", forceLoad: true); return; }
                 
-                // FIXED: Case-Insensitive Deserialization
                 var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                 var session = JsonSerializer.Deserialize<SessionData>(json, options);
                 
                 if (session == null || session.Expiry < DateTime.UtcNow) { Nav.NavigateTo("/login", forceLoad: true); return; }
 
+                currentUser = await Db.Users.FindAsync(session.UserId);
+                StateHasChanged();
+
                 try { clientOffsetMinutes = await JS.InvokeAsync<int>("getUserOffset"); UpdateTime(); } catch {}
             } 
             catch { Nav.NavigateTo("/login", forceLoad: true); }
         }
+    }
+
+    private async Task Logout()
+    {
+        await JS.InvokeVoidAsync("localStorage.removeItem", "dashboard_session");
+        Nav.NavigateTo("/login", forceLoad: true);
     }
 
     private async Task UpgradeDatabase()
