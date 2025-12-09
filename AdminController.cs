@@ -37,18 +37,13 @@ public class AdminController : ControllerBase
         {
             var json = await System.IO.File.ReadAllTextAsync(path);
             var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            
-            // 1. Deserialize into "Raw" classes (Strings allowed)
             var rawData = JsonSerializer.Deserialize<JsonRoot>(json, options);
 
             if (rawData == null) return BadRequest("JSON was null.");
 
-            // 2. Map "Raw" data to "Real" Database Entities
-            // We purposefully IGNORE the 'id' from JSON and let the DB create new ones.
-
             int groupsAdded = 0;
 
-            // --- LINK GROUPS & LINKS ---
+            // --- LINK GROUPS ---
             if (rawData.LinkGroups != null)
             {
                 foreach (var rawGroup in rawData.LinkGroups)
@@ -77,15 +72,18 @@ public class AdminController : ControllerBase
                 }
             }
 
-            // --- COUNTDOWNS ---
+            // --- COUNTDOWNS (THE FIX IS HERE) ---
             if (rawData.Countdowns != null)
             {
                 foreach (var c in rawData.Countdowns)
                 {
+                    // PostgreSQL requires dates to be explicitly UTC
+                    var utcDate = DateTime.SpecifyKind(c.TargetDate, DateTimeKind.Utc);
+
                     _context.Countdowns.Add(new Countdown
                     {
                         Name = c.Name,
-                        TargetDate = c.TargetDate,
+                        TargetDate = utcDate, // <--- FIXED
                         LinkUrl = c.LinkUrl,
                         Img = c.Img
                     });
@@ -101,21 +99,20 @@ public class AdminController : ControllerBase
                 }
             }
 
-            // 3. Save to DB
             await _context.SaveChangesAsync();
             return Ok($"Success! Seeded {groupsAdded} groups.");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[SEED ERROR] {ex.Message}");
-            return StatusCode(500, ex.Message);
+            // Print the inner exception too, it usually hides the real SQL error
+            var msg = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
+            Console.WriteLine($"[SEED ERROR] {msg}");
+            return StatusCode(500, msg);
         }
     }
 
     // ==========================================
     // TEMPORARY CLASSES (DTOs)
-    // These match your JSON exactly (using String IDs)
-    // so the deserializer doesn't crash.
     // ==========================================
 
     public class JsonRoot
@@ -127,7 +124,7 @@ public class AdminController : ControllerBase
 
     public class JsonGroup
     {
-        public string? Id { get; set; } // Matches "g1"
+        public string? Id { get; set; } 
         public string Name { get; set; } = "";
         public string Color { get; set; } = "blue";
         public bool IsStatic { get; set; }
@@ -136,7 +133,7 @@ public class AdminController : ControllerBase
 
     public class JsonLink
     {
-        public string? Id { get; set; } // Matches "l1"
+        public string? Id { get; set; } 
         public string Name { get; set; } = "";
         public string Url { get; set; } = "";
         public string Img { get; set; } = "";
@@ -144,7 +141,7 @@ public class AdminController : ControllerBase
 
     public class JsonCountdown
     {
-        public string? Id { get; set; } // Matches "c1"
+        public string? Id { get; set; } 
         public string Name { get; set; } = "";
         public DateTime TargetDate { get; set; }
         public string LinkUrl { get; set; } = "";
