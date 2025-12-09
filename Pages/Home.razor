@@ -345,7 +345,45 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender && !isDbError) { try { clientOffsetMinutes = await JS.InvokeAsync<int>("getUserOffset"); UpdateTime(); } catch {} }
+        if (firstRender && !isDbError) 
+        { 
+            try 
+            { 
+                // 1. Get Session JSON
+                var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
+                
+                if (string.IsNullOrEmpty(json))
+                {
+                    Nav.NavigateTo("/login", forceLoad: true);
+                    return;
+                }
+
+                // 2. Parse and Check Expiry
+                var session = JsonSerializer.Deserialize<SessionData>(json);
+                if (session == null || session.Expiry < DateTime.UtcNow)
+                {
+                    // Expired or Invalid -> Kick to Login
+                    Nav.NavigateTo("/login", forceLoad: true);
+                    return;
+                }
+
+                // 3. Valid Login -> Proceed
+                clientOffsetMinutes = await JS.InvokeAsync<int>("getUserOffset"); 
+                UpdateTime(); 
+            } 
+            catch 
+            {
+                // If JSON fails to parse, assume invalid and redirect
+                Nav.NavigateTo("/login", forceLoad: true);
+            } 
+        }
+    }
+
+    // Add this tiny class helper at the bottom of the @code block
+    public class SessionData
+    {
+        public int UserId { get; set; }
+        public DateTime Expiry { get; set; }
     }
 
     private async Task UpgradeDatabase()
