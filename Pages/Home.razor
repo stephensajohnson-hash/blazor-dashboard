@@ -1,7 +1,9 @@
 @page "/"
 @using Dashboard
 @using Microsoft.EntityFrameworkCore
+@using System.Text.Json
 @inject AppDbContext Db
+@inject HttpClient Http
 
 <Dashboard.Shared.NavMenu />
 
@@ -38,14 +40,22 @@
     <div class="mb-12">
         <h3 class="text-xl font-bold text-gray-200 mb-4 flex items-center gap-2">
             <span>📈</span> Portfolio
+            @if (isLoadingPrices)
+            {
+                <span class="text-xs font-mono text-yellow-500 animate-pulse">(Updating Prices...)</span>
+            }
         </h3>
         
         <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
             @foreach (var stock in Stocks)
             {
-                // NO MORE FAKE DATA
-                // We default to 0 until we connect a real API
-                decimal price = 0.00m; 
+                // Look up price in our new dictionary
+                decimal price = 0;
+                if (PriceCache.ContainsKey(stock.Symbol))
+                {
+                    price = PriceCache[stock.Symbol];
+                }
+
                 var value = stock.Shares * (double)price;
                 var hasPrice = price > 0;
 
@@ -71,7 +81,7 @@
                         <div class="font-bold text-white tracking-wide">@stock.Symbol</div>
                         
                         <div class="text-xs font-mono mb-2 @(hasPrice ? "text-green-400" : "text-gray-600")">
-                            @(hasPrice ? price.ToString("C") : "N/A")
+                            @(hasPrice ? price.ToString("C") : "Loading...")
                         </div>
 
                         @if (stock.Shares > 0)
@@ -79,7 +89,7 @@
                             <div class="pt-2 border-t border-gray-700 w-full">
                                 <div class="text-[10px] text-gray-500 uppercase">Value</div>
                                 <div class="font-bold text-blue-300 text-sm">
-                                    @(hasPrice ? value.ToString("C0") : "$0")
+                                    @(hasPrice ? value.ToString("C0") : "$--")
                                 </div>
                                 <div class="text-[9px] text-gray-600 mt-1">
                                     @stock.Shares.ToString("N1") shares
@@ -123,24 +133,21 @@
         <div class="bg-gray-800 border border-gray-600 p-6 rounded-xl shadow-2xl w-full max-w-sm">
             <h3 class="text-lg font-bold text-white mb-6 flex justify-between">
                 <span>Edit @editingStock.Symbol</span>
-                <span class="text-xs text-gray-500 font-mono pt-1">ID: @editingStock.Id</span>
             </h3>
-            
             <div class="space-y-4">
                 <div>
                     <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Image URL</label>
-                    <input @bind="editingStock.ImgUrl" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:border-blue-500 focus:outline-none" />
+                    <input @bind="editingStock.ImgUrl" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" />
                 </div>
                 <div>
                     <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Link URL</label>
-                    <input @bind="editingStock.LinkUrl" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:border-blue-500 focus:outline-none" />
+                    <input @bind="editingStock.LinkUrl" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" />
                 </div>
                 <div>
                     <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Shares Owned</label>
-                    <input @bind="editingStock.Shares" type="number" step="0.001" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:border-blue-500 focus:outline-none" />
+                    <input @bind="editingStock.Shares" type="number" step="0.001" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" />
                 </div>
             </div>
-
             <div class="mt-8 flex justify-end gap-3">
                 <button @onclick="() => editingStock = null" class="px-4 py-2 text-gray-400 hover:text-white text-xs font-bold uppercase tracking-wide">Cancel</button>
                 <button @onclick="SaveStock" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold uppercase tracking-wide shadow-lg shadow-blue-900/20">Save</button>
@@ -153,6 +160,10 @@
     private List<LinkGroup> Groups = new();
     private List<Stock> Stocks = new();
     private List<Countdown> Countdowns = new();
+    
+    // NEW: Cache for real prices
+    private Dictionary<string, decimal> PriceCache = new();
+    private bool isLoadingPrices = false;
     private Stock? editingStock = null;
 
     protected override async Task OnInitializedAsync()
@@ -160,6 +171,47 @@
         Groups = await Db.LinkGroups.Include(g => g.Links).OrderBy(g => g.Id).ToListAsync();
         Stocks = await Db.Stocks.OrderBy(s => s.Symbol).ToListAsync();
         Countdowns = await Db.Countdowns.OrderBy(c => c.TargetDate).ToListAsync();
+
+        // Trigger the price fetch in the background
+        _ = FetchPrices(); 
+    }
+
+    private async Task FetchPrices()
+    {
+        if (Stocks.Count == 0) return;
+
+        isLoadingPrices = true;
+        StateHasChanged(); // Show "Updating..."
+
+        foreach (var s in Stocks)
+        {
+            try 
+            {
+                // Unofficial Yahoo Finance API
+                // Docs: It returns a JSON with nested "meta" object containing "regularMarketPrice"
+                var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{s.Symbol}?interval=1d";
+                var json = await Http.GetStringAsync(url);
+                
+                using (var doc = JsonDocument.Parse(json))
+                {
+                    var result = doc.RootElement.GetProperty("chart").GetProperty("result")[0];
+                    var meta = result.GetProperty("meta");
+                    var price = meta.GetProperty("regularMarketPrice").GetDecimal();
+                    
+                    PriceCache[s.Symbol] = price;
+                }
+            }
+            catch 
+            {
+                Console.WriteLine($"Failed to fetch {s.Symbol}");
+                // On failure, keep it 0 or use old price
+            }
+            // Update UI one by one as they come in
+            StateHasChanged();
+        }
+
+        isLoadingPrices = false;
+        StateHasChanged();
     }
 
     private void EditStock(Stock stock)
