@@ -98,8 +98,8 @@ public class AdminController : ControllerBase
                     _context.Stocks.Add(new Stock 
                     { 
                         Symbol = s.Symbol,
-                        // Force a value here so the DB is happy
-                        ImgUrl = "" 
+                        ImgUrl = "",   // Previous fix
+                        LinkUrl = ""   // <--- NEW FIX (Satisfies the DB constraint)
                     });
                 }
             }
