@@ -158,4 +158,49 @@ public class AdminController : ControllerBase
     {
         public string Symbol { get; set; } = "";
     }
+
+    // ... inside AdminController class ...
+
+    [HttpPost("fix-ordering")]
+    public async Task<IActionResult> FixOrdering()
+    {
+        // 1. Fix Groups
+        var groups = await _context.LinkGroups.OrderBy(x => x.Id).ToListAsync();
+        for (int i = 0; i < groups.Count; i++) 
+        { 
+            // Only update if order is default 0 (collision)
+            if (groups.Count > 1 && groups.All(g => g.Order == 0)) 
+                groups[i].Order = i; 
+        }
+
+        // 2. Fix Links (per group)
+        foreach (var group in groups)
+        {
+            var links = await _context.Links.Where(l => l.LinkGroupId == group.Id).OrderBy(l => l.Id).ToListAsync();
+            for (int i = 0; i < links.Count; i++)
+            {
+                if (links.Count > 1 && links.All(l => l.Order == 0))
+                    links[i].Order = i;
+            }
+        }
+
+        // 3. Fix Stocks
+        var stocks = await _context.Stocks.OrderBy(x => x.Id).ToListAsync();
+        for (int i = 0; i < stocks.Count; i++)
+        {
+            if (stocks.Count > 1 && stocks.All(s => s.Order == 0))
+                stocks[i].Order = i;
+        }
+
+        // 4. Fix Countdowns
+        var countdowns = await _context.Countdowns.OrderBy(x => x.Id).ToListAsync();
+        for (int i = 0; i < countdowns.Count; i++)
+        {
+            if (countdowns.Count > 1 && countdowns.All(c => c.Order == 0))
+                countdowns[i].Order = i;
+        }
+
+        await _context.SaveChangesAsync();
+        return Ok("Ordering Fixed!");
+    }
 }

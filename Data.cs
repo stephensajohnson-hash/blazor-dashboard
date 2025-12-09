@@ -18,20 +18,20 @@ public class LinkGroup
 {
     public int Id { get; set; }
     public string Name { get; set; } = "";
-    public string Color { get; set; } = "blue"; // New: blue, red, green, etc.
+    public string Color { get; set; } = "blue";
     public bool IsStatic { get; set; }
+    public int Order { get; set; } // <--- NEW
     public List<Link> Links { get; set; } = new();
 }
 
 public class Link
 {
     public int Id { get; set; }
-    public string Name { get; set; } = ""; // Renamed from Title to match JSON
-    public string Url { get; set; } = "";
-    public string Img { get; set; } = "";  // New: Image URL
-    
     public int LinkGroupId { get; set; }
-    public LinkGroup? LinkGroup { get; set; }
+    public string Name { get; set; } = "";
+    public string Url { get; set; } = "";
+    public string Img { get; set; } = "";
+    public int Order { get; set; } // <--- NEW
 }
 
 public class Countdown
@@ -41,6 +41,7 @@ public class Countdown
     public DateTime TargetDate { get; set; }
     public string LinkUrl { get; set; } = "";
     public string Img { get; set; } = "";
+    public int Order { get; set; } // <--- NEW
 }
 
 public class Stock
@@ -49,5 +50,6 @@ public class Stock
     public string Symbol { get; set; } = "";
     public string ImgUrl { get; set; } = "";
     public string LinkUrl { get; set; } = "";
-    public double Shares { get; set; } 
+    public double Shares { get; set; }
+    public int Order { get; set; } // <--- NEW
 }
