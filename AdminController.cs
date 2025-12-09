@@ -95,7 +95,12 @@ public class AdminController : ControllerBase
             {
                 foreach (var s in rawData.Stocks)
                 {
-                    _context.Stocks.Add(new Stock { Symbol = s.Symbol });
+                    _context.Stocks.Add(new Stock 
+                    { 
+                        Symbol = s.Symbol,
+                        // Force a value here so the DB is happy
+                        ImgUrl = "" 
+                    });
                 }
             }
 
