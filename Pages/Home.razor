@@ -21,7 +21,7 @@
                     <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                     <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                 </div>
-                <div class="text-[10px] text-gray-600 font-mono mt-1">v1.6.3 (Debug Order)</div>
+                <div class="text-[10px] text-gray-600 font-mono mt-1">v1.6.4 (Clean UI)</div>
             </div>
 
             <div class="flex items-center gap-6 text-right">
@@ -36,7 +36,7 @@
                                     <span class="text-lg my-1">@GetWeatherIcon(weather.daily.weather_code[i])</span>
                                     <div class="text-[10px] font-mono">
                                         <span class="text-white">@Math.Round(weather.daily.temperature_2m_max[i])°</span>
-                                        <span class="text-gray-500">@Math.Round(weather.daily.temperature_2m_min[i])°</span>
+                                        <span class="text-blue-400">@Math.Round(weather.daily.temperature_2m_min[i])°</span>
                                     </div>
                                 </div>
                             }
@@ -77,8 +77,8 @@
                     <div class="flex justify-between items-center mb-4 pb-2 border-b border-gray-700">
                         <h3 class="text-lg font-bold text-white flex items-center gap-2">
                             <span class="w-2 h-2 rounded-full shadow-[0_0_10px_currentColor]" style="color: @group.Color; background-color: @group.Color"></span>
-                            @group.Name <span class="text-red-500 text-[10px] font-mono">(@group.Order)</span>
-                        </h3>
+                            @group.Name 
+                            </h3>
                         <div class="flex items-center gap-1 opacity-0 group-hover/card:opacity-100 transition">
                             <button type="button" @onclick="() => MoveGroup(group, -1)" class="text-gray-500 hover:text-white p-1" title="Move Left">←</button>
                             <button type="button" @onclick="() => MoveGroup(group, 1)" class="text-gray-500 hover:text-white p-1" title="Move Right">→</button>
@@ -110,7 +110,7 @@
                                     {
                                         <img src="@link.Img" class="w-16 h-16 rounded object-cover opacity-80 group-hover:opacity-100 transition shadow-sm" />
                                     }
-                                    <span class="text-gray-400 group-hover:text-white transition text-xs truncate w-full">@link.Name <span class="text-red-500 font-mono">(@link.Order)</span></span>
+                                    <span class="text-gray-400 group-hover:text-white transition text-xs truncate w-full">@link.Name</span>
                                 </a>
                             </div>
                         }
@@ -143,9 +143,7 @@
                             @if (!string.IsNullOrEmpty(c.Img)) { <img src="@c.Img" class="h-full w-auto object-cover opacity-90 group-hover:opacity-100 transition" /> }
                         </div>
                         <div class="p-4 flex flex-col justify-center min-w-[140px]">
-                            <div class="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">
-                                @c.Name <span class="text-red-500 font-mono">(@c.Order)</span>
-                            </div>
+                            <div class="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">@c.Name</div>
                             <div class="text-2xl font-bold text-white leading-none mb-1">@calc.MainDisplay</div>
                             @if (!string.IsNullOrEmpty(calc.SubDisplay)) { <div class="text-xs text-gray-400 font-mono">@calc.SubDisplay</div> }
                             <div class="text-sm font-bold text-blue-400 mt-2">@c.TargetDate.ToShortDateString()</div>
@@ -198,9 +196,7 @@
                             </div>
 
                             <div class="p-4 flex flex-col justify-center min-w-[140px]">
-                                <div class="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">
-                                    @stock.Symbol <span class="text-red-500 font-mono">(@stock.Order)</span>
-                                </div>
+                                <div class="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">@stock.Symbol</div>
                                 
                                 <div class="text-2xl font-bold text-white leading-none mb-1 @(hasPrice ? "" : "text-gray-500 text-lg")">
                                     @(hasPrice ? price.ToString("C", usCulture) : "Loading...")
@@ -371,43 +367,31 @@
         StateHasChanged();
     }
 
-    // --- SORTING (SELF-HEALING) ---
+    // --- SORTING ---
     private async Task FixOrder() { await Http.PostAsync("/api/admin/fix-ordering", null); await LoadData(); }
     private async Task MoveGroup(LinkGroup g, int d) { await MoveItem(Db.LinkGroups, g, d); }
     private async Task MoveLink(Link l, int d) { await MoveItem(Db.Links, l, d, x => x.LinkGroupId == l.LinkGroupId); }
     private async Task MoveStock(Stock s, int d) { await MoveItem(Db.Stocks, s, d); }
     private async Task MoveCountdown(Countdown c, int d) { await MoveItem(Db.Countdowns, c, d); }
 
-    // THIS IS THE FIX: Normalize -> Swap -> Save
     private async Task MoveItem<T>(DbSet<T> set, T item, int direction, System.Linq.Expressions.Expression<Func<T, bool>>? filter = null) where T : class
     {
         IQueryable<T> query = set;
         if (filter != null) query = query.Where(filter);
-        
         var list = await query.ToListAsync();
         var prop = typeof(T).GetProperty("Order");
         if (prop == null) return;
-
-        // 1. Force Clean Sort (Order then ID)
         list = list.OrderBy(x => (int)prop.GetValue(x)!).ThenBy(x => (int)typeof(T).GetProperty("Id")!.GetValue(x)!).ToList();
-
-        // 2. Normalize Values (0, 1, 2...)
         for(int i=0; i<list.Count; i++) prop.SetValue(list[i], i);
-
-        // 3. Find Indices
         var idProp = typeof(T).GetProperty("Id");
         var itemId = (int)idProp!.GetValue(item)!;
         var currentItemInList = list.First(x => (int)idProp.GetValue(x)! == itemId);
         int index = list.IndexOf(currentItemInList);
-
-        // 4. Swap
         int newIndex = index + direction;
-        if (newIndex >= 0 && newIndex < list.Count)
-        {
+        if (newIndex >= 0 && newIndex < list.Count) {
             var other = list[newIndex];
             prop.SetValue(currentItemInList, newIndex);
             prop.SetValue(other, index);
-            
             set.UpdateRange(list);
             await Db.SaveChangesAsync();
             await LoadData();
@@ -420,11 +404,7 @@
     private async Task SaveGroup() { if (editingGroup == null) return; if (editingGroup.Id == 0) Db.LinkGroups.Add(editingGroup); else Db.LinkGroups.Update(editingGroup); await Db.SaveChangesAsync(); editingGroup = null; await LoadData(); }
     private async Task DeleteGroup(LinkGroup g) { if (await JS.InvokeAsync<bool>("confirm", $"Delete '{g.Name}'?")) { Db.LinkGroups.Remove(g); await Db.SaveChangesAsync(); await LoadData(); } }
     
-    private void OpenAddLinkModal(int groupId) { 
-        var group = Groups.FirstOrDefault(g => g.Id == groupId);
-        int nextOrder = group?.Links.Count ?? 0;
-        editingLink = new Link { LinkGroupId = groupId, Order = nextOrder }; 
-    }
+    private void OpenAddLinkModal(int groupId) { var g = Groups.FirstOrDefault(x=>x.Id==groupId); editingLink = new Link { LinkGroupId = groupId, Order = g?.Links.Count ?? 0 }; }
     private void OpenEditLinkModal(Link l) { editingLink = l; }
     private async Task SaveLink() { if (editingLink == null) return; if (editingLink.Id == 0) Db.Links.Add(editingLink); else Db.Links.Update(editingLink); await Db.SaveChangesAsync(); editingLink = null; await LoadData(); }
     private async Task DeleteLink(Link l) { if (await JS.InvokeAsync<bool>("confirm", $"Delete '{l.Name}'?")) { Db.Links.Remove(l); await Db.SaveChangesAsync(); await LoadData(); } }
@@ -456,7 +436,7 @@
     private void UpdateTime() { var now = DateTime.UtcNow.AddMinutes(-clientOffsetMinutes); string suffix = (now.Day % 10 == 1 && now.Day != 11) ? "st" : (now.Day % 10 == 2 && now.Day != 12) ? "nd" : (now.Day % 10 == 3 && now.Day != 13) ? "rd" : "th"; CurrentDate = $"{now:dddd, MMMM d}{suffix} {now:yyyy}"; CurrentTime = now.ToString("h:mm tt").ToLower(); InvokeAsync(StateHasChanged); }
     private async Task FetchWeather() { try { var url = "https://api.open-meteo.com/v1/forecast?latitude=33.1383&longitude=-95.6011&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto"; weather = await Http.GetFromJsonAsync<WeatherData>(url); StateHasChanged(); } catch {} }
     private string GetDayName(string s) => DateTime.TryParse(s, out var d) ? d.ToString("ddd") : "";
-    private string GetWeatherIcon(int c) => c switch { 0=>"☀️", 1=>"🌤️", 2=>"Qw", 3=>"☁️", 45 or 48=>"🌫️", 51 or 53 or 55=>"DRIZZLE", 61 or 63 or 65=>"🌧️", 80 or 81 or 82=>"🌦️", 71 or 73 or 75=>"❄️", 95 or 96 or 99=>"⚡", _=>"🌡️" };
+    private string GetWeatherIcon(int c) => c switch { 0=>"☀️", 1=>"🌤️", 2=>"Qw", 3=>"☁️", 45 or 48=>"🌫️", 51 or 53 or 55=>"🌦️", 61 or 63 or 65=>"🌧️", 80 or 81 or 82=>"🌦️", 71 or 73 or 75=>"❄️", 95 or 96 or 99=>"⚡", _=>"🌡️" };
     private async Task FetchPrices() { if (Stocks.Count == 0) return; isLoadingPrices = true; StateHasChanged(); using var client = new HttpClient(); client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0"); foreach (var s in Stocks) { try { var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{s.Symbol}?interval=1d"; var json = await client.GetStringAsync(url); using (var doc = JsonDocument.Parse(json)) { var meta = doc.RootElement.GetProperty("chart").GetProperty("result")[0].GetProperty("meta"); PriceCache[s.Symbol] = meta.GetProperty("regularMarketPrice").GetDecimal(); } } catch {} StateHasChanged(); } isLoadingPrices = false; StateHasChanged(); }
     private async Task ClearDb() { if (await JS.InvokeAsync<bool>("confirm", "⚠️ WIPE DATABASE?")) { await Http.PostAsync("/api/admin/clear", null); Nav.NavigateTo(Nav.Uri, forceLoad: true); } }
     private async Task SeedDb() { var r = await Http.PostAsync("/api/admin/seed", null); if (r.IsSuccessStatusCode) { await JS.InvokeVoidAsync("alert", "Seeded!"); Nav.NavigateTo(Nav.Uri, forceLoad: true); } }
