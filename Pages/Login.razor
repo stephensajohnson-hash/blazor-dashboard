@@ -1,4 +1,7 @@
 @page "/login"
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@using System.Text.Json
 @using Dashboard
 @using Microsoft.EntityFrameworkCore
 @inject AppDbContext Db
@@ -49,7 +52,7 @@
         if (e.Key == "Enter") await DoLogin();
     }
 
-private async Task DoLogin()
+    private async Task DoLogin()
     {
         errorMessage = "";
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
@@ -58,6 +61,7 @@ private async Task DoLogin()
             return;
         }
 
+        // 1. Find User
         var user = await Db.Users.FirstOrDefaultAsync(u => u.Username.ToLower() == username.ToLower());
         
         if (user == null || !PasswordHelper.VerifyPassword(password, user.PasswordHash))
@@ -66,17 +70,18 @@ private async Task DoLogin()
             return;
         }
 
-        // --- NEW LOGIC: Create Session Object ---
+        // 2. Success - Create Session Object (30 Days)
         var sessionData = new 
         {
             userId = user.Id,
-            expiry = DateTime.UtcNow.AddDays(30) // Set 30-day expiration
+            expiry = DateTime.UtcNow.AddDays(30)
         };
 
-        // Save as JSON string
-        var json = System.Text.Json.JsonSerializer.Serialize(sessionData);
+        // 3. Save to LocalStorage
+        var json = JsonSerializer.Serialize(sessionData);
         await JS.InvokeVoidAsync("localStorage.setItem", "dashboard_session", json);
         
+        // 4. Go Home
         Nav.NavigateTo("/", forceLoad: true);
     }
 }
