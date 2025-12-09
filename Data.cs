@@ -48,7 +48,9 @@ public class Stock
     public int Id { get; set; }
     public string Symbol { get; set; } = "";
     
-    // ADD THIS LINE. 
-    // The = ""; part ensures it is never NULL, which fixes the error.
+    // You added this one last time
     public string ImgUrl { get; set; } = ""; 
+
+    // --- ADD THIS NEW ONE ---
+    public string LinkUrl { get; set; } = ""; 
 }
