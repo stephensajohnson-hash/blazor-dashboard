@@ -17,11 +17,10 @@ public class AppDbContext : DbContext
     public DbSet<User> Users { get; set; } 
 }
 
-// --- EXISTING MODELS (Restored) ---
-
 public class LinkGroup
 {
     public int Id { get; set; }
+    public int UserId { get; set; } // <--- NEW
     public string Name { get; set; } = "";
     public string Color { get; set; } = "blue";
     public bool IsStatic { get; set; }
@@ -32,6 +31,7 @@ public class LinkGroup
 public class Link
 {
     public int Id { get; set; }
+    public int UserId { get; set; } // <--- NEW
     public int LinkGroupId { get; set; }
     public string Name { get; set; } = "";
     public string Url { get; set; } = "";
@@ -42,6 +42,7 @@ public class Link
 public class Countdown
 {
     public int Id { get; set; }
+    public int UserId { get; set; } // <--- NEW
     public string Name { get; set; } = "";
     public DateTime TargetDate { get; set; }
     public string LinkUrl { get; set; } = "";
@@ -52,14 +53,13 @@ public class Countdown
 public class Stock
 {
     public int Id { get; set; }
+    public int UserId { get; set; } // <--- NEW
     public string Symbol { get; set; } = "";
     public string ImgUrl { get; set; } = "";
     public string LinkUrl { get; set; } = "";
     public double Shares { get; set; }
     public int Order { get; set; }
 }
-
-// --- NEW USER MODEL ---
 
 public class User
 {
@@ -69,8 +69,6 @@ public class User
     public string ZipCode { get; set; } = "75482"; 
     public string AvatarUrl { get; set; } = "";
 }
-
-// --- SECURITY HELPER ---
 
 public static class PasswordHelper
 {

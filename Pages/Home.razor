@@ -17,9 +17,9 @@
     {
         <div class="flex flex-col items-center justify-center h-screen space-y-6">
             <div class="text-red-500 text-xl font-bold">⚠️ Database Update Required</div>
-            <p class="text-gray-400 max-w-md text-center">Your code has new features that your database doesn't support yet.</p>
-            <button @onclick="UpgradeDatabase" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">
-                Add Missing Columns
+            <p class="text-gray-400 max-w-md text-center">We need to add User ownership to your data.</p>
+            <button @onclick="MigrateDataToUser" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">
+                Migrate Data to User ID 1
             </button>
         </div>
     }
@@ -33,7 +33,7 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v1.8.1 (Profile Edit)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v1.9.0 (Multi-User)</div>
                 </div>
 
                 <div class="flex items-center gap-8 text-right">
@@ -67,7 +67,7 @@
                         <button class="flex items-center gap-3 focus:outline-none">
                             <div class="text-right hidden md:block">
                                 <div class="text-sm font-bold text-white">@(currentUser?.Username ?? "Loading...")</div>
-                                <div class="text-[10px] text-gray-500 uppercase">Admin</div>
+                                <div class="text-[10px] text-gray-500 uppercase">User @(currentUser?.Id)</div>
                             </div>
                             <img src="@(string.IsNullOrEmpty(currentUser?.AvatarUrl) ? "https://i.imgur.com/7Y5j5Yx.png" : currentUser.AvatarUrl)" 
                                  class="w-10 h-10 rounded-full border-2 border-gray-700 group-hover:border-blue-500 transition object-cover bg-gray-800" />
@@ -75,27 +75,16 @@
 
                         <div class="absolute right-0 top-full mt-2 w-56 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 hidden group-hover:block transform origin-top-right transition-all">
                             
-                            <div class="px-3 py-2 border-b border-gray-700 mb-2">
-                                <div class="text-xs font-bold text-white">@currentUser?.Username</div>
-                                <div class="text-[10px] text-gray-500 font-mono">User ID: @currentUser?.Id</div>
-                            </div>
-
                             <button type="button" @onclick="OpenEditUserModal" class="w-full text-left text-xs text-white hover:bg-gray-700 p-2 rounded mb-2 transition flex items-center gap-2">
                                 <span>✏️</span> Edit Profile
                             </button>
 
                             <div class="px-2 py-1 text-[10px] uppercase text-gray-500 font-bold tracking-wider mb-1">System Tools</div>
+                            <button type="button" @onclick="MigrateDataToUser" class="w-full text-left text-xs text-yellow-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2">
+                                <span>🔄</span> Re-Run Migration
+                            </button>
                             <button type="button" @onclick="FixOrder" class="w-full text-left text-xs text-blue-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2">
                                 <span>🔧</span> Fix Sort Order
-                            </button>
-                            <button type="button" @onclick="UpgradeUsers" class="w-full text-left text-xs text-yellow-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2">
-                                <span>👥</span> Init Users
-                            </button>
-                            <button type="button" @onclick="SeedDb" class="w-full text-left text-xs text-green-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2">
-                                <span>🌱</span> Seed Data
-                            </button>
-                            <button type="button" @onclick="ClearDb" class="w-full text-left text-xs text-red-400 hover:bg-gray-700 p-2 rounded mb-2 transition flex items-center gap-2">
-                                <span>🗑️</span> Wipe DB
                             </button>
                             
                             <div class="border-t border-gray-700 my-1"></div>
@@ -335,9 +324,7 @@
         UpdateTime();
         try 
         {
-            await LoadData();
-            _ = FetchPrices();
-            _ = FetchWeather();
+            // Initial render without user data
             _ = StartClock();
         }
         catch (Exception ex)
@@ -368,15 +355,29 @@
                 if (session == null || session.Expiry < DateTime.UtcNow) { Nav.NavigateTo("/login", forceLoad: true); return; }
 
                 currentUser = await Db.Users.FindAsync(session.UserId);
-                StateHasChanged();
                 
-                // Fetch weather specific to user zip if available
-                if (currentUser != null) _ = FetchWeather();
+                // Only load data after user is confirmed
+                await LoadData();
+                _ = FetchPrices();
+                _ = FetchWeather();
 
                 try { clientOffsetMinutes = await JS.InvokeAsync<int>("getUserOffset"); UpdateTime(); } catch {}
+                StateHasChanged();
             } 
             catch { Nav.NavigateTo("/login", forceLoad: true); }
         }
+    }
+
+    private async Task MigrateDataToUser()
+    {
+        // 1. Add Columns & Default everything to 1
+        await Db.Database.ExecuteSqlRawAsync(@"
+            ALTER TABLE ""LinkGroups"" ADD COLUMN IF NOT EXISTS ""UserId"" integer DEFAULT 1;
+            ALTER TABLE ""Links"" ADD COLUMN IF NOT EXISTS ""UserId"" integer DEFAULT 1;
+            ALTER TABLE ""Stocks"" ADD COLUMN IF NOT EXISTS ""UserId"" integer DEFAULT 1;
+            ALTER TABLE ""Countdowns"" ADD COLUMN IF NOT EXISTS ""UserId"" integer DEFAULT 1;
+        ");
+        Nav.NavigateTo(Nav.Uri, forceLoad: true);
     }
 
     private async Task Logout()
@@ -401,9 +402,12 @@
 
     private async Task LoadData()
     {
-        Groups = await Db.LinkGroups.Include(g => g.Links).OrderBy(g => g.Order).ToListAsync();
-        Stocks = await Db.Stocks.OrderBy(s => s.Order).ToListAsync();
-        Countdowns = await Db.Countdowns.OrderBy(c => c.Order).ToListAsync();
+        if (currentUser == null) return;
+
+        // Filter by UserId
+        Groups = await Db.LinkGroups.Where(x => x.UserId == currentUser.Id).Include(g => g.Links).OrderBy(g => g.Order).ToListAsync();
+        Stocks = await Db.Stocks.Where(x => x.UserId == currentUser.Id).OrderBy(s => s.Order).ToListAsync();
+        Countdowns = await Db.Countdowns.Where(x => x.UserId == currentUser.Id).OrderBy(c => c.Order).ToListAsync();
         StateHasChanged();
     }
 
@@ -417,8 +421,26 @@
     private async Task MoveItem<T>(DbSet<T> set, T item, int direction, System.Linq.Expressions.Expression<Func<T, bool>>? filter = null) where T : class
     {
         IQueryable<T> query = set;
+        
+        // Ensure we only move items belonging to current user
+        var userProp = typeof(T).GetProperty("UserId");
+        if (userProp != null && currentUser != null)
+        {
+            // We have to filter in memory for generic reflection or build expression tree.
+            // Simplified: Filter by what passed in, assuming caller handles user scope, BUT
+            // strictly we should add .Where(x => x.UserId == currentUser.Id) here.
+            // For now, rely on LoadData providing the correct list context.
+        }
+
         if (filter != null) query = query.Where(filter);
         var list = await query.ToListAsync();
+        
+        // Filter list to current user explicitly just in case
+        if (userProp != null && currentUser != null)
+        {
+             list = list.Where(x => (int)userProp.GetValue(x)! == currentUser.Id).ToList();
+        }
+
         var prop = typeof(T).GetProperty("Order");
         if (prop == null) return;
         list = list.OrderBy(x => (int)prop.GetValue(x)!).ThenBy(x => (int)typeof(T).GetProperty("Id")!.GetValue(x)!).ToList();
@@ -439,62 +461,46 @@
     }
 
     // --- CRUD ---
-    private void OpenAddGroupModal() { editingGroup = new LinkGroup { Color = "Blue", Order = Groups.Count }; }
-    private void OpenEditGroupModal(LinkGroup g) { editingGroup = g; }
-    private async Task SaveGroup() { if (editingGroup == null) return; if (editingGroup.Id == 0) Db.LinkGroups.Add(editingGroup); else Db.LinkGroups.Update(editingGroup); await Db.SaveChangesAsync(); editingGroup = null; await LoadData(); }
-    private async Task DeleteGroup(LinkGroup g) { if (await JS.InvokeAsync<bool>("confirm", $"Delete '{g.Name}'?")) { Db.LinkGroups.Remove(g); await Db.SaveChangesAsync(); await LoadData(); } }
-    private void OpenAddLinkModal(int groupId) { var g = Groups.FirstOrDefault(x=>x.Id==groupId); editingLink = new Link { LinkGroupId = groupId, Order = g?.Links.Count ?? 0 }; }
-    private void OpenEditLinkModal(Link l) { editingLink = l; }
-    private async Task SaveLink() { if (editingLink == null) return; if (editingLink.Id == 0) Db.Links.Add(editingLink); else Db.Links.Update(editingLink); await Db.SaveChangesAsync(); editingLink = null; await LoadData(); }
-    private async Task DeleteLink(Link l) { if (await JS.InvokeAsync<bool>("confirm", $"Delete '{l.Name}'?")) { Db.Links.Remove(l); await Db.SaveChangesAsync(); await LoadData(); } }
-    private void OpenAddStockModal() { editingStock = new Stock { Order = Stocks.Count }; }
-    private void OpenEditStockModal(Stock s) { editingStock = s; }
-    private async Task SaveStock() { if (editingStock == null) return; if (editingStock.Id == 0) Db.Stocks.Add(editingStock); else Db.Stocks.Update(editingStock); await Db.SaveChangesAsync(); editingStock = null; await LoadData(); _ = FetchPrices(); }
-    private async Task DeleteStock(Stock s) { if (await JS.InvokeAsync<bool>("confirm", $"Delete '{s.Symbol}'?")) { Db.Stocks.Remove(s); await Db.SaveChangesAsync(); await LoadData(); } }
-    private void OpenAddCountdownModal() { editingCountdown = new Countdown { TargetDate = DateTime.Now.AddDays(1), Order = Countdowns.Count }; }
-    private void OpenEditCountdownModal(Countdown c) { editingCountdown = c; }
-    private async Task SaveCountdown() { if (editingCountdown == null) return; editingCountdown.TargetDate = DateTime.SpecifyKind(editingCountdown.TargetDate, DateTimeKind.Utc); if (editingCountdown.Id == 0) Db.Countdowns.Add(editingCountdown); else Db.Countdowns.Update(editingCountdown); await Db.SaveChangesAsync(); editingCountdown = null; await LoadData(); }
-    private async Task DeleteCountdown(Countdown c) { if (await JS.InvokeAsync<bool>("confirm", $"Delete '{c.Name}'?")) { Db.Countdowns.Remove(c); await Db.SaveChangesAsync(); await LoadData(); } }
-
-    // --- USER CRUD ---
     private void OpenEditUserModal() 
     { 
         if (currentUser == null) return;
-        // Clone to avoid live editing
-        editingUser = new User { 
-            Id = currentUser.Id, 
-            Username = currentUser.Username, 
-            ZipCode = currentUser.ZipCode, 
-            AvatarUrl = currentUser.AvatarUrl,
-            PasswordHash = currentUser.PasswordHash
-        };
-        newPassword = ""; // clear password field
+        editingUser = new User { Id = currentUser.Id, Username = currentUser.Username, ZipCode = currentUser.ZipCode, AvatarUrl = currentUser.AvatarUrl, PasswordHash = currentUser.PasswordHash };
+        newPassword = "";
     }
 
     private async Task SaveUser()
     {
         if (editingUser == null) return;
-
-        // 1. Fetch live user to update
         var dbUser = await Db.Users.FindAsync(editingUser.Id);
         if (dbUser != null)
         {
             dbUser.Username = editingUser.Username;
             dbUser.ZipCode = editingUser.ZipCode;
             dbUser.AvatarUrl = editingUser.AvatarUrl;
-
-            // 2. Hash Password ONLY if typed
-            if (!string.IsNullOrWhiteSpace(newPassword))
-            {
-                dbUser.PasswordHash = PasswordHelper.HashPassword(newPassword);
-            }
-
+            if (!string.IsNullOrWhiteSpace(newPassword)) dbUser.PasswordHash = PasswordHelper.HashPassword(newPassword);
             await Db.SaveChangesAsync();
-            currentUser = dbUser; // Update UI immediately
-            _ = FetchWeather(); // Refresh weather for new zip
+            currentUser = dbUser;
+            _ = FetchWeather();
         }
         editingUser = null;
     }
+
+    private void OpenAddGroupModal() { editingGroup = new LinkGroup { Color = "Blue", Order = Groups.Count, UserId = currentUser!.Id }; }
+    private void OpenEditGroupModal(LinkGroup g) { editingGroup = g; }
+    private async Task SaveGroup() { if (editingGroup == null) return; if (editingGroup.Id == 0) Db.LinkGroups.Add(editingGroup); else Db.LinkGroups.Update(editingGroup); await Db.SaveChangesAsync(); editingGroup = null; await LoadData(); }
+    private async Task DeleteGroup(LinkGroup g) { if (await JS.InvokeAsync<bool>("confirm", $"Delete '{g.Name}'?")) { Db.LinkGroups.Remove(g); await Db.SaveChangesAsync(); await LoadData(); } }
+    private void OpenAddLinkModal(int groupId) { var g = Groups.FirstOrDefault(x=>x.Id==groupId); editingLink = new Link { LinkGroupId = groupId, Order = g?.Links.Count ?? 0, UserId = currentUser!.Id }; }
+    private void OpenEditLinkModal(Link l) { editingLink = l; }
+    private async Task SaveLink() { if (editingLink == null) return; if (editingLink.Id == 0) Db.Links.Add(editingLink); else Db.Links.Update(editingLink); await Db.SaveChangesAsync(); editingLink = null; await LoadData(); }
+    private async Task DeleteLink(Link l) { if (await JS.InvokeAsync<bool>("confirm", $"Delete '{l.Name}'?")) { Db.Links.Remove(l); await Db.SaveChangesAsync(); await LoadData(); } }
+    private void OpenAddStockModal() { editingStock = new Stock { Order = Stocks.Count, UserId = currentUser!.Id }; }
+    private void OpenEditStockModal(Stock s) { editingStock = s; }
+    private async Task SaveStock() { if (editingStock == null) return; if (editingStock.Id == 0) Db.Stocks.Add(editingStock); else Db.Stocks.Update(editingStock); await Db.SaveChangesAsync(); editingStock = null; await LoadData(); _ = FetchPrices(); }
+    private async Task DeleteStock(Stock s) { if (await JS.InvokeAsync<bool>("confirm", $"Delete '{s.Symbol}'?")) { Db.Stocks.Remove(s); await Db.SaveChangesAsync(); await LoadData(); } }
+    private void OpenAddCountdownModal() { editingCountdown = new Countdown { TargetDate = DateTime.Now.AddDays(1), Order = Countdowns.Count, UserId = currentUser!.Id }; }
+    private void OpenEditCountdownModal(Countdown c) { editingCountdown = c; }
+    private async Task SaveCountdown() { if (editingCountdown == null) return; editingCountdown.TargetDate = DateTime.SpecifyKind(editingCountdown.TargetDate, DateTimeKind.Utc); if (editingCountdown.Id == 0) Db.Countdowns.Add(editingCountdown); else Db.Countdowns.Update(editingCountdown); await Db.SaveChangesAsync(); editingCountdown = null; await LoadData(); }
+    private async Task DeleteCountdown(Countdown c) { if (await JS.InvokeAsync<bool>("confirm", $"Delete '{c.Name}'?")) { Db.Countdowns.Remove(c); await Db.SaveChangesAsync(); await LoadData(); } }
 
     private (string MainDisplay, string SubDisplay) GetCountdownLogic(DateTime target)
     {
@@ -513,11 +519,12 @@
     private void UpdateTime() { var now = DateTime.UtcNow.AddMinutes(-clientOffsetMinutes); string suffix = (now.Day % 10 == 1 && now.Day != 11) ? "st" : (now.Day % 10 == 2 && now.Day != 12) ? "nd" : (now.Day % 10 == 3 && now.Day != 13) ? "rd" : "th"; CurrentDate = $"{now:dddd, MMMM d}{suffix} {now:yyyy}"; CurrentTime = now.ToString("h:mm tt").ToLower(); InvokeAsync(StateHasChanged); }
     
     private async Task FetchWeather() { 
+        if (currentUser == null) return;
         try { 
-            // Geocoding logic would be better, but we'll default to Lat/Lon mapping for now or use the Zip directly if the API supported it easily. 
-            // Open-Meteo needs Lat/Lon. For a true multi-user zip code support, we'd need a Geocoding API step here.
-            // For now, let's just stick to the default Lat/Lon but eventually you can add Geocoding.
-            // Currently using fixed Sulphur Springs Lat/Lon: 33.1383, -95.6011
+            // We are using a fixed API for now, but we SHOULD lookup Lat/Lon from Zip in a real app.
+            // For this specific request, we will assume the default behavior is preserved (Sulphur Springs) 
+            // OR if you want to support real multi-location, we need a Geocoding call.
+            // For now, I will keep the existing working call to ensure stability.
             var url = "https://api.open-meteo.com/v1/forecast?latitude=33.1383&longitude=-95.6011&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto"; 
             weather = await Http.GetFromJsonAsync<WeatherData>(url); 
             StateHasChanged(); 
