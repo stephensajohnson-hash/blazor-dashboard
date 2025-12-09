@@ -16,7 +16,7 @@
                 <img src="/images/dashboard.png" class="w-8 h-8 rounded bg-gray-700" alt="Logo" />
                 <h1 class="font-bold text-lg tracking-tight">Dashboard</h1>
             </div>
-            <div class="text-[10px] text-gray-500 font-mono pl-11">v1.2.3 (Layout)</div>
+            <div class="text-[10px] text-gray-500 font-mono pl-11">v1.2.4 (Header)</div>
         </div>
 
         <nav class="flex-1 p-4 space-y-1">
@@ -28,29 +28,26 @@
                 </a>
             }
         </nav>
+
+        <div class="p-4 border-t border-gray-800 bg-gray-900/50">
+            <div class="text-[10px] uppercase text-gray-600 font-bold mb-2">System</div>
+            <div class="grid grid-cols-2 gap-2">
+                <button @onclick="ClearDb" class="bg-red-900/20 hover:bg-red-900/40 text-red-500 text-xs py-2 rounded border border-red-900/30 transition font-mono">
+                    WIPE
+                </button>
+                <button @onclick="SeedDb" class="bg-green-900/20 hover:bg-green-900/40 text-green-500 text-xs py-2 rounded border border-green-900/30 transition font-mono">
+                    SEED
+                </button>
+            </div>
+        </div>
     </div>
 
-    <main class="flex-1 overflow-y-auto p-8 relative">
+    <main class="flex-1 overflow-y-auto p-8 relative scroll-smooth">
         
-        <div class="flex justify-between items-center mb-8 border-b border-gray-800 pb-4">
-            <div>
-                <h2 class="text-3xl font-bold text-white mb-1">Welcome Home</h2>
-                <div class="text-gray-400 text-sm">@DateTime.Now.ToString("D")</div>
-            </div>
-
-            <div class="flex items-center gap-4">
-                 <div class="flex gap-2 bg-gray-800 p-1 rounded-lg border border-gray-700">
-                    <button @onclick="ClearDb" class="px-3 py-1 text-xs font-bold text-red-400 hover:bg-red-900/30 rounded transition">
-                        🗑️ WIPE
-                    </button>
-                    <button @onclick="SeedDb" class="px-3 py-1 text-xs font-bold text-green-400 hover:bg-green-900/30 rounded transition">
-                        🌱 SEED
-                    </button>
-                </div>
-                
-                <div id="local-clock" class="text-3xl font-mono text-blue-400 font-bold tracking-widest pl-4 border-l border-gray-700">
-                    --:-- am
-                </div>
+        <div class="mb-10 border-b border-gray-800 pb-2">
+            <div class="flex items-baseline gap-4">
+                <h2 class="text-4xl font-bold text-white tracking-tight">@CurrentDate</h2>
+                <span class="text-2xl font-medium text-gray-600">@CurrentTime</span>
             </div>
         </div>
 
@@ -197,7 +194,11 @@
     private List<Stock> Stocks = new();
     private List<Countdown> Countdowns = new();
     
-    // NEW: Cache for real prices
+    // Clock Variables
+    private string CurrentDate = DateTime.Now.ToString("D");
+    private string CurrentTime = DateTime.Now.ToShortTimeString();
+
+    // Data Cache
     private Dictionary<string, decimal> PriceCache = new();
     private bool isLoadingPrices = false;
     private Stock? editingStock = null;
@@ -208,7 +209,32 @@
         Stocks = await Db.Stocks.OrderBy(s => s.Symbol).ToListAsync();
         Countdowns = await Db.Countdowns.OrderBy(c => c.TargetDate).ToListAsync();
 
-        _ = FetchPrices(); 
+        _ = FetchPrices();
+        _ = StartClock(); // Start the minute-aligned clock
+    }
+
+    private async Task StartClock()
+    {
+        // 1. Sync to the next minute
+        var now = DateTime.Now;
+        var secondsToNextMinute = 60 - now.Second;
+        await Task.Delay(secondsToNextMinute * 1000);
+
+        // 2. Loop every 60 seconds
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
+        
+        UpdateTime(); // First update exactly on the minute
+        while (await timer.WaitForNextTickAsync())
+        {
+            UpdateTime();
+        }
+    }
+
+    private void UpdateTime()
+    {
+        CurrentDate = DateTime.Now.ToString("D");
+        CurrentTime = DateTime.Now.ToShortTimeString();
+        InvokeAsync(StateHasChanged);
     }
 
     private async Task FetchPrices()
@@ -223,7 +249,6 @@
             {
                 var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{s.Symbol}?interval=1d";
                 var json = await Http.GetStringAsync(url);
-                
                 using (var doc = JsonDocument.Parse(json))
                 {
                     var result = doc.RootElement.GetProperty("chart").GetProperty("result")[0];
@@ -232,13 +257,9 @@
                     PriceCache[s.Symbol] = price;
                 }
             }
-            catch 
-            {
-                Console.WriteLine($"Failed to fetch {s.Symbol}");
-            }
+            catch { Console.WriteLine($"Failed to fetch {s.Symbol}"); }
             StateHasChanged();
         }
-
         isLoadingPrices = false;
         StateHasChanged();
     }
