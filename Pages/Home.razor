@@ -16,7 +16,7 @@
                 <img src="/images/dashboard.png" class="w-8 h-8 rounded bg-gray-700" alt="Logo" />
                 <h1 class="font-bold text-lg tracking-tight">Dashboard</h1>
             </div>
-            <div class="text-[10px] text-gray-500 font-mono pl-11">v1.2.5 (Date Fix)</div>
+            <div class="text-[10px] text-gray-500 font-mono pl-11">v1.3.0 (Weather)</div>
         </div>
 
         <nav class="flex-1 p-4 space-y-1">
@@ -44,11 +44,43 @@
 
     <main class="flex-1 overflow-y-auto p-8 relative scroll-smooth">
         
-        <div class="mb-10 border-b border-gray-800 pb-2">
+        <div class="mb-10 border-b border-gray-800 pb-4 flex justify-between items-end">
+            
             <div class="flex items-baseline gap-4">
                 <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                 <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
             </div>
+
+            @if (weather != null)
+            {
+                <div class="flex items-center gap-6 text-right">
+                    <div class="flex gap-4 border-r border-gray-700 pr-6 mr-2">
+                        @for (int i = 1; i < Math.Min(7, weather.daily.time.Length); i++)
+                        {
+                            <div class="flex flex-col items-center">
+                                <span class="text-[10px] text-gray-500 font-bold uppercase">@GetDayName(weather.daily.time[i])</span>
+                                <span class="text-lg my-1">@GetWeatherIcon(weather.daily.weather_code[i])</span>
+                                <div class="text-[10px] font-mono">
+                                    <span class="text-white">@Math.Round(weather.daily.temperature_2m_max[i])°</span>
+                                    <span class="text-gray-500">@Math.Round(weather.daily.temperature_2m_min[i])°</span>
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="flex items-center gap-3">
+                        <div class="text-4xl">@GetWeatherIcon(weather.current.weather_code)</div>
+                        <div>
+                            <div class="text-3xl font-bold text-white leading-none">@Math.Round(weather.current.temperature_2m)°</div>
+                            <div class="text-xs text-gray-400 mt-1">Sulphur Springs</div>
+                        </div>
+                    </div>
+                </div>
+            }
+            else 
+            {
+                <div class="text-xs text-gray-600 animate-pulse">Loading Weather...</div>
+            }
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-12">
@@ -115,13 +147,10 @@
                     var hasPrice = price > 0;
 
                     <div class="relative group bg-gray-800/50 hover:bg-gray-800 rounded-xl p-4 border border-gray-700 hover:border-blue-500/50 transition flex flex-col items-center text-center">
-                        
                         <button @onclick="() => EditStock(stock)" class="absolute top-2 right-2 text-gray-600 hover:text-white z-20 p-1 hover:bg-gray-700 rounded opacity-0 group-hover:opacity-100 transition">
                             ✏️
                         </button>
-
                         <a href="@(string.IsNullOrEmpty(stock.LinkUrl) ? "#" : stock.LinkUrl)" target="_blank" class="block w-full">
-                            
                             @if (!string.IsNullOrEmpty(stock.ImgUrl))
                             {
                                 <img src="@stock.ImgUrl" class="w-12 h-12 mx-auto mb-3 rounded-full object-cover shadow-sm bg-white" />
@@ -132,13 +161,10 @@
                                     @stock.Symbol.Substring(0, Math.Min(3, stock.Symbol.Length))
                                 </div>
                             }
-
                             <div class="font-bold text-white tracking-wide">@stock.Symbol</div>
-                            
                             <div class="text-xs font-mono mb-2 @(hasPrice ? "text-green-400" : "text-gray-600")">
                                 @(hasPrice ? price.ToString("C") : "Loading...")
                             </div>
-
                             @if (stock.Shares > 0)
                             {
                                 <div class="pt-2 border-t border-gray-700 w-full">
@@ -193,58 +219,89 @@
     private List<LinkGroup> Groups = new();
     private List<Stock> Stocks = new();
     private List<Countdown> Countdowns = new();
-    
-    // Clock Variables
-    private string CurrentDate = "";
-    private string CurrentTime = "";
-
-    // Data Cache
     private Dictionary<string, decimal> PriceCache = new();
+    
+    // UI State
     private bool isLoadingPrices = false;
     private Stock? editingStock = null;
+    private string CurrentDate = "";
+    private string CurrentTime = "";
+    
+    // Weather Data
+    private WeatherData? weather;
 
     protected override async Task OnInitializedAsync()
     {
-        UpdateTime(); // Set initial time immediately
+        UpdateTime();
         
         Groups = await Db.LinkGroups.Include(g => g.Links).OrderBy(g => g.Id).ToListAsync();
         Stocks = await Db.Stocks.OrderBy(s => s.Symbol).ToListAsync();
         Countdowns = await Db.Countdowns.OrderBy(c => c.TargetDate).ToListAsync();
 
         _ = FetchPrices();
+        _ = FetchWeather(); // New Weather Call
         _ = StartClock();
     }
 
     private async Task StartClock()
     {
         var now = DateTime.Now;
-        var secondsToNextMinute = 60 - now.Second;
-        await Task.Delay(secondsToNextMinute * 1000);
-
+        await Task.Delay((60 - now.Second) * 1000);
         using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
-        
         UpdateTime();
-        while (await timer.WaitForNextTickAsync())
-        {
-            UpdateTime();
-        }
+        while (await timer.WaitForNextTickAsync()) { UpdateTime(); }
     }
 
     private void UpdateTime()
     {
         var now = DateTime.Now;
-        // Logic for "st, nd, rd, th"
-        string suffix = (now.Day % 10 == 1 && now.Day != 11) ? "st" :
-                        (now.Day % 10 == 2 && now.Day != 12) ? "nd" :
-                        (now.Day % 10 == 3 && now.Day != 13) ? "rd" : "th";
-
-        // Format: Tuesday, December 9th 2025
+        string suffix = (now.Day % 10 == 1 && now.Day != 11) ? "st" : (now.Day % 10 == 2 && now.Day != 12) ? "nd" : (now.Day % 10 == 3 && now.Day != 13) ? "rd" : "th";
         CurrentDate = $"{now:dddd, MMMM d}{suffix} {now:yyyy}";
-        
-        // Format: 11:30 am
         CurrentTime = now.ToString("h:mm tt").ToLower();
-        
         InvokeAsync(StateHasChanged);
+    }
+
+    private async Task FetchWeather()
+    {
+        try
+        {
+            // Open-Meteo API for Sulphur Springs, TX (33.1383° N, 95.6011° W)
+            var url = "https://api.open-meteo.com/v1/forecast?latitude=33.1383&longitude=-95.6011&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto";
+            weather = await Http.GetFromJsonAsync<WeatherData>(url);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Weather Error: {ex.Message}");
+        }
+    }
+
+    private string GetDayName(string dateString)
+    {
+        if (DateTime.TryParse(dateString, out var date))
+        {
+            return date.ToString("ddd");
+        }
+        return "";
+    }
+
+    private string GetWeatherIcon(int code)
+    {
+        // WMO Weather Codes to Emojis
+        return code switch
+        {
+            0 => "☀️", // Clear sky
+            1 => "🌤️", // Mainly clear
+            2 => "Qw", // Partly cloudy
+            3 => "☁️", // Overcast
+            45 or 48 => "🌫️", // Fog
+            51 or 53 or 55 => "DRIZZLE", // Drizzle
+            61 or 63 or 65 => "🌧️", // Rain
+            80 or 81 or 82 => "🌦️", // Rain showers
+            71 or 73 or 75 => "❄️", // Snow fall
+            95 or 96 or 99 => "⚡", // Thunderstorm
+            _ => "🌡️"
+        };
     }
 
     private async Task FetchPrices()
@@ -252,37 +309,29 @@
         if (Stocks.Count == 0) return;
         isLoadingPrices = true;
         StateHasChanged(); 
-
         foreach (var s in Stocks)
         {
             try 
             {
                 var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{s.Symbol}?interval=1d";
                 var json = await Http.GetStringAsync(url);
-                using (var doc = JsonDocument.Parse(json))
-                {
-                    var result = doc.RootElement.GetProperty("chart").GetProperty("result")[0];
-                    var meta = result.GetProperty("meta");
-                    var price = meta.GetProperty("regularMarketPrice").GetDecimal();
-                    PriceCache[s.Symbol] = price;
+                using (var doc = JsonDocument.Parse(json)) {
+                    var meta = doc.RootElement.GetProperty("chart").GetProperty("result")[0].GetProperty("meta");
+                    PriceCache[s.Symbol] = meta.GetProperty("regularMarketPrice").GetDecimal();
                 }
             }
-            catch { Console.WriteLine($"Failed to fetch {s.Symbol}"); }
+            catch {}
             StateHasChanged();
         }
         isLoadingPrices = false;
         StateHasChanged();
     }
 
-    private void EditStock(Stock stock)
-    {
-        editingStock = stock;
-    }
+    private void EditStock(Stock stock) { editingStock = stock; }
 
     private async Task SaveStock()
     {
-        if (editingStock != null)
-        {
+        if (editingStock != null) {
             Db.Stocks.Update(editingStock);
             await Db.SaveChangesAsync();
             editingStock = null;
@@ -291,9 +340,7 @@
 
     private async Task ClearDb()
     {
-        bool confirm = await JS.InvokeAsync<bool>("confirm", "⚠️ WIPE DATABASE?\nThis cannot be undone.");
-        if (confirm)
-        {
+        if (await JS.InvokeAsync<bool>("confirm", "⚠️ WIPE DATABASE?")) {
             await Http.PostAsync("/api/admin/clear", null);
             Nav.NavigateTo(Nav.Uri, forceLoad: true);
         }
@@ -302,14 +349,28 @@
     private async Task SeedDb()
     {
         var response = await Http.PostAsync("/api/admin/seed", null);
-        if (response.IsSuccessStatusCode)
-        {
+        if (response.IsSuccessStatusCode) {
             await JS.InvokeVoidAsync("alert", "Seed Data Loaded!");
             Nav.NavigateTo(Nav.Uri, forceLoad: true);
         }
-        else
-        {
-            await JS.InvokeVoidAsync("alert", "Error loading seed.");
-        }
+    }
+
+    // --- WEATHER CLASSES ---
+    public class WeatherData
+    {
+        public CurrentWeather current { get; set; } = new();
+        public DailyWeather daily { get; set; } = new();
+    }
+    public class CurrentWeather
+    {
+        public double temperature_2m { get; set; }
+        public int weather_code { get; set; }
+    }
+    public class DailyWeather
+    {
+        public string[] time { get; set; } = Array.Empty<string>();
+        public int[] weather_code { get; set; } = Array.Empty<int>();
+        public double[] temperature_2m_max { get; set; } = Array.Empty<double>();
+        public double[] temperature_2m_min { get; set; } = Array.Empty<double>();
     }
 }
