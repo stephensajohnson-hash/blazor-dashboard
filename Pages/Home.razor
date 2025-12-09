@@ -19,7 +19,7 @@
                 <img src="/images/dashboard.png" class="w-8 h-8 rounded bg-gray-700" alt="Logo" />
                 <h1 class="font-bold text-lg tracking-tight">Dashboard</h1>
             </div>
-            <div class="text-[10px] text-gray-500 font-mono pl-11">v1.5.3 (UI Polish)</div>
+            <div class="text-[10px] text-gray-500 font-mono pl-11">v1.5.4 (Local Time)</div>
         </div>
 
         <nav class="flex-1 p-4 space-y-1">
@@ -303,6 +303,12 @@
     </div>
 }
 
+<script>
+    window.getUserOffset = () => {
+        return new Date().getTimezoneOffset();
+    };
+</script>
+
 @code {
     private List<LinkGroup> Groups = new();
     private List<Stock> Stocks = new();
@@ -310,12 +316,13 @@
     private Dictionary<string, decimal> PriceCache = new();
     private Dictionary<string, string> ColorOptions = new() { { "Red", "🔴" }, { "Orange", "🟠" }, { "Amber", "🔸" }, { "Yellow", "🟡" }, { "Lime", "🟢" }, { "Green", "💚" }, { "Emerald", "❇️" }, { "Teal", "💠" }, { "Cyan", "🔵" }, { "Sky", "🟦" }, { "Blue", "🔵" }, { "Indigo", "🟣" }, { "Violet", "🟣" }, { "Purple", "🟣" }, { "Fuchsia", "💗" }, { "Pink", "🩷" }, { "Rose", "🌹" }, { "Slate", "🪨" }, { "Gray", "🔘" }, { "Zinc", "🔩" }, { "Neutral", "😐" }, { "Stone", "🗿" }, { "Black", "⚫" }, { "White", "⚪" }, { "Brown", "🟤" }, { "Gold", "🥇" }, { "Silver", "🥈" } };
     
-    // Force US Culture for currency formatting to fix the "Chinese character" issue
+    // US Culture for $ formatting
     private CultureInfo usCulture = new CultureInfo("en-US");
 
     private WeatherData? weather;
     private string CurrentDate = "", CurrentTime = "";
     private bool isLoadingPrices = false;
+    private int clientOffsetMinutes = 0; // Stores user's offset
 
     // Modals
     private Stock? editingStock = null;
@@ -325,11 +332,25 @@
 
     protected override async Task OnInitializedAsync()
     {
-        UpdateTime();
+        UpdateTime(); // Initial server time (will fix after render)
         await LoadData();
         _ = FetchPrices();
         _ = FetchWeather();
         _ = StartClock();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try 
+            {
+                // Get client offset (e.g. 360 for CST)
+                clientOffsetMinutes = await JS.InvokeAsync<int>("getUserOffset");
+                UpdateTime(); // Snap to correct time immediately
+            }
+            catch {}
+        }
     }
 
     private async Task LoadData()
@@ -340,43 +361,42 @@
         StateHasChanged();
     }
 
+    // --- UTILS ---
+    private async Task StartClock() 
+    { 
+        var now = DateTime.Now; 
+        await Task.Delay((60 - now.Second) * 1000); 
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1)); 
+        UpdateTime(); 
+        while (await timer.WaitForNextTickAsync()) { UpdateTime(); } 
+    }
+
+    private void UpdateTime()
+    {
+        // Adjust UTC by the client's offset (inverted logic: UtcNow - offset)
+        var now = DateTime.UtcNow.AddMinutes(-clientOffsetMinutes);
+        
+        string suffix = (now.Day % 10 == 1 && now.Day != 11) ? "st" : (now.Day % 10 == 2 && now.Day != 12) ? "nd" : (now.Day % 10 == 3 && now.Day != 13) ? "rd" : "th";
+        CurrentDate = $"{now:dddd, MMMM d}{suffix} {now:yyyy}";
+        CurrentTime = now.ToString("h:mm tt").ToLower();
+        InvokeAsync(StateHasChanged);
+    }
+
     // --- COUNTDOWN LOGIC ---
     private void OpenAddCountdownModal() { editingCountdown = new Countdown { TargetDate = DateTime.Now.AddDays(1) }; }
     private void OpenEditCountdownModal(Countdown c) { editingCountdown = c; }
-    
-    private async Task SaveCountdown()
-    {
-        if (editingCountdown == null) return;
-        editingCountdown.TargetDate = DateTime.SpecifyKind(editingCountdown.TargetDate, DateTimeKind.Utc);
-        if (editingCountdown.Id == 0) Db.Countdowns.Add(editingCountdown);
-        else Db.Countdowns.Update(editingCountdown);
-        await Db.SaveChangesAsync();
-        editingCountdown = null;
-        await LoadData();
-    }
-
-    private async Task DeleteCountdown(Countdown c)
-    {
-        if (await JS.InvokeAsync<bool>("confirm", $"Delete countdown '{c.Name}'?")) {
-            Db.Countdowns.Remove(c);
-            await Db.SaveChangesAsync();
-            await LoadData();
-        }
-    }
-
+    private async Task SaveCountdown() { if (editingCountdown == null) return; editingCountdown.TargetDate = DateTime.SpecifyKind(editingCountdown.TargetDate, DateTimeKind.Utc); if (editingCountdown.Id == 0) Db.Countdowns.Add(editingCountdown); else Db.Countdowns.Update(editingCountdown); await Db.SaveChangesAsync(); editingCountdown = null; await LoadData(); }
+    private async Task DeleteCountdown(Countdown c) { if (await JS.InvokeAsync<bool>("confirm", $"Delete countdown '{c.Name}'?")) { Db.Countdowns.Remove(c); await Db.SaveChangesAsync(); await LoadData(); } }
     private (string MainDisplay, string SubDisplay) GetCountdownLogic(DateTime target)
     {
         var now = DateTime.Now;
         var diff = target - now;
         if (diff.TotalSeconds < 0) return ("Done", "");
         if (diff.TotalDays < 30) { return ($"{(int)diff.TotalDays + 1} Days", ""); }
-
-        DateTime date = now;
-        int years = 0, months = 0, days = 0;
+        DateTime date = now; int years = 0, months = 0, days = 0;
         while (date.AddYears(1) <= target) { years++; date = date.AddYears(1); }
         while (date.AddMonths(1) <= target) { months++; date = date.AddMonths(1); }
         days = (target - date).Days;
-
         string display = "";
         if (years > 0) display += $"{years}y ";
         if (months > 0) display += $"{months}m ";
@@ -397,54 +417,13 @@
     // --- STOCKS CRUD ---
     private void OpenAddStockModal() { editingStock = new Stock(); }
     private void OpenEditStockModal(Stock stock) { editingStock = stock; }
-    private async Task SaveStock() { 
-        if (editingStock == null) return; 
-        if (editingStock.Id == 0) Db.Stocks.Add(editingStock); 
-        else Db.Stocks.Update(editingStock); 
-        await Db.SaveChangesAsync(); 
-        editingStock = null; 
-        await LoadData(); 
-        _ = FetchPrices(); // Refresh prices after edit
-    }
-    private async Task DeleteStock(Stock s) {
-        if (await JS.InvokeAsync<bool>("confirm", $"Delete stock '{s.Symbol}'?")) {
-            Db.Stocks.Remove(s);
-            await Db.SaveChangesAsync();
-            await LoadData();
-        }
-    }
+    private async Task SaveStock() { if (editingStock == null) return; if (editingStock.Id == 0) Db.Stocks.Add(editingStock); else Db.Stocks.Update(editingStock); await Db.SaveChangesAsync(); editingStock = null; await LoadData(); _ = FetchPrices(); }
+    private async Task DeleteStock(Stock s) { if (await JS.InvokeAsync<bool>("confirm", $"Delete stock '{s.Symbol}'?")) { Db.Stocks.Remove(s); await Db.SaveChangesAsync(); await LoadData(); } }
 
-    // --- UTILS ---
-    private async Task StartClock() { var now = DateTime.Now; await Task.Delay((60 - now.Second) * 1000); using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1)); UpdateTime(); while (await timer.WaitForNextTickAsync()) { UpdateTime(); } }
-    private void UpdateTime() { var now = DateTime.Now; string suffix = (now.Day % 10 == 1 && now.Day != 11) ? "st" : (now.Day % 10 == 2 && now.Day != 12) ? "nd" : (now.Day % 10 == 3 && now.Day != 13) ? "rd" : "th"; CurrentDate = $"{now:dddd, MMMM d}{suffix} {now:yyyy}"; CurrentTime = now.ToString("h:mm tt").ToLower(); InvokeAsync(StateHasChanged); }
     private async Task FetchWeather() { try { var url = "https://api.open-meteo.com/v1/forecast?latitude=33.1383&longitude=-95.6011&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto"; weather = await Http.GetFromJsonAsync<WeatherData>(url); StateHasChanged(); } catch {} }
     private string GetDayName(string s) => DateTime.TryParse(s, out var d) ? d.ToString("ddd") : "";
     private string GetWeatherIcon(int c) => c switch { 0=>"☀️", 1=>"🌤️", 2=>"Qw", 3=>"☁️", 45 or 48=>"🌫️", 51 or 53 or 55=>"DRIZZLE", 61 or 63 or 65=>"🌧️", 80 or 81 or 82=>"🌦️", 71 or 73 or 75=>"❄️", 95 or 96 or 99=>"⚡", _=>"🌡️" };
-    
-    // --- PRICE FETCHER (FIXED) ---
-    private async Task FetchPrices() { 
-        if (Stocks.Count == 0) return; 
-        isLoadingPrices = true; StateHasChanged(); 
-        
-        using var client = new HttpClient();
-        client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-
-        foreach (var s in Stocks) { 
-            try { 
-                var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{s.Symbol}?interval=1d"; 
-                var json = await client.GetStringAsync(url);
-                using (var doc = JsonDocument.Parse(json)) { 
-                    var meta = doc.RootElement.GetProperty("chart").GetProperty("result")[0].GetProperty("meta"); 
-                    PriceCache[s.Symbol] = meta.GetProperty("regularMarketPrice").GetDecimal(); 
-                } 
-            } catch {
-                Console.WriteLine($"Price fetch failed for {s.Symbol}");
-            } 
-            StateHasChanged(); 
-        } 
-        isLoadingPrices = false; StateHasChanged(); 
-    }
-
+    private async Task FetchPrices() { if (Stocks.Count == 0) return; isLoadingPrices = true; StateHasChanged(); using var client = new HttpClient(); client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0"); foreach (var s in Stocks) { try { var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{s.Symbol}?interval=1d"; var json = await client.GetStringAsync(url); using (var doc = JsonDocument.Parse(json)) { var meta = doc.RootElement.GetProperty("chart").GetProperty("result")[0].GetProperty("meta"); PriceCache[s.Symbol] = meta.GetProperty("regularMarketPrice").GetDecimal(); } } catch {} StateHasChanged(); } isLoadingPrices = false; StateHasChanged(); }
     private async Task ClearDb() { if (await JS.InvokeAsync<bool>("confirm", "⚠️ WIPE DATABASE?")) { await Http.PostAsync("/api/admin/clear", null); Nav.NavigateTo(Nav.Uri, forceLoad: true); } }
     private async Task SeedDb() { var r = await Http.PostAsync("/api/admin/seed", null); if (r.IsSuccessStatusCode) { await JS.InvokeVoidAsync("alert", "Seeded!"); Nav.NavigateTo(Nav.Uri, forceLoad: true); } }
 
