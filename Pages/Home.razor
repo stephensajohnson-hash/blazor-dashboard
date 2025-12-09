@@ -5,7 +5,7 @@
 @using Microsoft.EntityFrameworkCore
 @using System.Text.Json
 @using Microsoft.JSInterop
-@inject AppDbContext Db
+@using System.Globalization @inject AppDbContext Db
 @inject HttpClient Http
 @inject IJSRuntime JS
 @inject NavigationManager Nav
@@ -18,7 +18,7 @@
                 <img src="/images/dashboard.png" class="w-8 h-8 rounded bg-gray-700" alt="Logo" />
                 <h1 class="font-bold text-lg tracking-tight">Dashboard</h1>
             </div>
-            <div class="text-[10px] text-gray-500 font-mono pl-11">v1.5.0 (Stocks)</div>
+            <div class="text-[10px] text-gray-500 font-mono pl-11">v1.5.1 (Stock Layout)</div>
         </div>
 
         <nav class="flex-1 p-4 space-y-1">
@@ -155,7 +155,7 @@
                 <button @onclick="OpenAddStockModal" class="text-xs font-bold text-gray-500 hover:text-white uppercase border border-gray-700 hover:border-gray-500 px-3 py-1 rounded transition">+ Add</button>
             </div>
 
-            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            <div class="flex gap-4 overflow-x-auto pb-4 scrollbar-hide">
                 @foreach (var stock in Stocks)
                 {
                     decimal price = 0;
@@ -163,35 +163,46 @@
                     var value = stock.Shares * (double)price;
                     var hasPrice = price > 0;
 
-                    <div class="relative group bg-gray-800/50 hover:bg-gray-800 rounded-xl p-4 border border-gray-700 hover:border-blue-500/50 transition flex flex-col items-center text-center">
-                        <div class="absolute top-2 right-2 flex gap-1 bg-black/90 rounded px-1 opacity-0 group-hover:opacity-100 z-10 transition border border-gray-700 shadow-md">
+                    // Redesigned horizontal card layout
+                    <div class="group relative h-32 bg-gray-800 rounded-xl flex items-center border border-gray-700 shadow-lg shrink-0 overflow-hidden hover:border-blue-500/50 transition pr-6">
+                        
+                        <div class="absolute top-2 right-2 flex gap-1 bg-black/90 rounded px-1 opacity-0 group-hover:opacity-100 z-20 transition border border-gray-700 shadow-md">
                             <button type="button" @onclick="() => OpenEditStockModal(stock)" class="text-[10px] text-gray-400 hover:text-white p-1">✏️</button>
                             <button type="button" @onclick="() => DeleteStock(stock)" class="text-[10px] text-gray-400 hover:text-red-500 p-1 font-bold">✕</button>
                         </div>
 
-                        <a href="@(string.IsNullOrEmpty(stock.LinkUrl) ? "#" : stock.LinkUrl)" target="_blank" class="block w-full">
-                            @if (!string.IsNullOrEmpty(stock.ImgUrl))
-                            {
-                                <img src="@stock.ImgUrl" class="w-12 h-12 mx-auto mb-3 rounded-full object-cover shadow-sm bg-white" />
-                            }
-                            else
-                            {
-                                <div class="w-12 h-12 mx-auto mb-3 rounded-full bg-gray-700 flex items-center justify-center text-[10px] font-bold text-gray-400 border border-gray-600">
-                                    @stock.Symbol.Substring(0, Math.Min(3, stock.Symbol.Length))
-                                </div>
-                            }
-                            <div class="font-bold text-white tracking-wide">@stock.Symbol</div>
-                            <div class="text-xs font-mono mb-2 @(hasPrice ? "text-green-400" : "text-gray-600")">
-                                @(hasPrice ? price.ToString("C") : "Loading...")
+                        <a href="@(string.IsNullOrEmpty(stock.LinkUrl) ? "#" : stock.LinkUrl)" target="_blank" class="flex items-center h-full w-full">
+                            <div class="h-full w-auto shrink-0 bg-gray-900 flex items-center justify-center">
+                                @if (!string.IsNullOrEmpty(stock.ImgUrl))
+                                {
+                                    <img src="@stock.ImgUrl" class="h-full w-auto object-cover opacity-90 group-hover:opacity-100 transition" />
+                                }
+                                else
+                                {
+                                    // Fallback for no image
+                                    <div class="h-full w-24 bg-gray-700 flex items-center justify-center text-xs font-bold text-gray-400 border-r border-gray-600">
+                                        @stock.Symbol.Substring(0, Math.Min(3, stock.Symbol.Length))
+                                    </div>
+                                }
                             </div>
-                            @if (stock.Shares > 0)
-                            {
-                                <div class="pt-2 border-t border-gray-700 w-full">
-                                    <div class="text-[10px] text-gray-500 uppercase">Value</div>
-                                    <div class="font-bold text-blue-300 text-sm">@(hasPrice ? value.ToString("C0") : "$--")</div>
-                                    <div class="text-[9px] text-gray-600 mt-1">@stock.Shares.ToString("N1") shares</div>
+
+                            <div class="p-4 flex flex-col justify-center min-w-[140px]">
+                                <div class="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">@stock.Symbol</div>
+                                
+                                <div class="text-2xl font-bold text-white leading-none mb-1 @(hasPrice ? "" : "text-gray-500 text-lg")">
+                                    @(hasPrice ? price.ToString("C", usCulture) : "Loading...")
                                 </div>
-                            }
+
+                                @if (stock.Shares > 0 && hasPrice)
+                                {
+                                    <div class="text-xs text-gray-400 font-mono">Value: <span class="text-blue-300">@value.ToString("C0", usCulture)</span></div>
+                                    <div class="text-[10px] text-gray-500 mt-0.5">@stock.Shares.ToString("N2") shares</div>
+                                }
+                                else if (stock.Shares > 0)
+                                {
+                                     <div class="text-[10px] text-gray-500 mt-1">@stock.Shares.ToString("N2") shares</div>
+                                }
+                            </div>
                         </a>
                     </div>
                 }
@@ -294,6 +305,9 @@
     private Dictionary<string, decimal> PriceCache = new();
     private Dictionary<string, string> ColorOptions = new() { { "Red", "🔴" }, { "Orange", "🟠" }, { "Amber", "🔸" }, { "Yellow", "🟡" }, { "Lime", "🟢" }, { "Green", "💚" }, { "Emerald", "❇️" }, { "Teal", "💠" }, { "Cyan", "🔵" }, { "Sky", "🟦" }, { "Blue", "🔵" }, { "Indigo", "🟣" }, { "Violet", "🟣" }, { "Purple", "🟣" }, { "Fuchsia", "💗" }, { "Pink", "🩷" }, { "Rose", "🌹" }, { "Slate", "🪨" }, { "Gray", "🔘" }, { "Zinc", "🔩" }, { "Neutral", "😐" }, { "Stone", "🗿" }, { "Black", "⚫" }, { "White", "⚪" }, { "Brown", "🟤" }, { "Gold", "🥇" }, { "Silver", "🥈" } };
     
+    // Force US Culture for currency formatting to fix the "Chinese character" issue
+    private CultureInfo usCulture = new CultureInfo("en-US");
+
     private WeatherData? weather;
     private string CurrentDate = "", CurrentTime = "";
     private bool isLoadingPrices = false;
@@ -402,26 +416,21 @@
     private string GetDayName(string s) => DateTime.TryParse(s, out var d) ? d.ToString("ddd") : "";
     private string GetWeatherIcon(int c) => c switch { 0=>"☀️", 1=>"🌤️", 2=>"Qw", 3=>"☁️", 45 or 48=>"🌫️", 51 or 53 or 55=>"DRIZZLE", 61 or 63 or 65=>"🌧️", 80 or 81 or 82=>"🌦️", 71 or 73 or 75=>"❄️", 95 or 96 or 99=>"⚡", _=>"🌡️" };
     
-    // --- PRICE FETCHER (FIXED) ---
+    // --- PRICE FETCHER ---
     private async Task FetchPrices() { 
         if (Stocks.Count == 0) return; 
         isLoadingPrices = true; StateHasChanged(); 
-        
-        // Use a new HttpClient instance to apply headers safely
         using var client = new HttpClient();
         client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-
         foreach (var s in Stocks) { 
             try { 
                 var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{s.Symbol}?interval=1d"; 
-                var json = await client.GetStringAsync(url); // Use our custom client
+                var json = await client.GetStringAsync(url);
                 using (var doc = JsonDocument.Parse(json)) { 
                     var meta = doc.RootElement.GetProperty("chart").GetProperty("result")[0].GetProperty("meta"); 
                     PriceCache[s.Symbol] = meta.GetProperty("regularMarketPrice").GetDecimal(); 
                 } 
-            } catch {
-                Console.WriteLine($"Price fetch failed for {s.Symbol}");
-            } 
+            } catch { } 
             StateHasChanged(); 
         } 
         isLoadingPrices = false; StateHasChanged(); 
