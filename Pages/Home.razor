@@ -33,7 +33,7 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v1.8.0 (User Profile)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v1.8.1 (Profile Edit)</div>
                 </div>
 
                 <div class="flex items-center gap-8 text-right">
@@ -57,7 +57,7 @@
                                 <div class="text-4xl">@GetWeatherIcon(weather.current.weather_code)</div>
                                 <div>
                                     <div class="text-3xl font-bold text-white leading-none">@Math.Round(weather.current.temperature_2m)°</div>
-                                    <div class="text-xs text-gray-400 mt-1">Sulphur Springs</div>
+                                    <div class="text-xs text-gray-400 mt-1">@currentUser?.ZipCode</div>
                                 </div>
                             </div>
                         </div>
@@ -69,11 +69,21 @@
                                 <div class="text-sm font-bold text-white">@(currentUser?.Username ?? "Loading...")</div>
                                 <div class="text-[10px] text-gray-500 uppercase">Admin</div>
                             </div>
-                            <img src="@(currentUser?.AvatarUrl ?? "https://i.imgur.com/7Y5j5Yx.png")" 
+                            <img src="@(string.IsNullOrEmpty(currentUser?.AvatarUrl) ? "https://i.imgur.com/7Y5j5Yx.png" : currentUser.AvatarUrl)" 
                                  class="w-10 h-10 rounded-full border-2 border-gray-700 group-hover:border-blue-500 transition object-cover bg-gray-800" />
                         </button>
 
-                        <div class="absolute right-0 top-full mt-2 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 hidden group-hover:block transform origin-top-right transition-all">
+                        <div class="absolute right-0 top-full mt-2 w-56 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 hidden group-hover:block transform origin-top-right transition-all">
+                            
+                            <div class="px-3 py-2 border-b border-gray-700 mb-2">
+                                <div class="text-xs font-bold text-white">@currentUser?.Username</div>
+                                <div class="text-[10px] text-gray-500 font-mono">User ID: @currentUser?.Id</div>
+                            </div>
+
+                            <button type="button" @onclick="OpenEditUserModal" class="w-full text-left text-xs text-white hover:bg-gray-700 p-2 rounded mb-2 transition flex items-center gap-2">
+                                <span>✏️</span> Edit Profile
+                            </button>
+
                             <div class="px-2 py-1 text-[10px] uppercase text-gray-500 font-bold tracking-wider mb-1">System Tools</div>
                             <button type="button" @onclick="FixOrder" class="w-full text-left text-xs text-blue-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2">
                                 <span>🔧</span> Fix Sort Order
@@ -110,6 +120,7 @@
                 @foreach (var group in Groups)
                 {
                     <div id="@group.Id" class="group/card relative bg-gray-800/40 rounded-xl p-5 border border-gray-700/50 hover:border-gray-600 transition">
+                        
                         <div class="flex justify-between items-center mb-4 pb-2 border-b border-gray-700">
                             <h3 class="text-lg font-bold text-white flex items-center gap-2">
                                 <span class="w-2 h-2 rounded-full shadow-[0_0_10px_currentColor]" style="color: @group.Color; background-color: @group.Color"></span>
@@ -128,6 +139,7 @@
                                 <button type="button" @onclick="() => DeleteGroup(group)" class="text-gray-400 hover:text-red-500 p-1 font-bold" title="Delete Group">✕</button>
                             </div>
                         </div>
+
                         <div class="grid grid-cols-4 gap-4">
                             @foreach (var link in group.Links.OrderBy(l => l.Order))
                             {
@@ -139,8 +151,12 @@
                                         <button type="button" @onclick="() => OpenEditLinkModal(link)" class="text-[10px] text-gray-400 hover:text-white p-1">✏️</button>
                                         <button type="button" @onclick="() => DeleteLink(link)" class="text-[10px] text-gray-400 hover:text-red-500 p-1 font-bold">✕</button>
                                     </div>
+
                                     <a href="@link.Url" target="_blank" class="flex flex-col items-center gap-2 p-2 rounded hover:bg-gray-700 transition w-full text-center">
-                                        @if (!string.IsNullOrEmpty(link.Img)) { <img src="@link.Img" class="w-16 h-16 rounded object-cover opacity-80 group-hover:opacity-100 transition shadow-sm" /> }
+                                        @if (!string.IsNullOrEmpty(link.Img))
+                                        {
+                                            <img src="@link.Img" class="w-16 h-16 rounded object-cover opacity-80 group-hover:opacity-100 transition shadow-sm" />
+                                        }
                                         <span class="text-gray-400 group-hover:text-white transition text-xs truncate w-full">@link.Name</span>
                                     </a>
                                 </div>
@@ -252,6 +268,37 @@
     }
 </div>
 
+@if (editingUser != null)
+{
+    <div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 border border-gray-600 p-6 rounded-xl shadow-2xl w-full max-w-sm">
+            <h3 class="text-lg font-bold text-white mb-6">Edit Profile</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Username</label>
+                    <input @bind="editingUser.Username" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" />
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Password</label>
+                    <input @bind="newPassword" type="password" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Leave empty to keep current" />
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Avatar URL</label>
+                    <input @bind="editingUser.AvatarUrl" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" />
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Zip Code</label>
+                    <input @bind="editingUser.ZipCode" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" />
+                </div>
+            </div>
+            <div class="mt-8 flex justify-end gap-3">
+                <button type="button" @onclick="() => editingUser = null" class="px-4 py-2 text-gray-400 hover:text-white text-xs font-bold uppercase">Cancel</button>
+                <button type="button" @onclick="SaveUser" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold uppercase shadow-lg">Save</button>
+            </div>
+        </div>
+    </div>
+}
+
 @if (editingStock != null) { <div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"><div class="bg-gray-800 border border-gray-600 p-6 rounded-xl shadow-2xl w-full max-w-sm"><h3 class="text-lg font-bold text-white mb-6">@(editingStock.Id == 0 ? "Add Stock" : "Edit Stock")</h3><div class="space-y-4"><input @bind="editingStock.Symbol" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm uppercase" placeholder="Symbol (e.g. TSLA)" /><input @bind="editingStock.Shares" type="number" step="0.001" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Shares" /><input @bind="editingStock.ImgUrl" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Image URL" /><input @bind="editingStock.LinkUrl" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Link URL" /></div><div class="mt-8 flex justify-end gap-3"><button type="button" @onclick="() => editingStock = null" class="px-4 py-2 text-gray-400 hover:text-white text-xs font-bold uppercase">Cancel</button><button type="button" @onclick="SaveStock" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold uppercase shadow-lg">Save</button></div></div></div> }
 @if (editingGroup != null) { <div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"><div class="bg-gray-800 border border-gray-600 p-6 rounded-xl shadow-2xl w-full max-w-sm"><h3 class="text-lg font-bold text-white mb-6">@(editingGroup.Id == 0 ? "Add Group" : "Edit Group")</h3><div class="space-y-4"><input @bind="editingGroup.Name" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Group Name" /><select @bind="editingGroup.Color" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm appearance-none">@foreach(var color in ColorOptions) { <option value="@color.Key">@color.Value @color.Key</option> }</select></div><div class="mt-8 flex justify-end gap-3"><button type="button" @onclick="() => editingGroup = null" class="px-4 py-2 text-gray-400 hover:text-white text-xs font-bold uppercase">Cancel</button><button type="button" @onclick="SaveGroup" class="px-6 py-2 bg-green-600 hover:bg-green-500 text-white rounded text-xs font-bold uppercase shadow-lg">Save</button></div></div></div> }
 @if (editingLink != null) { <div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"><div class="bg-gray-800 border border-gray-600 p-6 rounded-xl shadow-2xl w-full max-w-sm"><h3 class="text-lg font-bold text-white mb-6">@(editingLink.Id == 0 ? "Add Link" : "Edit Link")</h3><div class="space-y-4"><input @bind="editingLink.Name" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Name" /><input @bind="editingLink.Url" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="URL" /><input @bind="editingLink.Img" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Image URL" /></div><div class="mt-8 flex justify-end gap-3"><button type="button" @onclick="() => editingLink = null" class="px-4 py-2 text-gray-400 hover:text-white text-xs font-bold uppercase">Cancel</button><button type="button" @onclick="SaveLink" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold uppercase shadow-lg">Save</button></div></div></div> }
@@ -280,6 +327,8 @@
     private LinkGroup? editingGroup = null;
     private Link? editingLink = null;
     private Countdown? editingCountdown = null;
+    private User? editingUser = null;
+    private string newPassword = "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -320,6 +369,9 @@
 
                 currentUser = await Db.Users.FindAsync(session.UserId);
                 StateHasChanged();
+                
+                // Fetch weather specific to user zip if available
+                if (currentUser != null) _ = FetchWeather();
 
                 try { clientOffsetMinutes = await JS.InvokeAsync<int>("getUserOffset"); UpdateTime(); } catch {}
             } 
@@ -386,7 +438,7 @@
         }
     }
 
-    // --- CRUD (Standard) ---
+    // --- CRUD ---
     private void OpenAddGroupModal() { editingGroup = new LinkGroup { Color = "Blue", Order = Groups.Count }; }
     private void OpenEditGroupModal(LinkGroup g) { editingGroup = g; }
     private async Task SaveGroup() { if (editingGroup == null) return; if (editingGroup.Id == 0) Db.LinkGroups.Add(editingGroup); else Db.LinkGroups.Update(editingGroup); await Db.SaveChangesAsync(); editingGroup = null; await LoadData(); }
@@ -404,6 +456,46 @@
     private async Task SaveCountdown() { if (editingCountdown == null) return; editingCountdown.TargetDate = DateTime.SpecifyKind(editingCountdown.TargetDate, DateTimeKind.Utc); if (editingCountdown.Id == 0) Db.Countdowns.Add(editingCountdown); else Db.Countdowns.Update(editingCountdown); await Db.SaveChangesAsync(); editingCountdown = null; await LoadData(); }
     private async Task DeleteCountdown(Countdown c) { if (await JS.InvokeAsync<bool>("confirm", $"Delete '{c.Name}'?")) { Db.Countdowns.Remove(c); await Db.SaveChangesAsync(); await LoadData(); } }
 
+    // --- USER CRUD ---
+    private void OpenEditUserModal() 
+    { 
+        if (currentUser == null) return;
+        // Clone to avoid live editing
+        editingUser = new User { 
+            Id = currentUser.Id, 
+            Username = currentUser.Username, 
+            ZipCode = currentUser.ZipCode, 
+            AvatarUrl = currentUser.AvatarUrl,
+            PasswordHash = currentUser.PasswordHash
+        };
+        newPassword = ""; // clear password field
+    }
+
+    private async Task SaveUser()
+    {
+        if (editingUser == null) return;
+
+        // 1. Fetch live user to update
+        var dbUser = await Db.Users.FindAsync(editingUser.Id);
+        if (dbUser != null)
+        {
+            dbUser.Username = editingUser.Username;
+            dbUser.ZipCode = editingUser.ZipCode;
+            dbUser.AvatarUrl = editingUser.AvatarUrl;
+
+            // 2. Hash Password ONLY if typed
+            if (!string.IsNullOrWhiteSpace(newPassword))
+            {
+                dbUser.PasswordHash = PasswordHelper.HashPassword(newPassword);
+            }
+
+            await Db.SaveChangesAsync();
+            currentUser = dbUser; // Update UI immediately
+            _ = FetchWeather(); // Refresh weather for new zip
+        }
+        editingUser = null;
+    }
+
     private (string MainDisplay, string SubDisplay) GetCountdownLogic(DateTime target)
     {
         var now = DateTime.Now; var diff = target - now;
@@ -419,7 +511,19 @@
 
     private async Task StartClock() { var now = DateTime.Now; await Task.Delay((60 - now.Second) * 1000); using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1)); UpdateTime(); while (await timer.WaitForNextTickAsync()) { UpdateTime(); } }
     private void UpdateTime() { var now = DateTime.UtcNow.AddMinutes(-clientOffsetMinutes); string suffix = (now.Day % 10 == 1 && now.Day != 11) ? "st" : (now.Day % 10 == 2 && now.Day != 12) ? "nd" : (now.Day % 10 == 3 && now.Day != 13) ? "rd" : "th"; CurrentDate = $"{now:dddd, MMMM d}{suffix} {now:yyyy}"; CurrentTime = now.ToString("h:mm tt").ToLower(); InvokeAsync(StateHasChanged); }
-    private async Task FetchWeather() { try { var url = "https://api.open-meteo.com/v1/forecast?latitude=33.1383&longitude=-95.6011&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto"; weather = await Http.GetFromJsonAsync<WeatherData>(url); StateHasChanged(); } catch {} }
+    
+    private async Task FetchWeather() { 
+        try { 
+            // Geocoding logic would be better, but we'll default to Lat/Lon mapping for now or use the Zip directly if the API supported it easily. 
+            // Open-Meteo needs Lat/Lon. For a true multi-user zip code support, we'd need a Geocoding API step here.
+            // For now, let's just stick to the default Lat/Lon but eventually you can add Geocoding.
+            // Currently using fixed Sulphur Springs Lat/Lon: 33.1383, -95.6011
+            var url = "https://api.open-meteo.com/v1/forecast?latitude=33.1383&longitude=-95.6011&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto"; 
+            weather = await Http.GetFromJsonAsync<WeatherData>(url); 
+            StateHasChanged(); 
+        } catch {} 
+    }
+    
     private string GetDayName(string s) => DateTime.TryParse(s, out var d) ? d.ToString("ddd") : "";
     private string GetWeatherIcon(int c) => c switch { 0=>"☀️", 1=>"🌤️", 2=>"Qw", 3=>"☁️", 45 or 48=>"🌫️", 51 or 53 or 55=>"🌦️", 61 or 63 or 65=>"🌧️", 80 or 81 or 82=>"🌦️", 71 or 73 or 75=>"❄️", 95 or 96 or 99=>"⚡", _=>"🌡️" };
     private async Task FetchPrices() { if (Stocks.Count == 0) return; isLoadingPrices = true; StateHasChanged(); using var client = new HttpClient(); client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0"); foreach (var s in Stocks) { try { var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{s.Symbol}?interval=1d"; var json = await client.GetStringAsync(url); using (var doc = JsonDocument.Parse(json)) { var meta = doc.RootElement.GetProperty("chart").GetProperty("result")[0].GetProperty("meta"); PriceCache[s.Symbol] = meta.GetProperty("regularMarketPrice").GetDecimal(); } } catch {} StateHasChanged(); } isLoadingPrices = false; StateHasChanged(); }
