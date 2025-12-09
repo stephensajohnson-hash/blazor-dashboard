@@ -203,4 +203,44 @@ public class AdminController : ControllerBase
         await _context.SaveChangesAsync();
         return Ok("Ordering Fixed!");
     }
+
+    [HttpPost("upgrade-users")]
+    public async Task<IActionResult> UpgradeUsers()
+    {
+        try 
+        {
+            // 1. Create Table using Raw SQL (Postgres syntax)
+            await _context.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""Users"" (
+                    ""Id"" serial PRIMARY KEY,
+                    ""Username"" text NOT NULL,
+                    ""PasswordHash"" text NOT NULL,
+                    ""ZipCode"" text NOT NULL,
+                    ""AvatarUrl"" text NOT NULL
+                );
+            ");
+
+            // 2. Create Default Admin User if table is empty
+            if (!await _context.Users.AnyAsync())
+            {
+                var admin = new User
+                {
+                    Username = "admin",
+                    // Default password is 'password' - change this later!
+                    PasswordHash = PasswordHelper.HashPassword("password"), 
+                    ZipCode = "75482",
+                    AvatarUrl = "https://i.imgur.com/7Y5j5Yx.png" // Generic Avatar
+                };
+                _context.Users.Add(admin);
+                await _context.SaveChangesAsync();
+                return Ok("Users table created and Default Admin added.");
+            }
+
+            return Ok("Users table already exists.");
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, ex.Message);
+        }
+    }
 }
