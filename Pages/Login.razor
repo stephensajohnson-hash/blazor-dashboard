@@ -9,50 +9,90 @@
 @inject IJSRuntime JS
 
 <div class="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-    <div class="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-full max-w-md p-8">
+    <div class="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-full max-w-md p-8 transition-all duration-300">
         
         <div class="text-center mb-8">
             <img src="/images/dashboard.png" class="w-16 h-16 rounded mx-auto mb-4 bg-gray-700" />
-            <h1 class="text-2xl font-bold text-white">Welcome Back</h1>
-            <p class="text-gray-400 text-sm mt-1">Please sign in to access your dashboard.</p>
+            <h1 class="text-2xl font-bold text-white">@(isRegister ? "Create Account" : "Welcome Back")</h1>
+            <p class="text-gray-400 text-sm mt-1">
+                @(isRegister ? "Setup your personal dashboard" : "Please sign in to access your dashboard")
+            </p>
         </div>
 
-        <div class="space-y-6">
+        <div class="space-y-4">
+            
             <div>
-                <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Username</label>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Username</label>
                 <input @bind="username" @onkeypress="HandleEnter" class="w-full bg-gray-900 border border-gray-700 rounded px-4 py-3 text-white focus:border-blue-500 focus:outline-none transition" placeholder="Enter username" />
             </div>
 
             <div>
-                <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Password</label>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Password</label>
                 <input @bind="password" type="password" @onkeypress="HandleEnter" class="w-full bg-gray-900 border border-gray-700 rounded px-4 py-3 text-white focus:border-blue-500 focus:outline-none transition" placeholder="••••••••" />
             </div>
 
+            @if (isRegister)
+            {
+                <div class="grid grid-cols-2 gap-4 animate-fade-in">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Zip Code</label>
+                        <input @bind="zipCode" @onkeypress="HandleEnter" class="w-full bg-gray-900 border border-gray-700 rounded px-4 py-3 text-white focus:border-blue-500 focus:outline-none transition" placeholder="75482" />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Avatar URL</label>
+                        <input @bind="avatarUrl" @onkeypress="HandleEnter" class="w-full bg-gray-900 border border-gray-700 rounded px-4 py-3 text-white focus:border-blue-500 focus:outline-none transition" placeholder="https://..." />
+                    </div>
+                </div>
+                <div class="text-[10px] text-gray-500 italic">* Avatar URL is optional. Zip code sets your weather.</div>
+            }
+
             @if (!string.IsNullOrEmpty(errorMessage))
             {
-                <div class="bg-red-900/20 border border-red-500/50 text-red-200 text-xs p-3 rounded text-center">
+                <div class="bg-red-900/20 border border-red-500/50 text-red-200 text-xs p-3 rounded text-center animate-pulse">
                     @errorMessage
                 </div>
             }
 
-            <button @onclick="DoLogin" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-lg transition transform hover:scale-[1.02]">
-                Sign In
+            <button @onclick="HandleSubmit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-lg transition transform hover:scale-[1.02] mt-2">
+                @(isRegister ? "Create Account & Login" : "Sign In")
             </button>
+
+            <div class="text-center mt-6 pt-4 border-t border-gray-700">
+                <button @onclick="ToggleMode" class="text-sm text-gray-400 hover:text-white transition underline">
+                    @(isRegister ? "Already have an account? Sign In" : "Need an account? Create one")
+                </button>
+            </div>
         </div>
     </div>
 </div>
 
 @code {
+    // State
+    private bool isRegister = false;
     private string username = "";
     private string password = "";
+    private string zipCode = "";
+    private string avatarUrl = "";
     private string errorMessage = "";
+
+    private void ToggleMode()
+    {
+        isRegister = !isRegister;
+        errorMessage = "";
+        // Reset defaults for register
+        if (isRegister)
+        {
+            zipCode = "75482"; 
+            avatarUrl = "";
+        }
+    }
 
     private async Task HandleEnter(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter") await DoLogin();
+        if (e.Key == "Enter") await HandleSubmit();
     }
 
-    private async Task DoLogin()
+    private async Task HandleSubmit()
     {
         errorMessage = "";
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
@@ -61,7 +101,18 @@
             return;
         }
 
-        // 1. Find User
+        if (isRegister)
+        {
+            await DoRegister();
+        }
+        else
+        {
+            await DoLogin();
+        }
+    }
+
+    private async Task DoLogin()
+    {
         var user = await Db.Users.FirstOrDefaultAsync(u => u.Username.ToLower() == username.ToLower());
         
         if (user == null || !PasswordHelper.VerifyPassword(password, user.PasswordHash))
@@ -70,18 +121,47 @@
             return;
         }
 
-        // 2. Success - Create Session Object (30 Days)
+        await CompleteLogin(user);
+    }
+
+    private async Task DoRegister()
+    {
+        // 1. Check if user exists
+        bool exists = await Db.Users.AnyAsync(u => u.Username.ToLower() == username.ToLower());
+        if (exists)
+        {
+            errorMessage = "Username already taken.";
+            return;
+        }
+
+        // 2. Create User
+        var newUser = new User
+        {
+            Username = username,
+            PasswordHash = PasswordHelper.HashPassword(password),
+            ZipCode = string.IsNullOrWhiteSpace(zipCode) ? "75482" : zipCode,
+            AvatarUrl = string.IsNullOrWhiteSpace(avatarUrl) ? "https://i.imgur.com/7Y5j5Yx.png" : avatarUrl
+        };
+
+        Db.Users.Add(newUser);
+        await Db.SaveChangesAsync();
+
+        // 3. Auto-Login
+        await CompleteLogin(newUser);
+    }
+
+    private async Task CompleteLogin(User user)
+    {
+        // Create Session Token (30 Days)
         var sessionData = new 
         {
             userId = user.Id,
             expiry = DateTime.UtcNow.AddDays(30)
         };
 
-        // 3. Save to LocalStorage
         var json = JsonSerializer.Serialize(sessionData);
         await JS.InvokeVoidAsync("localStorage.setItem", "dashboard_session", json);
         
-        // 4. Go Home
         Nav.NavigateTo("/", forceLoad: true);
     }
 }
