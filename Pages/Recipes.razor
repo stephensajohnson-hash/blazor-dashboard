@@ -19,7 +19,9 @@
         <div class="flex flex-col items-center justify-center h-screen space-y-6">
             <div class="text-red-500 text-xl font-bold">⚠️ Database Error</div>
             <p class="text-gray-400 max-w-md text-center">@errorMessage</p>
-            <button @onclick="UpgradeDatabase" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">Attempt Fix</button>
+            <button @onclick="UpgradeDatabase" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">
+                Attempt Database Fix
+            </button>
         </div>
     }
     else
@@ -32,12 +34,12 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.5.0 (Deep Data)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.6.0 (Tags & Search)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
                     <a href="/" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Home">🏠</a>
-                    <span class="text-2xl transition grayscale-0 drop-shadow-[0_0_10px_rgba(255,165,0,0.5)] cursor-default">🍳</span>
+                    <a href="/recipes" class="text-2xl hover:scale-125 transition grayscale-0 drop-shadow-[0_0_10px_rgba(255,165,0,0.5)]" title="Recipes">🍳</a>
                     <span class="text-2xl opacity-20 cursor-not-allowed">🚧</span>
                 </div>
 
@@ -51,14 +53,13 @@
                             <img src="@(string.IsNullOrEmpty(currentUser?.AvatarUrl) ? "https://i.imgur.com/7Y5j5Yx.png" : currentUser.AvatarUrl)" 
                                  class="w-10 h-10 rounded-full border-2 border-gray-700 transition object-cover bg-gray-800" />
                         </button>
+                        
                         @if (showUserMenu)
                         {
                             <div class="absolute right-0 top-full mt-2 w-56 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 z-50">
                                 <button type="button" @onclick="CheckDbStatus" class="w-full text-left text-xs text-blue-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2"><span>🔍</span> Check Status</button>
-                                <button type="button" @onclick="InspectFirstRecipe" class="w-full text-left text-xs text-green-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2"><span>🔬</span> Inspect Data</button>
-                                <div class="border-t border-gray-700 my-1"></div>
-                                <button type="button" @onclick="NukeRecipes" class="w-full text-left text-xs text-red-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2"><span>🗑️</span> Delete All Data</button>
-                                <button type="button" @onclick="ImportRecipes" class="w-full text-left text-xs text-purple-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2"><span>🍳</span> Import New</button>
+                                <button type="button" @onclick="MigrateDashboardData" class="w-full text-left text-xs text-yellow-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2"><span>🏠</span> Claim Dashboard</button>
+                                <button type="button" @onclick="ImportRecipes" class="w-full text-left text-xs text-purple-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2"><span>🍳</span> Import Recipes</button>
                                 <div class="border-t border-gray-700 my-1"></div>
                                 <button type="button" @onclick="Logout" class="w-full text-left text-xs text-red-500 font-bold hover:bg-gray-700 p-2 rounded">Logout</button>
                             </div>
@@ -68,20 +69,17 @@
                 </div>
             </div>
 
-            @if (!string.IsNullOrEmpty(debugOutput))
-            {
-                <div class="bg-black/90 border border-green-500/50 p-4 rounded-xl mb-8 font-mono text-xs text-green-400 overflow-x-auto">
-                    <div class="flex justify-between mb-2 border-b border-green-500/30 pb-2">
-                        <strong>SYSTEM OUTPUT</strong>
-                        <button @onclick="() => debugOutput = null" class="text-white hover:text-red-400">CLOSE [X]</button>
-                    </div>
-                    <pre>@debugOutput</pre>
-                </div>
-            }
-
-            <div class="mb-8 relative max-w-xl mx-auto">
-                <input type="text" @bind="searchTerm" @bind:event="oninput" placeholder="Search recipes, ingredients..." class="w-full bg-gray-800 border border-gray-700 rounded-xl py-3 px-4 pl-11 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition duration-200 shadow-lg" />
+            <div class="mb-2 relative max-w-xl mx-auto">
+                <input type="text" @bind="searchTerm" @bind:event="oninput" placeholder="Search title, tags, ingredients..." class="w-full bg-gray-800 border border-gray-700 rounded-xl py-3 px-4 pl-11 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition duration-200 shadow-lg" />
                 <div class="absolute left-3.5 top-3.5 text-gray-500">🔍</div>
+                @if (!string.IsNullOrEmpty(searchTerm))
+                {
+                    <button class="absolute right-3 top-3 text-gray-500 hover:text-white" @onclick="() => searchTerm = string.Empty">✕</button>
+                }
+            </div>
+            
+            <div class="text-center mb-8 text-xs font-bold text-gray-500 uppercase tracking-widest">
+                @FilteredRecipes.Count() Recipes Found
             </div>
 
             @if (selectedRecipe == null)
@@ -91,9 +89,12 @@
                     {
                         <div class="text-center py-12">
                             <div class="text-gray-500 text-lg mb-4">No recipes found.</div>
-                            <button @onclick="ImportRecipes" class="bg-purple-600 hover:bg-purple-500 text-white px-6 py-2 rounded-lg font-bold shadow-lg transition">
-                                Import & Claim
-                            </button>
+                            @if (!RecipeList.Any()) 
+                            {
+                                <button @onclick="ImportRecipes" class="bg-purple-600 hover:bg-purple-500 text-white px-6 py-2 rounded-lg font-bold shadow-lg transition">
+                                    Import & Claim
+                                </button>
+                            }
                         </div>
                     }
                     
@@ -117,7 +118,11 @@
                                                 <div class="flex flex-wrap gap-1">
                                                     @foreach (var tag in GetTags(r.TagsJson))
                                                     {
-                                                        <span class="px-2 py-0.5 text-xs rounded-full bg-blue-900/50 text-blue-300">@tag</span>
+                                                        <span class="px-2 py-0.5 text-xs rounded-full bg-blue-900/50 text-blue-300 hover:bg-blue-600 hover:text-white transition z-10 relative" 
+                                                              @onclick:stopPropagation="true" 
+                                                              @onclick="() => searchTerm = tag">
+                                                            @tag
+                                                        </span>
                                                     }
                                                 </div>
                                             </div>
@@ -146,16 +151,21 @@
                                     <span class="bg-gray-700 px-3 py-1 rounded text-white">Cook: <strong>@selectedRecipe.CookTime</strong></span>
                                     <span class="bg-gray-700 px-3 py-1 rounded text-white">Serves: <strong>@selectedRecipe.Servings</strong></span>
                                 </div>
+                                <div class="flex flex-wrap gap-2 mt-2">
+                                    @foreach (var tag in GetTags(selectedRecipe.TagsJson))
+                                    {
+                                        <span class="px-3 py-1 text-xs rounded-full bg-blue-900/50 text-blue-300 border border-blue-900 hover:bg-blue-800 cursor-pointer transition"
+                                              @onclick="() => { searchTerm = tag; selectedRecipe = null; }">
+                                            @tag
+                                        </span>
+                                    }
+                                </div>
                             </div>
                         </div>
 
                         <div class="grid md:grid-cols-2 gap-8">
                             <div>
                                 <h2 class="text-2xl font-bold border-b border-blue-900/50 pb-2 mb-4 text-blue-300">Ingredients</h2>
-                                @if (!selectedRecipe.Ingredients.Any())
-                                {
-                                    <div class="text-red-400 italic">No ingredients found in database.</div>
-                                }
                                 @foreach (var ingGroup in selectedRecipe.Ingredients.GroupBy(i => i.Section))
                                 {
                                     <div class="mb-6">
@@ -174,10 +184,6 @@
                             </div>
                             <div>
                                 <h2 class="text-2xl font-bold border-b border-green-900/50 pb-2 mb-4 text-green-300">Instructions</h2>
-                                @if (!selectedRecipe.Instructions.Any())
-                                {
-                                    <div class="text-red-400 italic">No instructions found in database.</div>
-                                }
                                 @foreach (var instGroup in selectedRecipe.Instructions.GroupBy(i => i.Section))
                                 {
                                     <div class="mb-8">
@@ -206,13 +212,13 @@
     private Recipe? selectedRecipe;
     private string searchTerm = "";
     private User? currentUser;
+    
     private string CurrentDate = "", CurrentTime = "";
     private WeatherData? weather;
     private int clientOffsetMinutes = 0;
     private bool isDbError = false;
     private string errorMessage = "";
     private bool showUserMenu = false;
-    private string? debugOutput = null;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -222,13 +228,28 @@
             { 
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
                 if (string.IsNullOrEmpty(json)) { Nav.NavigateTo("/login", forceLoad: true); return; }
+                
                 var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                 var session = JsonSerializer.Deserialize<SessionData>(json, options);
                 if (session == null || session.Expiry < DateTime.UtcNow) { Nav.NavigateTo("/login", forceLoad: true); return; }
+
                 currentUser = await Db.Users.FindAsync(session.UserId);
                 if (currentUser == null) { await Logout(); return; }
 
-                await LoadData();
+                try 
+                {
+                    RecipeList = await Db.Recipes
+                        .Where(r => r.UserId == currentUser.Id)
+                        .Include(r => r.Ingredients)
+                        .Include(r => r.Instructions)
+                        .OrderBy(r => r.Category).ThenBy(r => r.Title)
+                        .ToListAsync();
+                }
+                catch (Exception ex)
+                {
+                    if (ex.Message.Contains("42P01") || ex.Message.Contains("42703")) { isDbError = true; errorMessage = ex.Message; StateHasChanged(); return; }
+                }
+                
                 _ = FetchWeather();
                 try { clientOffsetMinutes = await JS.InvokeAsync<int>("getUserOffset"); UpdateTime(); } catch {}
                 _ = StartClock();
@@ -240,38 +261,23 @@
     
     private void ToggleUserMenu() { showUserMenu = !showUserMenu; }
 
-    private async Task NukeRecipes()
-    {
-        if (!await JS.InvokeAsync<bool>("confirm", "ARE YOU SURE? This will delete ALL recipe data.")) return;
-        var r = await Http.PostAsync("/api/admin/nuke-recipes", null);
-        debugOutput = await r.Content.ReadAsStringAsync();
-        await LoadData();
-    }
-
-    private async Task InspectFirstRecipe()
-    {
-        var r = await Http.GetAsync("/api/admin/debug-recipe");
-        var json = await r.Content.ReadAsStringAsync();
-        // Pretty Print
-        try { 
-            var parsed = JsonSerializer.Deserialize<JsonElement>(json);
-            debugOutput = JsonSerializer.Serialize(parsed, new JsonSerializerOptions { WriteIndented = true }); 
-        } catch { debugOutput = json; }
-    }
-
     private async Task MigrateDashboardData()
     {
         if (currentUser == null) return;
-        await Db.Database.ExecuteSqlRawAsync($"UPDATE \"Recipes\" SET \"UserId\" = {currentUser.Id}; UPDATE \"RecipeCategories\" SET \"UserId\" = {currentUser.Id};");
-        await LoadData();
+        await Db.Database.ExecuteSqlRawAsync($@"
+            UPDATE ""LinkGroups"" SET ""UserId"" = {currentUser.Id}; 
+            UPDATE ""Links"" SET ""UserId"" = {currentUser.Id}; 
+            UPDATE ""Stocks"" SET ""UserId"" = {currentUser.Id}; 
+            UPDATE ""Countdowns"" SET ""UserId"" = {currentUser.Id};
+        ");
+        await JS.InvokeVoidAsync("alert", "Dashboard Data Claimed!");
     }
 
     private async Task CheckDbStatus()
     {
         var total = await Db.Recipes.CountAsync();
         var myCount = await Db.Recipes.CountAsync(r => r.UserId == currentUser!.Id);
-        var ingCount = await Db.RecipeIngredients.CountAsync();
-        debugOutput = $"Total Recipes: {total}\nMy Recipes: {myCount}\nTotal Ingredients: {ingCount}\nUser ID: {currentUser?.Id}";
+        await JS.InvokeVoidAsync("alert", $"Total Recipes in DB: {total}\nMy Recipes: {myCount}\nMy User ID: {currentUser?.Id}");
     }
 
     private async Task ImportRecipes()
@@ -280,38 +286,37 @@
             var json = await Http.GetStringAsync("/recipes_data.json");
             using var content = new StringContent(json, Encoding.UTF8, "application/json");
             var response = await Http.PostAsync("/api/admin/seed-recipes", content);
-            var result = await response.Content.ReadAsStringAsync();
-            
             if (response.IsSuccessStatusCode) {
-                // Parse the result to show the detailed log
-                try {
-                    var resultObj = JsonSerializer.Deserialize<JsonElement>(result);
-                    var logs = resultObj.GetProperty("Logs").EnumerateArray().Select(x => x.GetString()).ToList();
-                    debugOutput = string.Join("\n", logs);
-                } catch { debugOutput = result; }
-
-                await MigrateDashboardData();
-                await LoadData();
+                await MigrateRecipesOnly(); 
+                await JS.InvokeVoidAsync("alert", "Recipes Imported & Assigned to YOU!");
             } else {
-                debugOutput = "IMPORT FAILED:\n" + result;
+                await JS.InvokeVoidAsync("alert", "Import Failed: " + await response.Content.ReadAsStringAsync());
             }
-        } catch (Exception ex) { debugOutput = "ERROR:\n" + ex.Message; }
+        } catch (Exception ex) { await JS.InvokeVoidAsync("alert", "Import Error: " + ex.Message); }
+    }
+    
+    private async Task MigrateRecipesOnly()
+    {
+        if (currentUser == null) return;
+        await Db.Database.ExecuteSqlRawAsync($@"
+            UPDATE ""Recipes"" SET ""UserId"" = {currentUser.Id};
+            UPDATE ""RecipeCategories"" SET ""UserId"" = {currentUser.Id};
+        ");
+        await LoadData();
     }
 
     private async Task UpgradeDatabase()
     {
         try {
-            // Re-run create table scripts to ensure nothing is missing
-            await Http.PostAsync("/api/admin/seed-recipes", new StringContent("{}", Encoding.UTF8, "application/json")); // Trigger table creation logic
+            await Db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""SourceName"" text; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""SourceUrl"" text; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""TagsJson"" text DEFAULT '[]'; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""UserId"" integer DEFAULT 1;");
             Nav.NavigateTo(Nav.Uri, forceLoad: true);
         } catch (Exception ex) { errorMessage = "Fix Failed: " + ex.Message; }
     }
 
     private async Task LoadData()
     {
-         if (currentUser == null) return;
          RecipeList = await Db.Recipes
-            .Where(r => r.UserId == currentUser.Id)
+            .Where(r => r.UserId == currentUser!.Id)
             .Include(r => r.Ingredients)
             .Include(r => r.Instructions)
             .OrderBy(r => r.Category).ThenBy(r => r.Title)
@@ -319,7 +324,6 @@
          StateHasChanged();
     }
 
-    // SEARCH LOGIC
     private IEnumerable<Recipe> FilteredRecipes => 
         string.IsNullOrWhiteSpace(searchTerm) 
         ? RecipeList 
@@ -327,6 +331,8 @@
             (r.Title?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) || 
             (r.Description?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) || 
             (r.SourceName?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) || 
+            // TAG SEARCH ADDED HERE
+            (GetTags(r.TagsJson).Any(t => t.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))) ||
             r.Ingredients.Any(i => (i.Name?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) || (i.Notes?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false)) || 
             r.Instructions.Any(i => i.Text?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false)
         );
