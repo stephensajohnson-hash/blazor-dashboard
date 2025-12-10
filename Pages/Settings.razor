@@ -33,7 +33,7 @@
                         + Add Feed
                     </button>
                     <button @onclick="SeedFeeds" class="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-white transition border border-gray-600">
-                        Reset / Seed Defaults
+                        Reset Defaults
                     </button>
                 </div>
             </div>
@@ -108,13 +108,12 @@
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Category</label>
-                    <input @bind="editingFeed.Category" list="categories" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="e.g. Tech" />
-                    <datalist id="categories">
-                        <option value="Tech"></option>
-                        <option value="Sports"></option>
-                        <option value="Finance"></option>
-                        <option value="Shopping"></option>
-                        <option value="News"></option>
+                    <input @bind="editingFeed.Category" list="categories-list" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Select or type new..." />
+                    <datalist id="categories-list">
+                        @foreach (var cat in CategoryOptions)
+                        {
+                            <option value="@cat"></option>
+                        }
                     </datalist>
                 </div>
             </div>
@@ -132,6 +131,7 @@
     private User? currentUser;
     private Feed? editingFeed = null;
     private bool isDbError = false;
+    private List<string> CategoryOptions = new();
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -165,6 +165,11 @@
         {
             Feeds = await Db.Feeds.Where(f => f.UserId == currentUser.Id).OrderBy(f => f.Category).ToListAsync();
             isDbError = false;
+            
+            // Build dynamic category list
+            var dbCats = Feeds.Select(f => f.Category).Distinct().ToList();
+            var defaults = new List<string> { "Tech", "Sports", "Finance", "Shopping", "News", "Gaming", "Coding", "Lifestyle", "General" };
+            CategoryOptions = dbCats.Union(defaults).Where(c => c != "System").OrderBy(c => c).ToList();
         }
         catch 
         {
@@ -190,7 +195,6 @@
 
     private void OpenEditModal(Feed f)
     {
-        // Clone to prevent live edits on the UI before saving
         editingFeed = new Feed { Id = f.Id, UserId = f.UserId, Name = f.Name, Url = f.Url, Category = f.Category, IsEnabled = f.IsEnabled };
     }
 
@@ -251,7 +255,7 @@
         var existingDerby = await Db.Feeds.FirstOrDefaultAsync(f => f.UserId == currentUser.Id && f.Url == derbyUrl);
         if (existingDerby != null)
         {
-            existingDerby.Category = "System"; // Force it to System
+            existingDerby.Category = "System"; 
             existingDerby.Name = "Shirt.Woot Derby";
         }
         else
@@ -261,16 +265,16 @@
 
         // 2. Add Other Suggestions if missing
         var suggestions = new List<Feed>
-        {            
-            new Feed { Name = "Dallas Cowboys News", Url = "https://www.dallascowboys.com/rss/news", Category = "Sports" },
-            new Feed { Name = "Texas Rangers News", Url = "https://www.mlb.com/rangers/feeds/news/rss.xml", Category = "Sports" },
-            new Feed { Name = "Tesla Stock News", Url = "https://news.google.com/rss/search?q=Tesla+Stock", Category = "Finance" },            
-            new Feed { Name = "NPR National News", Url = "http://www.npr.org/rss/rss.php?id=1003", Category = "News" },
-            new Feed { Name = "Time", Url = "http://time.com/newsfeed/feed/", Category = "News" },
-            new Feed { Name = "ESPN", Url = "http://sports.espn.go.com/espn/rss/news", Category = "Sports" },
-            new Feed { Name = "CBS News - Entertainment", Url = "hhttp://www.cbsnews.com/latest/rss/entertainment", Category = "Entertainment" }
+        {
+            new Feed { Name = "Hacker News", Url = "https://news.ycombinator.com/rss", Category = "Tech" },
+            new Feed { Name = "Visual Studio Blog", Url = "https://devblogs.microsoft.com/visualstudio/feed/", Category = "Tech" },
+            new Feed { Name = "Dallas Cowboys", Url = "https://www.dallascowboys.com/rss/news", Category = "Sports" },
+            new Feed { Name = "Texas Rangers", Url = "https://www.mlb.com/rangers/feeds/news/rss.xml", Category = "Sports" },
+            new Feed { Name = "Tesla Stock News", Url = "https://news.google.com/rss/search?q=Tesla+Stock", Category = "Finance" },
+            new Feed { Name = "Woot Daily Deals", Url = "https://www.woot.com/blog/feed", Category = "Shopping" }
         };
 
+        bool added = false;
         foreach (var s in suggestions)
         {
             if (!await Db.Feeds.AnyAsync(f => f.UserId == currentUser.Id && f.Url == s.Url))
@@ -278,12 +282,15 @@
                 s.UserId = currentUser.Id;
                 s.IsEnabled = false;
                 Db.Feeds.Add(s);
+                added = true;
             }
         }
 
-        await Db.SaveChangesAsync();
+        if (added) await Db.SaveChangesAsync();
         await LoadFeeds();
-        await JS.InvokeVoidAsync("alert", "Feeds updated/reset successfully!");
+        
+        if (added) await JS.InvokeVoidAsync("alert", "Default feeds added!");
+        else await JS.InvokeVoidAsync("alert", "Defaults already exist.");
     }
 
     public class SessionData { public int UserId { get; set; } }
