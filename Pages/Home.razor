@@ -37,7 +37,7 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.9.1 (RSS User-Agent Fix)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.10.0 (RSS Image Engine)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -234,12 +234,21 @@
                     <h3 class="text-xl font-bold text-gray-200 mb-4 flex items-center gap-2">
                         <span>📰</span> News Feed
                     </h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                         @foreach (var item in RssItems)
                         {
-                            <a href="@item.Link" target="_blank" class="block bg-gray-800 rounded-lg p-4 border border-gray-700 hover:border-blue-500 hover:bg-gray-750 transition shadow-lg group">
-                                <div class="text-xs text-blue-400 font-bold uppercase mb-1">@item.Source</div>
-                                <h4 class="text-white font-medium group-hover:text-blue-300 transition line-clamp-2">@item.Title</h4>
+                            <a href="@item.Link" target="_blank" class="block bg-gray-800 rounded-xl overflow-hidden border border-gray-700 hover:border-blue-500 hover:bg-gray-750 transition shadow-lg group h-full flex flex-col">
+                                @if (!string.IsNullOrEmpty(item.ImgUrl))
+                                {
+                                    <div class="h-48 w-full overflow-hidden bg-gray-900">
+                                        <img src="@item.ImgUrl" class="w-full h-full object-cover transition transform group-hover:scale-105" onerror="this.style.display='none'" />
+                                    </div>
+                                }
+                                <div class="p-4 flex-1 flex flex-col">
+                                    <div class="text-xs text-blue-400 font-bold uppercase mb-2">@item.Source</div>
+                                    <h4 class="text-white font-medium group-hover:text-blue-300 transition line-clamp-3 mb-2 flex-1">@item.Title</h4>
+                                    <div class="text-[10px] text-gray-500">Read more →</div>
+                                </div>
                             </a>
                         }
                     </div>
@@ -415,25 +424,24 @@
     {
         try 
         {
-            // Adding User-Agent to satisfy shirt.woot security checks
+            // Use same generic parser for Derby to avoid namespace issues
             using var request = new HttpRequestMessage(HttpMethod.Get, "https://shirt.woot.com/derby/rss");
-            request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
-            
+            request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
             var response = await Http.SendAsync(request);
             if (!response.IsSuccessStatusCode) return;
 
             var xml = await response.Content.ReadAsStringAsync();
             var doc = XDocument.Parse(xml);
-            var ns = doc.Root.Name.Namespace;
-            
-            DerbyEntries = doc.Descendants(ns + "item")
+
+            DerbyEntries = doc.Descendants().Where(x => x.Name.LocalName == "item")
                 .Select(item => {
-                    var desc = item.Element(ns + "description")?.Value ?? "";
-                    var match = Regex.Match(desc, "src=\"([^\"]+)\"");
-                    var img = match.Success ? match.Groups[1].Value : "";
+                    // Try extract image from description
+                    var desc = item.Elements().FirstOrDefault(x => x.Name.LocalName == "description")?.Value ?? "";
+                    string img = ExtractImage(item); // Use the shared helper!
+
                     return new DerbyEntry {
-                        Title = item.Element(ns + "title")?.Value ?? "",
-                        Link = item.Element(ns + "link")?.Value ?? "",
+                        Title = item.Elements().FirstOrDefault(x => x.Name.LocalName == "title")?.Value ?? "",
+                        Link = item.Elements().FirstOrDefault(x => x.Name.LocalName == "link")?.Value ?? "",
                         ImgUrl = img
                     };
                 })
@@ -456,7 +464,6 @@
             var tasks = feeds.Select(async f => 
             {
                 try {
-                    // Adding User-Agent for all custom feeds too
                     using var request = new HttpRequestMessage(HttpMethod.Get, f.Url);
                     request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
                     
@@ -466,11 +473,15 @@
                     var xml = await response.Content.ReadAsStringAsync();
                     var doc = XDocument.Parse(xml);
                     
-                    return doc.Descendants("item").Take(3).Select(i => new RssItem {
-                        Source = f.Name,
-                        Title = i.Element("title")?.Value ?? "No Title",
-                        Link = i.Element("link")?.Value ?? "#"
-                    });
+                    // Namespace-agnostic parsing
+                    return doc.Descendants().Where(x => x.Name.LocalName == "item")
+                        .Take(3)
+                        .Select(i => new RssItem {
+                            Source = f.Name,
+                            Title = i.Elements().FirstOrDefault(x => x.Name.LocalName == "title")?.Value ?? "No Title",
+                            Link = i.Elements().FirstOrDefault(x => x.Name.LocalName == "link")?.Value ?? "#",
+                            ImgUrl = ExtractImage(i)
+                        });
                 } catch { return Enumerable.Empty<RssItem>(); }
             });
 
@@ -479,6 +490,30 @@
             StateHasChanged();
         }
         catch {}
+    }
+    
+    // THE MAGIC IMAGE PARSER
+    private string ExtractImage(XElement item)
+    {
+        // 1. Try <enclosure>
+        var enc = item.Elements().FirstOrDefault(x => x.Name.LocalName == "enclosure");
+        if (enc != null && enc.Attribute("type")?.Value.Contains("image") == true)
+            return enc.Attribute("url")?.Value ?? "";
+
+        // 2. Try <media:content> or <media:thumbnail> (ignores namespace prefix)
+        var media = item.Elements().FirstOrDefault(x => x.Name.LocalName == "content" || x.Name.LocalName == "thumbnail");
+        if (media != null)
+            return media.Attribute("url")?.Value ?? "";
+
+        // 3. Try HTML Description Regex
+        var desc = item.Elements().FirstOrDefault(x => x.Name.LocalName == "description" || x.Name.LocalName == "encoded")?.Value ?? "";
+        if (!string.IsNullOrEmpty(desc))
+        {
+            var match = Regex.Match(desc, "src=[\"'](http[^\"']+\\.(jpg|jpeg|png|gif|webp))[\"']", RegexOptions.IgnoreCase);
+            if (match.Success) return match.Groups[1].Value;
+        }
+
+        return "";
     }
 
     // --- SORTING ---
@@ -561,5 +596,5 @@
     public class DailyWeather { public string[] time { get; set; } = Array.Empty<string>(); public int[] weather_code { get; set; } = Array.Empty<int>(); public double[] temperature_2m_max { get; set; } = Array.Empty<double>(); public double[] temperature_2m_min { get; set; } = Array.Empty<double>(); }
     public class SessionData { public int UserId { get; set; } public DateTime Expiry { get; set; } }
     public class DerbyEntry { public string Title { get; set; } = ""; public string Link { get; set; } = ""; public string ImgUrl { get; set; } = ""; }
-    public class RssItem { public string Source { get; set; } = ""; public string Title { get; set; } = ""; public string Link { get; set; } = ""; }
+    public class RssItem { public string Source { get; set; } = ""; public string Title { get; set; } = ""; public string Link { get; set; } = ""; public string ImgUrl { get; set; } = ""; }
 }
