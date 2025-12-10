@@ -17,10 +17,10 @@
     @if (isDbError)
     {
         <div class="flex flex-col items-center justify-center h-screen space-y-6">
-            <div class="text-red-500 text-xl font-bold">⚠️ Database Error</div>
+            <div class="text-red-500 text-xl font-bold">⚠️ Database Update Required</div>
             <p class="text-gray-400 max-w-md text-center">@errorMessage</p>
             <button @onclick="UpgradeDatabase" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">
-                Attempt Database Fix
+                Sanitize & Fix Database
             </button>
         </div>
     }
@@ -34,7 +34,7 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.4.0 (Safe Import)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.4.1 (Sanitize Nulls)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -56,7 +56,8 @@
                         <div class="absolute right-0 top-full mt-2 w-56 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 hidden group-hover:block z-50">
                             <button type="button" @onclick="CheckDbStatus" class="w-full text-left text-xs text-blue-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2"><span>🔍</span> Check DB Status</button>
                             <button type="button" @onclick="MigrateDashboardData" class="w-full text-left text-xs text-yellow-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2"><span>🏠</span> Claim Dashboard</button>
-                             <button type="button" @onclick="ImportRecipes" class="w-full text-left text-xs text-purple-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2"><span>🍳</span> Import Recipes</button>
+                            <button type="button" @onclick="ImportRecipes" class="w-full text-left text-xs text-purple-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2"><span>🍳</span> Import Recipes</button>
+                            <button type="button" @onclick="UpgradeDatabase" class="w-full text-left text-xs text-green-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2"><span>💉</span> Fix Nulls</button>
                             <div class="border-t border-gray-700 my-1"></div>
                             <button type="button" @onclick="Logout" class="w-full text-left text-xs text-red-500 font-bold hover:bg-gray-700 p-2 rounded">Logout</button>
                         </div>
@@ -76,9 +77,14 @@
                     {
                         <div class="text-center py-12">
                             <div class="text-gray-500 text-lg mb-4">No recipes found for User ID @currentUser?.Id</div>
-                            <button @onclick="ImportRecipes" class="bg-purple-600 hover:bg-purple-500 text-white px-6 py-2 rounded-lg font-bold shadow-lg transition">
-                                Import & Claim Recipes
-                            </button>
+                            <div class="flex justify-center gap-4">
+                                <button @onclick="ImportRecipes" class="bg-purple-600 hover:bg-purple-500 text-white px-6 py-2 rounded-lg font-bold shadow-lg transition">
+                                    Import & Claim Recipes
+                                </button>
+                                <button @onclick="UpgradeDatabase" class="bg-gray-700 hover:bg-gray-600 text-white px-6 py-2 rounded-lg font-bold shadow-lg transition">
+                                    Fix Schema (Nulls)
+                                </button>
+                            </div>
                         </div>
                     }
                     
@@ -218,7 +224,13 @@
                 }
                 catch (Exception ex)
                 {
-                    if (ex.Message.Contains("42P01") || ex.Message.Contains("42703")) { isDbError = true; errorMessage = ex.Message; StateHasChanged(); return; }
+                    if (ex.Message.Contains("42P01") || ex.Message.Contains("42703") || ex.Message.Contains("null") || ex.InnerException?.Message.Contains("42703") == true) 
+                    { 
+                        isDbError = true; 
+                        errorMessage = "Schema Mismatch: " + ex.Message; 
+                        StateHasChanged(); 
+                        return; 
+                    }
                 }
                 
                 _ = FetchWeather();
@@ -232,7 +244,6 @@
 
     private async Task MigrateDashboardData()
     {
-        // ONLY touches Dashboard items
         if (currentUser == null) return;
         await Db.Database.ExecuteSqlRawAsync($@"
             UPDATE ""LinkGroups"" SET ""UserId"" = {currentUser.Id}; 
@@ -241,17 +252,6 @@
             UPDATE ""Countdowns"" SET ""UserId"" = {currentUser.Id};
         ");
         await JS.InvokeVoidAsync("alert", "Dashboard Data Claimed!");
-    }
-
-    private async Task MigrateRecipesOnly()
-    {
-        // ONLY touches Recipes
-        if (currentUser == null) return;
-        await Db.Database.ExecuteSqlRawAsync($@"
-            UPDATE ""Recipes"" SET ""UserId"" = {currentUser.Id};
-            UPDATE ""RecipeCategories"" SET ""UserId"" = {currentUser.Id};
-        ");
-        await LoadData();
     }
 
     private async Task CheckDbStatus()
@@ -268,9 +268,10 @@
             using var content = new StringContent(json, Encoding.UTF8, "application/json");
             var response = await Http.PostAsync("/api/admin/seed-recipes", content);
             if (response.IsSuccessStatusCode) {
-                // SAFE: Only takes ownership of the newly imported recipes
-                await MigrateRecipesOnly(); 
+                // Auto-Migrate & Auto-Fix NULLS
+                await UpgradeDatabase();
                 await JS.InvokeVoidAsync("alert", "Recipes Imported & Assigned to YOU!");
+                Nav.NavigateTo(Nav.Uri, forceLoad: true);
             } else {
                 await JS.InvokeVoidAsync("alert", "Import Failed: " + await response.Content.ReadAsStringAsync());
             }
@@ -279,22 +280,45 @@
 
     private async Task UpgradeDatabase()
     {
-        try {
-            // Ensure columns exist
-            await Db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""SourceName"" text; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""SourceUrl"" text; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""TagsJson"" text DEFAULT '[]'; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""UserId"" integer DEFAULT 1;");
-            Nav.NavigateTo(Nav.Uri, forceLoad: true);
-        } catch (Exception ex) { errorMessage = "Fix Failed: " + ex.Message; }
-    }
+        try 
+        {
+            if (currentUser == null) return;
 
-    private async Task LoadData()
-    {
-         RecipeList = await Db.Recipes
-            .Where(r => r.UserId == currentUser!.Id)
-            .Include(r => r.Ingredients)
-            .Include(r => r.Instructions)
-            .OrderBy(r => r.Category).ThenBy(r => r.Title)
-            .ToListAsync();
-         StateHasChanged();
+            // 1. ADD COLUMNS (Safe)
+            await Db.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""SourceName"" text;
+                ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""SourceUrl"" text;
+                ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""TagsJson"" text DEFAULT '[]';
+                ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""UserId"" integer DEFAULT 1;
+
+                ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Section"" text DEFAULT 'Main';
+                ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Calories"" double precision DEFAULT 0;
+                ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Protein"" double precision DEFAULT 0;
+                ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Carbs"" double precision DEFAULT 0;
+                ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Fat"" double precision DEFAULT 0;
+                ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Fiber"" double precision DEFAULT 0;
+
+                ALTER TABLE ""RecipeInstructions"" ADD COLUMN IF NOT EXISTS ""Section"" text DEFAULT 'Directions';
+            ");
+
+            // 2. SANITIZE NULLS (The Fix)
+            await Db.Database.ExecuteSqlRawAsync(@"
+                UPDATE ""Recipes"" SET ""SourceName"" = '' WHERE ""SourceName"" IS NULL;
+                UPDATE ""Recipes"" SET ""SourceUrl"" = '' WHERE ""SourceUrl"" IS NULL;
+                UPDATE ""Recipes"" SET ""TagsJson"" = '[]' WHERE ""TagsJson"" IS NULL;
+                UPDATE ""RecipeIngredients"" SET ""Section"" = 'Main' WHERE ""Section"" IS NULL;
+                UPDATE ""RecipeInstructions"" SET ""Section"" = 'Directions' WHERE ""Section"" IS NULL;
+            ");
+            
+            // 3. CLAIM OWNERSHIP (Move all to current user)
+            await Db.Database.ExecuteSqlRawAsync($@"
+                UPDATE ""Recipes"" SET ""UserId"" = {currentUser.Id} WHERE ""UserId"" = 1 OR ""UserId"" IS NULL;
+                UPDATE ""RecipeCategories"" SET ""UserId"" = {currentUser.Id} WHERE ""UserId"" = 1 OR ""UserId"" IS NULL;
+            ");
+
+            Nav.NavigateTo(Nav.Uri, forceLoad: true);
+        }
+        catch (Exception ex) { errorMessage = "Fix Failed: " + ex.Message; }
     }
 
     private IEnumerable<Recipe> FilteredRecipes => string.IsNullOrWhiteSpace(searchTerm) ? RecipeList : RecipeList.Where(r => r.Title.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) || r.Ingredients.Any(i => i.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)));
