@@ -41,18 +41,20 @@
             @if (Feeds.Any())
             {
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    @foreach (var group in Feeds.GroupBy(f => f.Category).OrderBy(g => g.Key == "System" ? 0 : 1))
+                    @foreach (var group in Feeds.GroupBy(f => f.Category).OrderBy(g => g.Key == "System" ? 0 : 1).ThenBy(g => g.Key))
                     {
                         <div class="bg-gray-900/50 rounded-lg p-4 border border-gray-800">
-                            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">@group.Key</h3>
+                            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                @if(group.Key == "System") { <span>⚙️</span> } 
+                                @group.Key
+                            </h3>
                             <div class="space-y-3">
                                 @foreach (var feed in group)
                                 {
                                     <div class="flex items-center justify-between p-3 rounded-lg border transition group @(feed.IsEnabled ? "bg-blue-900/20 border-blue-500/50" : "bg-gray-800 border-gray-700")">
                                         <div class="overflow-hidden mr-3 flex-1">
                                             <div class="font-bold text-sm @(feed.IsEnabled ? "text-white" : "text-gray-400") truncate">
-                                                @feed.Name 
-                                                @if(feed.Category == "System") { <span class="ml-2 text-[8px] bg-gray-700 text-gray-300 px-1 rounded uppercase">System</span> }
+                                                @feed.Name
                                             </div>
                                             <div class="text-[10px] text-gray-600 truncate" title="@feed.Url">@feed.Url</div>
                                         </div>
@@ -188,6 +190,7 @@
 
     private void OpenEditModal(Feed f)
     {
+        // Clone to prevent live edits on the UI before saving
         editingFeed = new Feed { Id = f.Id, UserId = f.UserId, Name = f.Name, Url = f.Url, Category = f.Category, IsEnabled = f.IsEnabled };
     }
 
@@ -238,41 +241,49 @@
         try {
             await Db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""Feeds"" (""Id"" serial PRIMARY KEY, ""UserId"" integer, ""Name"" text, ""Url"" text, ""Category"" text, ""IsEnabled"" boolean DEFAULT FALSE);");
             try { await Db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""Feeds"" ADD COLUMN IF NOT EXISTS ""UserId"" integer;"); } catch {}
-
         } catch (Exception ex) {
             await JS.InvokeVoidAsync("alert", "DB Init Error: " + ex.Message);
             return;
         }
 
-        var suggestions = new List<Feed>
+        // 1. Force Upsert Derby Feed (System)
+        var derbyUrl = "https://shirt.woot.com/derby/rss";
+        var existingDerby = await Db.Feeds.FirstOrDefaultAsync(f => f.UserId == currentUser.Id && f.Url == derbyUrl);
+        if (existingDerby != null)
         {
-            new Feed { Name = "Shirt.Woot Derby", Url = "https://shirt.woot.com/derby/rss", Category = "System", IsEnabled = true }, // New System Feed
-            new Feed { Name = "Hacker News", Url = "https://news.ycombinator.com/rss", Category = "Tech" },
-            new Feed { Name = "Visual Studio Blog", Url = "https://devblogs.microsoft.com/visualstudio/feed/", Category = "Tech" },
-            new Feed { Name = "Dallas Cowboys", Url = "https://www.dallascowboys.com/rss/news", Category = "Sports" },
-            new Feed { Name = "Texas Rangers", Url = "https://www.mlb.com/rangers/feeds/news/rss.xml", Category = "Sports" },
-            new Feed { Name = "Tesla Stock News", Url = "https://news.google.com/rss/search?q=Tesla+Stock", Category = "Finance" },
-            new Feed { Name = "Woot Daily Deals", Url = "https://www.woot.com/blog/feed", Category = "Shopping" }
+            existingDerby.Category = "System"; // Force it to System
+            existingDerby.Name = "Shirt.Woot Derby";
+        }
+        else
+        {
+            Db.Feeds.Add(new Feed { UserId = currentUser.Id, Name = "Shirt.Woot Derby", Url = derbyUrl, Category = "System", IsEnabled = true });
+        }
+
+        // 2. Add Other Suggestions if missing
+        var suggestions = new List<Feed>
+        {            
+            new Feed { Name = "Dallas Cowboys News", Url = "https://www.dallascowboys.com/rss/news", Category = "Sports" },
+            new Feed { Name = "Texas Rangers News", Url = "https://www.mlb.com/rangers/feeds/news/rss.xml", Category = "Sports" },
+            new Feed { Name = "Tesla Stock News", Url = "https://news.google.com/rss/search?q=Tesla+Stock", Category = "Finance" },            
+            new Feed { Name = "NPR National News", Url = "http://www.npr.org/rss/rss.php?id=1003", Category = "News" },
+            new Feed { Name = "Time", Url = "http://time.com/newsfeed/feed/", Category = "News" },
+            new Feed { Name = "ESPN", Url = "http://sports.espn.go.com/espn/rss/news", Category = "Sports" },
+            new Feed { Name = "CBS News - Entertainment", Url = "hhttp://www.cbsnews.com/latest/rss/entertainment", Category = "Entertainment" }
         };
 
-        bool added = false;
         foreach (var s in suggestions)
         {
-            // Check matching URL for this user
             if (!await Db.Feeds.AnyAsync(f => f.UserId == currentUser.Id && f.Url == s.Url))
             {
                 s.UserId = currentUser.Id;
-                if (s.Category != "System") s.IsEnabled = false; // Default others to OFF
+                s.IsEnabled = false;
                 Db.Feeds.Add(s);
-                added = true;
             }
         }
 
-        if (added) await Db.SaveChangesAsync();
+        await Db.SaveChangesAsync();
         await LoadFeeds();
-        
-        if (added) await JS.InvokeVoidAsync("alert", "Default feeds added!");
-        else await JS.InvokeVoidAsync("alert", "Defaults already exist.");
+        await JS.InvokeVoidAsync("alert", "Feeds updated/reset successfully!");
     }
 
     public class SessionData { public int UserId { get; set; } }
