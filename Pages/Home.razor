@@ -37,7 +37,7 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.12.0 (Smart Image Feed)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.12.1 (Grid & Dropdown Fix)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -234,27 +234,26 @@
                     <h3 class="text-xl font-bold text-gray-200 mb-4 flex items-center gap-2">
                         <span>📰</span> News Feed
                     </h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
                         @foreach (var item in RssItems)
                         {
-                            <a href="@item.Link" target="_blank" class="flex h-28 bg-gray-800 rounded-xl overflow-hidden border border-gray-700 hover:border-blue-500 hover:bg-gray-750 transition shadow-lg group">
+                            <a href="@item.Link" target="_blank" class="flex h-24 bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-blue-500 hover:bg-gray-750 transition shadow-lg group">
                                 @if (!string.IsNullOrEmpty(item.ImgUrl))
                                 {
-                                    <div class="w-32 h-full shrink-0 bg-gray-900">
+                                    <div class="w-24 h-full shrink-0 bg-gray-900">
                                         <img src="@item.ImgUrl" class="w-full h-full object-cover transition transform group-hover:scale-105" onerror="this.style.display='none'" />
                                     </div>
                                 }
                                 else
                                 {
-                                    <div class="w-4 h-full bg-gray-700/50 shrink-0"></div>
+                                    <div class="w-2 h-full bg-gray-700/50 shrink-0"></div>
                                 }
 
                                 <div class="flex-1 p-3 flex flex-col justify-between overflow-hidden">
                                     <div>
                                         <div class="text-[10px] text-blue-400 font-bold uppercase mb-1 truncate">@item.Source</div>
-                                        <h4 class="text-sm text-white font-medium group-hover:text-blue-300 transition line-clamp-2 leading-snug">@item.Title</h4>
+                                        <h4 class="text-xs text-white font-medium group-hover:text-blue-300 transition line-clamp-2 leading-snug">@item.Title</h4>
                                     </div>
-                                    <div class="text-[10px] text-gray-500 text-right mt-1">Read →</div>
                                 </div>
                             </a>
                         }
@@ -365,7 +364,6 @@
                     await LoadData();
                     _ = FetchPrices();
                     _ = FetchWeather();
-                    // AWAIT these to prevent concurrency issues
                     await FetchDerby();
                     await FetchRssFeeds();
                 }
@@ -432,6 +430,7 @@
     {
         if (currentUser == null) return;
         
+        // CHECK DB FOR SYSTEM FEED TOGGLE
         try 
         {
             var derbyFeed = await Db.Feeds.FirstOrDefaultAsync(f => f.Url == "https://shirt.woot.com/derby/rss" && f.UserId == currentUser.Id);
@@ -453,6 +452,7 @@
             var doc = XDocument.Parse(xml);
 
             DerbyEntries = doc.Descendants().Where(x => x.Name.LocalName == "item")
+                // FILTER: Show items that DO NOT have totalvotes or voterank (Fog of War)
                 .Where(item => !item.Elements().Any(e => e.Name.LocalName == "totalvotes" || e.Name.LocalName == "voterank"))
                 .Select(item => {
                     var desc = item.Elements().FirstOrDefault(x => x.Name.LocalName == "description")?.Value ?? "";
@@ -479,7 +479,6 @@
         {
             var feeds = await Db.Feeds.Where(f => f.UserId == currentUser.Id && f.IsEnabled && f.Category != "System").ToListAsync();
             
-            // UPDATED: Logic to fetch and filter for images
             var tasks = feeds.Select(async f => 
             {
                 try {
@@ -492,7 +491,7 @@
                     var xml = await response.Content.ReadAsStringAsync();
                     var doc = XDocument.Parse(xml);
                     
-                    // 1. Get ALL items (limit to 15 to scan)
+                    // Namespace-agnostic parsing
                     var allItems = doc.Descendants().Where(x => x.Name.LocalName == "item")
                         .Take(15)
                         .Select(i => new RssItem {
@@ -503,16 +502,11 @@
                         })
                         .ToList();
 
-                    // 2. Separate into "Has Image" and "No Image"
+                    // Prioritize Images
                     var withImg = allItems.Where(i => !string.IsNullOrEmpty(i.ImgUrl)).ToList();
                     var withoutImg = allItems.Where(i => string.IsNullOrEmpty(i.ImgUrl)).ToList();
-
-                    // 3. Take 4 total, preferring images
                     var result = withImg.Take(4).ToList();
-                    if (result.Count < 4)
-                    {
-                        result.AddRange(withoutImg.Take(4 - result.Count));
-                    }
+                    if (result.Count < 4) result.AddRange(withoutImg.Take(4 - result.Count));
                     return result;
 
                 } catch { return Enumerable.Empty<RssItem>(); }
@@ -533,7 +527,6 @@
         var media = item.Elements().FirstOrDefault(x => x.Name.LocalName == "content" || x.Name.LocalName == "thumbnail");
         if (media != null) return media.Attribute("url")?.Value ?? "";
         
-        // Handle media:group
         var group = item.Elements().FirstOrDefault(x => x.Name.LocalName == "group");
         if (group != null) {
              var subMedia = group.Elements().FirstOrDefault(x => x.Name.LocalName == "content" || x.Name.LocalName == "thumbnail");
@@ -543,7 +536,6 @@
         var desc = item.Elements().FirstOrDefault(x => x.Name.LocalName == "description" || x.Name.LocalName == "encoded")?.Value ?? "";
         if (!string.IsNullOrEmpty(desc)) 
         { 
-            // Regex for any image src
             var match = Regex.Match(desc, "src=[\"'](http[^\"']+)[\"']", RegexOptions.IgnoreCase); 
             if (match.Success) return match.Groups[1].Value; 
         }
