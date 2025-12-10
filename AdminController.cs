@@ -243,4 +243,143 @@ public class AdminController : ControllerBase
             return StatusCode(500, ex.Message);
         }
     }
+
+    // ... inside AdminController ...
+
+    [HttpPost("seed-recipes")]
+    public async Task<IActionResult> SeedRecipes([FromBody] JsonElement json)
+    {
+        try
+        {
+            // 1. Create Tables
+            await _context.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""Recipes"" (
+                    ""Id"" serial PRIMARY KEY,
+                    ""UserId"" integer NOT NULL,
+                    ""Title"" text, ""Description"" text, ""Category"" text,
+                    ""Servings"" integer, ""PrepTime"" text, ""CookTime"" text,
+                    ""ImageUrl"" text, ""SourceUrl"" text, ""SourceDescription"" text,
+                    ""TagsJson"" text
+                );
+                CREATE TABLE IF NOT EXISTS ""Ingredients"" (
+                    ""Id"" serial PRIMARY KEY,
+                    ""RecipeId"" integer NOT NULL,
+                    ""SectionTitle"" text, ""Name"" text, ""Quantity"" text, ""Unit"" text, ""Notes"" text,
+                    ""Calories"" double precision, ""Protein"" double precision, ""Carbs"" double precision, ""Fat"" double precision, ""Fiber"" double precision
+                );
+                CREATE TABLE IF NOT EXISTS ""Instructions"" (
+                    ""Id"" serial PRIMARY KEY,
+                    ""RecipeId"" integer NOT NULL,
+                    ""SectionTitle"" text, ""StepText"" text, ""Order"" integer
+                );
+                CREATE TABLE IF NOT EXISTS ""RecipeCategories"" (
+                    ""Id"" serial PRIMARY KEY, ""UserId"" integer, ""Name"" text
+                );
+            ");
+
+            // 2. Parse JSON
+            // We assume the user sends the raw JSON object { "recipes": [...], "categories": [...] }
+            
+            // Categories
+            if (json.TryGetProperty("categories", out var cats))
+            {
+                foreach (var cat in cats.EnumerateArray())
+                {
+                    if (!await _context.RecipeCategories.AnyAsync(c => c.Name == cat.GetString()))
+                    {
+                        _context.RecipeCategories.Add(new RecipeCategory { UserId = 1, Name = cat.GetString() });
+                    }
+                }
+            }
+
+            // Recipes
+            if (json.TryGetProperty("recipes", out var recipes))
+            {
+                foreach (var r in recipes.EnumerateArray())
+                {
+                    // Basic Info
+                    var newRecipe = new Recipe
+                    {
+                        UserId = 1, // Default to Admin
+                        Title = GetStr(r, "title"),
+                        Description = GetStr(r, "description"),
+                        Category = GetStr(r, "category"),
+                        Servings = r.TryGetProperty("servings", out var s) ? s.GetInt32() : 0,
+                        PrepTime = GetStr(r, "prepTime"),
+                        CookTime = GetStr(r, "cookTime"),
+                        ImageUrl = GetStr(r, "image"),
+                        SourceUrl = r.GetProperty("source").GetProperty("url").GetString() ?? "",
+                        SourceDescription = r.GetProperty("source").GetProperty("description").GetString() ?? "",
+                        TagsJson = r.GetProperty("tags").GetRawText()
+                    };
+
+                    _context.Recipes.Add(newRecipe);
+                    await _context.SaveChangesAsync(); // Save to get ID
+
+                    // Ingredients
+                    if (r.TryGetProperty("ingredients", out var ingList))
+                    {
+                        foreach (var section in ingList.EnumerateArray())
+                        {
+                            string secTitle = GetStr(section, "sectionTitle");
+                            foreach (var item in section.GetProperty("list").EnumerateArray())
+                            {
+                                var ing = new Ingredient
+                                {
+                                    RecipeId = newRecipe.Id,
+                                    SectionTitle = secTitle,
+                                    Name = GetStr(item, "name"),
+                                    Quantity = GetStr(item, "quantity"),
+                                    Unit = GetStr(item, "unit"),
+                                    Notes = GetStr(item, "notes")
+                                };
+
+                                // Macros
+                                if (item.TryGetProperty("macros", out var m))
+                                {
+                                    ing.Calories = GetDouble(m, "calories");
+                                    ing.Protein = GetDouble(m, "protein");
+                                    ing.Carbs = GetDouble(m, "carbs");
+                                    ing.Fat = GetDouble(m, "fat");
+                                    ing.Fiber = GetDouble(m, "fiber");
+                                }
+                                _context.Ingredients.Add(ing);
+                            }
+                        }
+                    }
+
+                    // Instructions
+                    if (r.TryGetProperty("instructions", out var instList))
+                    {
+                        foreach (var section in instList.EnumerateArray())
+                        {
+                            string secTitle = GetStr(section, "sectionTitle");
+                            int order = 0;
+                            foreach (var step in section.GetProperty("steps").EnumerateArray())
+                            {
+                                _context.Instructions.Add(new Instruction
+                                {
+                                    RecipeId = newRecipe.Id,
+                                    SectionTitle = secTitle,
+                                    StepText = step.GetString() ?? "",
+                                    Order = order++
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            await _context.SaveChangesAsync();
+            return Ok("Recipes Imported!");
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, ex.Message);
+        }
+    }
+
+    // Helper functions
+    private string GetStr(JsonElement el, string prop) => el.TryGetProperty(prop, out var p) ? p.GetString() ?? "" : "";
+    private double GetDouble(JsonElement el, string prop) => el.TryGetProperty(prop, out var p) && p.ValueKind == JsonValueKind.Number ? p.GetDouble() : 0;
 }
