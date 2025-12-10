@@ -37,8 +37,9 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.8.0 (Woot Derby)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.8.1 (Home Fix)</div>
                 </div>
+
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
                     <a href="/" class="text-2xl hover:scale-125 transition grayscale-0 drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]" title="Home Dashboard">🏠</a>
@@ -63,9 +64,7 @@
                                 <button type="button" @onclick="CheckDbStatus" class="w-full text-left text-xs text-blue-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2"><span>🔍</span> Check Status</button>
                                 <button type="button" @onclick="MigrateDashboardData" class="w-full text-left text-xs text-yellow-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2"><span>🏠</span> Claim Dashboard</button>
                                 <button type="button" @onclick="ImportRecipes" class="w-full text-left text-xs text-purple-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2"><span>🍳</span> Import Recipes</button>
-                                <a href="settings" class="block w-full text-left text-xs text-gray-300 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2">
-                                    <span>⚙️</span> Settings
-                                </a>
+                                <a href="settings" class="block w-full text-left text-xs text-gray-300 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2"><span>⚙️</span> Settings</a>
                                 <div class="border-t border-gray-700 my-1"></div>
                                 <button type="button" @onclick="Logout" class="w-full text-left text-xs text-red-500 font-bold hover:bg-gray-700 p-2 rounded">Logout</button>
                             </div>
@@ -156,7 +155,7 @@
                             </div>
                             <div class="p-4 flex flex-col justify-center min-w-[140px]">
                                 <div class="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">@c.Name</div>
-                                <div class="text-2xl font-bold text-white leading-none mb-1 whitespace-nowrap">@calc.MainDisplay</div>
+                                <div class="text-2xl font-bold text-white leading-none mb-1">@calc.MainDisplay</div>
                                 @if (!string.IsNullOrEmpty(calc.SubDisplay)) { <div class="text-xs text-gray-400 font-mono">@calc.SubDisplay</div> }
                                 <div class="text-sm font-bold text-blue-400 mt-2">@c.TargetDate.ToShortDateString()</div>
                             </div>
@@ -277,6 +276,7 @@
     private int clientOffsetMinutes = 0;
     
     private bool isDbError = false;
+    private string errorMessage = "";
     private bool showUserMenu = false;
     private User? currentUser;
 
@@ -349,12 +349,21 @@
         Nav.NavigateTo("/login", forceLoad: true);
     }
 
-    private async Task MigrateDataToUser()
+    private async Task MigrateDashboardData()
     {
         if (currentUser == null) return;
         await Db.Database.ExecuteSqlRawAsync($"UPDATE \"LinkGroups\" SET \"UserId\" = {currentUser.Id}; UPDATE \"Links\" SET \"UserId\" = {currentUser.Id}; UPDATE \"Stocks\" SET \"UserId\" = {currentUser.Id}; UPDATE \"Countdowns\" SET \"UserId\" = {currentUser.Id};");
-        await LoadData();
+        await JS.InvokeVoidAsync("alert", "Dashboard Data Claimed!");
     }
+    
+    private async Task CheckDbStatus()
+    {
+        var total = await Db.Recipes.CountAsync();
+        var myCount = await Db.Recipes.CountAsync(r => r.UserId == currentUser!.Id);
+        await JS.InvokeVoidAsync("alert", $"Total Recipes: {total}\nMy Recipes: {myCount}\nUser: {currentUser?.Id}");
+    }
+    
+    private async Task ImportRecipes() { Nav.NavigateTo("/recipes", true); }
 
     private async Task UpgradeDatabase()
     {
@@ -371,8 +380,6 @@
         await Http.PostAsync("/api/admin/fix-ordering", null);
         Nav.NavigateTo(Nav.Uri, forceLoad: true);
     }
-
-    private async Task UpgradeUsers() { await Http.PostAsync("/api/admin/upgrade-users", null); await JS.InvokeVoidAsync("alert", "Users Initialized!"); }
 
     private async Task LoadData()
     {
@@ -409,15 +416,6 @@
         }
         catch {}
     }
-    
-    private async Task CheckDbStatus()
-    {
-        var total = await Db.Recipes.CountAsync();
-        var myCount = await Db.Recipes.CountAsync(r => r.UserId == currentUser!.Id);
-        await JS.InvokeVoidAsync("alert", $"Total Recipes: {total}\nMy Recipes: {myCount}\nUser: {currentUser?.Id}");
-    }
-    
-    private async Task ImportRecipes() { Nav.NavigateTo("/recipes", true); }
 
     // --- SORTING ---
     private async Task FixOrder() { await Http.PostAsync("/api/admin/fix-ordering", null); await LoadData(); }
@@ -487,32 +485,7 @@
 
     private async Task StartClock() { var now = DateTime.Now; await Task.Delay((60 - now.Second) * 1000); using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1)); UpdateTime(); while (await timer.WaitForNextTickAsync()) { UpdateTime(); } }
     private void UpdateTime() { var now = DateTime.UtcNow.AddMinutes(-clientOffsetMinutes); string suffix = (now.Day % 10 == 1 && now.Day != 11) ? "st" : (now.Day % 10 == 2 && now.Day != 12) ? "nd" : (now.Day % 10 == 3 && now.Day != 13) ? "rd" : "th"; CurrentDate = $"{now:dddd, MMMM d}{suffix} {now:yyyy}"; CurrentTime = now.ToString("h:mm tt").ToLower(); InvokeAsync(StateHasChanged); }
-    
-    private async Task FetchWeather() { 
-        if (currentUser == null) return;
-        try { 
-            // 1. Geocode
-            var geoUrl = $"https://geocoding-api.open-meteo.com/v1/search?name={currentUser.ZipCode}&count=1&language=en&format=json";
-            var geoJson = await Http.GetStringAsync(geoUrl);
-            var lat = "33.1383"; var lon = "-95.6011"; // Default
-
-            using (var doc = JsonDocument.Parse(geoJson))
-            {
-                if (doc.RootElement.TryGetProperty("results", out var results) && results.GetArrayLength() > 0)
-                {
-                    var first = results[0];
-                    lat = first.GetProperty("latitude").GetDouble().ToString(CultureInfo.InvariantCulture);
-                    lon = first.GetProperty("longitude").GetDouble().ToString(CultureInfo.InvariantCulture);
-                }
-            }
-
-            // 2. Fetch Weather
-            var url = $"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto"; 
-            weather = await Http.GetFromJsonAsync<WeatherData>(url); 
-            StateHasChanged(); 
-        } catch {} 
-    }
-    
+    private async Task FetchWeather() { if (currentUser == null) return; try { var url = "https://api.open-meteo.com/v1/forecast?latitude=33.1383&longitude=-95.6011&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto"; weather = await Http.GetFromJsonAsync<WeatherData>(url); StateHasChanged(); } catch {} }
     private string GetDayName(string s) => DateTime.TryParse(s, out var d) ? d.ToString("ddd") : "";
     private string GetWeatherIcon(int c) => c switch { 0=>"☀️", 1=>"🌤️", 2=>"Qw", 3=>"☁️", 45 or 48=>"🌫️", 51 or 53 or 55=>"🌦️", 61 or 63 or 65=>"🌧️", 80 or 81 or 82=>"🌦️", 71 or 73 or 75=>"❄️", 95 or 96 or 99=>"⚡", _=>"🌡️" };
     private async Task FetchPrices() { if (Stocks.Count == 0) return; isLoadingPrices = true; StateHasChanged(); using var client = new HttpClient(); client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0"); foreach (var s in Stocks) { try { var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{s.Symbol}?interval=1d"; var json = await client.GetStringAsync(url); using (var doc = JsonDocument.Parse(json)) { var meta = doc.RootElement.GetProperty("chart").GetProperty("result")[0].GetProperty("meta"); PriceCache[s.Symbol] = meta.GetProperty("regularMarketPrice").GetDecimal(); } } catch {} StateHasChanged(); } isLoadingPrices = false; StateHasChanged(); }
