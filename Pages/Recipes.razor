@@ -17,17 +17,10 @@
     @if (isDbError)
     {
         <div class="flex flex-col items-center justify-center h-screen space-y-6">
-            <div class="text-red-500 text-5xl mb-2">🛠️</div>
-            <div class="text-xl font-bold text-white">Database Schema Mismatch</div>
-            <p class="text-gray-400 max-w-md text-center">
-                Your database is missing columns (like <code>SourceName</code>).<br/>
-                Click below to force-update the table structure.
-            </p>
-            <div class="text-xs font-mono bg-black p-2 rounded text-red-300 mb-2 max-w-lg overflow-hidden text-ellipsis whitespace-nowrap">
-                Error: @errorMessage
-            </div>
-            <button @onclick="UpgradeDatabase" class="px-8 py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg shadow-lg transition transform hover:scale-105">
-                Apply Schema Patch
+            <div class="text-red-500 text-xl font-bold">⚠️ Recipe Database Error</div>
+            <p class="text-gray-400 max-w-md text-center">@errorMessage</p>
+            <button @onclick="UpgradeDatabase" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">
+                Attempt Database Fix
             </button>
         </div>
     }
@@ -41,7 +34,7 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.3.1 (Schema Patcher)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.3.1 (Diagnostics)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -53,13 +46,21 @@
                 <div class="flex items-center gap-8 text-right">
                     <div class="relative group z-50">
                         <button class="flex items-center gap-3 focus:outline-none">
+                            <div class="text-right hidden md:block">
+                                <div class="text-sm font-bold text-white">@(currentUser?.Username ?? "Loading...")</div>
+                                <div class="text-[10px] text-gray-500 font-mono text-yellow-400">ID: @(currentUser?.Id)</div>
+                            </div>
                             <img src="@(string.IsNullOrEmpty(currentUser?.AvatarUrl) ? "https://i.imgur.com/7Y5j5Yx.png" : currentUser.AvatarUrl)" 
                                  class="w-10 h-10 rounded-full border-2 border-gray-700 transition object-cover bg-gray-800" />
                         </button>
-                        <div class="absolute right-0 top-full mt-2 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 hidden group-hover:block z-50">
+                        <div class="absolute right-0 top-full mt-2 w-56 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 hidden group-hover:block z-50">
+                            <button type="button" @onclick="CheckDbStatus" class="w-full text-left text-xs text-blue-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2">
+                                <span>🔍</span> Check DB Status
+                            </button>
                              <button type="button" @onclick="ImportRecipes" class="w-full text-left text-xs text-purple-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2">
                                 <span>🍳</span> Import Recipes
                             </button>
+                            <div class="border-t border-gray-700 my-1"></div>
                             <button type="button" @onclick="Logout" class="w-full text-left text-xs text-red-500 font-bold hover:bg-gray-700 p-2 rounded">Logout</button>
                         </div>
                     </div>
@@ -74,6 +75,16 @@
             @if (selectedRecipe == null)
             {
                 <div id="recipe-groups-container" class="flex flex-col space-y-12">
+                    @if (!FilteredRecipes.Any())
+                    {
+                        <div class="text-center py-12">
+                            <div class="text-gray-500 text-lg mb-2">No recipes found.</div>
+                            <button @onclick="ImportRecipes" class="text-blue-400 hover:text-white underline text-sm">
+                                Try Importing Data
+                            </button>
+                        </div>
+                    }
+                    
                     @foreach (var category in FilteredRecipes.Select(r => r.Category).Distinct().OrderBy(c => c))
                     {
                         var catRecipes = FilteredRecipes.Where(r => r.Category == category).ToList();
@@ -109,9 +120,7 @@
             else
             {
                 <div class="animate-fade-in">
-                    <button @onclick="() => selectedRecipe = null" class="mb-6 flex items-center text-gray-400 hover:text-white transition px-4 py-2 rounded-lg bg-gray-800 border border-gray-700">
-                        ← Back to Recipes
-                    </button>
+                    <button @onclick="() => selectedRecipe = null" class="mb-6 flex items-center text-gray-400 hover:text-white transition px-4 py-2 rounded-lg bg-gray-800 border border-gray-700">← Back to Recipes</button>
 
                     <div class="bg-gray-800 rounded-2xl p-6 border border-gray-700 shadow-2xl max-w-5xl mx-auto">
                         <div class="flex flex-col md:flex-row gap-6 mb-8">
@@ -139,10 +148,7 @@
                                             @foreach (var ing in ingGroup)
                                             {
                                                 <li class="flex justify-between border-b border-gray-700/50 pb-1">
-                                                    <span class="text-gray-200">
-                                                        <span class="font-bold text-white">@ing.Quantity</span> 
-                                                        <span class="font-bold text-white">@ing.Unit</span> @ing.Name
-                                                    </span>
+                                                    <span class="text-gray-200"><span class="font-bold text-white">@ing.Quantity</span> <span class="font-bold text-white">@ing.Unit</span> @ing.Name</span>
                                                     <span class="text-xs text-gray-500 italic ml-2">@ing.Notes</span>
                                                 </li>
                                             }
@@ -150,7 +156,6 @@
                                     </div>
                                 }
                             </div>
-
                             <div>
                                 <h2 class="text-2xl font-bold border-b border-green-900/50 pb-2 mb-4 text-green-300">Instructions</h2>
                                 @foreach (var instGroup in selectedRecipe.Instructions.GroupBy(i => i.Section))
@@ -170,7 +175,6 @@
                     </div>
                 </div>
             }
-
         </main>
     }
 </div>
@@ -207,7 +211,6 @@
                 currentUser = await Db.Users.FindAsync(session.UserId);
                 if (currentUser == null) { await Logout(); return; }
 
-                // Safe Data Load
                 try 
                 {
                     RecipeList = await Db.Recipes
@@ -219,14 +222,14 @@
                 }
                 catch (Exception ex)
                 {
-                    // Detect Missing Column (Postgres 42703)
-                    if (ex.Message.Contains("42703") || ex.InnerException?.Message.Contains("42703") == true)
+                    if (ex.Message.Contains("42P01") || ex.Message.Contains("42703") || ex.InnerException?.Message.Contains("42703") == true)
                     {
                         isDbError = true;
                         errorMessage = ex.Message;
                         StateHasChanged();
                         return;
                     }
+                    errorMessage = "Data Load Error: " + ex.Message;
                 }
                 
                 _ = FetchWeather();
@@ -239,11 +242,39 @@
         }
     }
 
+    private async Task CheckDbStatus()
+    {
+        var count = await Db.Recipes.CountAsync();
+        var sample = await Db.Recipes.Select(r => new { r.Title, r.UserId }).FirstOrDefaultAsync();
+        var userCount = currentUser != null ? await Db.Recipes.CountAsync(r => r.UserId == currentUser.Id) : 0;
+        
+        await JS.InvokeVoidAsync("alert", 
+            $"DB Status:\n" +
+            $"Total Recipes in DB: {count}\n" +
+            $"Your User ID: {currentUser?.Id}\n" +
+            $"Recipes Owned by You: {userCount}\n" +
+            $"Sample Recipe: {(sample == null ? "None" : $"{sample.Title} (Owner ID: {sample.UserId})")}");
+    }
+
+    private async Task ImportRecipes()
+    {
+        try {
+            var json = await Http.GetStringAsync("/recipes_data.json");
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var response = await Http.PostAsync("/api/admin/seed-recipes", content);
+            if (response.IsSuccessStatusCode) {
+                await JS.InvokeVoidAsync("alert", "Import Success! Refreshing...");
+                Nav.NavigateTo(Nav.Uri, forceLoad: true);
+            } else {
+                await JS.InvokeVoidAsync("alert", "Import Failed: " + await response.Content.ReadAsStringAsync());
+            }
+        } catch (Exception ex) { await JS.InvokeVoidAsync("alert", "Import Error: " + ex.Message); }
+    }
+
     private async Task UpgradeDatabase()
     {
         try 
         {
-            // FORCE ADD MISSING COLUMNS
             await Db.Database.ExecuteSqlRawAsync(@"
                 ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""SourceName"" text;
                 ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""SourceUrl"" text;
@@ -275,17 +306,6 @@
     private async void SelectRecipe(Recipe r) { selectedRecipe = r; await JS.InvokeVoidAsync("scrollToTop"); StateHasChanged(); }
     private async Task Logout() { await JS.InvokeVoidAsync("localStorage.removeItem", "dashboard_session"); Nav.NavigateTo("/login", true); }
     private List<string> GetTags(string json) { try { return JsonSerializer.Deserialize<List<string>>(json) ?? new(); } catch { return new(); } }
-
-    private async Task ImportRecipes()
-    {
-        try {
-            var json = await Http.GetStringAsync("/recipes_data.json");
-            using var content = new StringContent(json, Encoding.UTF8, "application/json");
-            var response = await Http.PostAsync("/api/admin/seed-recipes", content);
-            await JS.InvokeVoidAsync("alert", response.IsSuccessStatusCode ? "Recipes Imported!" : "Failed: " + await response.Content.ReadAsStringAsync());
-            Nav.NavigateTo(Nav.Uri, forceLoad: true);
-        } catch (Exception ex) { await JS.InvokeVoidAsync("alert", ex.Message); }
-    }
     
     private async Task StartClock() { var now = DateTime.Now; await Task.Delay((60 - now.Second) * 1000); using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1)); UpdateTime(); while (await timer.WaitForNextTickAsync()) { UpdateTime(); } }
     private void UpdateTime() { var now = DateTime.UtcNow.AddMinutes(-clientOffsetMinutes); string suffix = (now.Day % 10 == 1 && now.Day != 11) ? "st" : (now.Day % 10 == 2 && now.Day != 12) ? "nd" : (now.Day % 10 == 3 && now.Day != 13) ? "rd" : "th"; CurrentDate = $"{now:dddd, MMMM d}{suffix} {now:yyyy}"; CurrentTime = now.ToString("h:mm tt").ToLower(); InvokeAsync(StateHasChanged); }
