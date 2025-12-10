@@ -37,7 +37,7 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.10.0 (RSS Image Engine)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.9.2 (Derby Toggle)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -422,9 +422,19 @@
     
     private async Task FetchDerby()
     {
+        if (currentUser == null) return;
+
+        // CHECK DB IF ENABLED
+        var derbyFeed = await Db.Feeds.FirstOrDefaultAsync(f => f.Url == "https://shirt.woot.com/derby/rss" && f.UserId == currentUser.Id);
+        if (derbyFeed == null || !derbyFeed.IsEnabled) 
+        {
+            DerbyEntries.Clear();
+            StateHasChanged();
+            return; 
+        }
+
         try 
         {
-            // Use same generic parser for Derby to avoid namespace issues
             using var request = new HttpRequestMessage(HttpMethod.Get, "https://shirt.woot.com/derby/rss");
             request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
             var response = await Http.SendAsync(request);
@@ -432,13 +442,11 @@
 
             var xml = await response.Content.ReadAsStringAsync();
             var doc = XDocument.Parse(xml);
-
+            
             DerbyEntries = doc.Descendants().Where(x => x.Name.LocalName == "item")
                 .Select(item => {
-                    // Try extract image from description
                     var desc = item.Elements().FirstOrDefault(x => x.Name.LocalName == "description")?.Value ?? "";
-                    string img = ExtractImage(item); // Use the shared helper!
-
+                    string img = ExtractImage(item);
                     return new DerbyEntry {
                         Title = item.Elements().FirstOrDefault(x => x.Name.LocalName == "title")?.Value ?? "",
                         Link = item.Elements().FirstOrDefault(x => x.Name.LocalName == "link")?.Value ?? "",
@@ -459,7 +467,8 @@
         
         try
         {
-            var feeds = await Db.Feeds.Where(f => f.UserId == currentUser.Id && f.IsEnabled).ToListAsync();
+            // Exclude System Feeds from this generic list (so Derby doesn't show up twice)
+            var feeds = await Db.Feeds.Where(f => f.UserId == currentUser.Id && f.IsEnabled && f.Category != "System").ToListAsync();
             
             var tasks = feeds.Select(async f => 
             {
@@ -473,7 +482,6 @@
                     var xml = await response.Content.ReadAsStringAsync();
                     var doc = XDocument.Parse(xml);
                     
-                    // Namespace-agnostic parsing
                     return doc.Descendants().Where(x => x.Name.LocalName == "item")
                         .Take(3)
                         .Select(i => new RssItem {
@@ -492,27 +500,14 @@
         catch {}
     }
     
-    // THE MAGIC IMAGE PARSER
     private string ExtractImage(XElement item)
     {
-        // 1. Try <enclosure>
         var enc = item.Elements().FirstOrDefault(x => x.Name.LocalName == "enclosure");
-        if (enc != null && enc.Attribute("type")?.Value.Contains("image") == true)
-            return enc.Attribute("url")?.Value ?? "";
-
-        // 2. Try <media:content> or <media:thumbnail> (ignores namespace prefix)
+        if (enc != null && enc.Attribute("type")?.Value.Contains("image") == true) return enc.Attribute("url")?.Value ?? "";
         var media = item.Elements().FirstOrDefault(x => x.Name.LocalName == "content" || x.Name.LocalName == "thumbnail");
-        if (media != null)
-            return media.Attribute("url")?.Value ?? "";
-
-        // 3. Try HTML Description Regex
+        if (media != null) return media.Attribute("url")?.Value ?? "";
         var desc = item.Elements().FirstOrDefault(x => x.Name.LocalName == "description" || x.Name.LocalName == "encoded")?.Value ?? "";
-        if (!string.IsNullOrEmpty(desc))
-        {
-            var match = Regex.Match(desc, "src=[\"'](http[^\"']+\\.(jpg|jpeg|png|gif|webp))[\"']", RegexOptions.IgnoreCase);
-            if (match.Success) return match.Groups[1].Value;
-        }
-
+        if (!string.IsNullOrEmpty(desc)) { var match = Regex.Match(desc, "src=[\"'](http[^\"']+\\.(jpg|jpeg|png|gif|webp))[\"']", RegexOptions.IgnoreCase); if (match.Success) return match.Groups[1].Value; }
         return "";
     }
 
