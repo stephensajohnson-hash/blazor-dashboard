@@ -38,40 +38,20 @@ public class AdminController : ControllerBase
     [HttpPost("fix-ordering")]
     public async Task<IActionResult> FixOrdering()
     {
-        // 1. Fix Groups
         var groups = await _context.LinkGroups.OrderBy(x => x.Id).ToListAsync();
-        for (int i = 0; i < groups.Count; i++) 
-        { 
-            if (groups.Count > 1 && groups.All(g => g.Order == 0)) 
-                groups[i].Order = i; 
-        }
+        for (int i = 0; i < groups.Count; i++) { if (groups.Count > 1 && groups.All(g => g.Order == 0)) groups[i].Order = i; }
 
-        // 2. Fix Links
         foreach (var group in groups)
         {
             var links = await _context.Links.Where(l => l.LinkGroupId == group.Id).OrderBy(l => l.Id).ToListAsync();
-            for (int i = 0; i < links.Count; i++)
-            {
-                if (links.Count > 1 && links.All(l => l.Order == 0))
-                    links[i].Order = i;
-            }
+            for (int i = 0; i < links.Count; i++) { if (links.Count > 1 && links.All(l => l.Order == 0)) links[i].Order = i; }
         }
 
-        // 3. Fix Stocks
         var stocks = await _context.Stocks.OrderBy(x => x.Id).ToListAsync();
-        for (int i = 0; i < stocks.Count; i++)
-        {
-            if (stocks.Count > 1 && stocks.All(s => s.Order == 0))
-                stocks[i].Order = i;
-        }
+        for (int i = 0; i < stocks.Count; i++) { if (stocks.Count > 1 && stocks.All(s => s.Order == 0)) stocks[i].Order = i; }
 
-        // 4. Fix Countdowns
         var countdowns = await _context.Countdowns.OrderBy(x => x.Id).ToListAsync();
-        for (int i = 0; i < countdowns.Count; i++)
-        {
-            if (countdowns.Count > 1 && countdowns.All(c => c.Order == 0))
-                countdowns[i].Order = i;
-        }
+        for (int i = 0; i < countdowns.Count; i++) { if (countdowns.Count > 1 && countdowns.All(c => c.Order == 0)) countdowns[i].Order = i; }
 
         await _context.SaveChangesAsync();
         return Ok("Ordering Fixed!");
@@ -87,7 +67,6 @@ public class AdminController : ControllerBase
                     ""Id"" serial PRIMARY KEY, ""Username"" text, ""PasswordHash"" text, ""ZipCode"" text, ""AvatarUrl"" text
                 );
             ");
-            
             if (!await _context.Users.AnyAsync())
             {
                 _context.Users.Add(new User { Username = "admin", PasswordHash = PasswordHelper.HashPassword("password"), ZipCode = "75482" });
@@ -141,7 +120,18 @@ public class AdminController : ControllerBase
                 foreach (var r in recipes.EnumerateArray())
                 {
                     string title = GetStr(r, "title");
+                    // Skip duplicates based on title to avoid double import
                     if (await _context.Recipes.AnyAsync(x => x.Title == title)) continue;
+
+                    // SAFE PARSING LOGIC
+                    string srcName = "";
+                    string srcUrl = "";
+                    
+                    if (r.TryGetProperty("source", out var srcObj) && srcObj.ValueKind == JsonValueKind.Object)
+                    {
+                        srcName = GetStr(srcObj, "description");
+                        srcUrl = GetStr(srcObj, "url");
+                    }
 
                     var newRecipe = new Recipe
                     {
@@ -149,12 +139,12 @@ public class AdminController : ControllerBase
                         Title = title,
                         Description = GetStr(r, "description"),
                         Category = GetStr(r, "category"),
-                        Servings = r.TryGetProperty("servings", out var s) ? s.GetInt32() : 0,
+                        Servings = r.TryGetProperty("servings", out var s) && s.ValueKind == JsonValueKind.Number ? s.GetInt32() : 0,
                         PrepTime = GetStr(r, "prepTime"),
                         CookTime = GetStr(r, "cookTime"),
                         ImageUrl = GetStr(r, "image"),
-                        SourceName = r.GetProperty("source").TryGetProperty("description", out var sd) ? sd.GetString() : "",
-                        SourceUrl = r.GetProperty("source").TryGetProperty("url", out var su) ? su.GetString() : "",
+                        SourceName = srcName, // Now safely extracted
+                        SourceUrl = srcUrl,   // Now safely extracted
                         TagsJson = r.TryGetProperty("tags", out var t) ? t.GetRawText() : "[]"
                     };
 
@@ -162,28 +152,28 @@ public class AdminController : ControllerBase
                     await _context.SaveChangesAsync();
 
                     // Ingredients
-                    if (r.TryGetProperty("ingredients", out var ingList))
+                    if (r.TryGetProperty("ingredients", out var ingList) && ingList.ValueKind == JsonValueKind.Array)
                     {
                         foreach (var section in ingList.EnumerateArray())
                         {
                             string secTitle = GetStr(section, "sectionTitle");
                             if (string.IsNullOrEmpty(secTitle)) secTitle = "Main";
 
-                            if (section.TryGetProperty("list", out var list))
+                            if (section.TryGetProperty("list", out var list) && list.ValueKind == JsonValueKind.Array)
                             {
                                 foreach (var item in list.EnumerateArray())
                                 {
                                     var ing = new RecipeIngredient
                                     {
                                         RecipeId = newRecipe.Id,
-                                        Section = secTitle, // Matches Data.cs
+                                        Section = secTitle,
                                         Name = GetStr(item, "name"),
                                         Quantity = GetStr(item, "quantity"),
                                         Unit = GetStr(item, "unit"),
                                         Notes = GetStr(item, "notes")
                                     };
 
-                                    if (item.TryGetProperty("macros", out var m))
+                                    if (item.TryGetProperty("macros", out var m) && m.ValueKind == JsonValueKind.Object)
                                     {
                                         ing.Calories = GetDbl(m, "calories");
                                         ing.Protein = GetDbl(m, "protein");
@@ -191,29 +181,29 @@ public class AdminController : ControllerBase
                                         ing.Fat = GetDbl(m, "fat");
                                         ing.Fiber = GetDbl(m, "fiber");
                                     }
-                                    _context.RecipeIngredients.Add(ing); // Matches DbContext
+                                    _context.RecipeIngredients.Add(ing);
                                 }
                             }
                         }
                     }
 
                     // Instructions
-                    if (r.TryGetProperty("instructions", out var instList))
+                    if (r.TryGetProperty("instructions", out var instList) && instList.ValueKind == JsonValueKind.Array)
                     {
                         foreach (var section in instList.EnumerateArray())
                         {
                             string secTitle = GetStr(section, "sectionTitle");
                             if (string.IsNullOrEmpty(secTitle)) secTitle = "Directions";
 
-                            if (section.TryGetProperty("steps", out var steps))
+                            if (section.TryGetProperty("steps", out var steps) && steps.ValueKind == JsonValueKind.Array)
                             {
                                 int stepNum = 1;
                                 foreach (var step in steps.EnumerateArray())
                                 {
-                                    _context.RecipeInstructions.Add(new RecipeInstruction // Matches Data.cs
+                                    _context.RecipeInstructions.Add(new RecipeInstruction
                                     {
                                         RecipeId = newRecipe.Id,
-                                        Section = secTitle, // Matches Data.cs
+                                        Section = secTitle,
                                         StepNumber = stepNum++,
                                         Text = step.GetString() ?? ""
                                     });
@@ -229,10 +219,29 @@ public class AdminController : ControllerBase
         }
         catch (Exception ex)
         {
-            return StatusCode(500, "Error: " + ex.Message);
+            // Log the inner exception to help debug if it fails again
+            var msg = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
+            return StatusCode(500, "Import Error: " + msg);
         }
     }
 
-    private string GetStr(JsonElement el, string prop) => el.TryGetProperty(prop, out var p) ? p.GetString() ?? "" : "";
-    private double GetDbl(JsonElement el, string prop) => el.TryGetProperty(prop, out var p) && (p.ValueKind == JsonValueKind.Number) ? p.GetDouble() : 0;
+    // Safely get string, return "" if null/missing
+    private string GetStr(JsonElement el, string prop) 
+    {
+        if (el.TryGetProperty(prop, out var p))
+        {
+            return p.GetString() ?? "";
+        }
+        return "";
+    }
+
+    // Safely get double, return 0 if null/missing/wrong type
+    private double GetDbl(JsonElement el, string prop) 
+    {
+        if (el.TryGetProperty(prop, out var p) && p.ValueKind == JsonValueKind.Number)
+        {
+            return p.GetDouble();
+        }
+        return 0;
+    }
 }
