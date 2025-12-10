@@ -1,0 +1,93 @@
+@page "/settings"
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Dashboard
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext Db
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<div class="min-h-screen bg-gray-900 text-white p-8">
+    
+    <div class="max-w-4xl mx-auto">
+        <div class="flex justify-between items-center mb-10 border-b border-gray-800 pb-4">
+            <h1 class="text-3xl font-bold">Settings</h1>
+            <a href="/" class="text-gray-400 hover:text-white flex items-center gap-2 transition">
+                <span>←</span> Back to Dashboard
+            </a>
+        </div>
+
+        <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-xl mb-8">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold text-blue-400 flex items-center gap-2">
+                    <span>📰</span> News Feeds
+                </h2>
+                <button @onclick="SeedFeeds" class="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-white transition">
+                    Reset / Seed Defaults
+                </button>
+            </div>
+
+            @if (Feeds.Any())
+            {
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    @foreach (var group in Feeds.GroupBy(f => f.Category))
+                    {
+                        <div class="bg-gray-900/50 rounded-lg p-4">
+                            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">@group.Key</h3>
+                            <div class="space-y-3">
+                                @foreach (var feed in group)
+                                {
+                                    <div class="flex items-center justify-between p-3 rounded-lg border transition @(feed.IsEnabled ? "bg-blue-900/20 border-blue-500/50" : "bg-gray-800 border-gray-700")">
+                                        <div>
+                                            <div class="font-bold text-sm @(feed.IsEnabled ? "text-white" : "text-gray-400")">@feed.Name</div>
+                                            <div class="text-[10px] text-gray-600 truncate max-w-[200px]">@feed.Url</div>
+                                        </div>
+                                        
+                                        <button @onclick="() => Toggle(feed)" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none @(feed.IsEnabled ? "bg-blue-600" : "bg-gray-600")">
+                                            <span class="sr-only">Enable</span>
+                                            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out @(feed.IsEnabled ? "translate-x-6" : "translate-x-1")"></span>
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="text-center text-gray-500 py-8">
+                    No feeds found. Click "Seed Defaults" to load suggestions.
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<Feed> Feeds = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadFeeds();
+    }
+
+    private async Task LoadFeeds()
+    {
+        // For MVP, we assume User 1, but in prod use Auth state
+        Feeds = await Db.Feeds.Where(f => f.UserId == 1).OrderBy(f => f.Category).ToListAsync();
+    }
+
+    private async Task Toggle(Feed feed)
+    {
+        feed.IsEnabled = !feed.IsEnabled; // Optimistic UI update
+        await Http.PostAsync($"/api/admin/toggle-feed/{feed.Id}", null);
+    }
+
+    private async Task SeedFeeds()
+    {
+        await Http.PostAsync("/api/admin/seed-feeds", null);
+        await LoadFeeds();
+    }
+}

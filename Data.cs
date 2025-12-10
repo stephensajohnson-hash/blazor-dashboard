@@ -22,6 +22,9 @@ public class AppDbContext : DbContext
     public DbSet<RecipeIngredient> RecipeIngredients { get; set; }
     public DbSet<RecipeInstruction> RecipeInstructions { get; set; }
     public DbSet<RecipeCategory> RecipeCategories { get; set; }
+
+    // NEW
+    public DbSet<Feed> Feeds { get; set; }
 }
 
 public class Recipe
@@ -129,6 +132,16 @@ public class User
     public string PasswordHash { get; set; } = "";
     public string ZipCode { get; set; } = "75482"; 
     public string AvatarUrl { get; set; } = "";
+}
+
+public class Feed
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public string Name { get; set; } = "";
+    public string Url { get; set; } = "";
+    public string Category { get; set; } = "General"; // Tech, Sports, Finance
+    public bool IsEnabled { get; set; } = false; // Default OFF
 }
 
 public static class PasswordHelper

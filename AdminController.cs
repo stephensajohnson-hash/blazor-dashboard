@@ -231,4 +231,61 @@ public class AdminController : ControllerBase
         return "";
     }
     private double GetDbl(JsonElement el, string prop) => el.TryGetProperty(prop, out var p) && (p.ValueKind == JsonValueKind.Number) ? p.GetDouble() : 0;
+
+    // ... inside AdminController class ...
+
+    [HttpPost("seed-feeds")]
+    public async Task<IActionResult> SeedFeeds()
+    {
+        // 1. Ensure Table Exists
+        await _context.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS ""Feeds"" (
+                ""Id"" serial PRIMARY KEY, 
+                ""UserId"" integer, 
+                ""Name"" text, 
+                ""Url"" text, 
+                ""Category"" text, 
+                ""IsEnabled"" boolean DEFAULT FALSE
+            );
+        ");
+
+        // 2. The List of Suggested Feeds
+        var suggestions = new List<Feed>
+        {
+            new Feed { Name = "Hacker News", Url = "https://news.ycombinator.com/rss", Category = "Tech" },
+            new Feed { Name = "Visual Studio Blog", Url = "https://devblogs.microsoft.com/visualstudio/feed/", Category = "Tech" },
+            new Feed { Name = "Dallas Cowboys", Url = "https://www.dallascowboys.com/rss/news", Category = "Sports" },
+            new Feed { Name = "Texas Rangers", Url = "https://www.mlb.com/rangers/feeds/news/rss.xml", Category = "Sports" },
+            new Feed { Name = "Tesla Stock News", Url = "https://news.google.com/rss/search?q=Tesla+Stock", Category = "Finance" },
+            new Feed { Name = "Woot Daily Deals", Url = "https://www.woot.com/blog/feed", Category = "Shopping" }
+        };
+
+        // 3. Assign to Admin User (Id 1) if missing
+        int userId = 1; 
+
+        foreach (var s in suggestions)
+        {
+            // Check if this feed URL already exists for this user
+            if (!await _context.Feeds.AnyAsync(f => f.UserId == userId && f.Url == s.Url))
+            {
+                s.UserId = userId;
+                s.IsEnabled = false; // Default OFF
+                _context.Feeds.Add(s);
+            }
+        }
+
+        await _context.SaveChangesAsync();
+        return Ok("Feeds seeded (default off).");
+    }
+    
+    // Toggle Endpoint
+    [HttpPost("toggle-feed/{id}")]
+    public async Task<IActionResult> ToggleFeed(int id)
+    {
+        var feed = await _context.Feeds.FindAsync(id);
+        if (feed == null) return NotFound();
+        feed.IsEnabled = !feed.IsEnabled;
+        await _context.SaveChangesAsync();
+        return Ok(feed.IsEnabled);
+    }
 }
