@@ -6,6 +6,7 @@
 @using System.Text.Json
 @using Microsoft.JSInterop
 @using System.Globalization
+@using System.Text
 @inject AppDbContext Db
 @inject HttpClient Http
 @inject IJSRuntime JS
@@ -13,153 +14,162 @@
 
 <div class="min-h-screen bg-gray-900 text-white overflow-x-hidden pb-40">
 
-    <main class="w-full p-8 relative scroll-smooth">
-        
-        <div class="mb-10 border-b border-gray-800 pb-4 flex justify-between items-end">
-            <div>
-                <div class="flex items-baseline gap-4">
-                    <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
-                    <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
+    @if (isDbError)
+    {
+        <div class="flex flex-col items-center justify-center h-screen space-y-6">
+            <div class="text-red-500 text-xl font-bold">⚠️ Recipe Database Error</div>
+            <p class="text-gray-400 max-w-md text-center">@errorMessage</p>
+            <button @onclick="UpgradeDatabase" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">
+                Attempt Database Fix
+            </button>
+        </div>
+    }
+    else
+    {
+        <main class="w-full p-8 relative scroll-smooth">
+            
+            <div class="mb-10 border-b border-gray-800 pb-4 flex justify-between items-end">
+                <div>
+                    <div class="flex items-baseline gap-4">
+                        <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
+                        <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
+                    </div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.3.0 (Recipe Debug)</div>
                 </div>
-                <div class="text-[10px] text-gray-600 font-mono mt-1">v2.2.3 (Recipes Live)</div>
-            </div>
 
-            <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
-                <a href="/" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Home">🏠</a>
-                <a href="/recipes" class="text-2xl hover:scale-125 transition grayscale-0 drop-shadow-[0_0_10px_rgba(255,165,0,0.5)]" title="Recipes">🍳</a>
-                <span class="text-2xl opacity-20 cursor-not-allowed">🚧</span>
-            </div>
+                <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
+                    <a href="/" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Home">🏠</a>
+                    <a href="/recipes" class="text-2xl hover:scale-125 transition grayscale-0 drop-shadow-[0_0_10px_rgba(255,165,0,0.5)]" title="Recipes">🍳</a>
+                    <span class="text-2xl opacity-20 cursor-not-allowed">🚧</span>
+                </div>
 
-            <div class="flex items-center gap-8 text-right">
-                <div class="relative group z-50">
-                    <button class="flex items-center gap-3 focus:outline-none">
-                        <img src="@(string.IsNullOrEmpty(currentUser?.AvatarUrl) ? "https://i.imgur.com/7Y5j5Yx.png" : currentUser.AvatarUrl)" 
-                             class="w-10 h-10 rounded-full border-2 border-gray-700 transition object-cover bg-gray-800" />
-                    </button>
-                    <div class="absolute right-0 top-full mt-2 w-32 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 hidden group-hover:block z-50">
-                        <button type="button" @onclick="Logout" class="w-full text-left text-xs text-red-500 font-bold hover:bg-gray-700 p-2 rounded">Logout</button>
+                <div class="flex items-center gap-8 text-right">
+                    <div class="relative group z-50">
+                        <button class="flex items-center gap-3 focus:outline-none">
+                            <img src="@(string.IsNullOrEmpty(currentUser?.AvatarUrl) ? "https://i.imgur.com/7Y5j5Yx.png" : currentUser.AvatarUrl)" 
+                                 class="w-10 h-10 rounded-full border-2 border-gray-700 transition object-cover bg-gray-800" />
+                        </button>
+                        <div class="absolute right-0 top-full mt-2 w-32 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 hidden group-hover:block z-50">
+                            <button type="button" @onclick="Logout" class="w-full text-left text-xs text-red-500 font-bold hover:bg-gray-700 p-2 rounded">Logout</button>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <div class="mb-8 relative max-w-xl mx-auto">
-            <input type="text" @bind="searchTerm" @bind:event="oninput" placeholder="Search recipes, ingredients..." class="w-full bg-gray-800 border border-gray-700 rounded-xl py-3 px-4 pl-11 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition duration-200 shadow-lg" />
-            <div class="absolute left-3.5 top-3.5 text-gray-500">🔍</div>
-        </div>
+            @if (!string.IsNullOrEmpty(errorMessage) && !isDbError)
+            {
+                <div class="bg-red-900/50 border border-red-500 text-red-200 p-4 rounded-xl mb-8">
+                    <strong>Error Loading Recipes:</strong> @errorMessage
+                </div>
+            }
 
-        @if (selectedRecipe == null)
-        {
-            <div id="recipe-groups-container" class="flex flex-col space-y-12">
-                @foreach (var category in FilteredRecipes.Select(r => r.Category).Distinct().OrderBy(c => c))
-                {
-                    var catRecipes = FilteredRecipes.Where(r => r.Category == category).ToList();
-                    if (catRecipes.Any())
+            <div class="mb-8 relative max-w-xl mx-auto">
+                <input type="text" @bind="searchTerm" @bind:event="oninput" placeholder="Search recipes, ingredients..." class="w-full bg-gray-800 border border-gray-700 rounded-xl py-3 px-4 pl-11 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition duration-200 shadow-lg" />
+                <div class="absolute left-3.5 top-3.5 text-gray-500">🔍</div>
+            </div>
+
+            @if (selectedRecipe == null)
+            {
+                <div id="recipe-groups-container" class="flex flex-col space-y-12">
+                    @foreach (var category in FilteredRecipes.Select(r => r.Category).Distinct().OrderBy(c => c))
                     {
-                        <section>
-                            <div class="bg-gray-800 border border-gray-700 inline-block px-4 py-1.5 rounded-full mb-4 text-lg font-semibold text-white shadow-md">
-                                @category
-                            </div>
-                            <div class="flex flex-wrap gap-6 justify-start">
-                                @foreach (var r in catRecipes)
-                                {
-                                    <div class="w-full max-w-[300px] min-w-[250px] cursor-pointer bg-gray-800 border border-gray-700 rounded-xl shadow-lg overflow-hidden hover:bg-gray-700 transition duration-200" @onclick="() => SelectRecipe(r)">
-                                        <img src="@r.ImageUrl" class="w-full h-32 object-cover" onerror="this.src='https://placehold.co/400?text=No+Image'" />
-                                        <div class="p-3">
-                                            <h3 class="text-lg font-bold text-white truncate">@r.Title</h3>
-                                            <p class="text-xs text-gray-400 mt-1 mb-2">@r.PrepTime | @r.CookTime</p>
-                                            
-                                            <div class="flex flex-wrap gap-1">
-                                                @foreach (var tag in GetTags(r.TagsJson))
-                                                {
-                                                    <span class="px-2 py-0.5 text-xs rounded-full bg-blue-900/50 text-blue-300">@tag</span>
-                                                }
+                        var catRecipes = FilteredRecipes.Where(r => r.Category == category).ToList();
+                        if (catRecipes.Any())
+                        {
+                            <section>
+                                <div class="bg-gray-800 border border-gray-700 inline-block px-4 py-1.5 rounded-full mb-4 text-lg font-semibold text-white shadow-md">
+                                    @category
+                                </div>
+                                <div class="flex flex-wrap gap-6 justify-start">
+                                    @foreach (var r in catRecipes)
+                                    {
+                                        <div class="w-full max-w-[300px] min-w-[250px] cursor-pointer bg-gray-800 border border-gray-700 rounded-xl shadow-lg overflow-hidden hover:bg-gray-700 transition duration-200" @onclick="() => SelectRecipe(r)">
+                                            <img src="@r.ImageUrl" class="w-full h-32 object-cover" onerror="this.src='https://placehold.co/400?text=No+Image'" />
+                                            <div class="p-3">
+                                                <h3 class="text-lg font-bold text-white truncate">@r.Title</h3>
+                                                <p class="text-xs text-gray-400 mt-1 mb-2">@r.PrepTime | @r.CookTime</p>
+                                                <div class="flex flex-wrap gap-1">
+                                                    @foreach (var tag in GetTags(r.TagsJson))
+                                                    {
+                                                        <span class="px-2 py-0.5 text-xs rounded-full bg-blue-900/50 text-blue-300">@tag</span>
+                                                    }
+                                                </div>
                                             </div>
                                         </div>
+                                    }
+                                </div>
+                            </section>
+                        }
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="animate-fade-in">
+                    <button @onclick="() => selectedRecipe = null" class="mb-6 flex items-center text-gray-400 hover:text-white transition px-4 py-2 rounded-lg bg-gray-800 border border-gray-700">
+                        ← Back to Recipes
+                    </button>
+
+                    <div class="bg-gray-800 rounded-2xl p-6 border border-gray-700 shadow-2xl max-w-5xl mx-auto">
+                        <div class="flex flex-col md:flex-row gap-6 mb-8">
+                            <img src="@selectedRecipe.ImageUrl" class="w-full md:w-1/2 rounded-xl object-cover h-96 shadow-lg border border-gray-700" />
+                            <div class="flex-1 flex flex-col justify-center">
+                                <h1 class="text-4xl font-extrabold text-white mb-2">@selectedRecipe.Title</h1>
+                                <div class="text-sm text-blue-300 mb-4 font-medium">@selectedRecipe.SourceName</div>
+                                <p class="text-gray-400 italic mb-6 text-lg">@selectedRecipe.Description</p>
+                                <div class="flex gap-4 mb-6 text-sm">
+                                    <span class="bg-gray-700 px-3 py-1 rounded text-white">Prep: <strong>@selectedRecipe.PrepTime</strong></span>
+                                    <span class="bg-gray-700 px-3 py-1 rounded text-white">Cook: <strong>@selectedRecipe.CookTime</strong></span>
+                                    <span class="bg-gray-700 px-3 py-1 rounded text-white">Serves: <strong>@selectedRecipe.Servings</strong></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid md:grid-cols-2 gap-8">
+                            <div>
+                                <h2 class="text-2xl font-bold border-b border-blue-900/50 pb-2 mb-4 text-blue-300">Ingredients</h2>
+                                @foreach (var ingGroup in selectedRecipe.Ingredients.GroupBy(i => i.Section))
+                                {
+                                    <div class="mb-6">
+                                        <h3 class="text-lg font-semibold text-white mb-2 pl-2 border-l-2 border-blue-500">@ingGroup.Key</h3>
+                                        <ul class="space-y-2">
+                                            @foreach (var ing in ingGroup)
+                                            {
+                                                <li class="flex justify-between border-b border-gray-700/50 pb-1">
+                                                    <span class="text-gray-200">
+                                                        <span class="font-bold text-white">@ing.Quantity</span> 
+                                                        <span class="font-bold text-white">@ing.Unit</span> @ing.Name
+                                                    </span>
+                                                    <span class="text-xs text-gray-500 italic ml-2">@ing.Notes</span>
+                                                </li>
+                                            }
+                                        </ul>
                                     </div>
                                 }
                             </div>
-                        </section>
-                    }
-                }
-            </div>
-            
-            @if (!FilteredRecipes.Any())
-            {
-                <div class="text-center text-gray-500 mt-10">No recipes found matching "@searchTerm"</div>
-            }
-        }
-        else
-        {
-            <div class="animate-fade-in">
-                <button @onclick="() => selectedRecipe = null" class="mb-6 flex items-center text-gray-400 hover:text-white transition px-4 py-2 rounded-lg bg-gray-800 border border-gray-700">
-                    ← Back to Recipes
-                </button>
 
-                <div class="bg-gray-800 rounded-2xl p-6 border border-gray-700 shadow-2xl max-w-5xl mx-auto">
-                    <div class="flex flex-col md:flex-row gap-6 mb-8">
-                        <img src="@selectedRecipe.ImageUrl" class="w-full md:w-1/2 rounded-xl object-cover h-96 shadow-lg border border-gray-700" />
-                        <div class="flex-1 flex flex-col justify-center">
-                            <h1 class="text-4xl font-extrabold text-white mb-2">@selectedRecipe.Title</h1>
-                            
-                            <div class="text-sm text-blue-300 mb-4 font-medium">@selectedRecipe.SourceName</div>
-                            
-                            <p class="text-gray-400 italic mb-6 text-lg">@selectedRecipe.Description</p>
-                            
-                            <div class="flex gap-4 mb-6 text-sm">
-                                <span class="bg-gray-700 px-3 py-1 rounded text-white">Prep: <strong>@selectedRecipe.PrepTime</strong></span>
-                                <span class="bg-gray-700 px-3 py-1 rounded text-white">Cook: <strong>@selectedRecipe.CookTime</strong></span>
-                                <span class="bg-gray-700 px-3 py-1 rounded text-white">Serves: <strong>@selectedRecipe.Servings</strong></span>
+                            <div>
+                                <h2 class="text-2xl font-bold border-b border-green-900/50 pb-2 mb-4 text-green-300">Instructions</h2>
+                                @foreach (var instGroup in selectedRecipe.Instructions.GroupBy(i => i.Section))
+                                {
+                                    <div class="mb-8">
+                                        <h3 class="text-lg font-semibold text-white mb-3 pl-2 border-l-2 border-green-500">@instGroup.Key</h3>
+                                        <ol class="list-decimal list-outside space-y-4 text-gray-300 pl-5">
+                                            @foreach (var step in instGroup.OrderBy(s => s.StepNumber))
+                                            {
+                                                <li class="pl-2">@step.Text</li>
+                                            }
+                                        </ol>
+                                    </div>
+                                }
                             </div>
                         </div>
                     </div>
-
-                    <div class="grid md:grid-cols-2 gap-8">
-                        <div>
-                            <h2 class="text-2xl font-bold border-b border-blue-900/50 pb-2 mb-4 text-blue-300">Ingredients</h2>
-                            
-                            @foreach (var ingGroup in selectedRecipe.Ingredients.GroupBy(i => i.Section))
-                            {
-                                <div class="mb-6">
-                                    <h3 class="text-lg font-semibold text-white mb-2 pl-2 border-l-2 border-blue-500">@ingGroup.Key</h3>
-                                    <ul class="space-y-2">
-                                        @foreach (var ing in ingGroup)
-                                        {
-                                            <li class="flex justify-between border-b border-gray-700/50 pb-1">
-                                                <span class="text-gray-200">
-                                                    <span class="font-bold text-white">@ing.Quantity</span> 
-                                                    <span class="font-bold text-white">@ing.Unit</span> @ing.Name
-                                                </span>
-                                                <span class="text-xs text-gray-500 italic ml-2">@ing.Notes</span>
-                                            </li>
-                                        }
-                                    </ul>
-                                </div>
-                            }
-                        </div>
-
-                        <div>
-                            <h2 class="text-2xl font-bold border-b border-green-900/50 pb-2 mb-4 text-green-300">Instructions</h2>
-                            
-                            @foreach (var instGroup in selectedRecipe.Instructions.GroupBy(i => i.Section))
-                            {
-                                <div class="mb-8">
-                                    <h3 class="text-lg font-semibold text-white mb-3 pl-2 border-l-2 border-green-500">@instGroup.Key</h3>
-                                    <ol class="list-decimal list-outside space-y-4 text-gray-300 pl-5">
-                                        @foreach (var step in instGroup.OrderBy(s => s.StepNumber))
-                                        {
-                                            <li class="pl-2">@step.Text</li>
-                                        }
-                                    </ol>
-                                </div>
-                            }
-                        </div>
-                    </div>
                 </div>
-            </div>
-        }
+            }
 
-    </main>
+        </main>
+    }
 </div>
 
 <script>window.getUserOffset = () => { return new Date().getTimezoneOffset(); }; window.scrollToTop = () => window.scrollTo(0, 0);</script>
@@ -173,10 +183,14 @@
     private string CurrentDate = "", CurrentTime = "";
     private WeatherData? weather;
     private int clientOffsetMinutes = 0;
+    
+    // ERROR STATES
+    private bool isDbError = false;
+    private string errorMessage = "";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender) 
+        if (firstRender && !isDbError) 
         { 
             try 
             { 
@@ -191,12 +205,28 @@
                 currentUser = await Db.Users.FindAsync(session.UserId);
                 if (currentUser == null) { await Logout(); return; }
 
-                RecipeList = await Db.Recipes
-                    .Where(r => r.UserId == currentUser.Id)
-                    .Include(r => r.Ingredients)
-                    .Include(r => r.Instructions)
-                    .OrderBy(r => r.Category).ThenBy(r => r.Title)
-                    .ToListAsync();
+                // Safe Data Load
+                try 
+                {
+                    RecipeList = await Db.Recipes
+                        .Where(r => r.UserId == currentUser.Id)
+                        .Include(r => r.Ingredients)
+                        .Include(r => r.Instructions)
+                        .OrderBy(r => r.Category).ThenBy(r => r.Title)
+                        .ToListAsync();
+                }
+                catch (Exception ex)
+                {
+                    // Detect Missing Table/Column
+                    if (ex.Message.Contains("42P01") || ex.Message.Contains("42703") || ex.InnerException?.Message.Contains("42703") == true)
+                    {
+                        isDbError = true;
+                        errorMessage = ex.Message; // Show actual error
+                        StateHasChanged();
+                        return;
+                    }
+                    errorMessage = "Data Load Error: " + ex.Message;
+                }
                 
                 _ = FetchWeather();
                 try { clientOffsetMinutes = await JS.InvokeAsync<int>("getUserOffset"); UpdateTime(); } catch {}
@@ -206,6 +236,24 @@
             } 
             catch { Nav.NavigateTo("/login", forceLoad: true); }
         }
+    }
+
+    private async Task UpgradeDatabase()
+    {
+        // Force create tables if missing
+        await Http.PostAsync("/api/admin/upgrade-users", null); // Just triggers table checks
+        // Re-run the seed logic to ensure tables exist
+        try 
+        {
+            await Db.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""Recipes"" (""Id"" serial PRIMARY KEY, ""UserId"" integer, ""Title"" text, ""Description"" text, ""Category"" text, ""Servings"" integer, ""PrepTime"" text, ""CookTime"" text, ""ImageUrl"" text, ""SourceName"" text, ""SourceUrl"" text, ""TagsJson"" text);
+                CREATE TABLE IF NOT EXISTS ""RecipeIngredients"" (""Id"" serial PRIMARY KEY, ""RecipeId"" integer, ""Section"" text, ""Name"" text, ""Quantity"" text, ""Unit"" text, ""Notes"" text, ""Calories"" double precision, ""Protein"" double precision, ""Carbs"" double precision, ""Fat"" double precision, ""Fiber"" double precision);
+                CREATE TABLE IF NOT EXISTS ""RecipeInstructions"" (""Id"" serial PRIMARY KEY, ""RecipeId"" integer, ""Section"" text, ""StepNumber"" integer, ""Text"" text);
+                CREATE TABLE IF NOT EXISTS ""RecipeCategories"" (""Id"" serial PRIMARY KEY, ""UserId"" integer, ""Name"" text);
+            ");
+            Nav.NavigateTo(Nav.Uri, forceLoad: true);
+        }
+        catch (Exception ex) { errorMessage = ex.Message; }
     }
 
     private IEnumerable<Recipe> FilteredRecipes => 
