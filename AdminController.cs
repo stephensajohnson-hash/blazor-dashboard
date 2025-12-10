@@ -1,165 +1,39 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Threading.Tasks;
+using System.Linq;
 using System.Text.Json;
-using Dashboard;
+using System;
+
+namespace Dashboard.Controllers;
 
 [Route("api/admin")]
 [ApiController]
 public class AdminController : ControllerBase
 {
     private readonly AppDbContext _context;
-
-    public AdminController(AppDbContext context)
-    {
-        _context = context;
-    }
+    public AdminController(AppDbContext context) { _context = context; }
 
     [HttpPost("clear")]
     public async Task<IActionResult> ClearDatabase()
     {
-        _context.Links.RemoveRange(_context.Links);
         _context.LinkGroups.RemoveRange(_context.LinkGroups);
-        _context.Stocks.RemoveRange(_context.Stocks);
+        _context.Links.RemoveRange(_context.Links);
         _context.Countdowns.RemoveRange(_context.Countdowns);
+        _context.Stocks.RemoveRange(_context.Stocks);
+        _context.Recipes.RemoveRange(_context.Recipes); 
+        _context.RecipeIngredients.RemoveRange(_context.RecipeIngredients);
+        _context.RecipeInstructions.RemoveRange(_context.RecipeInstructions);
+        _context.RecipeCategories.RemoveRange(_context.RecipeCategories);
         await _context.SaveChangesAsync();
-        return Ok("Database Cleared.");
+        return Ok("Database cleared.");
     }
 
     [HttpPost("seed")]
     public async Task<IActionResult> SeedDatabase()
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "seed.json");
-
-        if (!System.IO.File.Exists(path))
-            return NotFound("seed.json not found.");
-
-        try 
-        {
-            var json = await System.IO.File.ReadAllTextAsync(path);
-            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            var rawData = JsonSerializer.Deserialize<JsonRoot>(json, options);
-
-            if (rawData == null) return BadRequest("JSON was null.");
-
-            int groupsAdded = 0;
-
-            // --- LINK GROUPS ---
-            if (rawData.LinkGroups != null)
-            {
-                foreach (var rawGroup in rawData.LinkGroups)
-                {
-                    var newGroup = new LinkGroup 
-                    { 
-                        Name = rawGroup.Name, 
-                        Color = rawGroup.Color, 
-                        IsStatic = rawGroup.IsStatic 
-                    };
-
-                    if (rawGroup.Links != null)
-                    {
-                        foreach (var rawLink in rawGroup.Links)
-                        {
-                            newGroup.Links.Add(new Link 
-                            { 
-                                Name = rawLink.Name, 
-                                Url = rawLink.Url, 
-                                Img = rawLink.Img 
-                            });
-                        }
-                    }
-                    _context.LinkGroups.Add(newGroup);
-                    groupsAdded++;
-                }
-            }
-
-            // --- COUNTDOWNS (THE FIX IS HERE) ---
-            if (rawData.Countdowns != null)
-            {
-                foreach (var c in rawData.Countdowns)
-                {
-                    // PostgreSQL requires dates to be explicitly UTC
-                    var utcDate = DateTime.SpecifyKind(c.TargetDate, DateTimeKind.Utc);
-
-                    _context.Countdowns.Add(new Countdown
-                    {
-                        Name = c.Name,
-                        TargetDate = utcDate, // <--- FIXED
-                        LinkUrl = c.LinkUrl,
-                        Img = c.Img
-                    });
-                }
-            }
-
-            // --- STOCKS ---
-            if (rawData.Stocks != null)
-            {
-                foreach (var s in rawData.Stocks)
-                {
-                    _context.Stocks.Add(new Stock 
-                    { 
-                        Symbol = s.Symbol,
-                        ImgUrl = "",
-                        LinkUrl = "",
-                        Shares = 0  // <--- NEW FIX
-                    });
-                }
-            }
-
-            await _context.SaveChangesAsync();
-            return Ok($"Success! Seeded {groupsAdded} groups.");
-        }
-        catch (Exception ex)
-        {
-            // Print the inner exception too, it usually hides the real SQL error
-            var msg = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
-            Console.WriteLine($"[SEED ERROR] {msg}");
-            return StatusCode(500, msg);
-        }
+        return Ok("Use specific seeders.");
     }
-
-    // ==========================================
-    // TEMPORARY CLASSES (DTOs)
-    // ==========================================
-
-    public class JsonRoot
-    {
-        public List<JsonGroup>? LinkGroups { get; set; }
-        public List<JsonStock>? Stocks { get; set; }
-        public List<JsonCountdown>? Countdowns { get; set; }
-    }
-
-    public class JsonGroup
-    {
-        public string? Id { get; set; } 
-        public string Name { get; set; } = "";
-        public string Color { get; set; } = "blue";
-        public bool IsStatic { get; set; }
-        public List<JsonLink>? Links { get; set; }
-    }
-
-    public class JsonLink
-    {
-        public string? Id { get; set; } 
-        public string Name { get; set; } = "";
-        public string Url { get; set; } = "";
-        public string Img { get; set; } = "";
-    }
-
-    public class JsonCountdown
-    {
-        public string? Id { get; set; } 
-        public string Name { get; set; } = "";
-        public DateTime TargetDate { get; set; }
-        public string LinkUrl { get; set; } = "";
-        public string Img { get; set; } = "";
-    }
-
-    public class JsonStock
-    {
-        public string Symbol { get; set; } = "";
-    }
-
-    // ... inside AdminController class ...
 
     [HttpPost("fix-ordering")]
     public async Task<IActionResult> FixOrdering()
@@ -168,12 +42,11 @@ public class AdminController : ControllerBase
         var groups = await _context.LinkGroups.OrderBy(x => x.Id).ToListAsync();
         for (int i = 0; i < groups.Count; i++) 
         { 
-            // Only update if order is default 0 (collision)
             if (groups.Count > 1 && groups.All(g => g.Order == 0)) 
                 groups[i].Order = i; 
         }
 
-        // 2. Fix Links (per group)
+        // 2. Fix Links
         foreach (var group in groups)
         {
             var links = await _context.Links.Where(l => l.LinkGroupId == group.Id).OrderBy(l => l.Id).ToListAsync();
@@ -209,112 +82,84 @@ public class AdminController : ControllerBase
     {
         try 
         {
-            // 1. Create Table using Raw SQL (Postgres syntax)
             await _context.Database.ExecuteSqlRawAsync(@"
                 CREATE TABLE IF NOT EXISTS ""Users"" (
-                    ""Id"" serial PRIMARY KEY,
-                    ""Username"" text NOT NULL,
-                    ""PasswordHash"" text NOT NULL,
-                    ""ZipCode"" text NOT NULL,
-                    ""AvatarUrl"" text NOT NULL
+                    ""Id"" serial PRIMARY KEY, ""Username"" text, ""PasswordHash"" text, ""ZipCode"" text, ""AvatarUrl"" text
                 );
             ");
-
-            // 2. Create Default Admin User if table is empty
+            
             if (!await _context.Users.AnyAsync())
             {
-                var admin = new User
-                {
-                    Username = "admin",
-                    // Default password is 'password' - change this later!
-                    PasswordHash = PasswordHelper.HashPassword("password"), 
-                    ZipCode = "75482",
-                    AvatarUrl = "https://i.imgur.com/7Y5j5Yx.png" // Generic Avatar
-                };
-                _context.Users.Add(admin);
+                _context.Users.Add(new User { Username = "admin", PasswordHash = PasswordHelper.HashPassword("password"), ZipCode = "75482" });
                 await _context.SaveChangesAsync();
-                return Ok("Users table created and Default Admin added.");
             }
-
-            return Ok("Users table already exists.");
+            return Ok("Users table checked.");
         }
-        catch (Exception ex)
-        {
-            return StatusCode(500, ex.Message);
-        }
+        catch (Exception ex) { return StatusCode(500, ex.Message); }
     }
-
-    // ... inside AdminController ...
 
     [HttpPost("seed-recipes")]
     public async Task<IActionResult> SeedRecipes([FromBody] JsonElement json)
     {
         try
         {
-            // 1. Create Tables
+            // 1. Ensure Tables Exist
             await _context.Database.ExecuteSqlRawAsync(@"
                 CREATE TABLE IF NOT EXISTS ""Recipes"" (
-                    ""Id"" serial PRIMARY KEY,
-                    ""UserId"" integer NOT NULL,
-                    ""Title"" text, ""Description"" text, ""Category"" text,
-                    ""Servings"" integer, ""PrepTime"" text, ""CookTime"" text,
-                    ""ImageUrl"" text, ""SourceUrl"" text, ""SourceDescription"" text,
-                    ""TagsJson"" text
+                    ""Id"" serial PRIMARY KEY, ""UserId"" integer, ""Title"" text, ""Description"" text, ""Category"" text,
+                    ""Servings"" integer, ""PrepTime"" text, ""CookTime"" text, ""ImageUrl"" text, 
+                    ""SourceName"" text, ""SourceUrl"" text, ""TagsJson"" text
                 );
-                CREATE TABLE IF NOT EXISTS ""Ingredients"" (
-                    ""Id"" serial PRIMARY KEY,
-                    ""RecipeId"" integer NOT NULL,
-                    ""SectionTitle"" text, ""Name"" text, ""Quantity"" text, ""Unit"" text, ""Notes"" text,
+                CREATE TABLE IF NOT EXISTS ""RecipeIngredients"" (
+                    ""Id"" serial PRIMARY KEY, ""RecipeId"" integer, ""Section"" text, ""Name"" text, ""Quantity"" text, ""Unit"" text, ""Notes"" text,
                     ""Calories"" double precision, ""Protein"" double precision, ""Carbs"" double precision, ""Fat"" double precision, ""Fiber"" double precision
                 );
-                CREATE TABLE IF NOT EXISTS ""Instructions"" (
-                    ""Id"" serial PRIMARY KEY,
-                    ""RecipeId"" integer NOT NULL,
-                    ""SectionTitle"" text, ""StepText"" text, ""Order"" integer
+                CREATE TABLE IF NOT EXISTS ""RecipeInstructions"" (
+                    ""Id"" serial PRIMARY KEY, ""RecipeId"" integer, ""Section"" text, ""StepNumber"" integer, ""Text"" text
                 );
                 CREATE TABLE IF NOT EXISTS ""RecipeCategories"" (
                     ""Id"" serial PRIMARY KEY, ""UserId"" integer, ""Name"" text
                 );
             ");
 
-            // 2. Parse JSON
-            // We assume the user sends the raw JSON object { "recipes": [...], "categories": [...] }
-            
-            // Categories
+            // 2. Parse Categories
             if (json.TryGetProperty("categories", out var cats))
             {
                 foreach (var cat in cats.EnumerateArray())
                 {
-                    if (!await _context.RecipeCategories.AnyAsync(c => c.Name == cat.GetString()))
+                    string name = cat.GetString() ?? "";
+                    if (!await _context.RecipeCategories.AnyAsync(c => c.Name == name))
                     {
-                        _context.RecipeCategories.Add(new RecipeCategory { UserId = 1, Name = cat.GetString() });
+                        _context.RecipeCategories.Add(new RecipeCategory { UserId = 1, Name = name });
                     }
                 }
             }
 
-            // Recipes
+            // 3. Parse Recipes
             if (json.TryGetProperty("recipes", out var recipes))
             {
                 foreach (var r in recipes.EnumerateArray())
                 {
-                    // Basic Info
+                    string title = GetStr(r, "title");
+                    if (await _context.Recipes.AnyAsync(x => x.Title == title)) continue;
+
                     var newRecipe = new Recipe
                     {
-                        UserId = 1, // Default to Admin
-                        Title = GetStr(r, "title"),
+                        UserId = 1, 
+                        Title = title,
                         Description = GetStr(r, "description"),
                         Category = GetStr(r, "category"),
                         Servings = r.TryGetProperty("servings", out var s) ? s.GetInt32() : 0,
                         PrepTime = GetStr(r, "prepTime"),
                         CookTime = GetStr(r, "cookTime"),
                         ImageUrl = GetStr(r, "image"),
-                        SourceUrl = r.GetProperty("source").GetProperty("url").GetString() ?? "",
-                        SourceDescription = r.GetProperty("source").GetProperty("description").GetString() ?? "",
-                        TagsJson = r.GetProperty("tags").GetRawText()
+                        SourceName = r.GetProperty("source").TryGetProperty("description", out var sd) ? sd.GetString() : "",
+                        SourceUrl = r.GetProperty("source").TryGetProperty("url", out var su) ? su.GetString() : "",
+                        TagsJson = r.TryGetProperty("tags", out var t) ? t.GetRawText() : "[]"
                     };
 
                     _context.Recipes.Add(newRecipe);
-                    await _context.SaveChangesAsync(); // Save to get ID
+                    await _context.SaveChangesAsync();
 
                     // Ingredients
                     if (r.TryGetProperty("ingredients", out var ingList))
@@ -322,28 +167,32 @@ public class AdminController : ControllerBase
                         foreach (var section in ingList.EnumerateArray())
                         {
                             string secTitle = GetStr(section, "sectionTitle");
-                            foreach (var item in section.GetProperty("list").EnumerateArray())
-                            {
-                                var ing = new Ingredient
-                                {
-                                    RecipeId = newRecipe.Id,
-                                    SectionTitle = secTitle,
-                                    Name = GetStr(item, "name"),
-                                    Quantity = GetStr(item, "quantity"),
-                                    Unit = GetStr(item, "unit"),
-                                    Notes = GetStr(item, "notes")
-                                };
+                            if (string.IsNullOrEmpty(secTitle)) secTitle = "Main";
 
-                                // Macros
-                                if (item.TryGetProperty("macros", out var m))
+                            if (section.TryGetProperty("list", out var list))
+                            {
+                                foreach (var item in list.EnumerateArray())
                                 {
-                                    ing.Calories = GetDouble(m, "calories");
-                                    ing.Protein = GetDouble(m, "protein");
-                                    ing.Carbs = GetDouble(m, "carbs");
-                                    ing.Fat = GetDouble(m, "fat");
-                                    ing.Fiber = GetDouble(m, "fiber");
+                                    var ing = new RecipeIngredient
+                                    {
+                                        RecipeId = newRecipe.Id,
+                                        Section = secTitle, // Matches Data.cs
+                                        Name = GetStr(item, "name"),
+                                        Quantity = GetStr(item, "quantity"),
+                                        Unit = GetStr(item, "unit"),
+                                        Notes = GetStr(item, "notes")
+                                    };
+
+                                    if (item.TryGetProperty("macros", out var m))
+                                    {
+                                        ing.Calories = GetDbl(m, "calories");
+                                        ing.Protein = GetDbl(m, "protein");
+                                        ing.Carbs = GetDbl(m, "carbs");
+                                        ing.Fat = GetDbl(m, "fat");
+                                        ing.Fiber = GetDbl(m, "fiber");
+                                    }
+                                    _context.RecipeIngredients.Add(ing); // Matches DbContext
                                 }
-                                _context.Ingredients.Add(ing);
                             }
                         }
                     }
@@ -354,16 +203,21 @@ public class AdminController : ControllerBase
                         foreach (var section in instList.EnumerateArray())
                         {
                             string secTitle = GetStr(section, "sectionTitle");
-                            int order = 0;
-                            foreach (var step in section.GetProperty("steps").EnumerateArray())
+                            if (string.IsNullOrEmpty(secTitle)) secTitle = "Directions";
+
+                            if (section.TryGetProperty("steps", out var steps))
                             {
-                                _context.Instructions.Add(new Instruction
+                                int stepNum = 1;
+                                foreach (var step in steps.EnumerateArray())
                                 {
-                                    RecipeId = newRecipe.Id,
-                                    SectionTitle = secTitle,
-                                    StepText = step.GetString() ?? "",
-                                    Order = order++
-                                });
+                                    _context.RecipeInstructions.Add(new RecipeInstruction // Matches Data.cs
+                                    {
+                                        RecipeId = newRecipe.Id,
+                                        Section = secTitle, // Matches Data.cs
+                                        StepNumber = stepNum++,
+                                        Text = step.GetString() ?? ""
+                                    });
+                                }
                             }
                         }
                     }
@@ -371,15 +225,14 @@ public class AdminController : ControllerBase
             }
 
             await _context.SaveChangesAsync();
-            return Ok("Recipes Imported!");
+            return Ok("Recipes Imported Successfully!");
         }
         catch (Exception ex)
         {
-            return StatusCode(500, ex.Message);
+            return StatusCode(500, "Error: " + ex.Message);
         }
     }
 
-    // Helper functions
     private string GetStr(JsonElement el, string prop) => el.TryGetProperty(prop, out var p) ? p.GetString() ?? "" : "";
-    private double GetDouble(JsonElement el, string prop) => el.TryGetProperty(prop, out var p) && p.ValueKind == JsonValueKind.Number ? p.GetDouble() : 0;
+    private double GetDbl(JsonElement el, string prop) => el.TryGetProperty(prop, out var p) && (p.ValueKind == JsonValueKind.Number) ? p.GetDouble() : 0;
 }
