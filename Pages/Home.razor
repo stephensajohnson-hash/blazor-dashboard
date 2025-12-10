@@ -6,7 +6,7 @@
 @using System.Text.Json
 @using Microsoft.JSInterop
 @using System.Globalization
-@inject AppDbContext Db
+@using System.Text @inject AppDbContext Db
 @inject HttpClient Http
 @inject IJSRuntime JS
 @inject NavigationManager Nav
@@ -33,13 +33,7 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.0.0 (Suite Nav)</div>
-                </div>
-
-                <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
-                    <a href="/" class="text-2xl hover:scale-125 transition grayscale-0 drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]" title="Home Dashboard">🏠</a>
-                    <a href="/recipes" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Recipes">🍳</a>
-                    <span class="text-2xl opacity-20 cursor-not-allowed" title="Coming Soon">🚧</span>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.0.1 (Recipe Import Fix)</div>
                 </div>
 
                 <div class="flex items-center gap-8 text-right">
@@ -86,17 +80,16 @@
                                 <button type="button" @onclick="OpenEditUserModal" class="w-full text-left text-xs text-white hover:bg-gray-700 p-2 rounded mb-2 transition flex items-center gap-2">
                                     <span>✏️</span> Edit Profile
                                 </button>
-
+                                
                                 <div class="px-2 py-1 text-[10px] uppercase text-gray-500 font-bold tracking-wider mb-1">System Tools</div>
+                                <button type="button" @onclick="ImportRecipes" class="w-full text-left text-xs text-purple-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2">
+                                    <span>🍳</span> Import Recipes
+                                </button>
                                 <button type="button" @onclick="MigrateDataToUser" class="w-full text-left text-xs text-yellow-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2">
                                     <span>🔄</span> Re-Run Migration
                                 </button>
                                 <button type="button" @onclick="FixOrder" class="w-full text-left text-xs text-blue-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2">
                                     <span>🔧</span> Fix Sort Order
-                                </button>
-
-                                <button type="button" @onclick="ImportRecipes" class="w-full text-left text-xs text-purple-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2">
-                                    <span>🍳</span> Import Recipes
                                 </button>
                                 
                                 <div class="border-t border-gray-700 my-1"></div>
@@ -363,6 +356,22 @@
         Nav.NavigateTo("/login", forceLoad: true);
     }
 
+    private async Task ImportRecipes()
+    {
+        try 
+        {
+            var json = await Http.GetStringAsync("/recipes_data.json");
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var response = await Http.PostAsync("/api/admin/seed-recipes", content);
+            if (response.IsSuccessStatusCode) await JS.InvokeVoidAsync("alert", "Recipes Imported!");
+            else await JS.InvokeVoidAsync("alert", "Import Failed: " + await response.Content.ReadAsStringAsync());
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", "Error (Check wwwroot): " + ex.Message);
+        }
+    }
+
     private async Task MigrateDataToUser()
     {
         if (currentUser == null) return;
@@ -507,23 +516,4 @@
     public class CurrentWeather { public double temperature_2m { get; set; } public int weather_code { get; set; } }
     public class DailyWeather { public string[] time { get; set; } = Array.Empty<string>(); public int[] weather_code { get; set; } = Array.Empty<int>(); public double[] temperature_2m_max { get; set; } = Array.Empty<double>(); public double[] temperature_2m_min { get; set; } = Array.Empty<double>(); }
     public class SessionData { public int UserId { get; set; } public DateTime Expiry { get; set; } }
-
-    private async Task ImportRecipes()
-    {
-        try 
-        {
-            // You must place 'recipes_data.json' in 'wwwroot' folder first!
-            var json = await Http.GetStringAsync("/recipes_data.json");
-            
-            using var content = new StringContent(json, Encoding.UTF8, "application/json");
-            var response = await Http.PostAsync("/api/admin/seed-recipes", content);
-            
-            if (response.IsSuccessStatusCode) await JS.InvokeVoidAsync("alert", "Recipes Imported!");
-            else await JS.InvokeVoidAsync("alert", "Import Failed: " + await response.Content.ReadAsStringAsync());
-        }
-        catch (Exception ex)
-        {
-            await JS.InvokeVoidAsync("alert", "Error: " + ex.Message);
-        }
-    }
 }
