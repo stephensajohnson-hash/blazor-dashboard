@@ -37,7 +37,7 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.9.0 (RSS Live)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.9.1 (RSS User-Agent Fix)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -415,7 +415,14 @@
     {
         try 
         {
-            var xml = await Http.GetStringAsync("https://shirt.woot.com/derby/rss");
+            // Adding User-Agent to satisfy shirt.woot security checks
+            using var request = new HttpRequestMessage(HttpMethod.Get, "https://shirt.woot.com/derby/rss");
+            request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
+            
+            var response = await Http.SendAsync(request);
+            if (!response.IsSuccessStatusCode) return;
+
+            var xml = await response.Content.ReadAsStringAsync();
             var doc = XDocument.Parse(xml);
             var ns = doc.Root.Name.Namespace;
             
@@ -442,28 +449,36 @@
     {
         if (currentUser == null) return;
         
-        // 1. Get enabled feeds
-        var feeds = await Db.Feeds.Where(f => f.UserId == currentUser.Id && f.IsEnabled).ToListAsync();
-        
-        // 2. Fetch concurrent
-        var tasks = feeds.Select(async f => 
+        try
         {
-            try {
-                var xml = await Http.GetStringAsync(f.Url);
-                var doc = XDocument.Parse(xml);
-                // Handle Atom/RSS namespaces generically or just assume standard RSS structure
-                // Simplifying to standard RSS <item> for MVP
-                return doc.Descendants("item").Take(3).Select(i => new RssItem {
-                    Source = f.Name,
-                    Title = i.Element("title")?.Value ?? "No Title",
-                    Link = i.Element("link")?.Value ?? "#"
-                });
-            } catch { return Enumerable.Empty<RssItem>(); }
-        });
+            var feeds = await Db.Feeds.Where(f => f.UserId == currentUser.Id && f.IsEnabled).ToListAsync();
+            
+            var tasks = feeds.Select(async f => 
+            {
+                try {
+                    // Adding User-Agent for all custom feeds too
+                    using var request = new HttpRequestMessage(HttpMethod.Get, f.Url);
+                    request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+                    
+                    var response = await Http.SendAsync(request);
+                    if (!response.IsSuccessStatusCode) return Enumerable.Empty<RssItem>();
 
-        var results = await Task.WhenAll(tasks);
-        RssItems = results.SelectMany(x => x).ToList();
-        StateHasChanged();
+                    var xml = await response.Content.ReadAsStringAsync();
+                    var doc = XDocument.Parse(xml);
+                    
+                    return doc.Descendants("item").Take(3).Select(i => new RssItem {
+                        Source = f.Name,
+                        Title = i.Element("title")?.Value ?? "No Title",
+                        Link = i.Element("link")?.Value ?? "#"
+                    });
+                } catch { return Enumerable.Empty<RssItem>(); }
+            });
+
+            var results = await Task.WhenAll(tasks);
+            RssItems = results.SelectMany(x => x).ToList();
+            StateHasChanged();
+        }
+        catch {}
     }
 
     // --- SORTING ---
