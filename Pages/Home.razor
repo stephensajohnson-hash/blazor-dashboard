@@ -6,7 +6,8 @@
 @using System.Text.Json
 @using Microsoft.JSInterop
 @using System.Globalization
-@using System.Text @inject AppDbContext Db
+@using System.Text
+@inject AppDbContext Db
 @inject HttpClient Http
 @inject IJSRuntime JS
 @inject NavigationManager Nav
@@ -33,7 +34,13 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.0.1 (Recipe Import Fix)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.1.1 (Full Fix)</div>
+                </div>
+
+                <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
+                    <a href="/" class="text-2xl hover:scale-125 transition grayscale-0 drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]" title="Home Dashboard">🏠</a>
+                    <a href="/recipes" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Recipes">🍳</a>
+                    <span class="text-2xl opacity-20 cursor-not-allowed" title="Coming Soon">🚧</span>
                 </div>
 
                 <div class="flex items-center gap-8 text-right">
@@ -302,13 +309,14 @@
         UpdateTime();
         try 
         {
-            await LoadData();
+            await LoadData(); // Try load, if fails (missing columns), catch block handles it
             _ = FetchPrices();
             _ = FetchWeather();
             _ = StartClock();
         }
         catch (Exception ex)
         {
+            // Detect Missing Columns (Postgres 42703)
             if (ex.Message.Contains("42703") || ex.InnerException?.Message.Contains("42703") == true)
             {
                 isDbError = true;
@@ -336,13 +344,20 @@
 
                 currentUser = await Db.Users.FindAsync(session.UserId);
                 
-                // If DB check passed, reload data for this user
-                await LoadData();
-                _ = FetchPrices();
-                _ = FetchWeather(); // Now we have user info, fetch weather
+                // If Valid User, Reload Data Scoped to them
+                if (currentUser != null) 
+                {
+                    await LoadData();
+                    _ = FetchPrices();
+                    _ = FetchWeather(); 
+                    StateHasChanged();
+                }
+                else 
+                {
+                    Nav.NavigateTo("/login", forceLoad: true); 
+                }
 
                 try { clientOffsetMinutes = await JS.InvokeAsync<int>("getUserOffset"); UpdateTime(); } catch {}
-                StateHasChanged();
             } 
             catch { Nav.NavigateTo("/login", forceLoad: true); }
         }
@@ -363,6 +378,7 @@
             var json = await Http.GetStringAsync("/recipes_data.json");
             using var content = new StringContent(json, Encoding.UTF8, "application/json");
             var response = await Http.PostAsync("/api/admin/seed-recipes", content);
+            
             if (response.IsSuccessStatusCode) await JS.InvokeVoidAsync("alert", "Recipes Imported!");
             else await JS.InvokeVoidAsync("alert", "Import Failed: " + await response.Content.ReadAsStringAsync());
         }
@@ -468,44 +484,13 @@
         while (date.AddYears(1) <= target) { years++; date = date.AddYears(1); }
         while (date.AddMonths(1) <= target) { months++; date = date.AddMonths(1); }
         days = (target - date).Days;
-        
-        string display = "";
-        // UPDATED: Full words, pluralized
-        if (years > 0) display += $"{years} year{(years == 1 ? "" : "s")} ";
-        if (months > 0) display += $"{months} month{(months == 1 ? "" : "s")} ";
-        display += $"{days} day{(days == 1 ? "" : "s")}";
-        
+        string display = ""; if (years > 0) display += $"{years} year{(years == 1 ? "" : "s")} "; if (months > 0) display += $"{months} month{(months == 1 ? "" : "s")} "; display += $"{days} day{(days == 1 ? "" : "s")}";
         return (display.Trim(), $"({(int)diff.TotalDays} total days)");
     }
 
     private async Task StartClock() { var now = DateTime.Now; await Task.Delay((60 - now.Second) * 1000); using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1)); UpdateTime(); while (await timer.WaitForNextTickAsync()) { UpdateTime(); } }
     private void UpdateTime() { var now = DateTime.UtcNow.AddMinutes(-clientOffsetMinutes); string suffix = (now.Day % 10 == 1 && now.Day != 11) ? "st" : (now.Day % 10 == 2 && now.Day != 12) ? "nd" : (now.Day % 10 == 3 && now.Day != 13) ? "rd" : "th"; CurrentDate = $"{now:dddd, MMMM d}{suffix} {now:yyyy}"; CurrentTime = now.ToString("h:mm tt").ToLower(); InvokeAsync(StateHasChanged); }
-    
-    private async Task FetchWeather() { 
-        if (currentUser == null) return;
-        try { 
-            // 1. Geocode
-            var geoUrl = $"https://geocoding-api.open-meteo.com/v1/search?name={currentUser.ZipCode}&count=1&language=en&format=json";
-            var geoJson = await Http.GetStringAsync(geoUrl);
-            var lat = "33.1383"; var lon = "-95.6011"; // Default
-
-            using (var doc = JsonDocument.Parse(geoJson))
-            {
-                if (doc.RootElement.TryGetProperty("results", out var results) && results.GetArrayLength() > 0)
-                {
-                    var first = results[0];
-                    lat = first.GetProperty("latitude").GetDouble().ToString(CultureInfo.InvariantCulture);
-                    lon = first.GetProperty("longitude").GetDouble().ToString(CultureInfo.InvariantCulture);
-                }
-            }
-
-            // 2. Fetch Weather
-            var url = $"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto"; 
-            weather = await Http.GetFromJsonAsync<WeatherData>(url); 
-            StateHasChanged(); 
-        } catch {} 
-    }
-    
+    private async Task FetchWeather() { try { var url = "https://api.open-meteo.com/v1/forecast?latitude=33.1383&longitude=-95.6011&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto"; weather = await Http.GetFromJsonAsync<WeatherData>(url); StateHasChanged(); } catch {} }
     private string GetDayName(string s) => DateTime.TryParse(s, out var d) ? d.ToString("ddd") : "";
     private string GetWeatherIcon(int c) => c switch { 0=>"☀️", 1=>"🌤️", 2=>"Qw", 3=>"☁️", 45 or 48=>"🌫️", 51 or 53 or 55=>"🌦️", 61 or 63 or 65=>"🌧️", 80 or 81 or 82=>"🌦️", 71 or 73 or 75=>"❄️", 95 or 96 or 99=>"⚡", _=>"🌡️" };
     private async Task FetchPrices() { if (Stocks.Count == 0) return; isLoadingPrices = true; StateHasChanged(); using var client = new HttpClient(); client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0"); foreach (var s in Stocks) { try { var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{s.Symbol}?interval=1d"; var json = await client.GetStringAsync(url); using (var doc = JsonDocument.Parse(json)) { var meta = doc.RootElement.GetProperty("chart").GetProperty("result")[0].GetProperty("meta"); PriceCache[s.Symbol] = meta.GetProperty("regularMarketPrice").GetDecimal(); } } catch {} StateHasChanged(); } isLoadingPrices = false; StateHasChanged(); }
