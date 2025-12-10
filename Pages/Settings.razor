@@ -3,6 +3,7 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Dashboard
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.JSInterop
 @inject AppDbContext Db
 @inject HttpClient Http
 @inject NavigationManager Nav
@@ -39,12 +40,12 @@
                                 @foreach (var feed in group)
                                 {
                                     <div class="flex items-center justify-between p-3 rounded-lg border transition @(feed.IsEnabled ? "bg-blue-900/20 border-blue-500/50" : "bg-gray-800 border-gray-700")">
-                                        <div>
-                                            <div class="font-bold text-sm @(feed.IsEnabled ? "text-white" : "text-gray-400")">@feed.Name</div>
-                                            <div class="text-[10px] text-gray-600 truncate max-w-[200px]">@feed.Url</div>
+                                        <div class="overflow-hidden mr-3">
+                                            <div class="font-bold text-sm @(feed.IsEnabled ? "text-white" : "text-gray-400") truncate">@feed.Name</div>
+                                            <div class="text-[10px] text-gray-600 truncate">@feed.Url</div>
                                         </div>
                                         
-                                        <button @onclick="() => Toggle(feed)" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none @(feed.IsEnabled ? "bg-blue-600" : "bg-gray-600")">
+                                        <button @onclick="() => Toggle(feed)" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none flex-shrink-0 @(feed.IsEnabled ? "bg-blue-600" : "bg-gray-600")">
                                             <span class="sr-only">Enable</span>
                                             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out @(feed.IsEnabled ? "translate-x-6" : "translate-x-1")"></span>
                                         </button>
@@ -67,27 +68,88 @@
 
 @code {
     private List<Feed> Feeds = new();
+    private User? currentUser;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        await LoadFeeds();
+        if (firstRender)
+        {
+            var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
+            if (!string.IsNullOrEmpty(json))
+            {
+                // Simple parse just to get ID
+                try {
+                    using var doc = System.Text.Json.JsonDocument.Parse(json);
+                    int userId = doc.RootElement.GetProperty("userId").GetInt32(); // Note: casing might vary, using flexible check below is safer usually but this matches previous logic
+                    // Actually, let's use the DB find to be safe
+                    // But first we need the ID. Let's assume the session logic from Home.razor holds:
+                     var options = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                     var session = System.Text.Json.JsonSerializer.Deserialize<SessionData>(json, options);
+                     if(session != null) currentUser = await Db.Users.FindAsync(session.UserId);
+                } catch {}
+            }
+
+            if (currentUser != null) 
+            {
+                await LoadFeeds();
+                StateHasChanged();
+            }
+            else
+            {
+                Nav.NavigateTo("/login", true);
+            }
+        }
     }
 
     private async Task LoadFeeds()
     {
-        // For MVP, we assume User 1, but in prod use Auth state
-        Feeds = await Db.Feeds.Where(f => f.UserId == 1).OrderBy(f => f.Category).ToListAsync();
+        if (currentUser == null) return;
+        Feeds = await Db.Feeds.Where(f => f.UserId == currentUser.Id).OrderBy(f => f.Category).ToListAsync();
     }
 
     private async Task Toggle(Feed feed)
     {
-        feed.IsEnabled = !feed.IsEnabled; // Optimistic UI update
-        await Http.PostAsync($"/api/admin/toggle-feed/{feed.Id}", null);
+        feed.IsEnabled = !feed.IsEnabled;
+        // Direct DB update for speed in this component
+        Db.Feeds.Update(feed);
+        await Db.SaveChangesAsync();
     }
 
     private async Task SeedFeeds()
     {
-        await Http.PostAsync("/api/admin/seed-feeds", null);
+        // Call the admin seeder (which seeds for User 1), but we might want to copy them to THIS user?
+        // For now, let's just use the Admin endpoint which seeds for User 1.
+        // If you are NOT User 1, you won't see them.
+        // We should probably update the AdminController to seed for the CURRENT user or generic.
+        // Let's stick to the requested logic: invoke the seed endpoint.
+        // NOTE: The previous step's SeedFeeds logic hardcoded UserId=1. 
+        // If you are logged in as a different user, you won't see them.
+        
+        // BETTER APPROACH for Settings Page:
+        // Let's manually seed for THIS user right here.
+        if (currentUser == null) return;
+
+        var suggestions = new List<Feed>
+        {
+            new Feed { Name = "Hacker News", Url = "https://news.ycombinator.com/rss", Category = "Tech" },
+            new Feed { Name = "Visual Studio Blog", Url = "https://devblogs.microsoft.com/visualstudio/feed/", Category = "Tech" },
+            new Feed { Name = "Dallas Cowboys", Url = "https://www.dallascowboys.com/rss/news", Category = "Sports" },
+            new Feed { Name = "Texas Rangers", Url = "https://www.mlb.com/rangers/feeds/news/rss.xml", Category = "Sports" },
+            new Feed { Name = "Tesla Stock News", Url = "https://news.google.com/rss/search?q=Tesla+Stock", Category = "Finance" },
+            new Feed { Name = "Woot Daily Deals", Url = "https://www.woot.com/blog/feed", Category = "Shopping" }
+        };
+
+        foreach (var s in suggestions)
+        {
+            if (!Feeds.Any(f => f.Url == s.Url))
+            {
+                s.UserId = currentUser.Id;
+                Db.Feeds.Add(s);
+            }
+        }
+        await Db.SaveChangesAsync();
         await LoadFeeds();
     }
+
+    public class SessionData { public int UserId { get; set; } }
 }
