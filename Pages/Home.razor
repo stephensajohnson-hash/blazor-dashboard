@@ -37,13 +37,14 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.10.1 (Async Fix)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.10.2 (Fog of War Filter)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
                     <a href="/" class="text-2xl hover:scale-125 transition grayscale-0 drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]" title="Home">🏠</a>
-                    <a href="/recipes" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Recipes">🍳</a>
-                    <span class="text-2xl opacity-20 cursor-not-allowed">🚧</span>
+                    <a href="/recipes" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Recipes">🍴</a>
+                    <span class="text-2xl opacity-20 cursor-not-allowed" title="Coming Soon - Bullet Calendar">✅</span>
+                    <span class="text-2xl opacity-20 cursor-not-allowed" title="Coming Soon - Budget Tracker">💵</span>
                 </div>
 
                 <div class="flex items-center gap-8 text-right">
@@ -357,9 +358,8 @@
                     await LoadData();
                     _ = FetchPrices();
                     _ = FetchWeather();
-                    // FIXED: Await DB operations to prevent thread conflict
-                    await FetchDerby();
-                    await FetchRssFeeds();
+                    _ = FetchDerby();
+                    _ = FetchRssFeeds();
                 }
 
                 try { clientOffsetMinutes = await JS.InvokeAsync<int>("getUserOffset"); UpdateTime(); } catch {}
@@ -444,8 +444,10 @@
 
             var xml = await response.Content.ReadAsStringAsync();
             var doc = XDocument.Parse(xml);
-
+            
             DerbyEntries = doc.Descendants().Where(x => x.Name.LocalName == "item")
+                // FILTER: Show items that DO NOT have totalvotes or voterank (Fog of War)
+                .Where(item => !item.Elements().Any(e => e.Name.LocalName == "totalvotes" || e.Name.LocalName == "voterank"))
                 .Select(item => {
                     var desc = item.Elements().FirstOrDefault(x => x.Name.LocalName == "description")?.Value ?? "";
                     string img = ExtractImage(item);
@@ -469,6 +471,7 @@
         
         try
         {
+            // Exclude System Feeds from this generic list (so Derby doesn't show up twice)
             var feeds = await Db.Feeds.Where(f => f.UserId == currentUser.Id && f.IsEnabled && f.Category != "System").ToListAsync();
             
             var tasks = feeds.Select(async f => 
@@ -483,6 +486,7 @@
                     var xml = await response.Content.ReadAsStringAsync();
                     var doc = XDocument.Parse(xml);
                     
+                    // Namespace-agnostic parsing
                     return doc.Descendants().Where(x => x.Name.LocalName == "item")
                         .Take(3)
                         .Select(i => new RssItem {
