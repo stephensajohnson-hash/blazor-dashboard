@@ -17,10 +17,17 @@
     @if (isDbError)
     {
         <div class="flex flex-col items-center justify-center h-screen space-y-6">
-            <div class="text-red-500 text-xl font-bold">⚠️ Recipe Database Error</div>
-            <p class="text-gray-400 max-w-md text-center">@errorMessage</p>
-            <button @onclick="UpgradeDatabase" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">
-                Attempt Database Fix
+            <div class="text-red-500 text-5xl mb-2">🛠️</div>
+            <div class="text-xl font-bold text-white">Database Schema Mismatch</div>
+            <p class="text-gray-400 max-w-md text-center">
+                Your database is missing columns (like <code>SourceName</code>).<br/>
+                Click below to force-update the table structure.
+            </p>
+            <div class="text-xs font-mono bg-black p-2 rounded text-red-300 mb-2 max-w-lg overflow-hidden text-ellipsis whitespace-nowrap">
+                Error: @errorMessage
+            </div>
+            <button @onclick="UpgradeDatabase" class="px-8 py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg shadow-lg transition transform hover:scale-105">
+                Apply Schema Patch
             </button>
         </div>
     }
@@ -34,7 +41,7 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.3.0 (Recipe Debug)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.3.1 (Schema Patcher)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -49,19 +56,15 @@
                             <img src="@(string.IsNullOrEmpty(currentUser?.AvatarUrl) ? "https://i.imgur.com/7Y5j5Yx.png" : currentUser.AvatarUrl)" 
                                  class="w-10 h-10 rounded-full border-2 border-gray-700 transition object-cover bg-gray-800" />
                         </button>
-                        <div class="absolute right-0 top-full mt-2 w-32 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 hidden group-hover:block z-50">
+                        <div class="absolute right-0 top-full mt-2 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 hidden group-hover:block z-50">
+                             <button type="button" @onclick="ImportRecipes" class="w-full text-left text-xs text-purple-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2">
+                                <span>🍳</span> Import Recipes
+                            </button>
                             <button type="button" @onclick="Logout" class="w-full text-left text-xs text-red-500 font-bold hover:bg-gray-700 p-2 rounded">Logout</button>
                         </div>
                     </div>
                 </div>
             </div>
-
-            @if (!string.IsNullOrEmpty(errorMessage) && !isDbError)
-            {
-                <div class="bg-red-900/50 border border-red-500 text-red-200 p-4 rounded-xl mb-8">
-                    <strong>Error Loading Recipes:</strong> @errorMessage
-                </div>
-            }
 
             <div class="mb-8 relative max-w-xl mx-auto">
                 <input type="text" @bind="searchTerm" @bind:event="oninput" placeholder="Search recipes, ingredients..." class="w-full bg-gray-800 border border-gray-700 rounded-xl py-3 px-4 pl-11 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition duration-200 shadow-lg" />
@@ -184,7 +187,6 @@
     private WeatherData? weather;
     private int clientOffsetMinutes = 0;
     
-    // ERROR STATES
     private bool isDbError = false;
     private string errorMessage = "";
 
@@ -217,15 +219,14 @@
                 }
                 catch (Exception ex)
                 {
-                    // Detect Missing Table/Column
-                    if (ex.Message.Contains("42P01") || ex.Message.Contains("42703") || ex.InnerException?.Message.Contains("42703") == true)
+                    // Detect Missing Column (Postgres 42703)
+                    if (ex.Message.Contains("42703") || ex.InnerException?.Message.Contains("42703") == true)
                     {
                         isDbError = true;
-                        errorMessage = ex.Message; // Show actual error
+                        errorMessage = ex.Message;
                         StateHasChanged();
                         return;
                     }
-                    errorMessage = "Data Load Error: " + ex.Message;
                 }
                 
                 _ = FetchWeather();
@@ -240,20 +241,27 @@
 
     private async Task UpgradeDatabase()
     {
-        // Force create tables if missing
-        await Http.PostAsync("/api/admin/upgrade-users", null); // Just triggers table checks
-        // Re-run the seed logic to ensure tables exist
         try 
         {
+            // FORCE ADD MISSING COLUMNS
             await Db.Database.ExecuteSqlRawAsync(@"
-                CREATE TABLE IF NOT EXISTS ""Recipes"" (""Id"" serial PRIMARY KEY, ""UserId"" integer, ""Title"" text, ""Description"" text, ""Category"" text, ""Servings"" integer, ""PrepTime"" text, ""CookTime"" text, ""ImageUrl"" text, ""SourceName"" text, ""SourceUrl"" text, ""TagsJson"" text);
-                CREATE TABLE IF NOT EXISTS ""RecipeIngredients"" (""Id"" serial PRIMARY KEY, ""RecipeId"" integer, ""Section"" text, ""Name"" text, ""Quantity"" text, ""Unit"" text, ""Notes"" text, ""Calories"" double precision, ""Protein"" double precision, ""Carbs"" double precision, ""Fat"" double precision, ""Fiber"" double precision);
-                CREATE TABLE IF NOT EXISTS ""RecipeInstructions"" (""Id"" serial PRIMARY KEY, ""RecipeId"" integer, ""Section"" text, ""StepNumber"" integer, ""Text"" text);
-                CREATE TABLE IF NOT EXISTS ""RecipeCategories"" (""Id"" serial PRIMARY KEY, ""UserId"" integer, ""Name"" text);
+                ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""SourceName"" text;
+                ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""SourceUrl"" text;
+                ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""TagsJson"" text DEFAULT '[]';
+                ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""UserId"" integer DEFAULT 1;
+
+                ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Section"" text DEFAULT 'Main';
+                ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Calories"" double precision DEFAULT 0;
+                ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Protein"" double precision DEFAULT 0;
+                ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Carbs"" double precision DEFAULT 0;
+                ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Fat"" double precision DEFAULT 0;
+                ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Fiber"" double precision DEFAULT 0;
+
+                ALTER TABLE ""RecipeInstructions"" ADD COLUMN IF NOT EXISTS ""Section"" text DEFAULT 'Directions';
             ");
             Nav.NavigateTo(Nav.Uri, forceLoad: true);
         }
-        catch (Exception ex) { errorMessage = ex.Message; }
+        catch (Exception ex) { errorMessage = "Fix Failed: " + ex.Message; }
     }
 
     private IEnumerable<Recipe> FilteredRecipes => 
@@ -267,6 +275,17 @@
     private async void SelectRecipe(Recipe r) { selectedRecipe = r; await JS.InvokeVoidAsync("scrollToTop"); StateHasChanged(); }
     private async Task Logout() { await JS.InvokeVoidAsync("localStorage.removeItem", "dashboard_session"); Nav.NavigateTo("/login", true); }
     private List<string> GetTags(string json) { try { return JsonSerializer.Deserialize<List<string>>(json) ?? new(); } catch { return new(); } }
+
+    private async Task ImportRecipes()
+    {
+        try {
+            var json = await Http.GetStringAsync("/recipes_data.json");
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var response = await Http.PostAsync("/api/admin/seed-recipes", content);
+            await JS.InvokeVoidAsync("alert", response.IsSuccessStatusCode ? "Recipes Imported!" : "Failed: " + await response.Content.ReadAsStringAsync());
+            Nav.NavigateTo(Nav.Uri, forceLoad: true);
+        } catch (Exception ex) { await JS.InvokeVoidAsync("alert", ex.Message); }
+    }
     
     private async Task StartClock() { var now = DateTime.Now; await Task.Delay((60 - now.Second) * 1000); using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1)); UpdateTime(); while (await timer.WaitForNextTickAsync()) { UpdateTime(); } }
     private void UpdateTime() { var now = DateTime.UtcNow.AddMinutes(-clientOffsetMinutes); string suffix = (now.Day % 10 == 1 && now.Day != 11) ? "st" : (now.Day % 10 == 2 && now.Day != 12) ? "nd" : (now.Day % 10 == 3 && now.Day != 13) ? "rd" : "th"; CurrentDate = $"{now:dddd, MMMM d}{suffix} {now:yyyy}"; CurrentTime = now.ToString("h:mm tt").ToLower(); InvokeAsync(StateHasChanged); }
