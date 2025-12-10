@@ -34,35 +34,35 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.4.1 (Stable Menu)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.5.0 (Deep Search)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
-                    <a href="/" class="text-2xl hover:scale-125 transition grayscale-0 drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]" title="Home Dashboard">🏠</a>                
+                    <a href="/" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Home Dashboard">🏠</a>                
+                    <span class="text-2xl transition grayscale-0 drop-shadow-[0_0_10px_rgba(255,165,0,0.5)] cursor-default" title="Current: Recipes">🍳</span>
                     <span class="text-2xl opacity-20 cursor-not-allowed" title="Coming Soon - Bullet Calendar">✅</span>
                     <span class="text-2xl opacity-20 cursor-not-allowed" title="Coming Soon - Budget Tracker">💵</span>
-
                 </div>
 
                 <div class="flex items-center gap-8 text-right">
-                    <div class="relative z-50">
-                        <button @onclick="ToggleUserMenu" class="flex items-center gap-3 focus:outline-none">
+                    <div class="relative group z-50">
+                        <button class="flex items-center gap-3 focus:outline-none" @onclick="ToggleUserMenu">
                             <div class="text-right hidden md:block">
                                 <div class="text-sm font-bold text-white">@(currentUser?.Username ?? "Loading...")</div>
                                 <div class="text-[10px] text-gray-500 font-mono text-yellow-400">ID: @(currentUser?.Id)</div>
                             </div>
                             <img src="@(string.IsNullOrEmpty(currentUser?.AvatarUrl) ? "https://i.imgur.com/7Y5j5Yx.png" : currentUser.AvatarUrl)" 
-                                 class="w-10 h-10 rounded-full border-2 @(showUserMenu ? "border-blue-500" : "border-gray-700") hover:border-blue-500 transition object-cover bg-gray-800" />
+                                 class="w-10 h-10 rounded-full border-2 border-gray-700 transition object-cover bg-gray-800" />
                         </button>
                         
                         @if (showUserMenu)
                         {
-                            <div class="absolute right-0 top-full mt-2 w-56 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 transform origin-top-right transition-all z-50">
+                            <div class="absolute right-0 top-full mt-2 w-56 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 z-50">
                                 <button type="button" @onclick="CheckDbStatus" class="w-full text-left text-xs text-blue-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2"><span>🔍</span> Check DB Status</button>
                                 <button type="button" @onclick="MigrateDashboardData" class="w-full text-left text-xs text-yellow-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2"><span>🏠</span> Claim Dashboard</button>
                                 <button type="button" @onclick="ImportRecipes" class="w-full text-left text-xs text-purple-400 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2"><span>🍳</span> Import Recipes</button>
                                 <div class="border-t border-gray-700 my-1"></div>
-                                <button type="button" @onclick="Logout" class="w-full text-left text-xs text-red-500 font-bold hover:bg-gray-700 p-2 rounded transition flex items-center gap-2"><span>🚪</span> Logout</button>
+                                <button type="button" @onclick="Logout" class="w-full text-left text-xs text-red-500 font-bold hover:bg-gray-700 p-2 rounded">Logout</button>
                             </div>
                             <div class="fixed inset-0 z-40" @onclick="ToggleUserMenu"></div>
                         }
@@ -71,7 +71,7 @@
             </div>
 
             <div class="mb-8 relative max-w-xl mx-auto">
-                <input type="text" @bind="searchTerm" @bind:event="oninput" placeholder="Search recipes, ingredients..." class="w-full bg-gray-800 border border-gray-700 rounded-xl py-3 px-4 pl-11 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition duration-200 shadow-lg" />
+                <input type="text" @bind="searchTerm" @bind:event="oninput" placeholder="Search title, ingredients, directions..." class="w-full bg-gray-800 border border-gray-700 rounded-xl py-3 px-4 pl-11 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition duration-200 shadow-lg" />
                 <div class="absolute left-3.5 top-3.5 text-gray-500">🔍</div>
             </div>
 
@@ -81,10 +81,13 @@
                     @if (!FilteredRecipes.Any())
                     {
                         <div class="text-center py-12">
-                            <div class="text-gray-500 text-lg mb-4">No recipes found for User ID @currentUser?.Id</div>
-                            <button @onclick="ImportRecipes" class="bg-purple-600 hover:bg-purple-500 text-white px-6 py-2 rounded-lg font-bold shadow-lg transition">
-                                Import & Claim Recipes
-                            </button>
+                            <div class="text-gray-500 text-lg mb-4">No recipes found matching "@searchTerm"</div>
+                            @if (!RecipeList.Any()) 
+                            {
+                                <button @onclick="ImportRecipes" class="bg-purple-600 hover:bg-purple-500 text-white px-6 py-2 rounded-lg font-bold shadow-lg transition">
+                                    Import & Claim Recipes
+                                </button>
+                            }
                         </div>
                     }
                     
@@ -302,7 +305,18 @@
          StateHasChanged();
     }
 
-    private IEnumerable<Recipe> FilteredRecipes => string.IsNullOrWhiteSpace(searchTerm) ? RecipeList : RecipeList.Where(r => r.Title.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) || r.Ingredients.Any(i => i.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)));
+    // EXPANDED SEARCH LOGIC
+    private IEnumerable<Recipe> FilteredRecipes => 
+        string.IsNullOrWhiteSpace(searchTerm) 
+        ? RecipeList 
+        : RecipeList.Where(r => 
+            (r.Title?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) || 
+            (r.Description?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) || 
+            (r.SourceName?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) || 
+            r.Ingredients.Any(i => (i.Name?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) || (i.Notes?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false)) || 
+            r.Instructions.Any(i => i.Text?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false)
+        );
+
     private async void SelectRecipe(Recipe r) { selectedRecipe = r; await JS.InvokeVoidAsync("scrollToTop"); StateHasChanged(); }
     private async Task Logout() { await JS.InvokeVoidAsync("localStorage.removeItem", "dashboard_session"); Nav.NavigateTo("/login", true); }
     private List<string> GetTags(string json) { try { return JsonSerializer.Deserialize<List<string>>(json) ?? new(); } catch { return new(); } }
