@@ -35,7 +35,7 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.7.0 (Macros & Deep Links)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.7.1 (Build Fix)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -203,7 +203,7 @@
                                     @foreach (var tag in GetTags(selectedRecipe.TagsJson))
                                     {
                                         <span class="px-3 py-1 text-xs rounded-full bg-blue-900/30 text-blue-300 border border-blue-900 hover:bg-blue-800 cursor-pointer transition"
-                                              @onclick="() => { searchTerm = tag; selectedRecipe = null; UpdateUrl(); }">
+                                              @onclick="() => { searchTerm = tag; selectedRecipe = null; UpdateUrl(null); }">
                                             @tag
                                         </span>
                                     }
@@ -314,7 +314,6 @@
                         .OrderBy(r => r.Category).ThenBy(r => r.Title)
                         .ToListAsync();
                     
-                    // URL CHECK FOR DEEP LINK
                     var uri = Nav.ToAbsoluteUri(Nav.Uri);
                     if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("id", out var idVal))
                     {
@@ -411,7 +410,6 @@
             (r.Title?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) || 
             (r.Description?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) || 
             (r.SourceName?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) || 
-            // TAG SEARCH ADDED HERE
             (GetTags(r.TagsJson).Any(t => t.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))) ||
             r.Ingredients.Any(i => (i.Name?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) || (i.Notes?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false)) || 
             r.Instructions.Any(i => i.Text?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false)
@@ -434,21 +432,19 @@
     private void UpdateUrl(int? id)
     {
         var uri = Nav.ToAbsoluteUri(Nav.Uri).GetLeftPart(UriPartial.Path);
-        if (id.HasValue) Nav.NavigateTo($"{uri}?id={id}", false); // False = No Reload
+        if (id.HasValue) Nav.NavigateTo($"{uri}?id={id}", false);
         else Nav.NavigateTo(uri, false);
     }
 
     private async Task Logout() { await JS.InvokeVoidAsync("localStorage.removeItem", "dashboard_session"); Nav.NavigateTo("/login", true); }
     private List<string> GetTags(string json) { try { return JsonSerializer.Deserialize<List<string>>(json) ?? new(); } catch { return new(); } }
     
-    // Header Utils
     private async Task StartClock() { var now = DateTime.Now; await Task.Delay((60 - now.Second) * 1000); using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1)); UpdateTime(); while (await timer.WaitForNextTickAsync()) { UpdateTime(); } }
     private void UpdateTime() { var now = DateTime.UtcNow.AddMinutes(-clientOffsetMinutes); string suffix = (now.Day % 10 == 1 && now.Day != 11) ? "st" : (now.Day % 10 == 2 && now.Day != 12) ? "nd" : (now.Day % 10 == 3 && now.Day != 13) ? "rd" : "th"; CurrentDate = $"{now:dddd, MMMM d}{suffix} {now:yyyy}"; CurrentTime = now.ToString("h:mm tt").ToLower(); InvokeAsync(StateHasChanged); }
     private async Task FetchWeather() { if (currentUser == null) return; try { var url = "https://api.open-meteo.com/v1/forecast?latitude=33.1383&longitude=-95.6011&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto"; weather = await Http.GetFromJsonAsync<WeatherData>(url); StateHasChanged(); } catch {} }
     private string GetDayName(string s) => DateTime.TryParse(s, out var d) ? d.ToString("ddd") : "";
     private string GetWeatherIcon(int c) => c switch { 0=>"☀️", 1=>"🌤️", 2=>"Qw", 3=>"☁️", 45 or 48=>"🌫️", 51 or 53 or 55=>"🌦️", 61 or 63 or 65=>"🌧️", 80 or 81 or 82=>"🌦️", 71 or 73 or 75=>"❄️", 95 or 96 or 99=>"⚡", _=>"🌡️" };
 
-    // MACRO CALCULATION HELPER
     private (int Cal, int Pro, int Fat, int Carb, int Fib, int Net) CalculateMacros(Recipe r)
     {
         double cal = 0, pro = 0, fat = 0, carb = 0, fib = 0;
