@@ -37,14 +37,13 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.9.2 (Derby Toggle)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.10.1 (Async Fix)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
-                    <a href="/" class="text-2xl hover:scale-125 transition grayscale-0 drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]" title="Home Dashboard">🏠</a>
-                    <a href="/recipes" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Recipes">🍴</a>
-                    <span class="text-2xl opacity-20 cursor-not-allowed" title="Coming Soon - Bullet Calendar">✅</span>
-                    <span class="text-2xl opacity-20 cursor-not-allowed" title="Coming Soon - Budget Tracker">💵</span>
+                    <a href="/" class="text-2xl hover:scale-125 transition grayscale-0 drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]" title="Home">🏠</a>
+                    <a href="/recipes" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Recipes">🍳</a>
+                    <span class="text-2xl opacity-20 cursor-not-allowed">🚧</span>
                 </div>
 
                 <div class="flex items-center gap-8 text-right">
@@ -358,8 +357,9 @@
                     await LoadData();
                     _ = FetchPrices();
                     _ = FetchWeather();
-                    _ = FetchDerby();
-                    _ = FetchRssFeeds();
+                    // FIXED: Await DB operations to prevent thread conflict
+                    await FetchDerby();
+                    await FetchRssFeeds();
                 }
 
                 try { clientOffsetMinutes = await JS.InvokeAsync<int>("getUserOffset"); UpdateTime(); } catch {}
@@ -423,15 +423,17 @@
     private async Task FetchDerby()
     {
         if (currentUser == null) return;
-
-        // CHECK DB IF ENABLED
-        var derbyFeed = await Db.Feeds.FirstOrDefaultAsync(f => f.Url == "https://shirt.woot.com/derby/rss" && f.UserId == currentUser.Id);
-        if (derbyFeed == null || !derbyFeed.IsEnabled) 
+        
+        // CHECK DB FOR SYSTEM FEED TOGGLE
+        try 
         {
-            DerbyEntries.Clear();
-            StateHasChanged();
-            return; 
-        }
+            var derbyFeed = await Db.Feeds.FirstOrDefaultAsync(f => f.Url == "https://shirt.woot.com/derby/rss" && f.UserId == currentUser.Id);
+            if (derbyFeed == null || !derbyFeed.IsEnabled) 
+            {
+                DerbyEntries.Clear();
+                return;
+            }
+        } catch { return; }
 
         try 
         {
@@ -442,7 +444,7 @@
 
             var xml = await response.Content.ReadAsStringAsync();
             var doc = XDocument.Parse(xml);
-            
+
             DerbyEntries = doc.Descendants().Where(x => x.Name.LocalName == "item")
                 .Select(item => {
                     var desc = item.Elements().FirstOrDefault(x => x.Name.LocalName == "description")?.Value ?? "";
@@ -467,7 +469,6 @@
         
         try
         {
-            // Exclude System Feeds from this generic list (so Derby doesn't show up twice)
             var feeds = await Db.Feeds.Where(f => f.UserId == currentUser.Id && f.IsEnabled && f.Category != "System").ToListAsync();
             
             var tasks = feeds.Select(async f => 
