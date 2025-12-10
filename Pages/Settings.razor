@@ -33,7 +33,7 @@
                         + Add Feed
                     </button>
                     <button @onclick="SeedFeeds" class="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-white transition border border-gray-600">
-                        Reset / Seed Defaults
+                        Reset Defaults
                     </button>
                 </div>
             </div>
@@ -67,6 +67,7 @@
                                                     <button @onclick="() => DeleteFeed(feed)" class="text-gray-500 hover:text-red-500 p-1" title="Delete">🗑️</button>
                                                 </div>
                                             }
+
                                             <button @onclick="() => Toggle(feed)" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none flex-shrink-0 @(feed.IsEnabled ? "bg-blue-600" : "bg-gray-600")">
                                                 <span class="sr-only">Enable</span>
                                                 <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out @(feed.IsEnabled ? "translate-x-6" : "translate-x-1")"></span>
@@ -99,19 +100,19 @@
             <div class="space-y-4">
                 <div>
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Name</label>
-                    <input @bind="editingFeed.Name" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="e.g. Hacker News" />
+                    <input @bind="editingFeed.Name" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" placeholder="e.g. Hacker News" />
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1">RSS URL</label>
-                    <input @bind="editingFeed.Url" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="https://..." />
+                    <input @bind="editingFeed.Url" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" placeholder="https://..." />
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Category</label>
-                    <input @bind="editingFeed.Category" list="categories-list" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Select or type new..." />
-                    <datalist id="categories-list">
+                    <input @bind="editingFeed.Category" list="feed-categories-list" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" placeholder="Select or type new..." />
+                    <datalist id="feed-categories-list">
                         @foreach (var cat in CategoryOptions)
                         {
-                            <option value="@cat"></option>
+                            <option value="@cat">@cat</option>
                         }
                     </datalist>
                 </div>
@@ -130,7 +131,8 @@
     private User? currentUser;
     private Feed? editingFeed = null;
     private bool isDbError = false;
-    private List<string> CategoryOptions = new();
+    // Initialized immediately so it's never empty
+    private List<string> CategoryOptions = new() { "Tech", "Sports", "Finance", "Shopping", "News", "Gaming", "Coding", "Lifestyle", "General" };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -166,14 +168,19 @@
             isDbError = false;
             UpdateCategories();
         }
-        catch { isDbError = true; }
+        catch 
+        {
+            isDbError = true;
+        }
         StateHasChanged();
     }
     
     private void UpdateCategories()
     {
-        var dbCats = Feeds.Select(f => f.Category).Distinct().ToList();
+        if (Feeds == null || !Feeds.Any()) return;
+        var dbCats = Feeds.Select(f => f.Category).Where(c => !string.IsNullOrEmpty(c)).Distinct();
         var defaults = new List<string> { "Tech", "Sports", "Finance", "Shopping", "News", "Gaming", "Coding", "Lifestyle", "General" };
+        // Merge and sort
         CategoryOptions = dbCats.Union(defaults).Where(c => c != "System").OrderBy(c => c).ToList();
     }
 
@@ -184,10 +191,12 @@
         await Db.SaveChangesAsync();
     }
 
+    // --- CRUD OPERATIONS ---
+
     private void OpenAddModal()
     {
         if (currentUser == null) return;
-        UpdateCategories(); // Refresh options before opening
+        UpdateCategories();
         editingFeed = new Feed { UserId = currentUser.Id, Category = "General", IsEnabled = true };
     }
 
@@ -200,18 +209,28 @@
     private async Task SaveFeed()
     {
         if (editingFeed == null) return;
-        if (string.IsNullOrWhiteSpace(editingFeed.Name) || string.IsNullOrWhiteSpace(editingFeed.Url)) { await JS.InvokeVoidAsync("alert", "Name and URL are required."); return; }
 
-        if (editingFeed.Id == 0) {
+        if (string.IsNullOrWhiteSpace(editingFeed.Name) || string.IsNullOrWhiteSpace(editingFeed.Url))
+        {
+            await JS.InvokeVoidAsync("alert", "Name and URL are required.");
+            return;
+        }
+
+        if (editingFeed.Id == 0)
+        {
             Db.Feeds.Add(editingFeed);
-        } else {
+        }
+        else
+        {
             var existing = await Db.Feeds.FindAsync(editingFeed.Id);
-            if (existing != null) {
+            if (existing != null)
+            {
                 existing.Name = editingFeed.Name;
                 existing.Url = editingFeed.Url;
                 existing.Category = editingFeed.Category;
             }
         }
+
         await Db.SaveChangesAsync();
         editingFeed = null;
         await LoadFeeds();
@@ -219,7 +238,8 @@
 
     private async Task DeleteFeed(Feed f)
     {
-        if (await JS.InvokeAsync<bool>("confirm", $"Delete '{f.Name}'?")) {
+        if (await JS.InvokeAsync<bool>("confirm", $"Delete '{f.Name}'?"))
+        {
             Db.Feeds.Remove(f);
             await Db.SaveChangesAsync();
             await LoadFeeds();
@@ -229,16 +249,31 @@
     private async Task SeedFeeds()
     {
         if (currentUser == null) return;
-        try { await Db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""Feeds"" (""Id"" serial PRIMARY KEY, ""UserId"" integer, ""Name"" text, ""Url"" text, ""Category"" text, ""IsEnabled"" boolean DEFAULT FALSE);"); } catch {}
 
-        // Upsert System Feed
+        try {
+            await Db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""Feeds"" (""Id"" serial PRIMARY KEY, ""UserId"" integer, ""Name"" text, ""Url"" text, ""Category"" text, ""IsEnabled"" boolean DEFAULT FALSE);");
+            try { await Db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""Feeds"" ADD COLUMN IF NOT EXISTS ""UserId"" integer;"); } catch {}
+        } catch (Exception ex) {
+            await JS.InvokeVoidAsync("alert", "DB Init Error: " + ex.Message);
+            return;
+        }
+
+        // 1. Force Upsert Derby Feed (System)
         var derbyUrl = "https://shirt.woot.com/derby/rss";
         var existingDerby = await Db.Feeds.FirstOrDefaultAsync(f => f.UserId == currentUser.Id && f.Url == derbyUrl);
-        if (existingDerby != null) { existingDerby.Category = "System"; existingDerby.Name = "Shirt.Woot Derby"; }
-        else { Db.Feeds.Add(new Feed { UserId = currentUser.Id, Name = "Shirt.Woot Derby", Url = derbyUrl, Category = "System", IsEnabled = true }); }
+        if (existingDerby != null)
+        {
+            existingDerby.Category = "System"; 
+            existingDerby.Name = "Shirt.Woot Derby";
+        }
+        else
+        {
+            Db.Feeds.Add(new Feed { UserId = currentUser.Id, Name = "Shirt.Woot Derby", Url = derbyUrl, Category = "System", IsEnabled = true });
+        }
 
-        // Add Defaults
-        var suggestions = new List<Feed> {
+        // 2. Add Other Suggestions if missing
+        var suggestions = new List<Feed>
+        {
             new Feed { Name = "Hacker News", Url = "https://news.ycombinator.com/rss", Category = "Tech" },
             new Feed { Name = "Visual Studio Blog", Url = "https://devblogs.microsoft.com/visualstudio/feed/", Category = "Tech" },
             new Feed { Name = "Dallas Cowboys", Url = "https://www.dallascowboys.com/rss/news", Category = "Sports" },
@@ -246,14 +281,24 @@
             new Feed { Name = "Tesla Stock News", Url = "https://news.google.com/rss/search?q=Tesla+Stock", Category = "Finance" },
             new Feed { Name = "Woot Daily Deals", Url = "https://www.woot.com/blog/feed", Category = "Shopping" }
         };
-        foreach (var s in suggestions) {
-            if (!await Db.Feeds.AnyAsync(f => f.UserId == currentUser.Id && f.Url == s.Url)) {
-                s.UserId = currentUser.Id; s.IsEnabled = false; Db.Feeds.Add(s);
+
+        bool added = false;
+        foreach (var s in suggestions)
+        {
+            if (!await Db.Feeds.AnyAsync(f => f.UserId == currentUser.Id && f.Url == s.Url))
+            {
+                s.UserId = currentUser.Id;
+                s.IsEnabled = false;
+                Db.Feeds.Add(s);
+                added = true;
             }
         }
-        await Db.SaveChangesAsync();
+
+        if (added) await Db.SaveChangesAsync();
         await LoadFeeds();
-        await JS.InvokeVoidAsync("alert", "Feeds updated!");
+        
+        if (added) await JS.InvokeVoidAsync("alert", "Default feeds added!");
+        else await JS.InvokeVoidAsync("alert", "Defaults already exist.");
     }
 
     public class SessionData { public int UserId { get; set; } }
