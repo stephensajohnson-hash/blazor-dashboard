@@ -21,62 +21,139 @@
                     <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                     <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                 </div>
-                <div class="text-[10px] text-gray-600 font-mono mt-1">v2.0.0 (Recipes)</div>
+                <div class="text-[10px] text-gray-600 font-mono mt-1">v2.2.0 (DB Connected)</div>
             </div>
 
             <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
-                <a href="/" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Home Dashboard">🏠</a>
+                <a href="/" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Home">🏠</a>
                 <a href="/recipes" class="text-2xl hover:scale-125 transition grayscale-0 drop-shadow-[0_0_10px_rgba(255,165,0,0.5)]" title="Recipes">🍳</a>
-                <span class="text-2xl opacity-20 cursor-not-allowed" title="Coming Soon">🚧</span>
+                <span class="text-2xl opacity-20 cursor-not-allowed">🚧</span>
             </div>
 
             <div class="flex items-center gap-8 text-right">
-                @if (weather != null)
-                {
-                    <div class="flex items-center gap-6">
-                        <div class="flex gap-4 border-r border-gray-700 pr-6">
-                            @for (int i = 1; i < Math.Min(7, weather.daily.time.Length); i++)
-                            {
-                                <div class="flex flex-col items-center">
-                                    <span class="text-[10px] text-gray-500 font-bold uppercase">@GetDayName(weather.daily.time[i])</span>
-                                    <span class="text-lg my-1">@GetWeatherIcon(weather.daily.weather_code[i])</span>
-                                    <div class="text-[10px] font-mono">
-                                        <span class="text-white">@Math.Round(weather.daily.temperature_2m_max[i])°</span>
-                                        <span class="text-blue-400">@Math.Round(weather.daily.temperature_2m_min[i])°</span>
-                                    </div>
-                                </div>
-                            }
-                        </div>
-                        <div class="flex items-center gap-3">
-                            <div class="text-4xl">@GetWeatherIcon(weather.current.weather_code)</div>
-                            <div>
-                                <div class="text-3xl font-bold text-white leading-none">@Math.Round(weather.current.temperature_2m)°</div>
-                                <div class="text-xs text-gray-400 mt-1">@(currentUser?.ZipCode ?? "75482")</div>
-                            </div>
-                        </div>
-                    </div>
-                }
-
                 <div class="relative group z-50">
                     <button class="flex items-center gap-3 focus:outline-none">
                         <img src="@(string.IsNullOrEmpty(currentUser?.AvatarUrl) ? "https://i.imgur.com/7Y5j5Yx.png" : currentUser.AvatarUrl)" 
-                             class="w-10 h-10 rounded-full border-2 border-gray-700 group-hover:border-blue-500 transition object-cover bg-gray-800" />
+                             class="w-10 h-10 rounded-full border-2 border-gray-700 transition object-cover bg-gray-800" />
                     </button>
-                    <div class="absolute right-0 top-full mt-2 w-40 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 hidden group-hover:block transform origin-top-right transition-all">
-                        <div class="px-3 py-2 border-b border-gray-700 mb-2 text-xs font-bold text-white">@currentUser?.Username</div>
-                        <button type="button" @onclick="Logout" class="w-full text-left text-xs text-red-500 font-bold hover:bg-gray-700 p-2 rounded transition flex items-center gap-2">
-                            <span>🚪</span> Logout
-                        </button>
+                    <div class="absolute right-0 top-full mt-2 w-32 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 hidden group-hover:block z-50">
+                        <button type="button" @onclick="Logout" class="w-full text-left text-xs text-red-500 font-bold hover:bg-gray-700 p-2 rounded">Logout</button>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div class="flex flex-col items-center justify-center h-96 border-2 border-dashed border-gray-800 rounded-xl bg-gray-800/20">
-            <div class="text-6xl mb-4">🍳</div>
-            <h1 class="text-2xl font-bold text-gray-400">Recipe Collection</h1>
-            <p class="text-gray-600 mt-2">Database not yet connected.</p>
+        <div class="mb-8 relative max-w-xl mx-auto">
+            <input type="text" @bind="searchTerm" @bind:event="oninput" placeholder="Search recipes, ingredients..." class="w-full bg-gray-800 border border-gray-700 rounded-xl py-3 px-4 pl-11 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition duration-200 shadow-lg" />
+            <div class="absolute left-3.5 top-3.5 text-gray-500">🔍</div>
         </div>
+
+        @if (selectedRecipe == null)
+        {
+            <div id="recipe-groups-container" class="flex flex-col space-y-12">
+                @foreach (var category in FilteredRecipes.Select(r => r.Category).Distinct().OrderBy(c => c))
+                {
+                    var catRecipes = FilteredRecipes.Where(r => r.Category == category).ToList();
+                    if (catRecipes.Any())
+                    {
+                        <section>
+                            <div class="bg-gray-800 border border-gray-700 inline-block px-4 py-1.5 rounded-full mb-4 text-lg font-semibold text-white shadow-md">
+                                @category
+                            </div>
+                            <div class="flex flex-wrap gap-6 justify-start">
+                                @foreach (var r in catRecipes)
+                                {
+                                    <div class="w-full max-w-[300px] min-w-[250px] cursor-pointer bg-gray-800 border border-gray-700 rounded-xl shadow-lg overflow-hidden hover:bg-gray-700 transition duration-200" @onclick="() => SelectRecipe(r)">
+                                        <img src="@r.ImageUrl" class="w-full h-32 object-cover" onerror="this.src='https://placehold.co/400?text=No+Image'" />
+                                        <div class="p-3">
+                                            <h3 class="text-lg font-bold text-white truncate">@r.Title</h3>
+                                            <p class="text-xs text-gray-400 mt-1 mb-2">@r.PrepTime | @r.CookTime</p>
+                                            
+                                            <div class="flex flex-wrap gap-1">
+                                                @foreach (var tag in GetTags(r.TagsJson))
+                                                {
+                                                    <span class="px-2 py-0.5 text-xs rounded-full bg-blue-900/50 text-blue-300">@tag</span>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </section>
+                    }
+                }
+            </div>
+            
+            @if (!FilteredRecipes.Any())
+            {
+                <div class="text-center text-gray-500 mt-10">No recipes found matching "@searchTerm"</div>
+            }
+        }
+        else
+        {
+            <div class="animate-fade-in">
+                <button @onclick="() => selectedRecipe = null" class="mb-6 flex items-center text-gray-400 hover:text-white transition px-4 py-2 rounded-lg bg-gray-800 border border-gray-700">
+                    ← Back to Recipes
+                </button>
+
+                <div class="bg-gray-800 rounded-2xl p-6 border border-gray-700 shadow-2xl max-w-5xl mx-auto">
+                    <div class="flex flex-col md:flex-row gap-6 mb-8">
+                        <img src="@selectedRecipe.ImageUrl" class="w-full md:w-1/2 rounded-xl object-cover h-96 shadow-lg border border-gray-700" />
+                        <div class="flex-1 flex flex-col justify-center">
+                            <h1 class="text-4xl font-extrabold text-white mb-2">@selectedRecipe.Title</h1>
+                            <div class="text-sm text-blue-300 mb-4 font-medium">@selectedRecipe.SourceName</div>
+                            <p class="text-gray-400 italic mb-6 text-lg">@selectedRecipe.Description</p>
+                            
+                            <div class="flex gap-4 mb-6 text-sm">
+                                <span class="bg-gray-700 px-3 py-1 rounded text-white">Prep: <strong>@selectedRecipe.PrepTime</strong></span>
+                                <span class="bg-gray-700 px-3 py-1 rounded text-white">Cook: <strong>@selectedRecipe.CookTime</strong></span>
+                                <span class="bg-gray-700 px-3 py-1 rounded text-white">Serves: <strong>@selectedRecipe.Servings</strong></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid md:grid-cols-2 gap-8">
+                        <div>
+                            <h2 class="text-2xl font-bold border-b border-blue-900/50 pb-2 mb-4 text-blue-300">Ingredients</h2>
+                            @foreach (var section in selectedRecipe.Ingredients.GroupBy(i => i.Section))
+                            {
+                                <div class="mb-6">
+                                    <h3 class="text-lg font-semibold text-white mb-2 pl-2 border-l-2 border-blue-500">@section.Key</h3>
+                                    <ul class="space-y-2">
+                                        @foreach (var ing in section)
+                                        {
+                                            <li class="flex justify-between border-b border-gray-700/50 pb-1">
+                                                <span class="text-gray-200">
+                                                    <span class="font-bold text-white">@ing.Quantity</span> 
+                                                    <span class="font-bold text-white">@ing.Unit</span> @ing.Name
+                                                </span>
+                                                <span class="text-xs text-gray-500 italic ml-2">@ing.Notes</span>
+                                            </li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+                        </div>
+
+                        <div>
+                            <h2 class="text-2xl font-bold border-b border-green-900/50 pb-2 mb-4 text-green-300">Instructions</h2>
+                            @foreach (var section in selectedRecipe.Instructions.GroupBy(i => i.Section))
+                            {
+                                <div class="mb-8">
+                                    <h3 class="text-lg font-semibold text-white mb-3 pl-2 border-l-2 border-green-500">@section.Key</h3>
+                                    <ol class="list-decimal list-outside space-y-4 text-gray-300 pl-5">
+                                        @foreach (var step in section.OrderBy(s => s.StepNumber))
+                                        {
+                                            <li class="pl-2">@step.Text</li>
+                                        }
+                                    </ol>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
 
     </main>
 </div>
@@ -84,17 +161,15 @@
 <script>window.getUserOffset = () => { return new Date().getTimezoneOffset(); };</script>
 
 @code {
-    private CultureInfo usCulture = new CultureInfo("en-US");
-    private WeatherData? weather;
-    private string CurrentDate = "", CurrentTime = "";
-    private int clientOffsetMinutes = 0;
+    private List<Recipe> Recipes = new();
+    private Recipe? selectedRecipe;
+    private string searchTerm = "";
     private User? currentUser;
-
-    protected override async Task OnInitializedAsync()
-    {
-        UpdateTime();
-        try { _ = StartClock(); } catch {}
-    }
+    
+    // Header Data
+    private string CurrentDate = "", CurrentTime = "";
+    private WeatherData? weather;
+    private int clientOffsetMinutes = 0;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -113,36 +188,40 @@
                 currentUser = await Db.Users.FindAsync(session.UserId);
                 if (currentUser == null) { await Logout(); return; }
 
+                // Load Recipes for this user
+                Recipes = await Db.Recipes
+                    .Where(r => r.UserId == currentUser.Id)
+                    .Include(r => r.Ingredients)
+                    .Include(r => r.Instructions)
+                    .OrderBy(r => r.Category).ThenBy(r => r.Title)
+                    .ToListAsync();
+                
                 _ = FetchWeather();
                 try { clientOffsetMinutes = await JS.InvokeAsync<int>("getUserOffset"); UpdateTime(); } catch {}
+                _ = StartClock();
+                
                 StateHasChanged();
             } 
             catch { Nav.NavigateTo("/login", forceLoad: true); }
         }
     }
 
-    private async Task Logout()
-    {
-        await JS.InvokeVoidAsync("localStorage.removeItem", "dashboard_session");
-        Nav.NavigateTo("/login", forceLoad: true);
-    }
+    private IEnumerable<Recipe> FilteredRecipes => 
+        string.IsNullOrWhiteSpace(searchTerm) 
+        ? Recipes 
+        : Recipes.Where(r => 
+            r.Title.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) || 
+            r.Ingredients.Any(i => i.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
+        );
 
+    private void SelectRecipe(Recipe r) { selectedRecipe = r; window.scrollTo(0,0); }
+    private async Task Logout() { await JS.InvokeVoidAsync("localStorage.removeItem", "dashboard_session"); Nav.NavigateTo("/login", true); }
+    private List<string> GetTags(string json) { try { return JsonSerializer.Deserialize<List<string>>(json) ?? new(); } catch { return new(); } }
+    
+    // Header Utils
     private async Task StartClock() { var now = DateTime.Now; await Task.Delay((60 - now.Second) * 1000); using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1)); UpdateTime(); while (await timer.WaitForNextTickAsync()) { UpdateTime(); } }
     private void UpdateTime() { var now = DateTime.UtcNow.AddMinutes(-clientOffsetMinutes); string suffix = (now.Day % 10 == 1 && now.Day != 11) ? "st" : (now.Day % 10 == 2 && now.Day != 12) ? "nd" : (now.Day % 10 == 3 && now.Day != 13) ? "rd" : "th"; CurrentDate = $"{now:dddd, MMMM d}{suffix} {now:yyyy}"; CurrentTime = now.ToString("h:mm tt").ToLower(); InvokeAsync(StateHasChanged); }
-    
-    private async Task FetchWeather() { 
-        if (currentUser == null) return;
-        try { 
-            var geoUrl = $"https://geocoding-api.open-meteo.com/v1/search?name={currentUser.ZipCode}&count=1&language=en&format=json";
-            var geoJson = await Http.GetStringAsync(geoUrl);
-            var lat = "33.1383"; var lon = "-95.6011"; 
-            using (var doc = JsonDocument.Parse(geoJson)) { if (doc.RootElement.TryGetProperty("results", out var results) && results.GetArrayLength() > 0) { var first = results[0]; lat = first.GetProperty("latitude").GetDouble().ToString(CultureInfo.InvariantCulture); lon = first.GetProperty("longitude").GetDouble().ToString(CultureInfo.InvariantCulture); } }
-            var url = $"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto"; 
-            weather = await Http.GetFromJsonAsync<WeatherData>(url); 
-            StateHasChanged(); 
-        } catch {} 
-    }
-    
+    private async Task FetchWeather() { if (currentUser == null) return; try { var url = "https://api.open-meteo.com/v1/forecast?latitude=33.1383&longitude=-95.6011&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto"; weather = await Http.GetFromJsonAsync<WeatherData>(url); StateHasChanged(); } catch {} }
     private string GetDayName(string s) => DateTime.TryParse(s, out var d) ? d.ToString("ddd") : "";
     private string GetWeatherIcon(int c) => c switch { 0=>"☀️", 1=>"🌤️", 2=>"Qw", 3=>"☁️", 45 or 48=>"🌫️", 51 or 53 or 55=>"🌦️", 61 or 63 or 65=>"🌧️", 80 or 81 or 82=>"🌦️", 71 or 73 or 75=>"❄️", 95 or 96 or 99=>"⚡", _=>"🌡️" };
 
