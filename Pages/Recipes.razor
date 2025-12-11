@@ -23,7 +23,7 @@
                     <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                     <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                 </div>
-                <div class="text-[10px] text-gray-600 font-mono mt-1">v3.3.1 (Safe Scaling)</div>
+                <div class="text-[10px] text-gray-600 font-mono mt-1">v3.4.0 (Smart Macros)</div>
             </div>
 
             <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -234,6 +234,14 @@
                 {
                     <div class="space-y-6">
                         <div class="flex justify-end"><label class="flex items-center text-xs font-bold text-gray-400 cursor-pointer hover:text-white"><input type="checkbox" @bind="showMacros" class="mr-2 rounded border-gray-600 bg-gray-700" /> Show Macro Fields</label></div>
+                        
+                        <datalist id="ingredient-list">
+                            @foreach(var known in IngredientDatabase)
+                            {
+                                <option value="@known.Key"></option>
+                            }
+                        </datalist>
+
                         @for(int s = 0; s < editorIngSections.Count; s++)
                         {
                             var sec = editorIngSections[s];
@@ -260,9 +268,11 @@
                                                 <button type="button" @onclick="() => MoveItem(sec.Items, iIdx, 1)" class="text-[8px] bg-gray-700 hover:bg-gray-600 px-1 rounded text-white disabled:opacity-30" disabled="@(iIdx==sec.Items.Count-1)">▼</button>
                                             </div>
                                             <div class="grid grid-cols-12 gap-2 flex-1 items-center">
-                                                <input @bind="item.Quantity" class="col-span-2 bg-gray-700 border border-gray-600 rounded p-1 text-xs text-white" placeholder="Qty" />
-                                                <input @bind="item.Unit" class="col-span-2 bg-gray-700 border border-gray-600 rounded p-1 text-xs text-white" placeholder="Unit" />
-                                                <input @bind="item.Name" class="col-span-5 bg-gray-700 border border-gray-600 rounded p-1 text-xs text-white font-bold" placeholder="Name" />
+                                                <input value="@item.Quantity" @onchange="@(e => { item.Quantity = e.Value?.ToString() ?? ""; TryAutoFillMacros(item); })" class="col-span-2 bg-gray-700 border border-gray-600 rounded p-1 text-xs text-white" placeholder="Qty" />
+                                                <input value="@item.Unit" @onchange="@(e => { item.Unit = e.Value?.ToString() ?? ""; TryAutoFillMacros(item); })" class="col-span-2 bg-gray-700 border border-gray-600 rounded p-1 text-xs text-white" placeholder="Unit" />
+                                                
+                                                <input value="@item.Name" list="ingredient-list" @onchange="@(e => { item.Name = e.Value?.ToString() ?? ""; TryAutoFillMacros(item); })" class="col-span-5 bg-gray-700 border border-gray-600 rounded p-1 text-xs text-white font-bold" placeholder="Name" />
+                                                
                                                 <input @bind="item.Notes" class="col-span-2 bg-gray-700 border border-gray-600 rounded p-1 text-xs text-white" placeholder="Notes" />
                                                 <button class="col-span-1 text-red-400 font-bold hover:text-red-300 text-right" @onclick="() => sec.Items.RemoveAt(iIdx)">✕</button>
                                             </div>
@@ -359,6 +369,10 @@
 @code {
     private List<Recipe> RecipeList = new(); 
     private List<RecipeCategory> CategoryList = new();
+    
+    // Auto-Complete Source: Dictionary<Name, BestVersion>
+    private Dictionary<string, RecipeIngredient> IngredientDatabase = new();
+
     private Recipe? selectedRecipe;
     private string searchTerm = "";
     private User? currentUser;
@@ -425,10 +439,101 @@
                 .Include(r => r.Ingredients).Include(r => r.Instructions)
                 .OrderBy(r => r.Category).ThenBy(r => r.Title).ToListAsync();
              CategoryList = await Db.RecipeCategories.Where(c => c.UserId == currentUser.Id).OrderBy(c => c.Name).ToListAsync();
+             
+             // BUILD INGREDIENT DATABASE FOR AUTOCOMPLETE
+             var allIngs = await Db.RecipeIngredients.Where(i => Db.Recipes.Any(r => r.Id == i.RecipeId && r.UserId == currentUser.Id)).ToListAsync();
+             IngredientDatabase = allIngs
+                .Where(i => i.Calories > 0 || i.Protein > 0 || i.Fat > 0 || i.Carbs > 0) // Only data-rich
+                .GroupBy(i => i.Name.ToLower().Trim())
+                .ToDictionary(
+                    g => g.Key, 
+                    g => g.OrderByDescending(i => (i.Calories>0?1:0) + (i.Protein>0?1:0)).First()
+                );
+
          } catch (Exception ex) {
              if (ex.Message.Contains("42P01") || ex.Message.Contains("42703")) { isDbError = true; errorMessage = ex.Message; }
          }
          StateHasChanged();
+    }
+    
+    // --- SMART MACRO AUTO-FILL ---
+    private void TryAutoFillMacros(RecipeIngredient item)
+    {
+        // 1. Check valid name match
+        if (string.IsNullOrWhiteSpace(item.Name)) return;
+        var key = item.Name.ToLower().Trim();
+        if (!IngredientDatabase.ContainsKey(key)) return;
+
+        // 2. Only fill if currently empty/zero to respect manual edits
+        bool isEmpty = item.Calories == 0 && item.Protein == 0 && item.Fat == 0 && item.Carbs == 0;
+        if (!isEmpty) return;
+
+        var source = IngredientDatabase[key];
+        
+        // 3. Calculate Ratio
+        double ratio = CalculateRatio(source.Quantity, source.Unit, item.Quantity, item.Unit);
+        
+        if (ratio > 0)
+        {
+            item.Calories = Math.Round(source.Calories * ratio, 1);
+            item.Protein = Math.Round(source.Protein * ratio, 1);
+            item.Fat = Math.Round(source.Fat * ratio, 1);
+            item.Carbs = Math.Round(source.Carbs * ratio, 1);
+            item.Fiber = Math.Round(source.Fiber * ratio, 1);
+        }
+    }
+    
+    private double CalculateRatio(string sQty, string sUnit, string tQty, string tUnit)
+    {
+        double sVal = ParseQty(sQty);
+        double tVal = ParseQty(tQty);
+        if (sVal <= 0 || tVal <= 0) return 0;
+        
+        // Normalize Units to Base (tsp for Vol, oz for Wgt, count for Count)
+        double sNorm = Normalize(sVal, sUnit);
+        double tNorm = Normalize(tVal, tUnit);
+        
+        // Only return ratio if compatible (both > 0 means both were normalized successfully)
+        // If normalization fails (returns -1), we can't convert e.g. Cup to Lb
+        // Exception: If units are identical string match, allow ratio
+        if (sNorm > 0 && tNorm > 0) return tNorm / sNorm;
+        if (sUnit.Trim().Equals(tUnit.Trim(), StringComparison.OrdinalIgnoreCase)) return tVal / sVal;
+        
+        return 0; // Incompatible
+    }
+    
+    private double Normalize(double val, string unit)
+    {
+        string u = unit.ToLower().Trim();
+        // Volume -> TSP
+        if (u.StartsWith("cup")) return val * 48;
+        if (u.StartsWith("tbsp") || u.StartsWith("tablespoon")) return val * 3;
+        if (u.StartsWith("tsp") || u.StartsWith("teaspoon")) return val;
+        if (u.StartsWith("fl oz")) return val * 6;
+        if (u.StartsWith("ml")) return val * 0.202;
+        if (u.StartsWith("l") || u.StartsWith("liter")) return val * 202.88;
+        
+        // Weight -> OZ
+        if (u.StartsWith("lb") || u.StartsWith("pound")) return val * 16;
+        if (u.StartsWith("oz") || u.StartsWith("ounce")) return val;
+        if (u.StartsWith("g") || u.StartsWith("gram")) return val * 0.03527;
+        if (u.StartsWith("kg")) return val * 35.274;
+
+        // Count -> Count
+        if (string.IsNullOrWhiteSpace(u) || u == "whole") return val;
+        
+        return -1; // Unknown/Incompatible
+    }
+
+    private double ParseQty(string qty)
+    {
+        if (string.IsNullOrWhiteSpace(qty)) return 0;
+        var mixedMatch = Regex.Match(qty.Trim(), @"^(\d+)\s+(\d+)/(\d+)$");
+        if (mixedMatch.Success) return double.Parse(mixedMatch.Groups[1].Value) + (double.Parse(mixedMatch.Groups[2].Value) / double.Parse(mixedMatch.Groups[3].Value));
+        var fracMatch = Regex.Match(qty.Trim(), @"^(\d+)/(\d+)$");
+        if (fracMatch.Success) return double.Parse(fracMatch.Groups[1].Value) / double.Parse(fracMatch.Groups[2].Value);
+        if (double.TryParse(qty, out double d)) return d;
+        return 0;
     }
 
     // --- RECIPE EDITOR ---
@@ -553,75 +658,44 @@
 
         double factor = (double)current / original;
         
-        // 1. Parse Quantity
-        double val = 0;
-        bool isNumber = false;
-        
-        var mixedMatch = Regex.Match(qty.Trim(), @"^(\d+)\s+(\d+)/(\d+)$");
-        var fracMatch = Regex.Match(qty.Trim(), @"^(\d+)/(\d+)$");
-        var decimalMatch = Regex.Match(qty.Trim(), @"^(\d+(\.\d+)?)$");
+        double val = ParseQty(qty);
+        if (val <= 0) return (qty, unit);
 
-        if (mixedMatch.Success) {
-            val = double.Parse(mixedMatch.Groups[1].Value) + (double.Parse(mixedMatch.Groups[2].Value) / double.Parse(mixedMatch.Groups[3].Value));
-            isNumber = true;
-        } else if (fracMatch.Success) {
-            val = double.Parse(fracMatch.Groups[1].Value) / double.Parse(fracMatch.Groups[2].Value);
-            isNumber = true;
-        } else if (decimalMatch.Success) {
-            val = double.Parse(decimalMatch.Groups[1].Value);
-            isNumber = true;
-        }
-
-        if (!isNumber) return (qty, unit);
-
-        // 2. Scale
         val *= factor;
 
-        // 3. Unit Conversion & Safety Floor
+        // Unit Conversion & Safety Floor
         string u = unit.ToLower().Trim();
         
-        // Volume (Cups, Tbsp, Tsp)
         if (u.StartsWith("cup") || u.StartsWith("tbsp") || u.StartsWith("tablespoon") || u.StartsWith("tsp") || u.StartsWith("teaspoon"))
         {
-            // Normalize to TSP
-            if (u.StartsWith("cup")) val *= 48; // 1 cup = 48 tsp
+            if (u.StartsWith("cup")) val *= 48; 
             else if (u.StartsWith("tbsp") || u.StartsWith("tablespoon")) val *= 3;
             
-            // Safety Floor (1/8 tsp)
-            if (val < 0.125 && val > 0) val = 0.125;
+            if (val < 0.125 && val > 0) val = 0.125; // Floor 1/8 tsp
 
-            // Convert back up
             if (val >= 48) { val /= 48; u = "cup"; }
             else if (val >= 3) { val /= 3; u = "tbsp"; }
             else { u = "tsp"; }
         }
-        // Weight Imperial (Lbs, Oz)
         else if (u.StartsWith("lb") || u.StartsWith("pound") || u.StartsWith("oz") || u.StartsWith("ounce"))
         {
-            // Normalize to OZ
             if (u.StartsWith("lb") || u.StartsWith("pound")) val *= 16;
             
-            // Safety Floor (1/8 oz)
-            if (val < 0.125 && val > 0) val = 0.125;
+            if (val < 0.125 && val > 0) val = 0.125; // Floor 1/8 oz
 
-            // Convert back up
             if (val >= 16) { val /= 16; u = "lb"; }
             else { u = "oz"; }
         }
-        // Weight Metric (g)
         else if (u.StartsWith("g") || u.StartsWith("gram"))
         {
-            // Safety Floor (1g)
-            if (val < 1 && val > 0) val = 1;
+            if (val < 1 && val > 0) val = 1; // Floor 1g
         }
 
-        // 4. Round to nearest Fraction
+        // Rounding
         double fractionPart = val - Math.Floor(val);
         double wholePart = Math.Floor(val);
-        
         double[] snaps = { 0, 0.125, 0.25, 0.333, 0.5, 0.666, 0.75, 0.875, 1.0 };
         string[] snapStrs = { "", "⅛", "¼", "⅓", "½", "⅔", "¾", "⅞", "1" };
-        
         double closest = snaps.OrderBy(x => Math.Abs(x - fractionPart)).First();
         int idx = Array.IndexOf(snaps, closest);
         
