@@ -23,7 +23,7 @@
                     <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                     <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                 </div>
-                <div class="text-[10px] text-gray-600 font-mono mt-1">v3.4.0 (Smart Macros)</div>
+                <div class="text-[10px] text-gray-600 font-mono mt-1">v3.5.0 (Ingredient Intelligence)</div>
             </div>
 
             <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -235,13 +235,6 @@
                     <div class="space-y-6">
                         <div class="flex justify-end"><label class="flex items-center text-xs font-bold text-gray-400 cursor-pointer hover:text-white"><input type="checkbox" @bind="showMacros" class="mr-2 rounded border-gray-600 bg-gray-700" /> Show Macro Fields</label></div>
                         
-                        <datalist id="ingredient-list">
-                            @foreach(var known in IngredientDatabase)
-                            {
-                                <option value="@known.Key"></option>
-                            }
-                        </datalist>
-
                         @for(int s = 0; s < editorIngSections.Count; s++)
                         {
                             var sec = editorIngSections[s];
@@ -261,7 +254,7 @@
                                 {
                                     var item = sec.Items[i];
                                     var iIdx = i;
-                                    <div class="mb-2 pb-2 border-b border-gray-700/50 last:border-0">
+                                    <div class="mb-2 pb-2 border-b border-gray-700/50 last:border-0 relative">
                                         <div class="flex gap-2 items-center">
                                             <div class="flex flex-col gap-0.5">
                                                 <button type="button" @onclick="() => MoveItem(sec.Items, iIdx, -1)" class="text-[8px] bg-gray-700 hover:bg-gray-600 px-1 rounded text-white disabled:opacity-30" disabled="@(iIdx==0)">▲</button>
@@ -271,8 +264,41 @@
                                                 <input value="@item.Quantity" @onchange="@(e => { item.Quantity = e.Value?.ToString() ?? ""; TryAutoFillMacros(item); })" class="col-span-2 bg-gray-700 border border-gray-600 rounded p-1 text-xs text-white" placeholder="Qty" />
                                                 <input value="@item.Unit" @onchange="@(e => { item.Unit = e.Value?.ToString() ?? ""; TryAutoFillMacros(item); })" class="col-span-2 bg-gray-700 border border-gray-600 rounded p-1 text-xs text-white" placeholder="Unit" />
                                                 
-                                                <input value="@item.Name" list="ingredient-list" @onchange="@(e => { item.Name = e.Value?.ToString() ?? ""; TryAutoFillMacros(item); })" class="col-span-5 bg-gray-700 border border-gray-600 rounded p-1 text-xs text-white font-bold" placeholder="Name" />
-                                                
+                                                <div class="col-span-5 relative">
+                                                    <input value="@item.Name" 
+                                                           @oninput="@(e => OnIngredientInput(e, item))" 
+                                                           @onfocus="@(() => { activeAutocompleteItem = item; FilterSuggestions(item.Name); })"
+                                                           @onblur="@(async () => { await Task.Delay(200); activeAutocompleteItem = null; })"
+                                                           class="w-full bg-gray-700 border border-gray-600 rounded p-1 text-xs text-white font-bold" 
+                                                           placeholder="Name" />
+                                                    
+                                                    @if (activeAutocompleteItem == item && filteredSuggestions.Any())
+                                                    {
+                                                        <ul class="absolute z-50 left-0 right-0 mt-1 bg-gray-900 border border-gray-600 rounded-lg shadow-2xl max-h-48 overflow-y-auto">
+                                                            @foreach (var suggestion in filteredSuggestions)
+                                                            {
+                                                                <li class="p-2 hover:bg-blue-900/50 cursor-pointer border-b border-gray-800 last:border-0"
+                                                                    @onclick="@(() => SelectSuggestion(item, suggestion))">
+                                                                    <div class="flex justify-between items-center">
+                                                                        <span class="font-bold text-xs text-white">@suggestion.Name</span>
+                                                                        @if (suggestion.Calories > 0)
+                                                                        {
+                                                                            <span class="text-[9px] text-green-300 bg-green-900/30 px-1 rounded border border-green-800">
+                                                                                @suggestion.Calories cal / @suggestion.Quantity @suggestion.Unit
+                                                                            </span>
+                                                                        }
+                                                                    </div>
+                                                                    @if (suggestion.Calories > 0) {
+                                                                        <div class="text-[9px] text-gray-500 mt-0.5">
+                                                                            P:@(suggestion.Protein)g F:@(suggestion.Fat)g C:@(suggestion.Carbs)g
+                                                                        </div>
+                                                                    }
+                                                                </li>
+                                                            }
+                                                        </ul>
+                                                    }
+                                                </div>
+
                                                 <input @bind="item.Notes" class="col-span-2 bg-gray-700 border border-gray-600 rounded p-1 text-xs text-white" placeholder="Notes" />
                                                 <button class="col-span-1 text-red-400 font-bold hover:text-red-300 text-right" @onclick="() => sec.Items.RemoveAt(iIdx)">✕</button>
                                             </div>
@@ -372,6 +398,8 @@
     
     // Auto-Complete Source: Dictionary<Name, BestVersion>
     private Dictionary<string, RecipeIngredient> IngredientDatabase = new();
+    private List<RecipeIngredient> filteredSuggestions = new();
+    private RecipeIngredient? activeAutocompleteItem;
 
     private Recipe? selectedRecipe;
     private string searchTerm = "";
@@ -456,21 +484,45 @@
          StateHasChanged();
     }
     
+    // --- CUSTOM AUTOCOMPLETE ---
+    private void OnIngredientInput(ChangeEventArgs e, RecipeIngredient item)
+    {
+        item.Name = e.Value?.ToString() ?? "";
+        activeAutocompleteItem = item;
+        FilterSuggestions(item.Name);
+        TryAutoFillMacros(item); // Try filling even while typing if match exact
+    }
+
+    private void FilterSuggestions(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) { filteredSuggestions.Clear(); return; }
+        filteredSuggestions = IngredientDatabase.Values
+            .Where(i => i.Name.Contains(input, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(i => i.Name.Length) // Exact matches first
+            .Take(5)
+            .ToList();
+    }
+
+    private void SelectSuggestion(RecipeIngredient target, RecipeIngredient source)
+    {
+        target.Name = source.Name; // Set correct name
+        activeAutocompleteItem = null; // Close dropdown
+        filteredSuggestions.Clear();
+        TryAutoFillMacros(target); // Force macro update
+    }
+
     // --- SMART MACRO AUTO-FILL ---
     private void TryAutoFillMacros(RecipeIngredient item)
     {
-        // 1. Check valid name match
         if (string.IsNullOrWhiteSpace(item.Name)) return;
         var key = item.Name.ToLower().Trim();
         if (!IngredientDatabase.ContainsKey(key)) return;
 
-        // 2. Only fill if currently empty/zero to respect manual edits
+        // Only fill if currently empty
         bool isEmpty = item.Calories == 0 && item.Protein == 0 && item.Fat == 0 && item.Carbs == 0;
         if (!isEmpty) return;
 
         var source = IngredientDatabase[key];
-        
-        // 3. Calculate Ratio
         double ratio = CalculateRatio(source.Quantity, source.Unit, item.Quantity, item.Unit);
         
         if (ratio > 0)
@@ -489,17 +541,13 @@
         double tVal = ParseQty(tQty);
         if (sVal <= 0 || tVal <= 0) return 0;
         
-        // Normalize Units to Base (tsp for Vol, oz for Wgt, count for Count)
         double sNorm = Normalize(sVal, sUnit);
         double tNorm = Normalize(tVal, tUnit);
         
-        // Only return ratio if compatible (both > 0 means both were normalized successfully)
-        // If normalization fails (returns -1), we can't convert e.g. Cup to Lb
-        // Exception: If units are identical string match, allow ratio
         if (sNorm > 0 && tNorm > 0) return tNorm / sNorm;
         if (sUnit.Trim().Equals(tUnit.Trim(), StringComparison.OrdinalIgnoreCase)) return tVal / sVal;
         
-        return 0; // Incompatible
+        return 0;
     }
     
     private double Normalize(double val, string unit)
