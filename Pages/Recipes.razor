@@ -23,7 +23,7 @@
             <div class="text-red-500 text-xl font-bold">⚠️ Database Update Required</div>
             <p class="text-gray-400 max-w-md text-center">@errorMessage</p>
             <button @onclick="UpgradeDatabase" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">
-                Apply Schema Update & Fix Nulls
+                Apply Schema Update
             </button>
         </div>
     }
@@ -37,7 +37,7 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v4.1.0 (Hover Edit)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v4.1.1 (Debug Mode)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -105,17 +105,22 @@
                         var catObj = CategoryList.FirstOrDefault(c => c.Name == categoryName);
                         
                         <section>
-                            <div class="group relative inline-flex items-center gap-3 bg-gray-800 border border-gray-700 px-4 py-1.5 rounded-full mb-4 shadow-md pr-10 hover:border-blue-500 transition-colors">
+                            <div class="group/cat relative inline-flex items-center gap-3 bg-gray-800 border border-gray-700 px-4 py-1.5 rounded-full mb-4 shadow-md pr-12 hover:border-blue-500 transition-colors cursor-pointer">
+                                
                                 @if (catObj != null && !string.IsNullOrEmpty(catObj.ImageUrl))
                                 {
-                                    <img src="@catObj.ImageUrl" class="w-8 h-8 rounded-full object-cover -ml-2 border border-gray-600" />
+                                    <img src="@catObj.ImageUrl" class="w-8 h-8 rounded-full object-cover -ml-2 border border-gray-600" 
+                                         onerror="this.style.display='none'; console.log('Failed to load category image: @catObj.ImageUrl');" />
                                 }
+                                
                                 <span class="text-lg font-semibold text-white">@categoryName</span>
                                 
                                 @if(catObj != null)
                                 {
-                                    <button class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition"
-                                            @onclick="() => { OpenCategoryManager(); EditCategory(catObj); }" title="Edit Category">
+                                    <button class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-blue-400 opacity-0 group-hover/cat:opacity-100 transition-opacity p-1"
+                                            @onclick="() => { OpenCategoryManager(); EditCategory(catObj); }" 
+                                            @onclick:stopPropagation="true"
+                                            title="Edit Category">
                                         ✏️
                                     </button>
                                 }
@@ -384,6 +389,10 @@
                                     <img src="@editingCategory.ImageUrl" class="h-full object-contain" />
                                 </div>
                             }
+                            else
+                            {
+                                <div class="text-[10px] text-gray-500 text-center">No image selected</div>
+                            }
                         </div>
                     }
                 }
@@ -554,6 +563,7 @@
         isUploading = true;
         try {
             var file = e.File;
+            Console.WriteLine($"Starting upload for {file.Name}"); // LOG
             using var content = new MultipartFormDataContent();
             using var stream = file.OpenReadStream(5 * 1024 * 1024); // 5MB Limit
             var fileContent = new StreamContent(stream);
@@ -566,14 +576,20 @@
                 var result = await response.Content.ReadFromJsonAsync<UploadResult>();
                 if (result != null)
                 {
+                    Console.WriteLine($"Upload success: {result.Url}"); // LOG
                     editingRecipe.ImageUrl = result.Url;
                     editingRecipe.ImageId = result.Id;
+                    StateHasChanged();
                 }
             }
             else { await JS.InvokeVoidAsync("alert", "Upload failed."); }
         }
-        catch (Exception ex) { await JS.InvokeVoidAsync("alert", "Error: " + ex.Message); }
+        catch (Exception ex) { 
+            Console.WriteLine($"Upload ERROR: {ex.Message}"); // LOG
+            await JS.InvokeVoidAsync("alert", "Error: " + ex.Message); 
+        }
         isUploading = false;
+        StateHasChanged();
     }
 
     private async Task HandleCategoryImageUpload(InputFileChangeEventArgs e, RecipeCategory? cat)
@@ -581,6 +597,7 @@
         if (cat == null) return;
         try {
             var file = e.File;
+            Console.WriteLine($"Starting CATEGORY upload for {file.Name}"); // LOG
             using var content = new MultipartFormDataContent();
             using var stream = file.OpenReadStream(5 * 1024 * 1024);
             var fileContent = new StreamContent(stream);
@@ -593,12 +610,16 @@
                 var result = await response.Content.ReadFromJsonAsync<UploadResult>();
                 if (result != null)
                 {
+                    Console.WriteLine($"Category Upload success: {result.Url}"); // LOG
                     cat.ImageUrl = result.Url;
                     cat.ImageId = result.Id;
                     StateHasChanged(); // Force update so image shows immediately
                 }
             }
-        } catch { await JS.InvokeVoidAsync("alert", "Category upload failed."); }
+        } catch (Exception ex) { 
+            Console.WriteLine($"Category Upload ERROR: {ex.Message}"); // LOG
+            await JS.InvokeVoidAsync("alert", "Category upload failed: " + ex.Message); 
+        }
     }
     
     private class UploadResult { public int Id { get; set; } public string Url { get; set; } = ""; }
