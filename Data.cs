@@ -33,7 +33,7 @@ public class Recipe
     public string Description { get; set; } = "";
     public string Category { get; set; } = "";
     public int Servings { get; set; }
-    public string ServingSize { get; set; } = ""; // NEW: e.g. "1 Cup"
+    public string? ServingSize { get; set; } // CHANGED: Nullable to prevent crash on existing data
     public string PrepTime { get; set; } = "";
     public string CookTime { get; set; } = "";
     public string ImageUrl { get; set; } = "";
@@ -50,8 +50,8 @@ public class RecipeIngredient
     public int Id { get; set; }
     public int RecipeId { get; set; }
     public string Section { get; set; } = "Main";
-    public int SectionOrder { get; set; } // NEW: Orders the groups (e.g. 0=Marinade, 1=Meat)
-    public int Order { get; set; } // Orders items within group
+    public int SectionOrder { get; set; }
+    public int Order { get; set; }
     public string Name { get; set; } = "";
     public string Quantity { get; set; } = "";
     public string Unit { get; set; } = "";
@@ -69,7 +69,7 @@ public class RecipeInstruction
     public int Id { get; set; }
     public int RecipeId { get; set; }
     public string Section { get; set; } = "Directions";
-    public int SectionOrder { get; set; } // NEW
+    public int SectionOrder { get; set; }
     public int StepNumber { get; set; } 
     public string Text { get; set; } = "";
 }
