@@ -1,4 +1,5 @@
 using Dashboard;
+using Dashboard.Components;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -10,25 +11,26 @@ using System.Net.Http;
 var builder = WebApplication.CreateBuilder(args);
 
 // =========================================================
-// 1. SERVICES (The Setup)
+// 1. SERVICES
 // =========================================================
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
     .AddCircuitOptions(options => options.DetailedErrors = true);
 
-builder.Services.AddHttpClient();
+// 1a. Register Controllers for Image Upload API
+builder.Services.AddControllers();
 
-// FIX A: Register Controllers so the Admin API works
-builder.Services.AddControllers(); 
-
-// FIX B: Allow the app to talk to itself (for the Admin Buttons)
-// Note: When testing locally, you might need to change this URL to localhost
-builder.Services.AddScoped(sp => new HttpClient { 
-    BaseAddress = new Uri("https://dashboard-app-rmm4.onrender.com/") 
+// 1b. Self-Referencing HttpClient (Adjusted for Prod/Dev)
+builder.Services.AddScoped(sp => 
+{
+    var navMan = sp.GetRequiredService<NavigationManager>();
+    return new HttpClient { 
+        BaseAddress = new Uri(navMan.BaseUri) 
+    };
 });
 
-// Database Connection
+// 1c. Database Connection
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (!string.IsNullOrEmpty(connectionString))
 {
@@ -42,10 +44,10 @@ else
 var app = builder.Build();
 
 // =========================================================
-// 2. MIDDLEWARE (The Pipeline)
+// 2. MIDDLEWARE
 // =========================================================
 
-// Render Proxy Fix
+// Render.com Proxy Fix (Crucial for HTTPS redirect)
 app.UseForwardedHeaders(new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
@@ -53,7 +55,7 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
 
 if (!app.Environment.IsDevelopment())
 {
-    app.UseExceptionHandler("/Error");
+    app.UseExceptionHandler("/Error", createScopeForErrors: true);
     app.UseHsts();
 }
 
@@ -62,17 +64,18 @@ app.UseStaticFiles();
 app.UseAntiforgery();
 
 // =========================================================
-// 3. ROUTING (The Map)
+// 3. ROUTING
 // =========================================================
 
+// 3a. Map the API Controllers (Images, Admin)
+app.MapControllers();
+
+// 3b. Map the UI
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-// FIX C: Actually map the controllers so /api/admin works
-app.MapControllers(); 
-
 // =========================================================
-// 4. STARTUP TASKS (The Seeder)
+// 4. STARTUP TASKS
 // =========================================================
 
 using (var scope = app.Services.CreateScope())
@@ -82,10 +85,11 @@ using (var scope = app.Services.CreateScope())
     
     try
     {
-        logger.LogInformation("--- APPLICATION STARTING ---");
         var context = services.GetRequiredService<AppDbContext>();
+        // Ensure the new StoredImages table exists
+        context.Database.EnsureCreated(); 
         
-        // This calls your DbInitializer.cs file
+        // Run your existing initializer
         DbInitializer.Initialize(context, logger);
     }
     catch (Exception ex)
