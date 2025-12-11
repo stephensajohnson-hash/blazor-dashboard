@@ -37,7 +37,7 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.12.1 (Grid & Dropdown Fix)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v2.13.0 (Timezone & Stock Delta)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -177,10 +177,14 @@
                 <div class="flex gap-4 overflow-x-auto pb-4 scrollbar-hide">
                     @foreach (var stock in Stocks)
                     {
-                        decimal price = 0;
-                        if (PriceCache.ContainsKey(stock.Symbol)) { price = PriceCache[stock.Symbol]; }
+                        var data = PriceCache.ContainsKey(stock.Symbol) ? PriceCache[stock.Symbol] : null;
+                        var hasPrice = data != null;
+                        var price = data?.Price ?? 0;
+                        var change = data?.Change ?? 0;
+                        var percent = data?.Percent ?? 0;
                         var value = stock.Shares * (double)price;
-                        var hasPrice = price > 0;
+                        var colorClass = change >= 0 ? "text-green-400" : "text-red-400";
+                        var arrow = change >= 0 ? "▲" : "▼";
 
                         <div class="group relative h-32 bg-gray-800 rounded-xl flex items-center border border-gray-700 shadow-lg shrink-0 overflow-hidden hover:border-blue-500/50 transition pr-6">
                             <div class="absolute top-2 right-2 flex gap-1 bg-black/90 rounded px-1 opacity-0 group-hover:opacity-100 z-20 transition border border-gray-700 shadow-md">
@@ -212,14 +216,18 @@
                                         @(hasPrice ? price.ToString("C", usCulture) : "Loading...")
                                     </div>
                                     
+                                    @if(hasPrice)
+                                    {
+                                        <div class="text-xs font-bold @colorClass flex items-center gap-1 mb-1">
+                                            <span>@arrow</span>
+                                            <span>@change.ToString("0.00")</span>
+                                            <span>(@percent.ToString("0.00")%)</span>
+                                        </div>
+                                    }
+
                                     @if (stock.Shares > 0 && hasPrice)
                                     {
-                                        <div class="text-sm text-gray-400 font-mono">Value: <span class="text-blue-300">@value.ToString("C0", usCulture)</span></div>
-                                        <div class="text-xs text-gray-400 mt-0.5">@stock.Shares.ToString("N2") shares</div>
-                                    }
-                                    else if (stock.Shares > 0)
-                                    {
-                                         <div class="text-xs text-gray-400 mt-1">@stock.Shares.ToString("N2") shares</div>
+                                        <div class="text-sm text-gray-400 font-mono mt-1 pt-1 border-t border-gray-700">Value: <span class="text-blue-300">@value.ToString("C0", usCulture)</span></div>
                                     }
                                 </div>
                             </a>
@@ -299,7 +307,11 @@
     private List<Countdown> Countdowns = new();
     private List<DerbyEntry> DerbyEntries = new();
     private List<RssItem> RssItems = new();
-    private Dictionary<string, decimal> PriceCache = new();
+    
+    // Updated Cache to hold detailed data
+    private Dictionary<string, StockData> PriceCache = new();
+    private record StockData(decimal Price, decimal Change, decimal Percent);
+
     private Dictionary<string, string> ColorOptions = new() { { "Red", "🔴" }, { "Orange", "🟠" }, { "Amber", "🔸" }, { "Yellow", "🟡" }, { "Lime", "🟢" }, { "Green", "💚" }, { "Emerald", "❇️" }, { "Teal", "💠" }, { "Cyan", "🔵" }, { "Sky", "🟦" }, { "Blue", "🔵" }, { "Indigo", "🟣" }, { "Violet", "🟣" }, { "Purple", "🟣" }, { "Fuchsia", "💗" }, { "Pink", "🩷" }, { "Rose", "🌹" }, { "Slate", "🪨" }, { "Gray", "🔘" }, { "Zinc", "🔩" }, { "Neutral", "😐" }, { "Stone", "🗿" }, { "Black", "⚫" }, { "White", "⚪" }, { "Brown", "🟤" }, { "Gold", "🥇" }, { "Silver", "🥈" } };
     
     private CultureInfo usCulture = new CultureInfo("en-US");
@@ -597,14 +609,28 @@
 
     private (string MainDisplay, string SubDisplay) GetCountdownLogic(DateTime target)
     {
-        var now = DateTime.Now; var diff = target - now;
-        if (diff.TotalSeconds < 0) return ("Done", "");
-        if (diff.TotalDays < 30) { return ($"{(int)diff.TotalDays + 1} Days", ""); }
-        DateTime date = now; int years = 0, months = 0, days = 0;
+        // Use client offset to get "User's Now"
+        var now = DateTime.UtcNow.AddMinutes(-clientOffsetMinutes);
+        
+        // Calculate difference purely based on Days (Midnight to Midnight logic)
+        var diff = target.Date - now.Date;
+        
+        if (diff.TotalDays < 0) return ("Done", "");
+        if (diff.TotalDays <= 30) { return ($"{(int)diff.TotalDays} Days", ""); }
+        
+        DateTime date = now.Date; 
+        int years = 0, months = 0, days = 0;
+        
         while (date.AddYears(1) <= target) { years++; date = date.AddYears(1); }
         while (date.AddMonths(1) <= target) { months++; date = date.AddMonths(1); }
+        
         days = (target - date).Days;
-        string display = ""; if (years > 0) display += $"{years}y "; if (months > 0) display += $"{months}m "; display += $"{days}d";
+        
+        string display = ""; 
+        if (years > 0) display += $"{years}y "; 
+        if (months > 0) display += $"{months}m "; 
+        display += $"{days}d";
+        
         return (display.Trim(), $"({(int)diff.TotalDays} total days)");
     }
 
@@ -613,7 +639,41 @@
     private async Task FetchWeather() { if (currentUser == null) return; try { var url = "https://api.open-meteo.com/v1/forecast?latitude=33.1383&longitude=-95.6011&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto"; weather = await Http.GetFromJsonAsync<WeatherData>(url); StateHasChanged(); } catch {} }
     private string GetDayName(string s) => DateTime.TryParse(s, out var d) ? d.ToString("ddd") : "";
     private string GetWeatherIcon(int c) => c switch { 0=>"☀️", 1=>"🌤️", 2=>"Qw", 3=>"☁️", 45 or 48=>"🌫️", 51 or 53 or 55=>"🌦️", 61 or 63 or 65=>"🌧️", 80 or 81 or 82=>"🌦️", 71 or 73 or 75=>"❄️", 95 or 96 or 99=>"⚡", _=>"🌡️" };
-    private async Task FetchPrices() { if (Stocks.Count == 0) return; isLoadingPrices = true; StateHasChanged(); using var client = new HttpClient(); client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0"); foreach (var s in Stocks) { try { var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{s.Symbol}?interval=1d"; var json = await client.GetStringAsync(url); using (var doc = JsonDocument.Parse(json)) { var meta = doc.RootElement.GetProperty("chart").GetProperty("result")[0].GetProperty("meta"); PriceCache[s.Symbol] = meta.GetProperty("regularMarketPrice").GetDecimal(); } } catch {} StateHasChanged(); } isLoadingPrices = false; StateHasChanged(); }
+    
+    private async Task FetchPrices() 
+    { 
+        if (Stocks.Count == 0) return; 
+        isLoadingPrices = true; 
+        StateHasChanged(); 
+        
+        using var client = new HttpClient(); 
+        client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0"); 
+        
+        foreach (var s in Stocks) 
+        { 
+            try 
+            { 
+                var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{s.Symbol}?interval=1d"; 
+                var json = await client.GetStringAsync(url); 
+                using (var doc = JsonDocument.Parse(json)) 
+                { 
+                    var meta = doc.RootElement.GetProperty("chart").GetProperty("result")[0].GetProperty("meta"); 
+                    decimal price = meta.GetProperty("regularMarketPrice").GetDecimal();
+                    decimal prevClose = meta.GetProperty("chartPreviousClose").GetDecimal();
+                    
+                    decimal change = price - prevClose;
+                    decimal percent = (prevClose != 0) ? (change / prevClose) * 100 : 0;
+
+                    PriceCache[s.Symbol] = new StockData(price, change, percent);
+                } 
+            } 
+            catch {} 
+            StateHasChanged(); 
+        } 
+        isLoadingPrices = false; 
+        StateHasChanged(); 
+    }
+    
     private async Task ClearDb() { if (await JS.InvokeAsync<bool>("confirm", "⚠️ WIPE DATABASE?")) { await Http.PostAsync("/api/admin/clear", null); Nav.NavigateTo(Nav.Uri, forceLoad: true); } }
     private async Task SeedDb() { var r = await Http.PostAsync("/api/admin/seed", null); if (r.IsSuccessStatusCode) { await JS.InvokeVoidAsync("alert", "Seeded!"); Nav.NavigateTo(Nav.Uri, forceLoad: true); } }
 
