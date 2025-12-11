@@ -36,7 +36,7 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v4.0.0 (Image Uploads)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v4.0.1 (Category Edit Fix)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -479,7 +479,7 @@
                     <div class="flex justify-between items-center bg-gray-900 p-2 rounded border border-gray-700">
                         <span>@cat.Name</span>
                         <div class="flex gap-2">
-                             @if (editingCategory == cat)
+                             @if (editingCategory != null && editingCategory.Id == cat.Id)
                              {
                                  <button class="text-green-400 hover:text-green-300" @onclick="SaveCategory">💾</button>
                                  <button class="text-gray-400 hover:text-gray-300" @onclick="() => editingCategory = null">✕</button>
@@ -491,7 +491,7 @@
                              }
                         </div>
                     </div>
-                    @if (editingCategory == cat)
+                    @if (editingCategory != null && editingCategory.Id == cat.Id)
                     {
                         <div class="p-2 bg-gray-800 border border-gray-600 rounded mt-1 mb-2">
                             <input @bind="editingCategory.Name" class="w-full bg-gray-700 border border-gray-600 rounded p-1 mb-1 text-xs text-white" placeholder="Name" />
@@ -630,6 +630,7 @@
                 currentUser = await Db.Users.FindAsync(session.UserId);
                 if (currentUser == null) { await Logout(); return; }
 
+                // Always load data on open to prevent stale lists
                 await LoadData();
                 _ = FetchWeather();
                 try { clientOffsetMinutes = await JS.InvokeAsync<int>("getUserOffset"); UpdateTime(); } catch {}
@@ -1004,7 +1005,10 @@
     }
 
     // --- CATEGORY MANAGER ---
-    private void OpenCategoryManager() { showCatModal = true; }
+    private void OpenCategoryManager() { 
+        showCatModal = true; 
+        _ = LoadData(); // REFRESH LIST
+    }
     private async Task AddCategory() { if (!string.IsNullOrWhiteSpace(newCategoryName) && currentUser != null) { Db.RecipeCategories.Add(new RecipeCategory { UserId = currentUser.Id, Name = newCategoryName }); await Db.SaveChangesAsync(); newCategoryName = ""; await LoadData(); } }
     private async Task DeleteCategory(RecipeCategory c) { if (await JS.InvokeAsync<bool>("confirm", $"Delete '{c.Name}'?")) { var orphaned = await Db.Recipes.Where(r => r.Category == c.Name && r.UserId == currentUser.Id).ToListAsync(); foreach(var r in orphaned) r.Category = "Uncategorized"; Db.RecipeCategories.Remove(c); await Db.SaveChangesAsync(); await LoadData(); } }
     
