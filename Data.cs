@@ -17,12 +17,22 @@ public class AppDbContext : DbContext
     public DbSet<Stock> Stocks { get; set; }
     public DbSet<User> Users { get; set; }
     public DbSet<Feed> Feeds { get; set; }
+    public DbSet<StoredImage> StoredImages { get; set; } // NEW: Shared Image Store
 
     // Recipes
     public DbSet<Recipe> Recipes { get; set; }
     public DbSet<RecipeIngredient> RecipeIngredients { get; set; }
     public DbSet<RecipeInstruction> RecipeInstructions { get; set; }
     public DbSet<RecipeCategory> RecipeCategories { get; set; }
+}
+
+public class StoredImage
+{
+    public int Id { get; set; }
+    public byte[] Data { get; set; } = Array.Empty<byte>();
+    public string ContentType { get; set; } = "image/jpeg";
+    public string OriginalName { get; set; } = "";
+    public DateTime UploadedAt { get; set; } = DateTime.UtcNow;
 }
 
 public class Recipe
@@ -36,7 +46,10 @@ public class Recipe
     public string? ServingSize { get; set; }
     public string PrepTime { get; set; } = "";
     public string CookTime { get; set; } = "";
-    public string ImageUrl { get; set; } = "";
+    
+    public string ImageUrl { get; set; } = ""; // Can be external URL or local path
+    public int? ImageId { get; set; } // NEW: Link to StoredImage if uploaded
+
     public string SourceName { get; set; } = "";
     public string SourceUrl { get; set; } = "";
     public string TagsJson { get; set; } = "[]"; 
@@ -44,6 +57,17 @@ public class Recipe
     public List<RecipeIngredient> Ingredients { get; set; } = new();
     public List<RecipeInstruction> Instructions { get; set; } = new();
 }
+
+public class RecipeCategory
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public string Name { get; set; } = "";
+    public string ImageUrl { get; set; } = "";
+    public int? ImageId { get; set; } // NEW
+}
+
+// --- EXISTING MODELS ---
 
 public class RecipeIngredient
 {
@@ -73,16 +97,6 @@ public class RecipeInstruction
     public int StepNumber { get; set; } 
     public string Text { get; set; } = "";
 }
-
-public class RecipeCategory
-{
-    public int Id { get; set; }
-    public int UserId { get; set; }
-    public string Name { get; set; } = "";
-    public string ImageUrl { get; set; } = ""; // NEW
-}
-
-// --- EXISTING MODELS ---
 
 public class LinkGroup
 {

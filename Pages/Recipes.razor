@@ -8,6 +8,7 @@
 @using System.Globalization
 @using System.Text.RegularExpressions
 @using Microsoft.AspNetCore.WebUtilities
+@using System.Net.Http.Headers
 @inject AppDbContext Db
 @inject HttpClient Http
 @inject IJSRuntime JS
@@ -21,7 +22,7 @@
             <div class="text-red-500 text-xl font-bold">⚠️ Database Update Required</div>
             <p class="text-gray-400 max-w-md text-center">@errorMessage</p>
             <button @onclick="UpgradeDatabase" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">
-                Apply Schema Update & Fix Nulls
+                Apply Schema Update
             </button>
         </div>
     }
@@ -35,7 +36,7 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v3.8.0 (Category Images)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v4.0.0 (Image Uploads)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -301,7 +302,32 @@
                         <div><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Cook Time</label><input @bind="editingRecipe.CookTime" class="w-full bg-gray-800 border border-gray-600 rounded p-2 text-white" /></div>
                         
                         <div class="md:col-span-2"><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Source URL</label><input @bind="editingRecipe.SourceUrl" class="w-full bg-gray-800 border border-gray-600 rounded p-2 text-white" /></div>
-                        <div class="md:col-span-2"><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Image URL</label><input @bind="editingRecipe.ImageUrl" class="w-full bg-gray-800 border border-gray-600 rounded p-2 text-white" /></div>
+                        
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Recipe Image</label>
+                            <div class="flex gap-2 mb-2">
+                                <button type="button" class="text-xs px-3 py-1 rounded @(uploadMode ? "bg-gray-700 text-gray-400" : "bg-blue-600 text-white")" @onclick="() => uploadMode = false">🔗 Link URL</button>
+                                <button type="button" class="text-xs px-3 py-1 rounded @(uploadMode ? "bg-blue-600 text-white" : "bg-gray-700 text-gray-400")" @onclick="() => uploadMode = true">📂 Upload File</button>
+                            </div>
+                            
+                            @if (!uploadMode)
+                            {
+                                <input @bind="editingRecipe.ImageUrl" class="w-full bg-gray-800 border border-gray-600 rounded p-2 text-white" placeholder="https://..." />
+                            }
+                            else
+                            {
+                                <InputFile OnChange="HandleImageUpload" class="w-full bg-gray-800 border border-gray-600 rounded p-2 text-white text-sm" />
+                                @if (isUploading) { <span class="text-xs text-blue-400">Uploading...</span> }
+                            }
+                            
+                            @if (!string.IsNullOrEmpty(editingRecipe.ImageUrl))
+                            {
+                                <div class="mt-2 h-32 w-full bg-gray-800 rounded overflow-hidden flex items-center justify-center border border-gray-700">
+                                    <img src="@editingRecipe.ImageUrl" class="h-full object-contain" />
+                                </div>
+                            }
+                        </div>
+
                         <div class="md:col-span-2"><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Tags (Comma Separated)</label><input value="@editingTags" @onchange="@((ChangeEventArgs e) => editingTags = e.Value?.ToString() ?? "")" class="w-full bg-gray-800 border border-gray-600 rounded p-2 text-white" /></div>
                     </div>
                 }
@@ -469,7 +495,14 @@
                     {
                         <div class="p-2 bg-gray-800 border border-gray-600 rounded mt-1 mb-2">
                             <input @bind="editingCategory.Name" class="w-full bg-gray-700 border border-gray-600 rounded p-1 mb-1 text-xs text-white" placeholder="Name" />
-                            <input @bind="editingCategory.ImageUrl" class="w-full bg-gray-700 border border-gray-600 rounded p-1 text-xs text-white" placeholder="Image URL" />
+                            
+                            <div class="flex gap-2">
+                                <input @bind="editingCategory.ImageUrl" class="w-full bg-gray-700 border border-gray-600 rounded p-1 text-xs text-white" placeholder="Image URL" />
+                                <label class="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded text-xs flex items-center">
+                                    📂
+                                    <InputFile OnChange="@(e => HandleCategoryImageUpload(e, editingCategory))" class="hidden" />
+                                </label>
+                            </div>
                         </div>
                     }
                 }
@@ -503,6 +536,10 @@
     private string activeTab = "General";
     private string editingTags = "";
     private bool showMacros = true;
+    
+    // Upload State
+    private bool uploadMode = false;
+    private bool isUploading = false;
     
     // Scaling State
     private int currentServings = 1;
@@ -627,7 +664,62 @@
          }
          StateHasChanged();
     }
+
+    // --- IMAGE UPLOAD LOGIC ---
+    private async Task HandleImageUpload(InputFileChangeEventArgs e)
+    {
+        if (editingRecipe == null) return;
+        isUploading = true;
+        try {
+            var file = e.File;
+            using var content = new MultipartFormDataContent();
+            using var stream = file.OpenReadStream(5 * 1024 * 1024); // 5MB Limit
+            var fileContent = new StreamContent(stream);
+            fileContent.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType);
+            content.Add(fileContent, "file", file.Name);
+
+            var response = await Http.PostAsync("/api/images/upload", content);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<UploadResult>();
+                if (result != null)
+                {
+                    editingRecipe.ImageUrl = result.Url;
+                    editingRecipe.ImageId = result.Id;
+                }
+            }
+            else { await JS.InvokeVoidAsync("alert", "Upload failed."); }
+        }
+        catch (Exception ex) { await JS.InvokeVoidAsync("alert", "Error: " + ex.Message); }
+        isUploading = false;
+    }
+
+    private async Task HandleCategoryImageUpload(InputFileChangeEventArgs e, RecipeCategory? cat)
+    {
+        if (cat == null) return;
+        try {
+            var file = e.File;
+            using var content = new MultipartFormDataContent();
+            using var stream = file.OpenReadStream(5 * 1024 * 1024);
+            var fileContent = new StreamContent(stream);
+            fileContent.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType);
+            content.Add(fileContent, "file", file.Name);
+
+            var response = await Http.PostAsync("/api/images/upload", content);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<UploadResult>();
+                if (result != null)
+                {
+                    cat.ImageUrl = result.Url;
+                    cat.ImageId = result.Id;
+                }
+            }
+        } catch { await JS.InvokeVoidAsync("alert", "Category upload failed."); }
+    }
     
+    private class UploadResult { public int Id { get; set; } public string Url { get; set; } = ""; }
+
     // --- CUSTOM AUTOCOMPLETE ---
     private void OnIngredientInput(ChangeEventArgs e, RecipeIngredient item)
     {
@@ -930,6 +1022,7 @@
         {
             existing.Name = editingCategory.Name;
             existing.ImageUrl = editingCategory.ImageUrl;
+            existing.ImageId = editingCategory.ImageId;
             await Db.SaveChangesAsync();
             await LoadData();
         }
@@ -947,7 +1040,7 @@
     private async Task MigrateDashboardData() { if (currentUser == null) return; await Db.Database.ExecuteSqlRawAsync($"UPDATE \"LinkGroups\" SET \"UserId\" = {currentUser.Id}; UPDATE \"Links\" SET \"UserId\" = {currentUser.Id}; UPDATE \"Stocks\" SET \"UserId\" = {currentUser.Id}; UPDATE \"Countdowns\" SET \"UserId\" = {currentUser.Id};"); await JS.InvokeVoidAsync("alert", "Dashboard Data Claimed!"); }
     private async Task CheckDbStatus() { var total = await Db.Recipes.CountAsync(); var myCount = await Db.Recipes.CountAsync(r => r.UserId == currentUser!.Id); await JS.InvokeVoidAsync("alert", $"Total Recipes: {total}\nMy Recipes: {myCount}\nUser: {currentUser?.Id}"); }
     private async Task ImportRecipes() { Nav.NavigateTo("/recipes", true); }
-    private async Task UpgradeDatabase() { try { await Db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""SourceName"" text; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""SourceUrl"" text; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""TagsJson"" text DEFAULT '[]'; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""UserId"" integer DEFAULT 1; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""ServingSize"" text; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Section"" text DEFAULT 'Main'; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Calories"" double precision DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Protein"" double precision DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Carbs"" double precision DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Fat"" double precision DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Fiber"" double precision DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Order"" integer DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""SectionOrder"" integer DEFAULT 0; ALTER TABLE ""RecipeInstructions"" ADD COLUMN IF NOT EXISTS ""Section"" text DEFAULT 'Directions'; ALTER TABLE ""RecipeInstructions"" ADD COLUMN IF NOT EXISTS ""SectionOrder"" integer DEFAULT 0; UPDATE ""Recipes"" SET ""ServingSize"" = '' WHERE ""ServingSize"" IS NULL; ALTER TABLE ""RecipeCategories"" ADD COLUMN IF NOT EXISTS ""ImageUrl"" text;"); Nav.NavigateTo(Nav.Uri, forceLoad: true); } catch (Exception ex) { errorMessage = "Fix Failed: " + ex.Message; } }
+    private async Task UpgradeDatabase() { try { await Db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""SourceName"" text; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""SourceUrl"" text; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""TagsJson"" text DEFAULT '[]'; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""UserId"" integer DEFAULT 1; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""ServingSize"" text; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""ImageId"" integer; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Section"" text DEFAULT 'Main'; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Calories"" double precision DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Protein"" double precision DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Carbs"" double precision DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Fat"" double precision DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Fiber"" double precision DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Order"" integer DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""SectionOrder"" integer DEFAULT 0; ALTER TABLE ""RecipeInstructions"" ADD COLUMN IF NOT EXISTS ""Section"" text DEFAULT 'Directions'; ALTER TABLE ""RecipeInstructions"" ADD COLUMN IF NOT EXISTS ""SectionOrder"" integer DEFAULT 0; UPDATE ""Recipes"" SET ""ServingSize"" = '' WHERE ""ServingSize"" IS NULL; ALTER TABLE ""RecipeCategories"" ADD COLUMN IF NOT EXISTS ""ImageUrl"" text; ALTER TABLE ""RecipeCategories"" ADD COLUMN IF NOT EXISTS ""ImageId"" integer; CREATE TABLE IF NOT EXISTS ""StoredImages"" (""Id"" serial PRIMARY KEY, ""Data"" bytea, ""ContentType"" text, ""OriginalName"" text, ""UploadedAt"" timestamp with time zone);"); Nav.NavigateTo(Nav.Uri, forceLoad: true); } catch (Exception ex) { errorMessage = "Fix Failed: " + ex.Message; } }
     private async Task StartClock() { var now = DateTime.Now; await Task.Delay((60 - now.Second) * 1000); using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1)); UpdateTime(); while (await timer.WaitForNextTickAsync()) { UpdateTime(); } }
     private void UpdateTime() { var now = DateTime.UtcNow.AddMinutes(-clientOffsetMinutes); string suffix = (now.Day % 10 == 1 && now.Day != 11) ? "st" : (now.Day % 10 == 2 && now.Day != 12) ? "nd" : (now.Day % 10 == 3 && now.Day != 13) ? "rd" : "th"; CurrentDate = $"{now:dddd, MMMM d}{suffix} {now:yyyy}"; CurrentTime = now.ToString("h:mm tt").ToLower(); InvokeAsync(StateHasChanged); }
     private async Task FetchWeather() { if (currentUser == null) return; try { var url = "https://api.open-meteo.com/v1/forecast?latitude=33.1383&longitude=-95.6011&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto"; weather = await Http.GetFromJsonAsync<WeatherData>(url); StateHasChanged(); } catch {} }
