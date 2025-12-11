@@ -33,7 +33,7 @@ public class Recipe
     public string Description { get; set; } = "";
     public string Category { get; set; } = "";
     public int Servings { get; set; }
-    public string? ServingSize { get; set; } // CHANGED: Nullable to prevent crash on existing data
+    public string? ServingSize { get; set; }
     public string PrepTime { get; set; } = "";
     public string CookTime { get; set; } = "";
     public string ImageUrl { get; set; } = "";
@@ -79,6 +79,7 @@ public class RecipeCategory
     public int Id { get; set; }
     public int UserId { get; set; }
     public string Name { get; set; } = "";
+    public string ImageUrl { get; set; } = ""; // NEW
 }
 
 // --- EXISTING MODELS ---

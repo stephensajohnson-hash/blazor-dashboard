@@ -35,7 +35,7 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v3.7.2 (Fraction Fix)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v3.8.0 (Category Images)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -97,13 +97,20 @@
                         <div class="text-center py-12 text-gray-500">No recipes found.</div>
                     }
                     
-                    @foreach (var category in FilteredRecipes.Select(r => r.Category).Distinct().OrderBy(c => c))
+                    @foreach (var categoryName in FilteredRecipes.Select(r => r.Category).Distinct().OrderBy(c => c))
                     {
-                        var catRecipes = FilteredRecipes.Where(r => r.Category == category).ToList();
+                        var catRecipes = FilteredRecipes.Where(r => r.Category == categoryName).ToList();
+                        var catObj = CategoryList.FirstOrDefault(c => c.Name == categoryName);
+                        
                         <section>
-                            <div class="bg-gray-800 border border-gray-700 inline-block px-4 py-1.5 rounded-full mb-4 text-lg font-semibold text-white shadow-md">
-                                @category
+                            <div class="bg-gray-800 border border-gray-700 inline-flex items-center px-4 py-1.5 rounded-full mb-4 text-lg font-semibold text-white shadow-md gap-3">
+                                @if (catObj != null && !string.IsNullOrEmpty(catObj.ImageUrl))
+                                {
+                                    <img src="@catObj.ImageUrl" class="w-8 h-8 rounded-full object-cover -ml-2 border border-gray-600" />
+                                }
+                                <span>@categoryName</span>
                             </div>
+
                             <div class="flex flex-wrap gap-6 justify-start">
                                 @foreach (var r in catRecipes)
                                 {
@@ -115,7 +122,6 @@
                                             <div class="flex flex-wrap gap-1">
                                                 @foreach (var tag in GetTags(r.TagsJson))
                                                 {
-                                                    // Small pill tags for card view
                                                     var colors = GetTagColors(tag);
                                                     <span class="px-2 py-0.5 text-xs rounded-full border @colors.Bg @colors.Border @colors.Text">@tag</span>
                                                 }
@@ -285,9 +291,12 @@
                         <div class="md:col-span-2"><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Description</label><textarea @bind="editingRecipe.Description" rows="3" class="w-full bg-gray-800 border border-gray-600 rounded p-2 text-white"></textarea></div>
                         <div><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Category</label><select @bind="editingRecipe.Category" class="w-full bg-gray-800 border border-gray-600 rounded p-2 text-white">@foreach (var cat in CategoryList) { <option value="@cat.Name">@cat.Name</option> }</select></div>
                         <div><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Servings</label><input @bind="editingRecipe.Servings" type="number" class="w-full bg-gray-800 border border-gray-600 rounded p-2 text-white" /></div>
-                        <div><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Serving Size</label><input @bind="editingRecipe.ServingSize" class="w-full bg-gray-800 border border-gray-600 rounded p-2 text-white" placeholder="e.g. 1 Bowl, 3 oz" /></div>
-                        <div><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Source Name</label><input @bind="editingRecipe.SourceName" class="w-full bg-gray-800 border border-gray-600 rounded p-2 text-white" /></div>
                         
+                        <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Serving Size</label><input @bind="editingRecipe.ServingSize" class="w-full bg-gray-800 border border-gray-600 rounded p-2 text-white" placeholder="e.g. 1 Bowl, 3 oz" /></div>
+                            <div><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Source Name</label><input @bind="editingRecipe.SourceName" class="w-full bg-gray-800 border border-gray-600 rounded p-2 text-white" /></div>
+                        </div>
+
                         <div><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Prep Time</label><input @bind="editingRecipe.PrepTime" class="w-full bg-gray-800 border border-gray-600 rounded p-2 text-white" /></div>
                         <div><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Cook Time</label><input @bind="editingRecipe.CookTime" class="w-full bg-gray-800 border border-gray-600 rounded p-2 text-white" /></div>
                         
@@ -443,8 +452,26 @@
                 {
                     <div class="flex justify-between items-center bg-gray-900 p-2 rounded border border-gray-700">
                         <span>@cat.Name</span>
-                        <button class="text-red-400 hover:text-red-300" @onclick="() => DeleteCategory(cat)">🗑️</button>
+                        <div class="flex gap-2">
+                             @if (editingCategory == cat)
+                             {
+                                 <button class="text-green-400 hover:text-green-300" @onclick="SaveCategory">💾</button>
+                                 <button class="text-gray-400 hover:text-gray-300" @onclick="() => editingCategory = null">✕</button>
+                             }
+                             else
+                             {
+                                 <button class="text-blue-400 hover:text-blue-300" @onclick="() => EditCategory(cat)">✏️</button>
+                                 <button class="text-red-400 hover:text-red-300" @onclick="() => DeleteCategory(cat)">🗑️</button>
+                             }
+                        </div>
                     </div>
+                    @if (editingCategory == cat)
+                    {
+                        <div class="p-2 bg-gray-800 border border-gray-600 rounded mt-1 mb-2">
+                            <input @bind="editingCategory.Name" class="w-full bg-gray-700 border border-gray-600 rounded p-1 mb-1 text-xs text-white" placeholder="Name" />
+                            <input @bind="editingCategory.ImageUrl" class="w-full bg-gray-700 border border-gray-600 rounded p-1 text-xs text-white" placeholder="Image URL" />
+                        </div>
+                    }
                 }
             </div>
             <div class="flex gap-2">
@@ -488,6 +515,7 @@
     // Category State
     private bool showCatModal = false;
     private string newCategoryName = "";
+    private RecipeCategory? editingCategory;
 
     // Header Data
     private string CurrentDate = "", CurrentTime = "";
@@ -747,20 +775,24 @@
         editingRecipe.TagsJson = JsonSerializer.Serialize(editingTags.Split(',').Select(t => t.Trim()).Where(t => !string.IsNullOrEmpty(t)).ToList());
 
         var finalIngredients = new List<RecipeIngredient>();
-        foreach(var sec in editorIngSections) {
+        for(int s=0; s<editorIngSections.Count; s++) {
+            var sec = editorIngSections[s];
             for(int i=0; i<sec.Items.Count; i++) {
                 var item = sec.Items[i];
                 item.Section = sec.Name;
+                item.SectionOrder = s;
                 item.Order = i; 
                 finalIngredients.Add(item);
             }
         }
 
         var finalInstructions = new List<RecipeInstruction>();
-        foreach(var sec in editorInstSections) {
+        for(int s=0; s<editorInstSections.Count; s++) {
+            var sec = editorInstSections[s];
             for(int i=0; i<sec.Items.Count; i++) {
                 var item = sec.Items[i];
                 item.Section = sec.Name;
+                item.SectionOrder = s;
                 item.StepNumber = i + 1; 
                 finalInstructions.Add(item);
             }
@@ -883,6 +915,26 @@
     private void OpenCategoryManager() { showCatModal = true; }
     private async Task AddCategory() { if (!string.IsNullOrWhiteSpace(newCategoryName) && currentUser != null) { Db.RecipeCategories.Add(new RecipeCategory { UserId = currentUser.Id, Name = newCategoryName }); await Db.SaveChangesAsync(); newCategoryName = ""; await LoadData(); } }
     private async Task DeleteCategory(RecipeCategory c) { if (await JS.InvokeAsync<bool>("confirm", $"Delete '{c.Name}'?")) { var orphaned = await Db.Recipes.Where(r => r.Category == c.Name && r.UserId == currentUser.Id).ToListAsync(); foreach(var r in orphaned) r.Category = "Uncategorized"; Db.RecipeCategories.Remove(c); await Db.SaveChangesAsync(); await LoadData(); } }
+    
+    private void EditCategory(RecipeCategory c)
+    {
+        // Clone for editing
+        editingCategory = new RecipeCategory { Id = c.Id, UserId = c.UserId, Name = c.Name, ImageUrl = c.ImageUrl };
+    }
+
+    private async Task SaveCategory()
+    {
+        if (editingCategory == null) return;
+        var existing = await Db.RecipeCategories.FindAsync(editingCategory.Id);
+        if (existing != null)
+        {
+            existing.Name = editingCategory.Name;
+            existing.ImageUrl = editingCategory.ImageUrl;
+            await Db.SaveChangesAsync();
+            await LoadData();
+        }
+        editingCategory = null;
+    }
 
     // --- STANDARD UTILS ---
     private void ToggleUserMenu() { showUserMenu = !showUserMenu; }
@@ -895,7 +947,7 @@
     private async Task MigrateDashboardData() { if (currentUser == null) return; await Db.Database.ExecuteSqlRawAsync($"UPDATE \"LinkGroups\" SET \"UserId\" = {currentUser.Id}; UPDATE \"Links\" SET \"UserId\" = {currentUser.Id}; UPDATE \"Stocks\" SET \"UserId\" = {currentUser.Id}; UPDATE \"Countdowns\" SET \"UserId\" = {currentUser.Id};"); await JS.InvokeVoidAsync("alert", "Dashboard Data Claimed!"); }
     private async Task CheckDbStatus() { var total = await Db.Recipes.CountAsync(); var myCount = await Db.Recipes.CountAsync(r => r.UserId == currentUser!.Id); await JS.InvokeVoidAsync("alert", $"Total Recipes: {total}\nMy Recipes: {myCount}\nUser: {currentUser?.Id}"); }
     private async Task ImportRecipes() { Nav.NavigateTo("/recipes", true); }
-    private async Task UpgradeDatabase() { try { await Db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""SourceName"" text; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""SourceUrl"" text; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""TagsJson"" text DEFAULT '[]'; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""UserId"" integer DEFAULT 1; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""ServingSize"" text; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Section"" text DEFAULT 'Main'; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Calories"" double precision DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Protein"" double precision DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Carbs"" double precision DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Fat"" double precision DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Fiber"" double precision DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Order"" integer DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""SectionOrder"" integer DEFAULT 0; ALTER TABLE ""RecipeInstructions"" ADD COLUMN IF NOT EXISTS ""Section"" text DEFAULT 'Directions'; ALTER TABLE ""RecipeInstructions"" ADD COLUMN IF NOT EXISTS ""SectionOrder"" integer DEFAULT 0; UPDATE ""Recipes"" SET ""ServingSize"" = '' WHERE ""ServingSize"" IS NULL;"); Nav.NavigateTo(Nav.Uri, forceLoad: true); } catch (Exception ex) { errorMessage = "Fix Failed: " + ex.Message; } }
+    private async Task UpgradeDatabase() { try { await Db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""SourceName"" text; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""SourceUrl"" text; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""TagsJson"" text DEFAULT '[]'; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""UserId"" integer DEFAULT 1; ALTER TABLE ""Recipes"" ADD COLUMN IF NOT EXISTS ""ServingSize"" text; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Section"" text DEFAULT 'Main'; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Calories"" double precision DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Protein"" double precision DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Carbs"" double precision DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Fat"" double precision DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Fiber"" double precision DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""Order"" integer DEFAULT 0; ALTER TABLE ""RecipeIngredients"" ADD COLUMN IF NOT EXISTS ""SectionOrder"" integer DEFAULT 0; ALTER TABLE ""RecipeInstructions"" ADD COLUMN IF NOT EXISTS ""Section"" text DEFAULT 'Directions'; ALTER TABLE ""RecipeInstructions"" ADD COLUMN IF NOT EXISTS ""SectionOrder"" integer DEFAULT 0; UPDATE ""Recipes"" SET ""ServingSize"" = '' WHERE ""ServingSize"" IS NULL; ALTER TABLE ""RecipeCategories"" ADD COLUMN IF NOT EXISTS ""ImageUrl"" text;"); Nav.NavigateTo(Nav.Uri, forceLoad: true); } catch (Exception ex) { errorMessage = "Fix Failed: " + ex.Message; } }
     private async Task StartClock() { var now = DateTime.Now; await Task.Delay((60 - now.Second) * 1000); using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1)); UpdateTime(); while (await timer.WaitForNextTickAsync()) { UpdateTime(); } }
     private void UpdateTime() { var now = DateTime.UtcNow.AddMinutes(-clientOffsetMinutes); string suffix = (now.Day % 10 == 1 && now.Day != 11) ? "st" : (now.Day % 10 == 2 && now.Day != 12) ? "nd" : (now.Day % 10 == 3 && now.Day != 13) ? "rd" : "th"; CurrentDate = $"{now:dddd, MMMM d}{suffix} {now:yyyy}"; CurrentTime = now.ToString("h:mm tt").ToLower(); InvokeAsync(StateHasChanged); }
     private async Task FetchWeather() { if (currentUser == null) return; try { var url = "https://api.open-meteo.com/v1/forecast?latitude=33.1383&longitude=-95.6011&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto"; weather = await Http.GetFromJsonAsync<WeatherData>(url); StateHasChanged(); } catch {} }
