@@ -7,6 +7,9 @@ using Microsoft.AspNetCore.HttpOverrides;
 using System;
 using System.Net.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Components; // FIXED: Required for NavigationManager
+using System.IO;
+using System.Linq;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,10 +21,10 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
     .AddCircuitOptions(options => options.DetailedErrors = true);
 
-builder.Services.AddControllers(); // Required for any extra API controllers
+builder.Services.AddControllers(); 
 builder.Services.AddHttpClient();
 
-// Self-Referencing HttpClient
+// Self-Referencing HttpClient (Now compiles correctly)
 builder.Services.AddScoped(sp => 
 {
     var navMan = sp.GetRequiredService<NavigationManager>();
@@ -102,7 +105,6 @@ app.MapPost("/api/images/upload", async (HttpRequest request, AppDbContext db) =
     return Results.Ok(new { Id = img.Id, Url = $"/api/images/{img.Id}" });
 }).DisableAntiforgery();
 
-// Map Admin Controllers
 app.MapControllers(); 
 
 // =========================================================
