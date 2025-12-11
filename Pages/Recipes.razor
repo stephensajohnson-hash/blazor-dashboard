@@ -15,6 +15,24 @@
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 
+<style>
+    @@media print {
+        body { visibility: hidden; background-color: white !important; color: black !important; }
+        #printable-area { visibility: visible; position: absolute; left: 0; top: 0; width: 100%; padding: 20px; background-color: white !important; }
+        #printable-area * { visibility: visible; color: black !important; }
+        .no-print { display: none !important; }
+        /* Smaller image for print */
+        #printable-image { height: auto !important; max-height: 300px !important; width: auto !important; margin: 0 auto 20px auto !important; border: none !important; box-shadow: none !important; }
+        /* Ensure text wraps and is legible */
+        h1 { font-size: 24pt !important; color: black !important; }
+        p, li { font-size: 12pt !important; color: black !important; }
+        a { text-decoration: underline; color: black !important; }
+        /* Hide macro boxes background, just show text */
+        .macro-box { background: none !important; border: 1px solid #ccc !important; }
+        .macro-box div { color: black !important; }
+    }
+</style>
+
 <div class="min-h-screen bg-gray-900 text-white overflow-x-hidden pb-40">
 
     @if (isDbError)
@@ -31,13 +49,13 @@
     {
         <main class="w-full p-8 relative scroll-smooth">
             
-            <div class="mb-10 border-b border-gray-800 pb-4 flex justify-between items-end">
+            <div class="mb-10 border-b border-gray-800 pb-4 flex justify-between items-end no-print">
                 <div>
                     <div class="flex items-baseline gap-4">
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v4.3.0 (Smart Category Actions)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v4.4.0 (Print & Share)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -68,7 +86,7 @@
 
             @if (selectedRecipe == null)
             {
-                <div class="mb-2 relative max-w-xl mx-auto animate-fade-in">
+                <div class="mb-2 relative max-w-xl mx-auto animate-fade-in no-print">
                     <input type="text" @bind="searchTerm" @bind:event="oninput" placeholder="Search title, tags, ingredients..." class="w-full bg-gray-800 border border-gray-700 rounded-xl py-3 px-4 pl-11 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition duration-200 shadow-lg" />
                     <div class="absolute left-3.5 top-3.5 text-gray-500">🔍</div>
                     @if (!string.IsNullOrEmpty(searchTerm))
@@ -77,17 +95,16 @@
                     }
                 </div>
                 
-                <div class="text-center mb-6">
+                <div class="text-center mb-6 no-print">
                     <span class="text-xs font-bold text-gray-500 bg-gray-800/50 px-3 py-1 rounded-full border border-gray-700/50">
                         Showing @FilteredRecipes.Count() Recipes
                     </span>
                 </div>
-
-                }
+            }
 
             @if (selectedRecipe == null)
             {
-                <div id="recipe-groups-container" class="flex flex-col space-y-12 mb-16">
+                <div id="recipe-groups-container" class="flex flex-col space-y-12 mb-16 no-print">
                     @if (!FilteredRecipes.Any() && RecipeList.Any())
                     {
                         <div class="text-center py-12 text-gray-500">No recipes found matching your search.</div>
@@ -182,7 +199,7 @@
                     var cloud = GenerateTagCloud();
                     if (cloud.Any())
                     {
-                        <div class="mt-20 pt-10 border-t border-gray-800 text-center">
+                        <div class="mt-20 pt-10 border-t border-gray-800 text-center no-print">
                             <h3 class="text-gray-500 text-sm font-bold uppercase tracking-widest mb-6">Tag Cloud</h3>
                             <div class="flex flex-wrap justify-center gap-x-6 gap-y-3 max-w-5xl mx-auto leading-none items-baseline">
                                 @foreach (var tag in cloud)
@@ -202,25 +219,42 @@
             }
             else
             {
-                <div class="animate-fade-in">
-                    <div class="flex justify-between items-center mb-6">
-                        <button @onclick="ClearSelection" class="flex items-center text-gray-400 hover:text-white transition px-4 py-2 rounded-lg bg-gray-800 border border-gray-700">← Back</button>
-                        <div class="flex gap-2">
-                            <button @onclick="() => OpenEditRecipe(selectedRecipe)" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-bold shadow">Edit</button>
-                            <button @onclick="() => DeleteRecipe(selectedRecipe)" class="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg font-bold shadow">Delete</button>
+                <div class="animate-fade-in" id="printable-area">
+                    <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 no-print">
+                        <button @onclick="ClearSelection" class="flex items-center text-gray-400 hover:text-white transition px-4 py-2 rounded-lg bg-gray-800 border border-gray-700 self-start">← Back</button>
+                        
+                        <div class="flex gap-2 flex-wrap justify-end relative z-10">
+                            <button @onclick="PrintRecipe" class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg font-bold shadow transition flex items-center gap-2 text-sm">🖨️ Print</button>
+                            <button @onclick="CopyRecipeInfo" class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg font-bold shadow transition flex items-center gap-2 text-sm">📋 Copy Info</button>
+                            
+                            <div class="relative">
+                                <button @onclick="() => showShareMenu = !showShareMenu" class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg font-bold shadow transition flex items-center gap-2 text-sm">📤 Share</button>
+                                @if(showShareMenu)
+                                {
+                                    <div class="absolute right-0 top-full mt-2 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 z-20 flex flex-col gap-1">
+                                        <button @onclick="CopyShareLink" class="w-full text-left text-xs text-white hover:bg-gray-700 p-2 rounded transition flex items-center gap-2">🔗 Copy Link</button>
+                                        <a href="sms:?body=Check out this recipe: @Nav.Uri" class="w-full text-left text-xs text-white hover:bg-gray-700 p-2 rounded transition flex items-center gap-2">💬 Share via Text</a>
+                                         <a href="https://www.facebook.com/sharer/sharer.php?u=@Uri.EscapeDataString(Nav.Uri)" target="_blank" class="w-full text-left text-xs text-white hover:bg-gray-700 p-2 rounded transition flex items-center gap-2">💬 Facebook</a>
+                                    </div>
+                                    <div class="fixed inset-0 z-10" @onclick="() => showShareMenu = false"></div>
+                                }
+                            </div>
+
+                            <button @onclick="() => OpenEditRecipe(selectedRecipe)" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-bold shadow transition flex items-center gap-2 text-sm">Edit</button>
+                            <button @onclick="() => DeleteRecipe(selectedRecipe)" class="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg font-bold shadow transition flex items-center gap-2 text-sm">Delete</button>
                         </div>
                     </div>
 
-                    <div class="bg-gray-800 rounded-2xl p-6 border border-gray-700 shadow-2xl max-w-5xl mx-auto">
+                    <div class="bg-gray-800 rounded-2xl p-6 border border-gray-700 shadow-2xl max-w-5xl mx-auto printable-content">
                         <div class="flex flex-col md:flex-row gap-6 mb-8">
-                            <img src="@selectedRecipe.ImageUrl" class="w-full md:w-1/2 rounded-xl object-cover h-96 shadow-lg border border-gray-700" />
+                            <img id="printable-image" src="@selectedRecipe.ImageUrl" class="w-full md:w-1/2 rounded-xl object-cover h-96 shadow-lg border border-gray-700" />
                             <div class="flex-1 flex flex-col justify-center">
                                 <h1 class="text-4xl font-extrabold text-white mb-2">@selectedRecipe.Title</h1>
-                                @if (!string.IsNullOrEmpty(selectedRecipe.SourceUrl)) { <a href="@selectedRecipe.SourceUrl" target="_blank" class="text-sm text-blue-400 hover:text-blue-300 mb-4 font-medium flex items-center gap-1 transition">🔗 @selectedRecipe.SourceName</a> }
+                                @if (!string.IsNullOrEmpty(selectedRecipe.SourceUrl)) { <a href="@selectedRecipe.SourceUrl" target="_blank" class="text-sm text-blue-400 hover:text-blue-300 mb-4 font-medium flex items-center gap-1 transition no-print">🔗 @selectedRecipe.SourceName</a> <span class="hidden print:block text-sm mb-4">Source: @selectedRecipe.SourceName</span> }
                                 else { <div class="text-sm text-gray-500 mb-4 font-medium">@selectedRecipe.SourceName</div> }
                                 <p class="text-gray-400 italic mb-6 text-lg">@selectedRecipe.Description</p>
                                 
-                                <div class="flex flex-wrap gap-2 mb-6">
+                                <div class="flex flex-wrap gap-2 mb-6 no-print">
                                     @foreach (var tag in GetTags(selectedRecipe.TagsJson))
                                     {
                                         var colors = GetTagColors(tag);
@@ -236,12 +270,14 @@
                                     <span class="bg-gray-700 px-3 py-1 rounded text-white border border-gray-600">Prep: <strong>@selectedRecipe.PrepTime</strong></span>
                                     <span class="bg-gray-700 px-3 py-1 rounded text-white border border-gray-600">Cook: <strong>@selectedRecipe.CookTime</strong></span>
                                     
-                                    <div class="flex items-center gap-2 bg-gray-700 px-2 py-1 rounded text-white border border-gray-600">
+                                    <div class="flex items-center gap-2 bg-gray-700 px-2 py-1 rounded text-white border border-gray-600 no-print">
                                         <span class="text-gray-400 uppercase text-xs mr-1">Serves</span>
                                         <button class="w-6 h-6 flex items-center justify-center bg-gray-600 hover:bg-gray-500 rounded text-sm font-bold transition" @onclick="() => UpdateServings(-1)">-</button>
                                         <span class="w-6 text-center font-bold">@currentServings</span>
                                         <button class="w-6 h-6 flex items-center justify-center bg-gray-600 hover:bg-gray-500 rounded text-sm font-bold transition" @onclick="() => UpdateServings(1)">+</button>
                                     </div>
+                                    <span class="hidden print:block">Serves: <strong>@currentServings</strong></span>
+
                                     @if (!string.IsNullOrEmpty(selectedRecipe.ServingSize))
                                     {
                                         <span class="text-gray-400 italic text-lg">Serving Size: @ToUnicode(selectedRecipe.ServingSize)</span>
@@ -249,7 +285,7 @@
                                 </div>
                                 
                                 @{ var m = CalculateMacros(selectedRecipe); }
-                                <div class="bg-gray-900/80 p-4 rounded-xl border border-gray-700 shadow-inner mb-4">
+                                <div class="macro-box bg-gray-900/80 p-4 rounded-xl border border-gray-700 shadow-inner mb-4">
                                     <h3 class="text-[10px] font-bold text-gray-500 uppercase mb-2 text-center tracking-widest">Per Serving</h3>
                                     <div class="grid grid-cols-6 gap-2 text-center">
                                         <div class="border-r border-gray-800"> <div class="text-lg font-black text-white">@m.Cal</div> <div class="text-[9px] text-gray-500 uppercase">Cal</div> </div>
@@ -292,7 +328,7 @@
                                         @if(instGroup.Key != "Directions") { <h3 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3 border-b border-gray-700 pb-1">@instGroup.Key</h3> }
                                         <ol class="space-y-4">
                                             @foreach (var step in instGroup.OrderBy(s => s.StepNumber)) {
-                                                <li class="flex gap-4 group"><span class="flex-shrink-0 w-6 h-6 rounded-full bg-gray-800 text-green-500 font-bold text-xs flex items-center justify-center border border-gray-700">@step.StepNumber</span><span class="text-gray-300 leading-relaxed">@ToUnicode(step.Text)</span></li>
+                                                <li class="flex gap-4 group"><span class="flex-shrink-0 w-6 h-6 rounded-full bg-gray-800 text-green-500 font-bold text-xs flex items-center justify-center border border-gray-700 no-print">@step.StepNumber</span><span class="hidden print:inline-block font-bold mr-2">@step.StepNumber.</span><span class="text-gray-300 leading-relaxed">@ToUnicode(step.Text)</span></li>
                                             }
                                         </ol>
                                     </div>
@@ -309,7 +345,7 @@
 
 @if (editingRecipe != null)
 {
-    <div class="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div class="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-50 p-4 no-print">
         <div class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-4xl h-[90vh] flex flex-col shadow-2xl">
             <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50 rounded-t-2xl">
                 <h2 class="text-xl font-bold text-white">@(editingRecipe.Id == 0 ? "Create Recipe" : "Edit Recipe")</h2>
@@ -353,7 +389,7 @@
                     <div class="space-y-6">
                         <div class="flex justify-end"><label class="flex items-center text-xs font-bold text-gray-400 cursor-pointer hover:text-white"><input type="checkbox" @bind="showMacros" class="mr-2 rounded border-gray-600 bg-gray-700" /> Show Macro Fields</label></div>
                         @for(int s = 0; s < editorIngSections.Count; s++) { var sec = editorIngSections[s]; var sIdx = s; <div class="bg-gray-800 p-4 rounded-xl border border-gray-700"> <div class="flex justify-between items-center mb-3"> <div class="flex items-center gap-2 w-2/3"> <div class="flex flex-col gap-0.5"> <button type="button" @onclick="() => MoveSection(editorIngSections, sIdx, -1)" class="text-[10px] bg-gray-700 hover:bg-gray-600 px-1 rounded text-white disabled:opacity-30" disabled="@(sIdx==0)">▲</button> <button type="button" @onclick="() => MoveSection(editorIngSections, sIdx, 1)" class="text-[10px] bg-gray-700 hover:bg-gray-600 px-1 rounded text-white disabled:opacity-30" disabled="@(sIdx==editorIngSections.Count-1)">▼</button> </div> <input @bind="sec.Name" class="bg-transparent border-b border-gray-600 font-bold text-blue-300 w-full" placeholder="Section Name" /> </div> <button class="text-red-400 text-xs" @onclick="() => editorIngSections.RemoveAt(sIdx)">Remove Section</button> </div> @for(int i = 0; i < sec.Items.Count; i++) { var item = sec.Items[i]; var iIdx = i; <div class="mb-2 pb-2 border-b border-gray-700/50 last:border-0 relative"> <div class="flex gap-2 items-center"> <div class="flex flex-col gap-0.5"> <button type="button" @onclick="() => MoveItem(sec.Items, iIdx, -1)" class="text-[8px] bg-gray-700 hover:bg-gray-600 px-1 rounded text-white disabled:opacity-30" disabled="@(iIdx==0)">▲</button> <button type="button" @onclick="() => MoveItem(sec.Items, iIdx, 1)" class="text-[8px] bg-gray-700 hover:bg-gray-600 px-1 rounded text-white disabled:opacity-30" disabled="@(iIdx==sec.Items.Count-1)">▼</button> </div> <div class="grid grid-cols-12 gap-2 flex-1 items-center"> <input value="@item.Quantity" @onchange="@(e => { item.Quantity = e.Value?.ToString() ?? ""; TryAutoFillMacros(item); })" class="col-span-2 bg-gray-700 border border-gray-600 rounded p-1 text-xs text-white" placeholder="Qty" /> <input value="@item.Unit" @onchange="@(e => { item.Unit = e.Value?.ToString() ?? ""; TryAutoFillMacros(item); })" class="col-span-2 bg-gray-700 border border-gray-600 rounded p-1 text-xs text-white" placeholder="Unit" /> <div class="col-span-5 relative"> <input value="@item.Name" @oninput="@(e => OnIngredientInput(e, item))" @onfocus="@(() => { activeAutocompleteItem = item; FilterSuggestions(item.Name); })" @onblur="@(async () => { await Task.Delay(200); activeAutocompleteItem = null; })" class="w-full bg-gray-700 border border-gray-600 rounded p-1 text-xs text-white font-bold" placeholder="Name" /> @if (activeAutocompleteItem == item && filteredSuggestions.Any()) { <ul class="absolute z-50 left-0 right-0 mt-1 bg-gray-900 border border-gray-600 rounded-lg shadow-2xl max-h-48 overflow-y-auto"> @foreach (var suggestion in filteredSuggestions) { <li class="p-2 hover:bg-blue-900/50 cursor-pointer border-b border-gray-800 last:border-0" @onclick="@(() => SelectSuggestion(item, suggestion))"> <div class="flex justify-between items-center"> <span class="font-bold text-xs text-white">@suggestion.Name</span> @if (suggestion.Calories > 0) { <span class="text-[9px] text-green-300 bg-green-900/30 px-1 rounded border border-green-800"> @suggestion.Calories cal / @suggestion.Quantity @suggestion.Unit </span> } </div> @if (suggestion.Calories > 0) { <div class="text-[9px] text-gray-500 mt-0.5"> P:@(suggestion.Protein)g F:@(suggestion.Fat)g C:@(suggestion.Carbs)g </div> } </li> } </ul> } </div> <input @bind="item.Notes" class="col-span-2 bg-gray-700 border border-gray-600 rounded p-1 text-xs text-white" placeholder="Notes" /> <button class="col-span-1 text-red-400 font-bold hover:text-red-300 text-right" @onclick="() => sec.Items.RemoveAt(iIdx)">✕</button> </div> </div> @if (showMacros) { <div class="grid grid-cols-5 gap-2 pl-8 pr-4 mt-1"> <div class="relative"><input @bind="item.Calories" type="number" class="w-full bg-gray-900 border border-gray-600 rounded p-1 text-[10px] text-white text-center" /><span class="absolute -top-1.5 left-1 text-[7px] text-gray-500 bg-gray-800 px-1">Cal</span></div> <div class="relative"><input @bind="item.Protein" type="number" step="0.1" class="w-full bg-gray-900 border border-blue-900/50 rounded p-1 text-[10px] text-blue-300 text-center" /><span class="absolute -top-1.5 left-1 text-[7px] text-blue-500 bg-gray-800 px-1">Pro</span></div> <div class="relative"><input @bind="item.Fat" type="number" step="0.1" class="w-full bg-gray-900 border border-yellow-900/50 rounded p-1 text-[10px] text-yellow-300 text-center" /><span class="absolute -top-1.5 left-1 text-[7px] text-yellow-500 bg-gray-800 px-1">Fat</span></div> <div class="relative"><input @bind="item.Carbs" type="number" step="0.1" class="w-full bg-gray-900 border border-green-900/50 rounded p-1 text-[10px] text-green-300 text-center" /><span class="absolute -top-1.5 left-1 text-[7px] text-green-500 bg-gray-800 px-1">Carb</span></div> <div class="relative"><input @bind="item.Fiber" type="number" step="0.1" class="w-full bg-gray-900 border border-gray-600 rounded p-1 text-[10px] text-gray-300 text-center" /><span class="absolute -top-1.5 left-1 text-[7px] text-gray-500 bg-gray-800 px-1">Fib</span></div> </div> } </div> } <button class="text-xs text-green-400 mt-2 hover:text-green-300" @onclick="() => sec.Items.Add(new RecipeIngredient())">+ Add Ingredient</button> </div> }
-                        <button class="w-full py-3 border-2 border-dashed border-gray-700 text-gray-500 hover:border-gray-500 hover:text-white rounded-xl transition" @onclick='() => editorIngSections.Add(new SectionContainer<RecipeIngredient> { Name = "New Section", Items = new() })'>+ Add Section</button>
+                        <button class="w-full py-3 border-2 border-dashed border-gray-700 text-gray-500 hover:border-gray-500 hover:text-white rounded-xl transition" @onclick='() => editorInstSections.Add(new SectionContainer<RecipeInstruction> { Name = "New Section", Items = new() })'>+ Add Section</button>
                     </div>
                 }
                 else if (activeTab == "Instructions")
@@ -375,7 +411,7 @@
 
 @if (showCatModal)
 {
-    <div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 no-print">
         <div class="bg-gray-800 border border-gray-600 p-6 rounded-xl shadow-2xl w-full max-w-sm">
             <h3 class="text-lg font-bold text-white mb-4">Manage Categories</h3>
             <div class="space-y-2 mb-4 max-h-[60vh] overflow-y-auto">
@@ -430,528 +466,111 @@
     </div>
 }
 
-<script>window.getUserOffset = () => { return new Date().getTimezoneOffset(); }; window.scrollToTop = () => window.scrollTo(0, 0);</script>
+<script>
+    window.getUserOffset = () => { return new Date().getTimezoneOffset(); }; 
+    window.scrollToTop = () => window.scrollTo(0, 0);
+    window.printPage = () => { window.print(); };
+    window.copyToClipboard = (text) => {
+        navigator.clipboard.writeText(text).then(() => {
+            alert("Copied to clipboard!");
+        }, () => {
+            alert("Failed to copy.");
+        });
+    };
+</script>
 
 @code {
     private List<Recipe> RecipeList = new(); 
     private List<RecipeCategory> CategoryList = new();
-    
-    // Auto-Complete Source: Dictionary<Name, BestVersion>
     private Dictionary<string, RecipeIngredient> IngredientDatabase = new();
     private List<RecipeIngredient> filteredSuggestions = new();
     private RecipeIngredient? activeAutocompleteItem;
-
     private Recipe? selectedRecipe;
     private string searchTerm = "";
     private User? currentUser;
-    
-    // Edit State
     private Recipe? editingRecipe;
     private string activeTab = "General";
     private string editingTags = "";
     private bool showMacros = true;
-    
-    // Upload State
     private bool uploadMode = false;
     private bool isUploading = false;
-    
-    // Scaling State
     private int currentServings = 1;
-    
-    // HIERARCHICAL EDITOR MODELS
     private class SectionContainer<T> { public string Name { get; set; } = ""; public List<T> Items { get; set; } = new(); }
     private List<SectionContainer<RecipeIngredient>> editorIngSections = new();
     private List<SectionContainer<RecipeInstruction>> editorInstSections = new();
-    
-    // Category State
     private bool showCatModal = false;
     private string newCategoryName = "";
     private RecipeCategory? editingCategory;
-
-    // Header Data
     private string CurrentDate = "", CurrentTime = "";
     private WeatherData? weather;
     private int clientOffsetMinutes = 0;
-    
     private bool isDbError = false;
     private string errorMessage = "";
     private bool showUserMenu = false;
+    private bool showShareMenu = false; // New state for share dropdown
 
     // TAG CLOUD GENERATION & COLORS
     private class TagItem { public string Name { get; set; } = ""; public int Size { get; set; } }
-    
-    // 10 Distinct Colors
-    private readonly (string Text, string Bg, string Border)[] TagColorPalette = new[] 
+    private readonly (string Text, string Bg, string Border)[] TagColorPalette = new[] { ("text-red-400", "bg-red-900/30", "border-red-800"), ("text-orange-400", "bg-orange-900/30", "border-orange-800"), ("text-amber-400", "bg-amber-900/30", "border-amber-800"), ("text-yellow-300", "bg-yellow-900/30", "border-yellow-800"), ("text-lime-400", "bg-lime-900/30", "border-lime-800"), ("text-green-400", "bg-green-900/30", "border-green-800"), ("text-emerald-400", "bg-emerald-900/30", "border-emerald-800"), ("text-teal-400", "bg-teal-900/30", "border-teal-800"), ("text-cyan-400", "bg-cyan-900/30", "border-cyan-800"), ("text-sky-400", "bg-sky-900/30", "border-sky-800"), ("text-blue-400", "bg-blue-900/30", "border-blue-800"), ("text-indigo-400", "bg-indigo-900/30", "border-indigo-800"), ("text-violet-400", "bg-violet-900/30", "border-violet-800"), ("text-purple-400", "bg-purple-900/30", "border-purple-800"), ("text-fuchsia-400", "bg-fuchsia-900/30", "border-fuchsia-800"), ("text-pink-400", "bg-pink-900/30", "border-pink-800"), ("text-rose-400", "bg-rose-900/30", "border-rose-800") };
+    private (string Text, string Bg, string Border) GetTagColors(string tag) { if (string.IsNullOrEmpty(tag)) return TagColorPalette[0]; int hash = Math.Abs(tag.GetHashCode()); return TagColorPalette[hash % TagColorPalette.Length]; }
+    private List<TagItem> GenerateTagCloud() { var allTags = RecipeList.SelectMany(r => GetTags(r.TagsJson)).GroupBy(t => t, StringComparer.OrdinalIgnoreCase).Select(g => new { Name = g.Key, Count = g.Count() }).ToList(); if (!allTags.Any()) return new List<TagItem>(); return allTags.OrderBy(t => t.Name).Select(t => new TagItem { Name = t.Name, Size = 7 + (t.Count * 3) }).ToList(); }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender && !isDbError) { try { var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session"); if (string.IsNullOrEmpty(json)) { Nav.NavigateTo("/login", forceLoad: true); return; } var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true }; var session = JsonSerializer.Deserialize<SessionData>(json, options); if (session == null || session.Expiry < DateTime.UtcNow) { Nav.NavigateTo("/login", forceLoad: true); return; } currentUser = await Db.Users.FindAsync(session.UserId); if (currentUser == null) { await Logout(); return; } await LoadData(); _ = FetchWeather(); try { clientOffsetMinutes = await JS.InvokeAsync<int>("getUserOffset"); UpdateTime(); } catch {} _ = StartClock(); StateHasChanged(); } catch { Nav.NavigateTo("/login", forceLoad: true); } } }
+    private async Task LoadData() { if (currentUser == null) return; try { RecipeList = await Db.Recipes.Where(r => r.UserId == currentUser.Id).Include(r => r.Ingredients).Include(r => r.Instructions).OrderBy(r => r.Category).ThenBy(r => r.Title).ToListAsync(); CategoryList = await Db.RecipeCategories.Where(c => c.UserId == currentUser.Id).OrderBy(c => c.Name).ToListAsync(); var allIngs = await Db.RecipeIngredients.Where(i => Db.Recipes.Any(r => r.Id == i.RecipeId && r.UserId == currentUser.Id)).ToListAsync(); IngredientDatabase = allIngs.Where(i => i.Calories > 0 || i.Protein > 0 || i.Fat > 0 || i.Carbs > 0).GroupBy(i => i.Name.ToLower().Trim()).ToDictionary(g => g.Key, g => g.OrderByDescending(i => (i.Calories>0?1:0) + (i.Protein>0?1:0)).First()); } catch (Exception ex) { if (ex.Message.Contains("42P01") || ex.Message.Contains("42703")) { isDbError = true; errorMessage = ex.Message; } } StateHasChanged(); }
+
+    // --- ACTIONS (Print, Copy, Share) ---
+    private void PrintRecipe() { _ = JS.InvokeVoidAsync("printPage"); }
+    private async Task CopyRecipeInfo()
     {
-        ("text-red-400", "bg-red-900/30", "border-red-800"),
-        ("text-orange-400", "bg-orange-900/30", "border-orange-800"),
-        ("text-amber-400", "bg-amber-900/30", "border-amber-800"),
-        ("text-yellow-300", "bg-yellow-900/30", "border-yellow-800"),
-        ("text-lime-400", "bg-lime-900/30", "border-lime-800"),
-        ("text-green-400", "bg-green-900/30", "border-green-800"),
-        ("text-emerald-400", "bg-emerald-900/30", "border-emerald-800"),
-        ("text-teal-400", "bg-teal-900/30", "border-teal-800"),
-        ("text-cyan-400", "bg-cyan-900/30", "border-cyan-800"),
-        ("text-sky-400", "bg-sky-900/30", "border-sky-800"),
-        ("text-blue-400", "bg-blue-900/30", "border-blue-800"),
-        ("text-indigo-400", "bg-indigo-900/30", "border-indigo-800"),
-        ("text-violet-400", "bg-violet-900/30", "border-violet-800"),
-        ("text-purple-400", "bg-purple-900/30", "border-purple-800"),
-        ("text-fuchsia-400", "bg-fuchsia-900/30", "border-fuchsia-800"),
-        ("text-pink-400", "bg-pink-900/30", "border-pink-800"),
-        ("text-rose-400", "bg-rose-900/30", "border-rose-800")
-    };
-
-    private (string Text, string Bg, string Border) GetTagColors(string tag)
-    {
-        if (string.IsNullOrEmpty(tag)) return TagColorPalette[0];
-        // Hash the string to get a consistent index
-        int hash = Math.Abs(tag.GetHashCode());
-        return TagColorPalette[hash % TagColorPalette.Length];
-    }
-
-    private List<TagItem> GenerateTagCloud()
-    {
-        var allTags = RecipeList.SelectMany(r => GetTags(r.TagsJson))
-                              .GroupBy(t => t, StringComparer.OrdinalIgnoreCase)
-                              .Select(g => new { Name = g.Key, Count = g.Count() })
-                              .ToList();
-
-        if (!allTags.Any()) return new List<TagItem>();
-
-        // Formula: 7 + (Count * 3) = Pixels
-        return allTags.OrderBy(t => t.Name).Select(t => new TagItem 
-        { 
-            Name = t.Name, 
-            Size = 7 + (t.Count * 3) // No Cap, direct scaling
-        }).ToList();
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender && !isDbError) 
-        { 
-            try 
-            { 
-                var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
-                if (string.IsNullOrEmpty(json)) { Nav.NavigateTo("/login", forceLoad: true); return; }
-                
-                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                var session = JsonSerializer.Deserialize<SessionData>(json, options);
-                
-                if (session == null || session.Expiry < DateTime.UtcNow) { Nav.NavigateTo("/login", forceLoad: true); return; }
-
-                currentUser = await Db.Users.FindAsync(session.UserId);
-                if (currentUser == null) { await Logout(); return; }
-
-                // Always load data on open to prevent stale lists
-                await LoadData();
-                _ = FetchWeather();
-                try { clientOffsetMinutes = await JS.InvokeAsync<int>("getUserOffset"); UpdateTime(); } catch {}
-                _ = StartClock();
-                StateHasChanged();
-            } 
-            catch { Nav.NavigateTo("/login", forceLoad: true); }
+        if (selectedRecipe == null) return;
+        var m = CalculateMacros(selectedRecipe);
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"{selectedRecipe.Title} - {currentServings} servings");
+        if (m.Cal > 0) sb.AppendLine($"Macros per serving: {m.Cal}cal, {m.Pro}g Protein, {m.Fat}g Fat, {m.Net}g Net Carb");
+        sb.AppendLine("Ingredients:");
+        foreach (var ingGroup in selectedRecipe.Ingredients.OrderBy(i => i.SectionOrder).GroupBy(i => i.Section))
+        {
+             foreach (var ing in ingGroup.OrderBy(i => i.Order)) {
+                  var scaled = ScaleIngredient(ing.Quantity, ing.Unit, currentServings, selectedRecipe.Servings);
+                  sb.AppendLine($"- {scaled.Qty} {scaled.Unit} {ing.Name}");
+             }
         }
+        await JS.InvokeVoidAsync("copyToClipboard", sb.ToString());
     }
+    private async Task CopyShareLink() { await JS.InvokeVoidAsync("copyToClipboard", Nav.Uri); showShareMenu = false; }
 
-    private async Task LoadData()
-    {
-         if (currentUser == null) return;
-         try {
-             RecipeList = await Db.Recipes.Where(r => r.UserId == currentUser.Id)
-                .Include(r => r.Ingredients).Include(r => r.Instructions)
-                .OrderBy(r => r.Category).ThenBy(r => r.Title).ToListAsync();
-             CategoryList = await Db.RecipeCategories.Where(c => c.UserId == currentUser.Id).OrderBy(c => c.Name).ToListAsync();
-             
-             // BUILD INGREDIENT DATABASE FOR AUTOCOMPLETE
-             var allIngs = await Db.RecipeIngredients.Where(i => Db.Recipes.Any(r => r.Id == i.RecipeId && r.UserId == currentUser.Id)).ToListAsync();
-             IngredientDatabase = allIngs
-                .Where(i => i.Calories > 0 || i.Protein > 0 || i.Fat > 0 || i.Carbs > 0) // Only data-rich
-                .GroupBy(i => i.Name.ToLower().Trim())
-                .ToDictionary(
-                    g => g.Key, 
-                    g => g.OrderByDescending(i => (i.Calories>0?1:0) + (i.Protein>0?1:0)).First()
-                );
-
-         } catch (Exception ex) {
-             if (ex.Message.Contains("42P01") || ex.Message.Contains("42703")) { isDbError = true; errorMessage = ex.Message; }
-         }
-         StateHasChanged();
-    }
 
     // --- IMAGE UPLOAD LOGIC ---
-    private async Task HandleImageUpload(InputFileChangeEventArgs e)
-    {
-        if (editingRecipe == null) return;
-        isUploading = true;
-        try {
-            var file = e.File;
-            using var content = new MultipartFormDataContent();
-            using var stream = file.OpenReadStream(5 * 1024 * 1024); // 5MB Limit
-            var fileContent = new StreamContent(stream);
-            fileContent.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType);
-            content.Add(fileContent, "file", file.Name);
-
-            var response = await Http.PostAsync("/api/images/upload", content);
-            if (response.IsSuccessStatusCode)
-            {
-                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                var result = await response.Content.ReadFromJsonAsync<UploadResult>(options);
-                if (result != null)
-                {
-                    editingRecipe.ImageUrl = result.Url;
-                    editingRecipe.ImageId = result.Id;
-                    StateHasChanged();
-                }
-            }
-            else { await JS.InvokeVoidAsync("alert", "Upload failed."); }
-        }
-        catch (Exception ex) { await JS.InvokeVoidAsync("alert", "Error: " + ex.Message); }
-        isUploading = false;
-        StateHasChanged();
-    }
-
-    private async Task HandleCategoryImageUpload(InputFileChangeEventArgs e, RecipeCategory? cat)
-    {
-        if (cat == null) return;
-        try {
-            var file = e.File;
-            using var content = new MultipartFormDataContent();
-            using var stream = file.OpenReadStream(5 * 1024 * 1024);
-            var fileContent = new StreamContent(stream);
-            fileContent.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType);
-            content.Add(fileContent, "file", file.Name);
-
-            var response = await Http.PostAsync("/api/images/upload", content);
-            if (response.IsSuccessStatusCode)
-            {
-                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                var result = await response.Content.ReadFromJsonAsync<UploadResult>(options);
-                if (result != null)
-                {
-                    cat.ImageUrl = result.Url;
-                    cat.ImageId = result.Id;
-                    StateHasChanged(); // Force update so image shows immediately
-                }
-            }
-        } catch { await JS.InvokeVoidAsync("alert", "Category upload failed."); }
-    }
-    
+    private async Task HandleImageUpload(InputFileChangeEventArgs e) { if (editingRecipe == null) return; isUploading = true; try { var file = e.File; using var content = new MultipartFormDataContent(); using var stream = file.OpenReadStream(5 * 1024 * 1024); var fileContent = new StreamContent(stream); fileContent.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType); content.Add(fileContent, "file", file.Name); var response = await Http.PostAsync("/api/images/upload", content); if (response.IsSuccessStatusCode) { var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true }; var result = await response.Content.ReadFromJsonAsync<UploadResult>(options); if (result != null) { editingRecipe.ImageUrl = result.Url; editingRecipe.ImageId = result.Id; StateHasChanged(); } } else { await JS.InvokeVoidAsync("alert", "Upload failed."); } } catch (Exception ex) { await JS.InvokeVoidAsync("alert", "Error: " + ex.Message); } isUploading = false; StateHasChanged(); }
+    private async Task HandleCategoryImageUpload(InputFileChangeEventArgs e, RecipeCategory? cat) { if (cat == null) return; try { var file = e.File; using var content = new MultipartFormDataContent(); using var stream = file.OpenReadStream(5 * 1024 * 1024); var fileContent = new StreamContent(stream); fileContent.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType); content.Add(fileContent, "file", file.Name); var response = await Http.PostAsync("/api/images/upload", content); if (response.IsSuccessStatusCode) { var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true }; var result = await response.Content.ReadFromJsonAsync<UploadResult>(options); if (result != null) { cat.ImageUrl = result.Url; cat.ImageId = result.Id; StateHasChanged(); } } } catch { await JS.InvokeVoidAsync("alert", "Category upload failed."); } }
     private class UploadResult { public int Id { get; set; } public string Url { get; set; } = ""; }
-
     // --- CUSTOM AUTOCOMPLETE ---
-    private void OnIngredientInput(ChangeEventArgs e, RecipeIngredient item)
-    {
-        item.Name = e.Value?.ToString() ?? "";
-        activeAutocompleteItem = item;
-        FilterSuggestions(item.Name);
-        TryAutoFillMacros(item); // Try filling even while typing if match exact
-    }
-
-    private void FilterSuggestions(string input)
-    {
-        if (string.IsNullOrWhiteSpace(input)) { filteredSuggestions.Clear(); return; }
-        filteredSuggestions = IngredientDatabase.Values
-            .Where(i => i.Name.Contains(input, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(i => i.Name.Length) // Exact matches first
-            .Take(5)
-            .ToList();
-    }
-
-    private void SelectSuggestion(RecipeIngredient target, RecipeIngredient source)
-    {
-        target.Name = source.Name; // Set correct name
-        activeAutocompleteItem = null; // Close dropdown
-        filteredSuggestions.Clear();
-        TryAutoFillMacros(target); // Force macro update
-    }
-
+    private void OnIngredientInput(ChangeEventArgs e, RecipeIngredient item) { item.Name = e.Value?.ToString() ?? ""; activeAutocompleteItem = item; FilterSuggestions(item.Name); TryAutoFillMacros(item); }
+    private void FilterSuggestions(string input) { if (string.IsNullOrWhiteSpace(input)) { filteredSuggestions.Clear(); return; } filteredSuggestions = IngredientDatabase.Values.Where(i => i.Name.Contains(input, StringComparison.OrdinalIgnoreCase)).OrderBy(i => i.Name.Length).Take(5).ToList(); }
+    private void SelectSuggestion(RecipeIngredient target, RecipeIngredient source) { target.Name = source.Name; activeAutocompleteItem = null; filteredSuggestions.Clear(); TryAutoFillMacros(target); }
     // --- SMART MACRO AUTO-FILL ---
-    private void TryAutoFillMacros(RecipeIngredient item)
-    {
-        if (string.IsNullOrWhiteSpace(item.Name)) return;
-        var key = item.Name.ToLower().Trim();
-        if (!IngredientDatabase.ContainsKey(key)) return;
-
-        // Only fill if currently empty
-        bool isEmpty = item.Calories == 0 && item.Protein == 0 && item.Fat == 0 && item.Carbs == 0;
-        if (!isEmpty) return;
-
-        var source = IngredientDatabase[key];
-        double ratio = CalculateRatio(source.Quantity, source.Unit, item.Quantity, item.Unit);
-        
-        if (ratio > 0)
-        {
-            item.Calories = Math.Round(source.Calories * ratio, 1);
-            item.Protein = Math.Round(source.Protein * ratio, 1);
-            item.Fat = Math.Round(source.Fat * ratio, 1);
-            item.Carbs = Math.Round(source.Carbs * ratio, 1);
-            item.Fiber = Math.Round(source.Fiber * ratio, 1);
-        }
-    }
-    
-    private double CalculateRatio(string sQty, string sUnit, string tQty, string tUnit)
-    {
-        double sVal = ParseQty(sQty);
-        double tVal = ParseQty(tQty);
-        if (sVal <= 0 || tVal <= 0) return 0;
-        
-        double sNorm = Normalize(sVal, sUnit);
-        double tNorm = Normalize(tVal, tUnit);
-        
-        if (sNorm > 0 && tNorm > 0) return tNorm / sNorm;
-        if (sUnit.Trim().Equals(tUnit.Trim(), StringComparison.OrdinalIgnoreCase)) return tVal / sVal;
-        
-        return 0;
-    }
-    
-    private double Normalize(double val, string unit)
-    {
-        string u = unit.ToLower().Trim();
-        
-        // Weight -> OZ (Order Matters! Check 'lb' before 'liter' check due to 'starts with l')
-        if (u.StartsWith("lb") || u.StartsWith("pound")) return val * 16;
-        if (u.StartsWith("oz") || u.StartsWith("ounce")) return val;
-        if (u.StartsWith("g") || u.StartsWith("gram")) return val * 0.03527;
-        if (u.StartsWith("kg")) return val * 35.274;
-
-        // Volume -> TSP
-        if (u.StartsWith("cup")) return val * 48;
-        if (u.StartsWith("tbsp") || u.StartsWith("tablespoon")) return val * 3;
-        if (u.StartsWith("tsp") || u.StartsWith("teaspoon")) return val;
-        if (u.StartsWith("fl oz")) return val * 6;
-        if (u.StartsWith("ml")) return val * 0.202;
-        if (u == "l" || u.StartsWith("liter") || u.StartsWith("litre")) return val * 202.88;
-        
-        // Count -> Count
-        if (string.IsNullOrWhiteSpace(u) || u == "whole") return val;
-        
-        return -1; // Unknown/Incompatible
-    }
-
-    private double ParseQty(string qty)
-    {
-        if (string.IsNullOrWhiteSpace(qty)) return 0;
-        var mixedMatch = Regex.Match(qty.Trim(), @"^(\d+)\s+(\d+)/(\d+)$");
-        if (mixedMatch.Success) return double.Parse(mixedMatch.Groups[1].Value) + (double.Parse(mixedMatch.Groups[2].Value) / double.Parse(mixedMatch.Groups[3].Value));
-        var fracMatch = Regex.Match(qty.Trim(), @"^(\d+)/(\d+)$");
-        if (fracMatch.Success) return double.Parse(fracMatch.Groups[1].Value) / double.Parse(fracMatch.Groups[2].Value);
-        if (double.TryParse(qty, out double d)) return d;
-        return 0;
-    }
-
+    private void TryAutoFillMacros(RecipeIngredient item) { if (string.IsNullOrWhiteSpace(item.Name)) return; var key = item.Name.ToLower().Trim(); if (!IngredientDatabase.ContainsKey(key)) return; bool isEmpty = item.Calories == 0 && item.Protein == 0 && item.Fat == 0 && item.Carbs == 0; if (!isEmpty) return; var source = IngredientDatabase[key]; double ratio = CalculateRatio(source.Quantity, source.Unit, item.Quantity, item.Unit); if (ratio > 0) { item.Calories = Math.Round(source.Calories * ratio, 1); item.Protein = Math.Round(source.Protein * ratio, 1); item.Fat = Math.Round(source.Fat * ratio, 1); item.Carbs = Math.Round(source.Carbs * ratio, 1); item.Fiber = Math.Round(source.Fiber * ratio, 1); } }
+    private double CalculateRatio(string sQty, string sUnit, string tQty, string tUnit) { double sVal = ParseQty(sQty); double tVal = ParseQty(tQty); if (sVal <= 0 || tVal <= 0) return 0; double sNorm = Normalize(sVal, sUnit); double tNorm = Normalize(tVal, tUnit); if (sNorm > 0 && tNorm > 0) return tNorm / sNorm; if (sUnit.Trim().Equals(tUnit.Trim(), StringComparison.OrdinalIgnoreCase)) return tVal / sVal; return 0; }
+    private double Normalize(double val, string unit) { string u = unit.ToLower().Trim(); if (u.StartsWith("lb") || u.StartsWith("pound")) return val * 16; if (u.StartsWith("oz") || u.StartsWith("ounce")) return val; if (u.StartsWith("g") || u.StartsWith("gram")) return val * 0.03527; if (u.StartsWith("kg")) return val * 35.274; if (u.StartsWith("cup")) return val * 48; if (u.StartsWith("tbsp") || u.StartsWith("tablespoon")) return val * 3; if (u.StartsWith("tsp") || u.StartsWith("teaspoon")) return val; if (u.StartsWith("fl oz")) return val * 6; if (u.StartsWith("ml")) return val * 0.202; if (u == "l" || u.StartsWith("liter") || u.StartsWith("litre")) return val * 202.88; if (string.IsNullOrWhiteSpace(u) || u == "whole") return val; return -1; }
+    private double ParseQty(string qty) { if (string.IsNullOrWhiteSpace(qty)) return 0; var mixedMatch = Regex.Match(qty.Trim(), @"^(\d+)\s+(\d+)/(\d+)$"); if (mixedMatch.Success) return double.Parse(mixedMatch.Groups[1].Value) + (double.Parse(mixedMatch.Groups[2].Value) / double.Parse(mixedMatch.Groups[3].Value)); var fracMatch = Regex.Match(qty.Trim(), @"^(\d+)/(\d+)$"); if (fracMatch.Success) return double.Parse(fracMatch.Groups[1].Value) / double.Parse(fracMatch.Groups[2].Value); if (double.TryParse(qty, out double d)) return d; return 0; }
     // --- RECIPE EDITOR ---
-    private void OpenAddRecipe(string? categoryName = null)
-    {
-        editingRecipe = new Recipe { UserId = currentUser.Id, Category = categoryName ?? "Uncategorized" };
-        editorIngSections = new() { new SectionContainer<RecipeIngredient> { Name = "Main", Items = new() } };
-        editorInstSections = new() { new SectionContainer<RecipeInstruction> { Name = "Directions", Items = new() } };
-        editingTags = "";
-        activeTab = "General";
-    }
-
-    private void OpenEditRecipe(Recipe r)
-    {
-        editingRecipe = new Recipe {
-            Id = r.Id, UserId = r.UserId, Title = r.Title, Description = r.Description, Category = r.Category,
-            Servings = r.Servings, PrepTime = r.PrepTime, CookTime = r.CookTime, ImageUrl = r.ImageUrl, 
-            SourceName = r.SourceName, SourceUrl = r.SourceUrl, TagsJson = r.TagsJson, ServingSize = r.ServingSize
-        };
-        
-        editorIngSections = r.Ingredients.OrderBy(i => i.SectionOrder).GroupBy(i => i.Section)
-            .Select(g => new SectionContainer<RecipeIngredient> { 
-                Name = g.Key, 
-                Items = g.OrderBy(x => x.Order).Select(i => new RecipeIngredient { 
-                    Id = i.Id, RecipeId = i.RecipeId, Section = i.Section, Order = i.Order, Name = i.Name, Quantity = i.Quantity, Unit = i.Unit, Notes = i.Notes, 
-                    Calories = i.Calories, Protein = i.Protein, Carbs = i.Carbs, Fat = i.Fat, Fiber = i.Fiber 
-                }).ToList() 
-            }).ToList();
-
-        editorInstSections = r.Instructions.OrderBy(i => i.SectionOrder).GroupBy(i => i.Section)
-            .Select(g => new SectionContainer<RecipeInstruction> { 
-                Name = g.Key, 
-                Items = g.OrderBy(x => x.StepNumber).Select(i => new RecipeInstruction { 
-                    Id = i.Id, RecipeId = i.RecipeId, Section = i.Section, StepNumber = i.StepNumber, Text = i.Text 
-                }).ToList() 
-            }).ToList();
-
-        editingTags = string.Join(", ", GetTags(r.TagsJson));
-        activeTab = "General";
-    }
-
-    private async Task SaveRecipe()
-    {
-        if (editingRecipe == null || currentUser == null) return;
-        
-        editingRecipe.TagsJson = JsonSerializer.Serialize(editingTags.Split(',').Select(t => t.Trim()).Where(t => !string.IsNullOrEmpty(t)).ToList());
-
-        var finalIngredients = new List<RecipeIngredient>();
-        for(int s=0; s<editorIngSections.Count; s++) {
-            var sec = editorIngSections[s];
-            for(int i=0; i<sec.Items.Count; i++) {
-                var item = sec.Items[i];
-                item.Section = sec.Name;
-                item.SectionOrder = s;
-                item.Order = i; 
-                finalIngredients.Add(item);
-            }
-        }
-
-        var finalInstructions = new List<RecipeInstruction>();
-        for(int s=0; s<editorInstSections.Count; s++) {
-            var sec = editorInstSections[s];
-            for(int i=0; i<sec.Items.Count; i++) {
-                var item = sec.Items[i];
-                item.Section = sec.Name;
-                item.SectionOrder = s;
-                item.StepNumber = i + 1; 
-                finalInstructions.Add(item);
-            }
-        }
-
-        if (editingRecipe.Id == 0)
-        {
-            Db.Recipes.Add(editingRecipe);
-            await Db.SaveChangesAsync(); 
-            foreach(var ing in finalIngredients) { ing.RecipeId = editingRecipe.Id; Db.RecipeIngredients.Add(ing); }
-            foreach(var inst in finalInstructions) { inst.RecipeId = editingRecipe.Id; Db.RecipeInstructions.Add(inst); }
-        }
-        else
-        {
-            var dbRecipe = await Db.Recipes.FindAsync(editingRecipe.Id);
-            if (dbRecipe != null)
-            {
-                Db.Entry(dbRecipe).CurrentValues.SetValues(editingRecipe);
-                var oldIngs = await Db.RecipeIngredients.Where(i => i.RecipeId == editingRecipe.Id).ToListAsync();
-                Db.RecipeIngredients.RemoveRange(oldIngs);
-                foreach(var ing in finalIngredients) { ing.Id = 0; ing.RecipeId = editingRecipe.Id; Db.RecipeIngredients.Add(ing); }
-
-                var oldInsts = await Db.RecipeInstructions.Where(i => i.RecipeId == editingRecipe.Id).ToListAsync();
-                Db.RecipeInstructions.RemoveRange(oldInsts);
-                foreach(var inst in finalInstructions) { inst.Id = 0; inst.RecipeId = editingRecipe.Id; Db.RecipeInstructions.Add(inst); }
-            }
-        }
-
-        await Db.SaveChangesAsync();
-        editingRecipe = null;
-        await LoadData();
-        if (selectedRecipe != null && selectedRecipe.Id == editingRecipe?.Id) SelectRecipe(RecipeList.First(r => r.Id == selectedRecipe.Id));
-    }
-
-    private async Task DeleteRecipe(Recipe r)
-    {
-        if (await JS.InvokeAsync<bool>("confirm", $"Delete '{r.Title}'?"))
-        {
-            var ings = await Db.RecipeIngredients.Where(i => i.RecipeId == r.Id).ToListAsync();
-            var insts = await Db.RecipeInstructions.Where(i => i.RecipeId == r.Id).ToListAsync();
-            Db.RecipeIngredients.RemoveRange(ings);
-            Db.RecipeInstructions.RemoveRange(insts);
-            Db.Recipes.Remove(r);
-            await Db.SaveChangesAsync();
-            selectedRecipe = null;
-            await LoadData();
-        }
-    }
-
+    private void OpenAddRecipe(string? categoryName = null) { editingRecipe = new Recipe { UserId = currentUser.Id, Category = categoryName ?? "Uncategorized" }; editorIngSections = new() { new SectionContainer<RecipeIngredient> { Name = "Main", Items = new() } }; editorInstSections = new() { new SectionContainer<RecipeInstruction> { Name = "Directions", Items = new() } }; editingTags = ""; activeTab = "General"; }
+    private void OpenEditRecipe(Recipe r) { editingRecipe = new Recipe { Id = r.Id, UserId = r.UserId, Title = r.Title, Description = r.Description, Category = r.Category, Servings = r.Servings, PrepTime = r.PrepTime, CookTime = r.CookTime, ImageUrl = r.ImageUrl, SourceName = r.SourceName, SourceUrl = r.SourceUrl, TagsJson = r.TagsJson, ServingSize = r.ServingSize }; editorIngSections = r.Ingredients.OrderBy(i => i.SectionOrder).GroupBy(i => i.Section).Select(g => new SectionContainer<RecipeIngredient> { Name = g.Key, Items = g.OrderBy(x => x.Order).Select(i => new RecipeIngredient { Id = i.Id, RecipeId = i.RecipeId, Section = i.Section, Order = i.Order, Name = i.Name, Quantity = i.Quantity, Unit = i.Unit, Notes = i.Notes, Calories = i.Calories, Protein = i.Protein, Carbs = i.Carbs, Fat = i.Fat, Fiber = i.Fiber }).ToList() }).ToList(); editorInstSections = r.Instructions.OrderBy(i => i.SectionOrder).GroupBy(i => i.Section).Select(g => new SectionContainer<RecipeInstruction> { Name = g.Key, Items = g.OrderBy(x => x.StepNumber).Select(i => new RecipeInstruction { Id = i.Id, RecipeId = i.RecipeId, Section = i.Section, StepNumber = i.StepNumber, Text = i.Text }).ToList() }).ToList(); editingTags = string.Join(", ", GetTags(r.TagsJson)); activeTab = "General"; }
+    private async Task SaveRecipe() { if (editingRecipe == null || currentUser == null) return; editingRecipe.TagsJson = JsonSerializer.Serialize(editingTags.Split(',').Select(t => t.Trim()).Where(t => !string.IsNullOrEmpty(t)).ToList()); var finalIngredients = new List<RecipeIngredient>(); for(int s=0; s<editorIngSections.Count; s++) { var sec = editorIngSections[s]; for(int i=0; i<sec.Items.Count; i++) { var item = sec.Items[i]; item.Section = sec.Name; item.SectionOrder = s; item.Order = i; finalIngredients.Add(item); } } var finalInstructions = new List<RecipeInstruction>(); for(int s=0; s<editorInstSections.Count; s++) { var sec = editorInstSections[s]; for(int i=0; i<sec.Items.Count; i++) { var item = sec.Items[i]; item.Section = sec.Name; item.SectionOrder = s; item.StepNumber = i + 1; finalInstructions.Add(item); } } if (editingRecipe.Id == 0) { Db.Recipes.Add(editingRecipe); await Db.SaveChangesAsync(); foreach(var ing in finalIngredients) { ing.RecipeId = editingRecipe.Id; Db.RecipeIngredients.Add(ing); } foreach(var inst in finalInstructions) { inst.RecipeId = editingRecipe.Id; Db.RecipeInstructions.Add(inst); } } else { var dbRecipe = await Db.Recipes.FindAsync(editingRecipe.Id); if (dbRecipe != null) { Db.Entry(dbRecipe).CurrentValues.SetValues(editingRecipe); var oldIngs = await Db.RecipeIngredients.Where(i => i.RecipeId == editingRecipe.Id).ToListAsync(); Db.RecipeIngredients.RemoveRange(oldIngs); foreach(var ing in finalIngredients) { ing.Id = 0; ing.RecipeId = editingRecipe.Id; Db.RecipeIngredients.Add(ing); } var oldInsts = await Db.RecipeInstructions.Where(i => i.RecipeId == editingRecipe.Id).ToListAsync(); Db.RecipeInstructions.RemoveRange(oldInsts); foreach(var inst in finalInstructions) { inst.Id = 0; inst.RecipeId = editingRecipe.Id; Db.RecipeInstructions.Add(inst); } } } await Db.SaveChangesAsync(); editingRecipe = null; await LoadData(); if (selectedRecipe != null && selectedRecipe.Id == editingRecipe?.Id) SelectRecipe(RecipeList.First(r => r.Id == selectedRecipe.Id)); }
+    private async Task DeleteRecipe(Recipe r) { if (await JS.InvokeAsync<bool>("confirm", $"Delete '{r.Title}'?")) { var ings = await Db.RecipeIngredients.Where(i => i.RecipeId == r.Id).ToListAsync(); var insts = await Db.RecipeInstructions.Where(i => i.RecipeId == r.Id).ToListAsync(); Db.RecipeIngredients.RemoveRange(ings); Db.RecipeInstructions.RemoveRange(insts); Db.Recipes.Remove(r); await Db.SaveChangesAsync(); selectedRecipe = null; await LoadData(); } }
     // --- REORDERING HELPERS ---
     private void MoveSection<T>(List<SectionContainer<T>> list, int index, int direction) { int newIndex = index + direction; if (newIndex >= 0 && newIndex < list.Count) { var item = list[index]; list.RemoveAt(index); list.Insert(newIndex, item); } }
     private void MoveItem<T>(List<T> list, int index, int direction) { int newIndex = index + direction; if (newIndex >= 0 && newIndex < list.Count) { var item = list[index]; list.RemoveAt(index); list.Insert(newIndex, item); } }
-
     // --- SCALING & CONVERSION LOGIC ---
     private void UpdateServings(int delta) { currentServings = Math.Max(1, currentServings + delta); }
-    private (string Qty, string Unit) ScaleIngredient(string qty, string unit, int current, int original)
-    {
-        if (original <= 0) original = 1;
-        if (current == original) return (ToUnicode(qty), unit);
-
-        double factor = (double)current / original;
-        
-        double val = ParseQty(qty);
-        if (val <= 0) return (qty, unit);
-
-        val *= factor;
-
-        // Unit Conversion & Safety Floor
-        string u = unit.ToLower().Trim();
-        
-        if (u.StartsWith("cup") || u.StartsWith("tbsp") || u.StartsWith("tablespoon") || u.StartsWith("tsp") || u.StartsWith("teaspoon"))
-        {
-            if (u.StartsWith("cup")) val *= 48; 
-            else if (u.StartsWith("tbsp") || u.StartsWith("tablespoon")) val *= 3;
-            
-            if (val < 0.125 && val > 0) val = 0.125; // Floor 1/8 tsp
-
-            if (val >= 48) { val /= 48; u = "cup"; }
-            else if (val >= 3) { val /= 3; u = "tbsp"; }
-            else { u = "tsp"; }
-        }
-        else if (u.StartsWith("lb") || u.StartsWith("pound") || u.StartsWith("oz") || u.StartsWith("ounce"))
-        {
-            if (u.StartsWith("lb") || u.StartsWith("pound")) val *= 16;
-            
-            if (val < 0.125 && val > 0) val = 0.125; // Floor 1/8 oz
-
-            if (val >= 16) { val /= 16; u = "lb"; }
-            else { u = "oz"; }
-        }
-        else if (u.StartsWith("g") || u.StartsWith("gram"))
-        {
-            if (val < 1 && val > 0) val = 1; // Floor 1g
-        }
-
-        // Rounding
-        double fractionPart = val - Math.Floor(val);
-        double wholePart = Math.Floor(val);
-        double[] snaps = { 0, 0.125, 0.25, 0.333, 0.5, 0.666, 0.75, 0.875, 1.0 };
-        string[] snapStrs = { "", "⅛", "¼", "⅓", "½", "⅔", "¾", "⅞", "1" };
-        double closest = snaps.OrderBy(x => Math.Abs(x - fractionPart)).First();
-        int idx = Array.IndexOf(snaps, closest);
-        
-        if (closest == 1.0) { wholePart++; closest = 0; idx = 0; }
-        
-        string finalQty = wholePart > 0 ? $"{wholePart}" : "";
-        if (idx > 0) finalQty += (wholePart > 0 ? " " : "") + snapStrs[idx];
-        if (string.IsNullOrEmpty(finalQty)) finalQty = "0";
-
-        return (finalQty, u);
-    }
-
-    private string ToUnicode(string qty)
-    {
-        return qty.Replace("1/2", "½").Replace("1/4", "¼").Replace("3/4", "¾")
-                  .Replace("1/3", "⅓").Replace("2/3", "⅔").Replace("1/8", "⅛");
-    }
-
+    private (string Qty, string Unit) ScaleIngredient(string qty, string unit, int current, int original) { if (original <= 0) original = 1; if (current == original) return (ToUnicode(qty), unit); double factor = (double)current / original; double val = ParseQty(qty); if (val <= 0) return (qty, unit); val *= factor; string u = unit.ToLower().Trim(); if (u.StartsWith("cup") || u.StartsWith("tbsp") || u.StartsWith("tablespoon") || u.StartsWith("tsp") || u.StartsWith("teaspoon")) { if (u.StartsWith("cup")) val *= 48; else if (u.StartsWith("tbsp") || u.StartsWith("tablespoon")) val *= 3; if (val < 0.125 && val > 0) val = 0.125; if (val >= 48) { val /= 48; u = "cup"; } else if (val >= 3) { val /= 3; u = "tbsp"; } else { u = "tsp"; } } else if (u.StartsWith("lb") || u.StartsWith("pound") || u.StartsWith("oz") || u.StartsWith("ounce")) { if (u.StartsWith("lb") || u.StartsWith("pound")) val *= 16; if (val < 0.125 && val > 0) val = 0.125; if (val >= 16) { val /= 16; u = "lb"; } else { u = "oz"; } } else if (u.StartsWith("g") || u.StartsWith("gram")) { if (val < 1 && val > 0) val = 1; } double fractionPart = val - Math.Floor(val); double wholePart = Math.Floor(val); double[] snaps = { 0, 0.125, 0.25, 0.333, 0.5, 0.666, 0.75, 0.875, 1.0 }; string[] snapStrs = { "", "⅛", "¼", "⅓", "½", "⅔", "¾", "⅞", "1" }; double closest = snaps.OrderBy(x => Math.Abs(x - fractionPart)).First(); int idx = Array.IndexOf(snaps, closest); if (closest == 1.0) { wholePart++; closest = 0; idx = 0; } string finalQty = wholePart > 0 ? $"{wholePart}" : ""; if (idx > 0) finalQty += (wholePart > 0 ? " " : "") + snapStrs[idx]; if (string.IsNullOrEmpty(finalQty)) finalQty = "0"; return (finalQty, u); }
+    private string ToUnicode(string qty) { return qty.Replace("1/2", "½").Replace("1/4", "¼").Replace("3/4", "¾").Replace("1/3", "⅓").Replace("2/3", "⅔").Replace("1/8", "⅛"); }
     // --- CATEGORY MANAGER ---
-    private void OpenCategoryManager() { 
-        showCatModal = true; 
-        _ = LoadData(); // REFRESH LIST
-    }
+    private void OpenCategoryManager() { showCatModal = true; _ = LoadData(); }
     private async Task AddCategory() { if (!string.IsNullOrWhiteSpace(newCategoryName) && currentUser != null) { Db.RecipeCategories.Add(new RecipeCategory { UserId = currentUser.Id, Name = newCategoryName }); await Db.SaveChangesAsync(); newCategoryName = ""; await LoadData(); } }
     private async Task DeleteCategory(RecipeCategory c) { if (await JS.InvokeAsync<bool>("confirm", $"Delete '{c.Name}'?")) { var orphaned = await Db.Recipes.Where(r => r.Category == c.Name && r.UserId == currentUser.Id).ToListAsync(); foreach(var r in orphaned) r.Category = "Uncategorized"; Db.RecipeCategories.Remove(c); await Db.SaveChangesAsync(); await LoadData(); } }
-    
-    private void EditCategory(RecipeCategory c)
-    {
-        // Clone for editing
-        editingCategory = new RecipeCategory { Id = c.Id, UserId = c.UserId, Name = c.Name, ImageUrl = c.ImageUrl };
-    }
-
-    private async Task SaveCategory()
-    {
-        if (editingCategory == null) return;
-        var existing = await Db.RecipeCategories.FindAsync(editingCategory.Id);
-        if (existing != null)
-        {
-            existing.Name = editingCategory.Name;
-            existing.ImageUrl = editingCategory.ImageUrl;
-            existing.ImageId = editingCategory.ImageId;
-            await Db.SaveChangesAsync();
-            await LoadData();
-        }
-        editingCategory = null;
-    }
-
+    private void EditCategory(RecipeCategory c) { editingCategory = new RecipeCategory { Id = c.Id, UserId = c.UserId, Name = c.Name, ImageUrl = c.ImageUrl }; }
+    private async Task SaveCategory() { if (editingCategory == null) return; var existing = await Db.RecipeCategories.FindAsync(editingCategory.Id); if (existing != null) { existing.Name = editingCategory.Name; existing.ImageUrl = editingCategory.ImageUrl; existing.ImageId = editingCategory.ImageId; await Db.SaveChangesAsync(); await LoadData(); } editingCategory = null; }
     // --- STANDARD UTILS ---
     private void ToggleUserMenu() { showUserMenu = !showUserMenu; }
     private async Task Logout() { await JS.InvokeVoidAsync("localStorage.removeItem", "dashboard_session"); Nav.NavigateTo("/login", true); }
