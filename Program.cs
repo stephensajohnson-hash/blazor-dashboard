@@ -1,5 +1,4 @@
 using Dashboard;
-using Dashboard.Components;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -7,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.HttpOverrides;
 using System;
 using System.Net.Http;
+using Microsoft.AspNetCore.Components;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,10 +18,11 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
     .AddCircuitOptions(options => options.DetailedErrors = true);
 
-// 1a. Register Controllers for Image Upload API
+// 1a. Register Controllers (Crucial for Image Uploads)
 builder.Services.AddControllers();
+builder.Services.AddHttpClient();
 
-// 1b. Self-Referencing HttpClient (Adjusted for Prod/Dev)
+// 1b. Self-Referencing HttpClient
 builder.Services.AddScoped(sp => 
 {
     var navMan = sp.GetRequiredService<NavigationManager>();
@@ -47,7 +48,6 @@ var app = builder.Build();
 // 2. MIDDLEWARE
 // =========================================================
 
-// Render.com Proxy Fix (Crucial for HTTPS redirect)
 app.UseForwardedHeaders(new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
@@ -67,10 +67,10 @@ app.UseAntiforgery();
 // 3. ROUTING
 // =========================================================
 
-// 3a. Map the API Controllers (Images, Admin)
+// 3a. Map Controllers (Enables /api/images/upload)
 app.MapControllers();
 
-// 3b. Map the UI
+// 3b. Map UI
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
@@ -86,11 +86,9 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var context = services.GetRequiredService<AppDbContext>();
-        // Ensure the new StoredImages table exists
-        context.Database.EnsureCreated(); 
+        context.Database.EnsureCreated(); // Creates StoredImages table if missing
         
-        // Run your existing initializer
-        DbInitializer.Initialize(context, logger);
+        // DbInitializer.Initialize(context, logger); // Uncomment if you have a seeder
     }
     catch (Exception ex)
     {
