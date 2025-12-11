@@ -17,7 +17,7 @@ public class AppDbContext : DbContext
     public DbSet<Stock> Stocks { get; set; }
     public DbSet<User> Users { get; set; }
     public DbSet<Feed> Feeds { get; set; }
-    public DbSet<StoredImage> StoredImages { get; set; } // NEW: Shared Image Store
+    public DbSet<StoredImage> StoredImages { get; set; }
 
     // Recipes
     public DbSet<Recipe> Recipes { get; set; }
@@ -47,8 +47,8 @@ public class Recipe
     public string PrepTime { get; set; } = "";
     public string CookTime { get; set; } = "";
     
-    public string ImageUrl { get; set; } = ""; // Can be external URL or local path
-    public int? ImageId { get; set; } // NEW: Link to StoredImage if uploaded
+    public string ImageUrl { get; set; } = ""; 
+    public int? ImageId { get; set; }
 
     public string SourceName { get; set; } = "";
     public string SourceUrl { get; set; } = "";
@@ -63,8 +63,8 @@ public class RecipeCategory
     public int Id { get; set; }
     public int UserId { get; set; }
     public string Name { get; set; } = "";
-    public string ImageUrl { get; set; } = "";
-    public int? ImageId { get; set; } // NEW
+    public string? ImageUrl { get; set; } // FIXED: Nullable to prevent crash
+    public int? ImageId { get; set; }
 }
 
 // --- EXISTING MODELS ---
