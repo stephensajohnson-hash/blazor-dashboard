@@ -1,4 +1,5 @@
 using Dashboard;
+using Dashboard.Components;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -6,32 +7,26 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.HttpOverrides;
 using System;
 using System.Net.Http;
-using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Mvc;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// =========================================================
 // 1. SERVICES
-// =========================================================
-
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
     .AddCircuitOptions(options => options.DetailedErrors = true);
 
-// 1a. Register Controllers (Crucial for Image Uploads)
-builder.Services.AddControllers();
+builder.Services.AddControllers(); // For Admin
 builder.Services.AddHttpClient();
 
-// 1b. Self-Referencing HttpClient
+// Self-Referencing HttpClient
 builder.Services.AddScoped(sp => 
 {
     var navMan = sp.GetRequiredService<NavigationManager>();
-    return new HttpClient { 
-        BaseAddress = new Uri(navMan.BaseUri) 
-    };
+    return new HttpClient { BaseAddress = new Uri(navMan.BaseUri) };
 });
 
-// 1c. Database Connection
+// Database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (!string.IsNullOrEmpty(connectionString))
 {
@@ -44,10 +39,7 @@ else
 
 var app = builder.Build();
 
-// =========================================================
 // 2. MIDDLEWARE
-// =========================================================
-
 app.UseForwardedHeaders(new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
@@ -63,32 +55,58 @@ app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseAntiforgery();
 
-// =========================================================
-// 3. ROUTING
-// =========================================================
+// 3. API ROUTES (Defined directly to ensure they exist)
 
-// 3a. Map Controllers (Enables /api/images/upload)
-app.MapControllers();
+// GET IMAGE
+app.MapGet("/api/images/{id}", async (int id, AppDbContext db) =>
+{
+    var img = await db.StoredImages.FindAsync(id);
+    if (img == null) return Results.NotFound();
+    return Results.File(img.Data, img.ContentType);
+});
 
-// 3b. Map UI
+// UPLOAD IMAGE
+app.MapPost("/api/images/upload", async (HttpRequest request, AppDbContext db) =>
+{
+    if (!request.HasFormContentType) return Results.BadRequest("Not a form upload");
+    
+    var form = await request.ReadFormAsync();
+    var file = form.Files.FirstOrDefault();
+    
+    if (file == null || file.Length == 0) return Results.BadRequest("No file found");
+    
+    using var ms = new MemoryStream();
+    await file.CopyToAsync(ms);
+    
+    var img = new StoredImage
+    {
+        OriginalName = file.FileName,
+        ContentType = file.ContentType,
+        Data = ms.ToArray(),
+        UploadedAt = DateTime.UtcNow
+    };
+    
+    db.StoredImages.Add(img);
+    await db.SaveChangesAsync();
+    
+    return Results.Ok(new { Id = img.Id, Url = $"/api/images/{img.Id}" });
+}).DisableAntiforgery(); // Disable CSRF check for simple API uploads
+
+app.MapControllers(); // Admin controllers
+
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-// =========================================================
-// 4. STARTUP TASKS
-// =========================================================
-
+// 4. STARTUP
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
     var logger = services.GetRequiredService<ILogger<Program>>();
-    
     try
     {
         var context = services.GetRequiredService<AppDbContext>();
-        context.Database.EnsureCreated(); // Creates StoredImages table if missing
-        
-        // DbInitializer.Initialize(context, logger); // Uncomment if you have a seeder
+        context.Database.EnsureCreated();
+        DbInitializer.Initialize(context, logger);
     }
     catch (Exception ex)
     {

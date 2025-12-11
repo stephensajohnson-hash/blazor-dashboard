@@ -47,7 +47,7 @@ public class Recipe
     public string PrepTime { get; set; } = "";
     public string CookTime { get; set; } = "";
     
-    public string? ImageUrl { get; set; } // FIXED: Nullable
+    public string? ImageUrl { get; set; } // NULLABLE
     public int? ImageId { get; set; }
 
     public string SourceName { get; set; } = "";
@@ -63,7 +63,7 @@ public class RecipeCategory
     public int Id { get; set; }
     public int UserId { get; set; }
     public string Name { get; set; } = "";
-    public string? ImageUrl { get; set; } // FIXED: Nullable
+    public string? ImageUrl { get; set; } // NULLABLE
     public int? ImageId { get; set; }
 }
 

@@ -23,7 +23,7 @@
             <div class="text-red-500 text-xl font-bold">⚠️ Database Update Required</div>
             <p class="text-gray-400 max-w-md text-center">@errorMessage</p>
             <button @onclick="UpgradeDatabase" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">
-                Apply Schema Update
+                Apply Schema Update & Fix Nulls
             </button>
         </div>
     }
@@ -37,7 +37,7 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v4.1.1 (JSON Case Fix)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v4.2.0 (Direct API Upload)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -696,6 +696,7 @@
         isUploading = true;
         try {
             var file = e.File;
+            Console.WriteLine($"Starting upload for {file.Name}"); // LOG
             using var content = new MultipartFormDataContent();
             using var stream = file.OpenReadStream(5 * 1024 * 1024); // 5MB Limit
             var fileContent = new StreamContent(stream);
@@ -709,6 +710,7 @@
                 var result = await response.Content.ReadFromJsonAsync<UploadResult>(options);
                 if (result != null)
                 {
+                    Console.WriteLine($"Upload success: {result.Url}"); // LOG
                     editingRecipe.ImageUrl = result.Url;
                     editingRecipe.ImageId = result.Id;
                     StateHasChanged();
@@ -716,8 +718,12 @@
             }
             else { await JS.InvokeVoidAsync("alert", "Upload failed."); }
         }
-        catch (Exception ex) { await JS.InvokeVoidAsync("alert", "Error: " + ex.Message); }
+        catch (Exception ex) { 
+            Console.WriteLine($"Upload ERROR: {ex.Message}"); // LOG
+            await JS.InvokeVoidAsync("alert", "Error: " + ex.Message); 
+        }
         isUploading = false;
+        StateHasChanged();
     }
 
     private async Task HandleCategoryImageUpload(InputFileChangeEventArgs e, RecipeCategory? cat)
@@ -725,6 +731,7 @@
         if (cat == null) return;
         try {
             var file = e.File;
+            Console.WriteLine($"Starting CATEGORY upload for {file.Name}"); // LOG
             using var content = new MultipartFormDataContent();
             using var stream = file.OpenReadStream(5 * 1024 * 1024);
             var fileContent = new StreamContent(stream);
@@ -738,12 +745,16 @@
                 var result = await response.Content.ReadFromJsonAsync<UploadResult>(options);
                 if (result != null)
                 {
+                    Console.WriteLine($"Category Upload success: {result.Url}"); // LOG
                     cat.ImageUrl = result.Url;
                     cat.ImageId = result.Id;
                     StateHasChanged(); // Force update so image shows immediately
                 }
             }
-        } catch { await JS.InvokeVoidAsync("alert", "Category upload failed."); }
+        } catch (Exception ex) { 
+            Console.WriteLine($"Category Upload ERROR: {ex.Message}"); // LOG
+            await JS.InvokeVoidAsync("alert", "Category upload failed: " + ex.Message); 
+        }
     }
     
     private class UploadResult { public int Id { get; set; } public string Url { get; set; } = ""; }
