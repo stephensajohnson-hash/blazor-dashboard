@@ -16,15 +16,13 @@ public class AppDbContext : DbContext
     public DbSet<Countdown> Countdowns { get; set; }
     public DbSet<Stock> Stocks { get; set; }
     public DbSet<User> Users { get; set; }
+    public DbSet<Feed> Feeds { get; set; } // Added Feed DbSet
 
     // Recipes
     public DbSet<Recipe> Recipes { get; set; }
     public DbSet<RecipeIngredient> RecipeIngredients { get; set; }
     public DbSet<RecipeInstruction> RecipeInstructions { get; set; }
     public DbSet<RecipeCategory> RecipeCategories { get; set; }
-
-    // NEW
-    public DbSet<Feed> Feeds { get; set; }
 }
 
 public class Recipe
@@ -38,7 +36,7 @@ public class Recipe
     public string PrepTime { get; set; } = "";
     public string CookTime { get; set; } = "";
     public string ImageUrl { get; set; } = "";
-    public string SourceName { get; set; } = ""; // Fixed: Was missing or named wrong
+    public string SourceName { get; set; } = "";
     public string SourceUrl { get; set; } = "";
     public string TagsJson { get; set; } = "[]"; 
 
@@ -50,7 +48,8 @@ public class RecipeIngredient
 {
     public int Id { get; set; }
     public int RecipeId { get; set; }
-    public string Section { get; set; } = "Main"; // Fixed: Was SectionTitle
+    public string Section { get; set; } = "Main";
+    public int Order { get; set; } // NEW: Controls display order
     public string Name { get; set; } = "";
     public string Quantity { get; set; } = "";
     public string Unit { get; set; } = "";
@@ -67,8 +66,8 @@ public class RecipeInstruction
 {
     public int Id { get; set; }
     public int RecipeId { get; set; }
-    public string Section { get; set; } = "Directions"; // Fixed: Was SectionTitle
-    public int StepNumber { get; set; }
+    public string Section { get; set; } = "Directions";
+    public int StepNumber { get; set; } // Acts as Order
     public string Text { get; set; } = "";
 }
 
@@ -125,6 +124,16 @@ public class Stock
     public int Order { get; set; }
 }
 
+public class Feed
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public string Name { get; set; } = "";
+    public string Url { get; set; } = "";
+    public string Category { get; set; } = "General";
+    public bool IsEnabled { get; set; } = false;
+}
+
 public class User
 {
     public int Id { get; set; }
@@ -132,16 +141,6 @@ public class User
     public string PasswordHash { get; set; } = "";
     public string ZipCode { get; set; } = "75482"; 
     public string AvatarUrl { get; set; } = "";
-}
-
-public class Feed
-{
-    public int Id { get; set; }
-    public int UserId { get; set; }
-    public string Name { get; set; } = "";
-    public string Url { get; set; } = "";
-    public string Category { get; set; } = "General"; // Tech, Sports, Finance
-    public bool IsEnabled { get; set; } = false; // Default OFF
 }
 
 public static class PasswordHelper
