@@ -140,7 +140,7 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v4.5.6 (Compact UI)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v4.5.7 (Smart Tag Toggling)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -311,7 +311,7 @@
                         
                         <div class="flex items-center gap-1 bg-gray-800 p-1 rounded-xl border border-gray-700 relative z-10">
                             <button @onclick="PrintRecipe" class="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition" title="Print">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z" /></svg>
                             </button>
                             <button @onclick="CopyRecipeInfo" class="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition" title="Copy Info">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
@@ -493,9 +493,9 @@
                                 <span class="text-xs text-gray-500 self-center mr-1">Quick Add:</span>
                                 @foreach(var tag in GetPopularTags())
                                 {
-                                    var isSelected = editingTags.Contains(tag, StringComparison.OrdinalIgnoreCase);
+                                    var isSelected = editingTags.Split(',', StringSplitOptions.RemoveEmptyEntries).Any(t => t.Trim().Equals(tag, StringComparison.OrdinalIgnoreCase));
                                     <button type="button" 
-                                            @onclick="() => AddTagToEditor(tag)" 
+                                            @onclick="() => ToggleTagInEditor(tag)" 
                                             class="px-2 py-1 text-xs rounded border transition @(isSelected ? "bg-blue-900 border-blue-500 text-white" : "bg-gray-800 border-gray-600 text-gray-300 hover:bg-gray-700")">
                                         @tag
                                     </button>
@@ -639,9 +639,6 @@
         showToast = false;
         StateHasChanged();
     }
-    
-    // Style Preview Logic
-    private bool showStylePreview = false;
 
     // TAG CLOUD GENERATION & COLORS
     private class TagItem { public string Name { get; set; } = ""; public int Size { get; set; } }
@@ -655,10 +652,7 @@
     private async Task LoadData() { if (currentUser == null) return; try { RecipeList = await Db.Recipes.Where(r => r.UserId == currentUser.Id).Include(r => r.Ingredients).Include(r => r.Instructions).OrderBy(r => r.Category).ThenBy(r => r.Title).ToListAsync(); CategoryList = await Db.RecipeCategories.Where(c => c.UserId == currentUser.Id).OrderBy(c => c.Name).ToListAsync(); var allIngs = await Db.RecipeIngredients.Where(i => Db.Recipes.Any(r => r.Id == i.RecipeId && r.UserId == currentUser.Id)).ToListAsync(); IngredientDatabase = allIngs.Where(i => i.Calories > 0 || i.Protein > 0 || i.Fat > 0 || i.Carbs > 0).GroupBy(i => i.Name.ToLower().Trim()).ToDictionary(g => g.Key, g => g.OrderByDescending(i => (i.Calories>0?1:0) + (i.Protein>0?1:0)).First()); } catch (Exception ex) { if (ex.Message.Contains("42P01") || ex.Message.Contains("42703")) { isDbError = true; errorMessage = ex.Message; } } StateHasChanged(); }
 
     // --- ACTIONS (Print, Copy, Share) ---
-    private void PrintRecipe() 
-    { 
-        _ = JS.InvokeVoidAsync("printPage"); 
-    }
+    private void PrintRecipe() { _ = JS.InvokeVoidAsync("printPage"); }
     private async Task CopyRecipeInfo()
     {
         if (selectedRecipe == null) return;
@@ -750,14 +744,25 @@
             .ToList();
     }
 
-    private void AddTagToEditor(string tag)
+    private void ToggleTagInEditor(string tag)
     {
-        var tags = editingTags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-        if (!tags.Contains(tag, StringComparer.OrdinalIgnoreCase))
+        var tags = editingTags
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+
+        // Check case-insensitive match
+        var existing = tags.FirstOrDefault(t => t.Equals(tag, StringComparison.OrdinalIgnoreCase));
+
+        if (existing != null)
+        {
+            tags.Remove(existing);
+        }
+        else
         {
             tags.Add(tag);
-            editingTags = string.Join(", ", tags);
         }
+
+        editingTags = string.Join(", ", tags);
     }
 
     private async Task MigrateDashboardData() { if (currentUser == null) return; await Db.Database.ExecuteSqlRawAsync($"UPDATE \"LinkGroups\" SET \"UserId\" = {currentUser.Id}; UPDATE \"Links\" SET \"UserId\" = {currentUser.Id}; UPDATE \"Stocks\" SET \"UserId\" = {currentUser.Id}; UPDATE \"Countdowns\" SET \"UserId\" = {currentUser.Id};"); await JS.InvokeVoidAsync("alert", "Dashboard Data Claimed!"); }
