@@ -26,16 +26,15 @@
     }
     else
     {
-        <main class="w-full p-8 relative scroll-smooth">
+        <main class="w-full p-8 relative scroll-smooth" @onclick="CloseMenus">
             
             <div class="mb-10 border-b border-gray-800 pb-4 flex items-center justify-between">
-                
                 <div>
                     <div class="flex items-baseline gap-4">
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v1.1.2 (Smart Import)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v1.1.3 (Debug Mode)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -46,7 +45,6 @@
                 </div>
 
                 <div class="flex items-center gap-6">
-                    
                     @if (weather?.current != null)
                     {
                         <div class="flex items-center gap-4 bg-gray-800/30 px-4 py-2 rounded-xl border border-gray-700/30 transition hover:bg-gray-800/50">
@@ -97,7 +95,7 @@
                 <div class="flex justify-between items-center mb-6">
                     <h3 class="text-xl font-bold text-gray-200">Database Verification</h3>
                     <div class="flex gap-3">
-                         <button @onclick="() => showImportModal = true" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm">
+                         <button @onclick="OpenImportModal" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm">
                             📂 Import JSON
                         </button>
                          <button @onclick="LoadData" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm">
@@ -162,20 +160,30 @@
 @if (showImportModal)
 {
     <div class="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div class="bg-gray-800 border border-gray-600 p-6 rounded-xl shadow-2xl w-full max-w-2xl h-[80vh] flex flex-col">
+        <div class="bg-gray-800 border border-gray-600 p-6 rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
             <h3 class="text-xl font-bold text-white mb-2">Import Data</h3>
-            <p class="text-sm text-gray-400 mb-4">Paste your JSON array below. Dates can be ISO (2024-01-01) or US format (1/1/2024).</p>
             
-            <textarea @bind="jsonContent" class="flex-1 bg-gray-900 border border-gray-700 rounded-lg p-4 text-xs font-mono text-green-400 resize-none focus:outline-none focus:border-blue-500" placeholder='[ { "id": "1", "content": "Sample Task", "date": "2024-05-20", "type": "task" } ]'></textarea>
-            
-            <div class="mt-6 flex justify-between items-center gap-3">
-                <div class="text-xs font-mono @(importStatus.StartsWith("Error") || importStatus.Contains("0 items") ? "text-red-400" : "text-green-400")">
-                    @importStatus
+            <div class="flex gap-4 h-full min-h-0">
+                <div class="flex-1 flex flex-col">
+                    <p class="text-sm text-gray-400 mb-2">Paste JSON below:</p>
+                    <textarea @bind="jsonContent" class="flex-1 bg-gray-900 border border-gray-700 rounded-lg p-4 text-xs font-mono text-green-400 resize-none focus:outline-none focus:border-blue-500 mb-4" placeholder='[ { "id": "1", "content": "Sample Task", "date": "2024-05-20", "type": "task" } ]'></textarea>
                 </div>
+
+                <div class="w-1/3 flex flex-col bg-black rounded-lg border border-gray-700 p-4 font-mono text-[10px] overflow-y-auto text-gray-300">
+                    <div class="text-white font-bold mb-2 border-b border-gray-700 pb-1">Debug Log</div>
+                    @foreach(var log in debugLogs)
+                    {
+                        <div class="mb-1 border-b border-gray-900 pb-1">@log</div>
+                    }
+                </div>
+            </div>
+            
+            <div class="mt-6 flex justify-between items-center">
+                <button @onclick="ClearLogs" class="text-xs text-gray-500 hover:text-white underline">Clear Logs</button>
                 <div class="flex gap-2">
-                    <button @onclick="() => showImportModal = false" class="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
+                    <button @onclick="() => showImportModal = false" class="px-4 py-2 text-gray-400 hover:text-white">Close</button>
                     <button @onclick="ProcessImport" class="px-6 py-2 bg-green-600 hover:bg-green-500 text-white rounded font-bold shadow-lg flex items-center gap-2">
-                        @if(isImporting) { <span>⏳ Processing...</span> } else { <span>🚀 Import</span> }
+                        @if(isImporting) { <span>⏳ Processing...</span> } else { <span>🚀 Run Import</span> }
                     </button>
                 </div>
             </div>
@@ -199,7 +207,7 @@
     private bool showImportModal = false;
     private string jsonContent = "";
     private bool isImporting = false;
-    private string importStatus = "";
+    private List<string> debugLogs = new();
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -230,6 +238,17 @@
         }
     }
 
+    private void Log(string msg)
+    {
+        var line = $"{DateTime.Now:HH:mm:ss} - {msg}";
+        debugLogs.Add(line);
+        Console.WriteLine($"[BULLET IMPORT] {msg}");
+        StateHasChanged();
+    }
+    
+    private void ClearLogs() => debugLogs.Clear();
+    private void OpenImportModal() { showImportModal = true; ClearLogs(); }
+
     private async Task LoadData()
     {
         if (currentUser == null) return;
@@ -254,80 +273,114 @@
 
     private async Task ProcessImport()
     {
-        if (string.IsNullOrWhiteSpace(jsonContent) || currentUser == null) return;
-        isImporting = true;
-        importStatus = "Parsing JSON...";
-        StateHasChanged();
+        if (string.IsNullOrWhiteSpace(jsonContent) || currentUser == null) 
+        {
+            Log("JSON is empty or user not logged in.");
+            return;
+        }
 
+        isImporting = true;
+        Log("Starting Import Process...");
+        
         try
         {
             var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            // Step 1: Deserialize to generic elements to inspect keys
             var rawItems = JsonSerializer.Deserialize<List<JsonElement>>(jsonContent, options);
 
-            if (rawItems == null || !rawItems.Any()) throw new Exception("No items found. Check JSON format.");
+            if (rawItems == null || !rawItems.Any()) 
+            {
+                Log("Deserialization returned 0 items.");
+                return;
+            }
 
-            importStatus = $"Parsed {rawItems.Count} items. Converting...";
-            StateHasChanged();
+            Log($"Found {rawItems.Count} raw items. Processing...");
+
+            // Debug first item keys to help user
+            var first = rawItems.First();
+            Log("First Item Keys detected: " + string.Join(", ", first.EnumerateObject().Select(p => p.Name)));
 
             var newItems = new List<BulletItem>();
+            int successCount = 0;
+            int failCount = 0;
 
             foreach (var raw in rawItems)
             {
-                var item = new BulletItem();
-                item.UserId = currentUser.Id;
-                
-                // Content Mapping
-                if (raw.TryGetProperty("content", out var c) || raw.TryGetProperty("text", out c) || raw.TryGetProperty("title", out c))
-                    item.Content = c.ToString();
-                
-                // Date Mapping (Handles various formats)
-                if (raw.TryGetProperty("date", out var d))
+                try
                 {
-                    string dateStr = d.ToString();
-                    if (DateTime.TryParse(dateStr, out var dt))
-                        item.Date = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+                    var item = new BulletItem();
+                    item.UserId = currentUser.Id;
+                    
+                    // --- CONTENT ---
+                    if (raw.TryGetProperty("content", out var c)) item.Content = c.ToString();
+                    else if (raw.TryGetProperty("text", out c)) item.Content = c.ToString();
+                    else if (raw.TryGetProperty("title", out c)) item.Content = c.ToString();
+                    else item.Content = "(No Content)";
+                    
+                    // --- DATE ---
+                    if (raw.TryGetProperty("date", out var d))
+                    {
+                        string dateStr = d.ToString();
+                        if (DateTime.TryParse(dateStr, out var dt))
+                            item.Date = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+                        else
+                        {
+                            Log($"Invalid Date format: {dateStr}. Using Now.");
+                            item.Date = DateTime.UtcNow;
+                        }
+                    }
                     else
-                        item.Date = DateTime.UtcNow; // Fallback
+                    {
+                        item.Date = DateTime.UtcNow;
+                    }
+
+                    // --- TYPE ---
+                    if (raw.TryGetProperty("type", out var t))
+                        item.Type = t.ToString().ToLower();
+                    else
+                        item.Type = "task"; 
+
+                    // --- COMPLETED ---
+                    if (raw.TryGetProperty("isCompleted", out var ic)) item.IsCompleted = ic.ValueKind == JsonValueKind.True;
+                    else if (raw.TryGetProperty("completed", out ic)) item.IsCompleted = ic.ValueKind == JsonValueKind.True;
+                    else if (raw.TryGetProperty("done", out ic)) item.IsCompleted = ic.ValueKind == JsonValueKind.True;
+                    
+                    // --- ID ---
+                    if (raw.TryGetProperty("id", out var oldId))
+                        item.OriginalStringId = oldId.ToString();
+
+                    newItems.Add(item);
+                    successCount++;
                 }
-                else
+                catch (Exception ex)
                 {
-                    item.Date = DateTime.UtcNow;
+                    failCount++;
+                    Log($"Error parsing item: {ex.Message}");
                 }
-
-                // Type Mapping
-                if (raw.TryGetProperty("type", out var t))
-                    item.Type = t.ToString().ToLower();
-                else
-                    item.Type = "task"; 
-
-                // Completed Mapping
-                if (raw.TryGetProperty("isCompleted", out var ic) || raw.TryGetProperty("completed", out ic) || raw.TryGetProperty("done", out ic))
-                    item.IsCompleted = ic.ValueKind == JsonValueKind.True;
-                
-                // Original ID
-                if (raw.TryGetProperty("id", out var oldId))
-                    item.OriginalStringId = oldId.ToString();
-
-                newItems.Add(item);
             }
 
-            importStatus = $"Saving {newItems.Count} items to Database...";
-            StateHasChanged();
+            Log($"Prepared {successCount} items for DB. ({failCount} failed)");
 
-            await Db.Set<BulletItem>().AddRangeAsync(newItems);
-            await Db.SaveChangesAsync();
-
-            importStatus = "Success! Data Imported.";
-            jsonContent = ""; 
-            await LoadData();
-            
-            await Task.Delay(1500);
-            showImportModal = false;
-            importStatus = "";
+            if (newItems.Any())
+            {
+                Log("Saving to Database...");
+                await Db.Set<BulletItem>().AddRangeAsync(newItems);
+                await Db.SaveChangesAsync();
+                Log("Database Save Complete!");
+                
+                await LoadData();
+                Log("Table reloaded. Closing modal in 2s...");
+                await Task.Delay(2000);
+                showImportModal = false;
+            }
+            else
+            {
+                Log("No valid items to save.");
+            }
         }
         catch (Exception ex)
         {
-            importStatus = "Error: " + ex.Message;
+            Log($"CRITICAL ERROR: {ex.Message}");
         }
         finally
         {
@@ -353,11 +406,13 @@
                 );
             ");
             isDbError = false;
+            Log("Database Table Created/Verified.");
             await LoadData();
         }
         catch (Exception ex)
         {
             errorMessage = ex.Message;
+            Log($"DB Create Error: {ex.Message}");
         }
     }
 
@@ -365,9 +420,11 @@
     {
         if (await JS.InvokeAsync<bool>("confirm", "⚠️ Delete ALL Bullet Items? This cannot be undone."))
         {
+            Log("Wiping data...");
             var items = await Db.Set<BulletItem>().Where(i => i.UserId == currentUser!.Id).ToListAsync();
             Db.Set<BulletItem>().RemoveRange(items);
             await Db.SaveChangesAsync();
+            Log("Data Wiped.");
             await LoadData();
         }
     }
