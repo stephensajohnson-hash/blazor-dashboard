@@ -19,9 +19,11 @@
     @if (isDbError)
     {
         <div class="flex flex-col items-center justify-center h-screen space-y-6">
-            <div class="text-red-500 text-xl font-bold">⚠️ Database Error</div>
+            <div class="text-red-500 text-xl font-bold">⚠️ Database Setup Required</div>
             <p class="text-gray-400 max-w-md text-center">@errorMessage</p>
-            <button @onclick="UpgradeDatabase" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">Create Tables</button>
+            <button @onclick="UpgradeDatabase" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">
+                Create BulletTasks Table
+            </button>
         </div>
     }
     else
@@ -44,7 +46,6 @@
 
                     <div class="flex items-center gap-2">
                         <button @onclick="Prev" class="w-8 h-8 flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded-full text-gray-300 transition">◀</button>
-                        
                         <button @onclick="GoToday" class="px-3 h-8 flex items-center justify-center bg-gray-700 hover:bg-blue-600 hover:text-white text-gray-300 rounded-lg text-xs font-bold uppercase tracking-wider transition">Today</button>
                         
                         <div class="flex bg-gray-900/50 rounded-lg p-1">
@@ -103,21 +104,34 @@
                     <div class="grid grid-cols-3 gap-4 h-full">
                         <div class="bg-gray-800/40 rounded-xl border border-gray-700 flex flex-col h-full overflow-hidden">
                             <div class="p-3 bg-gray-800/80 border-b border-gray-700 text-center font-bold text-blue-400 uppercase tracking-wider text-sm sticky top-0 backdrop-blur">Work</div>
-                            <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide">
-                                <div class="text-center text-gray-600 text-xs italic mt-10">No items yet</div>
+                            <div class="p-3 overflow-y-auto flex-1 space-y-2 scrollbar-hide">
+                                @foreach(var t in GetTasksForDate(viewDate, "work"))
+                                {
+                                    @RenderTaskCard(t)
+                                }
+                                @if(!GetTasksForDate(viewDate, "work").Any())
+                                {
+                                    <div class="text-center text-gray-600 text-xs italic mt-10">No work tasks</div>
+                                }
                             </div>
                         </div>
 
                         <div class="bg-gray-800/40 rounded-xl border border-gray-700 flex flex-col h-full overflow-hidden">
                             <div class="p-3 bg-gray-800/80 border-b border-gray-700 text-center font-bold text-green-400 uppercase tracking-wider text-sm sticky top-0 backdrop-blur">Personal</div>
                             <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide">
+                                @foreach(var t in GetTasksForDate(viewDate, "personal"))
+                                {
+                                    @RenderTaskCard(t)
+                                }
+                                
                                 @foreach(var m in GetMediaForDate(viewDate))
                                 {
                                     @RenderMediaCard(m)
                                 }
-                                @if(!GetMediaForDate(viewDate).Any())
+                                
+                                @if(!GetTasksForDate(viewDate, "personal").Any() && !GetMediaForDate(viewDate).Any())
                                 {
-                                    <div class="text-center text-gray-600 text-xs italic mt-10">No media items</div>
+                                    <div class="text-center text-gray-600 text-xs italic mt-10">No items</div>
                                 }
                             </div>
                         </div>
@@ -140,13 +154,15 @@
                             var isToday = d.Date == DateTime.UtcNow.AddMinutes(-clientOffsetMinutes).Date;
                             var isWeekend = d.DayOfWeek == DayOfWeek.Saturday || d.DayOfWeek == DayOfWeek.Sunday;
                             var dayMedia = GetMediaForDate(d);
+                            var dayTasks = GetTasksForDate(d);
 
                             <div class="flex flex-col h-full rounded-xl border overflow-hidden transition hover:border-gray-500 @(isToday ? "border-yellow-500 border-2" : "border-gray-700") @(isWeekend ? "bg-gray-800/30" : "bg-gray-800/60")">
                                 <div class="p-2 text-center border-b border-gray-700/50 @(isToday ? "bg-blue-900/50 text-white" : "text-gray-400")">
                                     <div class="text-[10px] uppercase font-bold">@d.ToString("ddd")</div>
                                     <div class="text-lg font-bold">@d.Day</div>
                                 </div>
-                                <div class="flex-1 overflow-y-auto p-2 space-y-2 scrollbar-hide">
+                                <div class="flex-1 overflow-y-auto p-1 space-y-1 scrollbar-hide">
+                                    @foreach(var t in dayTasks) { @RenderTaskPill(t) }
                                     @foreach(var m in dayMedia) { @RenderMediaCard(m, true) }
                                 </div>
                             </div>
@@ -164,9 +180,8 @@
                             @{ 
                                 var monthStart = new DateTime(viewDate.Year, viewDate.Month, 1);
                                 var daysInMonth = DateTime.DaysInMonth(viewDate.Year, viewDate.Month);
-                                // Calculate padding (Monday start)
                                 var startDay = (int)monthStart.DayOfWeek; 
-                                if (startDay == 0) startDay = 7; // Sunday becomes 7
+                                if (startDay == 0) startDay = 7; 
                                 var emptyCells = startDay - 1; 
                             }
                             
@@ -178,10 +193,12 @@
                                 var isToday = currentDay.Date == DateTime.UtcNow.AddMinutes(-clientOffsetMinutes).Date;
                                 var isWeekend = currentDay.DayOfWeek == DayOfWeek.Saturday || currentDay.DayOfWeek == DayOfWeek.Sunday;
                                 var dayMedia = GetMediaForDate(currentDay);
+                                var dayTasks = GetTasksForDate(currentDay);
 
                                 <div class="relative flex flex-col rounded-lg border overflow-hidden p-1 hover:bg-gray-700 transition cursor-pointer @(isToday ? "border-yellow-500 border-2" : "border-gray-700") @(isWeekend ? "bg-gray-800/30" : "bg-gray-800")" @onclick="() => GoToDate(currentDay)">
                                     <div class="text-right text-xs font-bold text-gray-500 mb-1 @(isToday ? "text-yellow-400" : "")">@d</div>
                                     <div class="flex-1 overflow-y-auto space-y-1 scrollbar-hide max-h-32">
+                                        @foreach(var t in dayTasks) { @RenderTaskPill(t) }
                                         @foreach(var m in dayMedia) { @RenderMediaCard(m, true) }
                                     </div>
                                 </div>
@@ -200,11 +217,11 @@
         <div class="bg-gray-800 border border-gray-600 p-6 rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
             <h3 class="text-xl font-bold text-white mb-2">Import Data</h3>
             <div class="flex gap-3 mb-4">
-                 <button @onclick="ImportMedia" class="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm" disabled="@isImporting">
-                     @if(isImporting) { <span>⏳ Processing...</span> } else { <span>🎬 Import Media Only</span> }
+                 <button @onclick="ImportTasks" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm" disabled="@isImporting">
+                     @if(isImporting) { <span>⏳ Processing...</span> } else { <span>📋 Import Tasks Only</span> }
                 </button>
-                 <button @onclick="WipeData" class="bg-red-900/50 hover:bg-red-800 text-red-200 px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm">
-                    🗑️ Wipe Media
+                 <button @onclick="WipeTasks" class="bg-red-900/50 hover:bg-red-800 text-red-200 px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm">
+                    🗑️ Wipe Tasks
                 </button>
             </div>
             
@@ -236,11 +253,13 @@
     private User? currentUser;
 
     // View State
-    private string currentView = "month"; // day, week, month
+    private string currentView = "day"; // Default to Day
     private DateTime viewDate = DateTime.UtcNow;
 
     // Data
     private List<BulletMedia> AllMedia = new();
+    private List<BulletTask> AllTasks = new();
+    
     private bool isImporting = false;
     private List<string> debugLogs = new();
 
@@ -266,8 +285,6 @@
                 }
 
                 try { clientOffsetMinutes = await JS.InvokeAsync<int>("getUserOffset"); } catch {}
-                
-                // Set view date to local now
                 viewDate = DateTime.UtcNow.AddMinutes(-clientOffsetMinutes);
                 
                 _ = StartClock();
@@ -318,9 +335,13 @@
         return d.AddDays(-1 * diff).Date;
     }
 
-    private List<BulletMedia> GetMediaForDate(DateTime d)
+    private List<BulletMedia> GetMediaForDate(DateTime d) => AllMedia.Where(m => m.Date.Date == d.Date).ToList();
+    
+    private List<BulletTask> GetTasksForDate(DateTime d, string? category = null)
     {
-        return AllMedia.Where(m => m.Date.Date == d.Date).ToList();
+        var tasks = AllTasks.Where(t => t.Date.Date == d.Date);
+        if (!string.IsNullOrEmpty(category)) return tasks.Where(t => t.Category == category).ToList();
+        return tasks.ToList();
     }
 
     private RenderFragment RenderMediaCard(BulletMedia m, bool compact = false) => __builder =>
@@ -328,33 +349,42 @@
         <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden group relative hover:border-purple-500 transition shadow-lg w-full mb-2">
             @if(!string.IsNullOrEmpty(m.ImgUrl))
             {
-                // Full width image, natural aspect ratio
                 <img src="@m.ImgUrl" class="w-full h-auto block opacity-80 group-hover:opacity-100 transition" loading="lazy" />
             }
-            
-            @if(m.Rating > 0)
-            {
-                 <div class="absolute top-1 right-1 bg-black/80 backdrop-blur text-yellow-400 text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5 border border-yellow-500/30 shadow z-10">
-                    <span>★</span> @m.Rating
-                </div>
-            }
-
             @if(!compact)
             {
                 <div class="p-2">
-                    <h4 class="font-bold text-white text-xs truncate leading-tight mb-1">@m.Title</h4>
-                    @if(!string.IsNullOrEmpty(m.Description))
-                    {
-                        <p class="text-[10px] text-gray-500 line-clamp-2">@m.Description</p>
-                    }
+                    <h4 class="font-bold text-white text-xs truncate leading-tight mb-1">🎬 @m.Title</h4>
+                    @if(m.Rating > 0) { <div class="text-[10px] text-yellow-400">@m.Rating ★</div> }
                 </div>
             }
-            else
-            {
-                 <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-1 pt-4">
-                    <h4 class="font-bold text-white text-[9px] truncate">@m.Title</h4>
-                 </div>
-            }
+        </div>
+    };
+
+    private RenderFragment RenderTaskCard(BulletTask t) => __builder =>
+    {
+        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 mb-2 hover:border-blue-500 transition shadow-md group">
+            <div class="flex items-start gap-2">
+                <input type="checkbox" checked="@t.IsCompleted" disabled class="mt-1 w-4 h-4 rounded bg-gray-800 border-gray-600" />
+                <div class="flex-1 min-w-0">
+                    <h4 class="text-sm font-bold text-white leading-tight @(t.IsCompleted ? "line-through text-gray-500" : "")">@t.Title</h4>
+                    @if(!string.IsNullOrEmpty(t.Description))
+                    {
+                        <p class="text-[10px] text-gray-500 mt-1 line-clamp-2">@t.Description</p>
+                    }
+                    @if(!string.IsNullOrEmpty(t.TicketNumber))
+                    {
+                        <span class="inline-block bg-gray-800 text-[9px] text-blue-300 px-1.5 rounded border border-blue-900 mt-1">@t.TicketNumber</span>
+                    }
+                </div>
+            </div>
+        </div>
+    };
+
+    private RenderFragment RenderTaskPill(BulletTask t) => __builder =>
+    {
+        <div class="text-[9px] px-1 py-0.5 rounded truncate mb-1 border @(t.IsCompleted ? "bg-gray-800 text-gray-500 border-gray-700 line-through" : "bg-blue-900/30 text-blue-200 border-blue-800")">
+            @t.Title
         </div>
     };
 
@@ -364,9 +394,8 @@
         if (currentUser == null) return;
         try 
         {
-            AllMedia = await Db.Set<BulletMedia>()
-                            .Where(i => i.UserId == currentUser.Id)
-                            .ToListAsync();
+            AllMedia = await Db.Set<BulletMedia>().Where(i => i.UserId == currentUser.Id).ToListAsync();
+            AllTasks = await Db.Set<BulletTask>().Where(i => i.UserId == currentUser.Id).ToListAsync();
             StateHasChanged();
         }
         catch {}
@@ -374,10 +403,10 @@
 
     // --- IMPORT LOGIC ---
     private void Log(string msg) { debugLogs.Add($"{DateTime.Now:HH:mm:ss} - {msg}"); InvokeAsync(StateHasChanged); }
-    private async Task ImportMedia()
+    private async Task ImportTasks()
     {
         if (currentUser == null) return;
-        isImporting = true; debugLogs.Clear(); Log("Scanning...");
+        isImporting = true; debugLogs.Clear(); Log("Scanning Tasks...");
         try
         {
             var filePath = Path.Combine(Env.WebRootPath, "bullet_calendar.json");
@@ -391,42 +420,63 @@
                 if (root.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array) foreach (var el in items.EnumerateArray()) rawList.Add(el);
             }
             
-            var newItems = new List<BulletMedia>();
+            var newItems = new List<BulletTask>();
+            int skipped = 0;
             foreach (var raw in rawList)
             {
-                if (raw.TryGetProperty("type", out var t) && t.ToString().ToLower() == "media")
+                string type = "";
+                if (raw.TryGetProperty("type", out var t)) type = t.ToString().ToLower();
+                
+                if (type != "task") { skipped++; continue; }
+
+                try
                 {
-                    var item = new BulletMedia { UserId = currentUser.Id, Category = "Movie" };
+                    var item = new BulletTask();
+                    item.UserId = currentUser.Id;
+                    
                     if (raw.TryGetProperty("title", out var c)) item.Title = c.ToString();
                     else if (raw.TryGetProperty("content", out c)) item.Title = c.ToString();
+                    
                     if (raw.TryGetProperty("date", out var d) && DateTime.TryParse(d.ToString(), out var dt)) item.Date = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+                    else item.Date = DateTime.UtcNow;
+
                     if (raw.TryGetProperty("description", out var desc)) item.Description = desc.ToString();
                     else if (raw.TryGetProperty("notes", out var n)) item.Description = n.ToString();
-                    if (raw.TryGetProperty("rating", out var r) && r.TryGetInt32(out int rate)) item.Rating = rate;
-                    if (raw.TryGetProperty("imgUrl", out var img)) item.ImgUrl = img.ToString();
+                    
+                    if (raw.TryGetProperty("category", out var cat)) item.Category = cat.ToString();
+                    if (raw.TryGetProperty("ticketNumber", out var tn)) item.TicketNumber = tn.ToString();
                     if (raw.TryGetProperty("linkUrl", out var lnk)) item.LinkUrl = lnk.ToString();
+                    if (raw.TryGetProperty("imgUrl", out var img)) item.ImgUrl = img.ToString();
+                    
+                    if (raw.TryGetProperty("status", out var s) && s.ToString() == "completed") item.IsCompleted = true;
+                    if (raw.TryGetProperty("isCompleted", out var ic) && ic.ValueKind == JsonValueKind.True) item.IsCompleted = true;
+
                     if (raw.TryGetProperty("id", out var oldId)) item.OriginalStringId = oldId.ToString();
+
                     newItems.Add(item);
                 }
+                catch (Exception ex) { Log($"Error mapping: {ex.Message}"); }
             }
-            if (newItems.Any()) { await Db.Set<BulletMedia>().AddRangeAsync(newItems); await Db.SaveChangesAsync(); Log($"Imported {newItems.Count} items."); await LoadData(); }
-            else { Log("No media found."); }
+
+            if (newItems.Any()) { await Db.Set<BulletTask>().AddRangeAsync(newItems); await Db.SaveChangesAsync(); Log($"Imported {newItems.Count} tasks."); await LoadData(); }
+            else { Log("No tasks found."); }
         }
         catch (Exception ex) { Log($"Error: {ex.Message}"); }
         finally { isImporting = false; }
     }
     
-    private async Task WipeData()
+    private async Task WipeTasks()
     {
-        if (await JS.InvokeAsync<bool>("confirm", "Delete All Media?")) {
-            var items = await Db.Set<BulletMedia>().Where(i => i.UserId == currentUser!.Id).ToListAsync();
-            Db.Set<BulletMedia>().RemoveRange(items); await Db.SaveChangesAsync(); await LoadData();
+        if (await JS.InvokeAsync<bool>("confirm", "Delete All Tasks?")) {
+            var items = await Db.Set<BulletTask>().Where(i => i.UserId == currentUser!.Id).ToListAsync();
+            Db.Set<BulletTask>().RemoveRange(items); await Db.SaveChangesAsync(); await LoadData();
         }
     }
     
     private async Task UpgradeDatabase() {
         try {
-             await Db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletMedia"" (""Id"" serial PRIMARY KEY, ""UserId"" integer NOT NULL, ""Title"" text, ""Date"" timestamp with time zone NOT NULL, ""Category"" text DEFAULT 'Movie', ""LinkUrl"" text, ""ImgUrl"" text, ""ImageId"" integer, ""Description"" text, ""Rating"" integer DEFAULT 0, ""ReleaseYear"" integer DEFAULT 0, ""Actors"" text DEFAULT '', ""Tags"" text DEFAULT '', ""OriginalStringId"" text);");
+             // Creates BulletTasks table
+             await Db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletTasks"" (""Id"" serial PRIMARY KEY, ""UserId"" integer NOT NULL, ""Title"" text, ""Date"" timestamp with time zone NOT NULL, ""Category"" text DEFAULT 'personal', ""Type"" text DEFAULT 'task', ""IsCompleted"" boolean DEFAULT false, ""Priority"" text DEFAULT 'Normal', ""LinkUrl"" text, ""ImgUrl"" text, ""ImageId"" integer, ""Description"" text, ""TicketNumber"" text, ""TicketUrl"" text, ""Tags"" text, ""DueDate"" timestamp with time zone, ""OriginalStringId"" text);");
              isDbError = false; await LoadData();
         } catch (Exception ex) { errorMessage = ex.Message; }
     }
