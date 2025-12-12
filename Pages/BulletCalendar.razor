@@ -22,9 +22,7 @@
         <div class="flex flex-col items-center justify-center h-screen space-y-6">
             <div class="text-red-500 text-xl font-bold">⚠️ Database Setup Required</div>
             <p class="text-gray-400 max-w-md text-center">@errorMessage</p>
-            <button @onclick="UpgradeDatabase" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">
-                Create Missing Tables
-            </button>
+            <button @onclick="UpgradeDatabase" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">Create Missing Tables</button>
         </div>
     }
     else
@@ -77,11 +75,9 @@
                             </div>
                         </div>
                     }
-
                     <div class="relative group z-50">
                         <button class="flex items-center gap-3 focus:outline-none" @onclick="ToggleUserMenu" @onclick:stopPropagation="true">
-                            <img src="@(string.IsNullOrEmpty(currentUser?.AvatarUrl) ? "https://i.imgur.com/7Y5j5Yx.png" : currentUser.AvatarUrl)" 
-                                 class="w-9 h-9 rounded-full border-2 border-gray-700 transition object-cover bg-gray-800" />
+                            <img src="@(string.IsNullOrEmpty(currentUser?.AvatarUrl) ? "https://i.imgur.com/7Y5j5Yx.png" : currentUser.AvatarUrl)" class="w-9 h-9 rounded-full border-2 border-gray-700 transition object-cover bg-gray-800" />
                         </button>
                         @if (showUserMenu) {
                             <div class="absolute right-0 top-full mt-2 w-56 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 z-50">
@@ -133,6 +129,7 @@
                             <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide">
                                 @foreach(var h in GetHealthForDate(viewDate)) { @RenderHealthCard(h) }
                                 @foreach(var t in GetTasksForDate(viewDate, "health")) { @RenderTaskCard(t) }
+                                @foreach(var h in GetHabitsForDate(viewDate, "health")) { @RenderHabitCard(h) }
                                 @if(!GetTasksForDate(viewDate, "health").Any() && !GetHealthForDate(viewDate).Any()) { <div class="text-center text-gray-600 text-xs italic mt-10">No logs</div> }
                             </div>
                         </div>
@@ -223,7 +220,6 @@
     private bool showUserMenu = false;
     private bool showImportModal = false;
     private User? currentUser;
-
     private string currentView = "day"; 
     private DateTime viewDate = DateTime.UtcNow;
 
@@ -253,7 +249,6 @@
         public int Rating { get; set; } 
         public int ReleaseYear { get; set; } 
         public int Streak { get; set; }
-        // Health
         public double Weight { get; set; }
         public double Water { get; set; }
         public List<BulletMeal> Meals { get; set; } = new();
@@ -278,26 +273,8 @@
             } catch { Nav.NavigateTo("/login", true); }
         }
     }
-
-    private void ToggleUserMenu() { showUserMenu = !showUserMenu; }
-    private void CloseMenus() { showUserMenu = false; }
-    private async Task Logout() { await JS.InvokeVoidAsync("localStorage.removeItem", "dashboard_session"); Nav.NavigateTo("/login", true); }
-    private void SwitchView(string view) { currentView = view; StateHasChanged(); }
-    private void Prev() { if (currentView == "day") viewDate = viewDate.AddDays(-1); else if (currentView == "week") viewDate = viewDate.AddDays(-7); else viewDate = viewDate.AddMonths(-1); }
-    private void Next() { if (currentView == "day") viewDate = viewDate.AddDays(1); else if (currentView == "week") viewDate = viewDate.AddDays(7); else viewDate = viewDate.AddMonths(1); }
-    private void GoToday() { viewDate = DateTime.UtcNow.AddMinutes(-clientOffsetMinutes); SwitchView("day"); }
-    private void GoToDate(DateTime d) { viewDate = d; SwitchView("day"); }
-    private string GetHeaderDate() => currentView == "day" ? viewDate.ToString("dddd, MMMM d, yyyy") : (currentView == "week" ? $"Week of {GetStartOfWeek(viewDate):MMM d, yyyy}" : viewDate.ToString("MMMM yyyy"));
-    private DateTime GetStartOfWeek(DateTime d) => d.AddDays(-1 * ((7 + (d.DayOfWeek - DayOfWeek.Monday)) % 7)).Date;
     
-    // FILTERS
-    private List<BulletMedia> GetMediaForDate(DateTime d, string? category = null) { var q = AllMedia.Where(m => m.Date.Date == d.Date); return category == null ? q.ToList() : q.Where(x => x.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList(); }
-    private List<BulletTask> GetTasksForDate(DateTime d, string? category = null) { var t = AllTasks.Where(x => x.Date.Date == d.Date); return category == null ? t.ToList() : t.Where(x => x.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList(); }
-    private List<BulletMeeting> GetMeetingsForDate(DateTime d, string? category = null) { var q = AllMeetings.Where(m => m.Date.Date == d.Date).OrderBy(m => m.StartTime); return category == null ? q.ToList() : q.Where(x => x.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList(); }
-    private List<BulletHabit> GetHabitsForDate(DateTime d, string? category = null) { var q = AllHabits.Where(h => h.Date.Date == d.Date); return category == null ? q.ToList() : q.Where(x => x.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList(); }
-    private List<BulletMacroTracker> GetHealthForDate(DateTime d) => AllHealth.Where(h => h.Date.Date == d.Date).ToList();
-
-    // CALCULATIONS & DATA
+    // --- TDEE / STATS ---
     private double CalculateTDEE(double weightLbs) {
         if (currentUser == null) return 2000;
         double weightKg = weightLbs * 0.453592; double heightCm = currentUser.HeightInches * 2.54; int age = currentUser.Age > 0 ? currentUser.Age : 30;
@@ -318,21 +295,8 @@
         }
         return (totalDeficit, daysCounted);
     }
-    private async Task LoadData() {
-        if (currentUser == null) return;
-        try {
-            AllMedia = await Db.Set<BulletMedia>().Where(i => i.UserId == currentUser.Id).ToListAsync();
-            AllTasks = await Db.Set<BulletTask>().Where(i => i.UserId == currentUser.Id).ToListAsync();
-            AllMeetings = await Db.Set<BulletMeeting>().Where(i => i.UserId == currentUser.Id).ToListAsync();
-            AllHabits = await Db.Set<BulletHabit>().Where(i => i.UserId == currentUser.Id).ToListAsync();
-            AllHealth = await Db.Set<BulletMacroTracker>().Where(i => i.UserId == currentUser.Id).ToListAsync();
-            AllMeals = await Db.Set<BulletMeal>().ToListAsync();
-            AllWorkouts = await Db.Set<BulletWorkout>().ToListAsync();
-            StateHasChanged();
-        } catch (Exception ex) { if (ex.Message.Contains("42P01")) { isDbError = true; errorMessage = "Missing Tables."; } }
-    }
 
-    // ACTIONS
+    // --- ACTIONS ---
     private async Task ToggleTaskComplete(BulletTask t) { t.IsCompleted = !t.IsCompleted; await Db.SaveChangesAsync(); }
     private async Task ToggleMeetingComplete(BulletMeeting m) { m.IsCompleted = !m.IsCompleted; await Db.SaveChangesAsync(); }
     private async Task ToggleHabitComplete(BulletHabit h) { h.IsCompleted = !h.IsCompleted; await Db.SaveChangesAsync(); }
@@ -353,6 +317,7 @@
             editingItem = new DraftItem { Id = h.Id, Type = "health", Category = h.Category, Date = h.Date, Weight = h.Weight, Water = h.WaterIntake, Meals = meals, Workouts = works }; 
         }
     }
+    
     private async Task SaveItem() {
         if(editingItem == null || currentUser == null) return;
         if (editingItem.Type == "task") { BulletTask t; if(editingItem.Id > 0) t = await Db.BulletTasks.FindAsync(editingItem.Id) ?? new BulletTask(); else { t = new BulletTask { UserId = currentUser.Id }; await Db.BulletTasks.AddAsync(t); } t.Title = editingItem.Title; t.Category = editingItem.Category; t.Date = editingItem.Date; t.Description = editingItem.Description; t.ImgUrl = editingItem.ImgUrl; t.TicketNumber = editingItem.TicketNumber; t.Priority = editingItem.Priority; }
@@ -372,6 +337,7 @@
         }
         await Db.SaveChangesAsync(); editingItem = null; await LoadData();
     }
+
     private async Task DeleteItem(string type, int id) { if(!await JS.InvokeAsync<bool>("confirm", "Delete item?")) return; if(type == "task") { var x = await Db.BulletTasks.FindAsync(id); if(x != null) Db.BulletTasks.Remove(x); } else if(type == "meeting") { var x = await Db.BulletMeetings.FindAsync(id); if(x != null) Db.BulletMeetings.Remove(x); } else if(type == "media") { var x = await Db.BulletMedia.FindAsync(id); if(x != null) Db.BulletMedia.Remove(x); } else if(type == "habit") { var x = await Db.BulletHabits.FindAsync(id); if(x != null) Db.BulletHabits.Remove(x); } else if(type == "health") { var x = await Db.BulletMacroTrackers.FindAsync(id); if(x != null) Db.BulletMacroTrackers.Remove(x); } await Db.SaveChangesAsync(); await LoadData(); }
     private async Task HandleImageUpload(InputFileChangeEventArgs e) { if (editingItem == null) return; try { var file = e.File; using var content = new MultipartFormDataContent(); using var stream = file.OpenReadStream(5 * 1024 * 1024); var fileContent = new StreamContent(stream); fileContent.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType); content.Add(fileContent, "file", file.Name); var response = await Http.PostAsync("/api/images/upload", content); if (response.IsSuccessStatusCode) { var result = await response.Content.ReadFromJsonAsync<UploadResult>(); if (result != null) { editingItem.ImgUrl = result.Url; editingItem.ImageId = result.Id; } } } catch {} }
     private class UploadResult { public int Id { get; set; } public string Url { get; set; } = ""; }
@@ -387,23 +353,60 @@
         else { <div class="bg-gray-900 border @borderColor rounded-lg p-3 mb-2 hover:border-green-400 transition shadow-md group flex items-center gap-3 relative">@RenderActions("habit", h.Id)<input type="checkbox" checked="@h.IsCompleted" @onchange="() => ToggleHabitComplete(h)" @onclick:stopPropagation="true" class="shrink-0 w-5 h-5 rounded border-green-600 text-green-600 bg-gray-800 cursor-pointer" /><div class="flex items-center gap-2"><div class="text-xl">🔥</div><div><h4 class="text-base font-bold text-white leading-tight">@h.Title</h4><div class="text-sm text-gray-500">@h.StreakCount Day Streak</div></div></div></div> }
     };
     private RenderFragment RenderHabitPill(BulletHabit h) => __builder => { var today = DateTime.UtcNow.AddMinutes(-clientOffsetMinutes).Date; var isMissed = h.Date.Date < today && !h.IsCompleted; var style = isMissed ? "bg-red-900/40 text-red-200 border-red-800" : (h.IsCompleted ? "bg-green-900/40 text-green-200 border-green-800" : "bg-orange-900/40 text-orange-200 border-orange-800"); if(!string.IsNullOrEmpty(h.ImgUrl)) { <div class="bg-gray-900 border @(isMissed?"border-red-800":"border-green-800") rounded overflow-hidden group relative hover:border-green-400 transition shadow mb-1 flex items-stretch h-auto">@RenderActions("habit", h.Id)<div class="w-[30%] bg-black"><img src="@h.ImgUrl" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition" loading="lazy"/></div><div class="flex-1 p-1 min-w-0 flex flex-col justify-center"><div class="text-[9px] text-gray-500 font-bold leading-none mb-0.5">🔥 @h.StreakCount</div><div class="font-bold text-white text-xs truncate leading-tight">@h.Title</div></div></div> } else { <div class="text-xs px-1 py-0.5 rounded truncate mb-1 border @style group relative">@RenderActions("habit", h.Id)🔥 @h.Title @(h.IsCompleted ? $"({h.StreakCount})" : "")</div> } };
+    
+    // NEW HEALTH CARD & CALCULATIONS
     private RenderFragment RenderHealthCard(BulletMacroTracker h) => __builder => {
         var meals = AllMeals.Where(m => m.BulletMacroTrackerId == h.Id).ToList(); var workouts = AllWorkouts.Where(w => w.BulletMacroTrackerId == h.Id).ToList();
         double calIn = meals.Sum(m => m.Calories); double calOut = workouts.Sum(w => w.CaloriesBurned); double net = calIn - calOut; double tdee = CalculateTDEE(h.Weight);
+        
+        // Goals: Protein (30%), Fat (35%), Carb (35%)
+        double proteinGoal = (tdee * 0.30) / 4; 
+        double fatGoal = (tdee * 0.35) / 9;
+        double carbGoal = (tdee * 0.35) / 4;
+
         double pro = meals.Sum(m => m.Protein); double fat = meals.Sum(m => m.Fat); double carb = meals.Sum(m => m.Carbs);
+        
         var (wkDeficit, days) = CalculateWeeklyDeficit(h.Date);
         double dailyDeficit = tdee - net;
         
         <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 mb-2 hover:border-orange-500 transition shadow-md group relative">@RenderActions("health", h.Id)
-            <div class="flex justify-between items-center mb-2"><div class="text-xs text-gray-400 font-bold">Weight</div><span class="text-lg font-bold text-white">@h.Weight lbs</span></div>
-            <div class="bg-black/40 rounded p-2 mb-2"><div class="flex justify-between text-xs mb-1"><span class="text-gray-400">Net: @net.ToString("N0")</span><span class="text-[10px] text-gray-500">Target: &lt; @((int)tdee)</span></div>
-            <div class="h-1.5 w-full bg-gray-700 rounded-full overflow-hidden flex"><div class="bg-blue-500 h-full" style="width: @(pro/3)%"></div><div class="bg-yellow-500 h-full" style="width: @(fat/3)%"></div><div class="bg-green-500 h-full" style="width: @(carb/3)%"></div></div><div class="flex justify-between text-[9px] text-gray-500 mt-1"><span>P: @pro</span><span>F: @fat</span><span>C: @carb</span></div></div>
-            <div class="grid grid-cols-2 gap-2 text-center mb-2">
-                <div class="bg-gray-800/50 rounded p-1"><div class="text-[9px] text-gray-500 uppercase">Daily Deficit</div><div class="text-xs font-bold @(dailyDeficit > 500 ? "text-green-400" : "text-red-400")">@dailyDeficit.ToString("N0")</div></div>
-                <div class="bg-gray-800/50 rounded p-1"><div class="text-[9px] text-gray-500 uppercase">Weekly (M-S)</div><div class="text-xs font-bold @(wkDeficit > (days * 500) ? "text-green-400" : "text-yellow-400")">@wkDeficit.ToString("N0")</div></div>
+            
+            <div class="flex justify-between items-center mb-3">
+                <div class="text-xs text-gray-400 font-bold uppercase">Weight</div>
+                <div class="text-lg font-bold text-white">@h.Weight <span class="text-sm text-gray-500">lbs</span></div>
             </div>
-            @if(meals.Any()) { <div class="space-y-0.5 border-t border-gray-800 pt-2">@foreach(var m in meals){ <div class="flex justify-between text-[10px] text-gray-400"><span class="truncate pr-2">@m.Name</span><span>@m.Calories</span></div> }</div> }
-            @if(workouts.Any()) { <div class="space-y-0.5 border-t border-gray-800 pt-2"><div class="text-[9px] font-bold text-gray-500">WORKOUTS</div>@foreach(var w in workouts){ <div class="flex justify-between text-[10px] text-blue-300"><span class="truncate pr-2">@w.Description</span><span>-@w.CaloriesBurned</span></div> }</div> }
+
+            <div class="bg-black/40 rounded p-2 mb-3 border border-gray-800">
+                <div class="flex justify-between text-xs mb-1">
+                    <span class="text-gray-400">Net Calories</span>
+                    <span class="font-bold text-white">@net.ToString("N0") / @tdee.ToString("N0")</span>
+                </div>
+                <div class="h-2 w-full bg-gray-700 rounded-full overflow-hidden flex mb-2">
+                    <div class="bg-blue-500 h-full" style="width: @(Math.Min(100, (pro * 4 / tdee) * 100))%" title="Protein"></div>
+                    <div class="bg-yellow-500 h-full" style="width: @(Math.Min(100, (fat * 9 / tdee) * 100))%" title="Fat"></div>
+                    <div class="bg-green-500 h-full" style="width: @(Math.Min(100, (carb * 4 / tdee) * 100))%" title="Carbs"></div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-1 text-[10px] text-center">
+                    <div><div class="text-blue-400 font-bold">Protein</div><div class="text-gray-400">@pro.ToString("0") / @proteinGoal.ToString("0")g</div></div>
+                    <div><div class="text-yellow-400 font-bold">Fat</div><div class="text-gray-400">@fat.ToString("0") / @fatGoal.ToString("0")g</div></div>
+                    <div><div class="text-green-400 font-bold">Carbs</div><div class="text-gray-400">@carb.ToString("0") / @carbGoal.ToString("0")g</div></div>
+                </div>
+            </div>
+
+            <div class="bg-gray-800/50 rounded p-2 text-center mb-2 border border-gray-700">
+                <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">Weekly Deficit Goal: 3,500</div>
+                <div class="flex items-center justify-center gap-2">
+                    <span class="text-sm font-bold @(wkDeficit >= 0 ? "text-green-400" : "text-red-400")">@wkDeficit.ToString("N0")</span>
+                    <span class="text-xs text-gray-500">/ 3,500</span>
+                </div>
+                 <div class="w-full bg-gray-700 h-1 mt-1 rounded-full overflow-hidden">
+                    <div class="bg-green-500 h-full" style="width: @(Math.Min(100, (wkDeficit / 3500) * 100))%"></div>
+                </div>
+            </div>
+
+            @if(meals.Any()) { <div class="space-y-1 border-t border-gray-800 pt-2"><div class="text-[10px] font-bold text-gray-500 uppercase">Meals</div>@foreach(var m in meals){ <div class="flex justify-between text-xs text-gray-400"><span class="truncate pr-2">@m.Name</span><span>@m.Calories</span></div> }</div> }
+            @if(workouts.Any()) { <div class="space-y-1 border-t border-gray-800 pt-2"><div class="text-[10px] font-bold text-gray-500 uppercase">Workouts</div>@foreach(var w in workouts){ <div class="flex justify-between text-xs text-blue-300"><span class="truncate pr-2">@w.Description</span><span>-@w.CaloriesBurned</span></div> }</div> }
         </div>
     };
     private RenderFragment RenderTaskCard(BulletTask t) => __builder => { if(!string.IsNullOrEmpty(t.ImgUrl)){ <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden group relative hover:border-blue-500 transition shadow-md mb-2 flex flex-row">@RenderActions("task", t.Id)<div class="w-[30%] bg-black relative"><img src="@t.ImgUrl" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition" loading="lazy" style="min-height: 80px;"/></div><div class="w-[70%] p-3 flex items-start gap-2"><input type="checkbox" checked="@t.IsCompleted" @onchange="() => ToggleTaskComplete(t)" @onclick:stopPropagation="true" class="mt-1 w-4 h-4 rounded bg-gray-800 border-gray-600 shrink-0 cursor-pointer"/><div class="flex-1 min-w-0"><h4 class="text-base font-bold text-white leading-tight @(t.IsCompleted?"line-through text-gray-500":"")">@t.Title</h4>@if(!string.IsNullOrEmpty(t.Description)){<p class="text-sm text-gray-500 mt-1 line-clamp-2">@t.Description</p>}@if(!string.IsNullOrEmpty(t.TicketNumber)){<span class="inline-block bg-gray-800 text-xs text-blue-300 px-1.5 rounded border border-blue-900 mt-1">@t.TicketNumber</span>}</div></div></div> } else{ <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 mb-2 hover:border-blue-500 transition shadow-md group relative">@RenderActions("task", t.Id)<div class="flex items-start gap-2"><input type="checkbox" checked="@t.IsCompleted" @onchange="() => ToggleTaskComplete(t)" @onclick:stopPropagation="true" class="mt-1 w-4 h-4 rounded bg-gray-800 border-gray-600 shrink-0 cursor-pointer"/><div class="flex-1 min-w-0"><h4 class="text-base font-bold text-white leading-tight @(t.IsCompleted?"line-through text-gray-500":"")">@t.Title</h4>@if(!string.IsNullOrEmpty(t.Description)){<p class="text-sm text-gray-500 mt-1 line-clamp-2">@t.Description</p>}@if(!string.IsNullOrEmpty(t.TicketNumber)){<span class="inline-block bg-gray-800 text-xs text-blue-300 px-1.5 rounded border border-blue-900 mt-1">@t.TicketNumber</span>}</div></div></div> } };
