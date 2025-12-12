@@ -1,68 +1,69 @@
-@page "/fix-schema"
-@using Microsoft.AspNetCore.Components.Web
+@page "/autofix"
 @using Dashboard
 @using Microsoft.EntityFrameworkCore
-@rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject AppDbContext Db
 @inject NavigationManager Nav
 
-<div style="padding: 50px; background: #111; color: white; height: 100vh; font-family: sans-serif; text-align: center;">
-    <h1 style="color: #ff4444;">🚑 Database Repair Tool</h1>
-    <p>Your database is missing columns required for the new Health features.</p>
+<div style="background-color: #111; color: #0f0; font-family: monospace; padding: 20px; height: 100vh; overflow: auto;">
+    <h1>🤖 Auto-Repair Sequence Initiated</h1>
+    <hr style="border-color: #333;" />
     
-    <div style="margin: 20px 0; padding: 20px; background: #222; border-radius: 8px; text-align: left; font-family: monospace; color: #0f0;">
-        @if (string.IsNullOrEmpty(logs))
-        {
-            <span>Waiting for action...</span>
-        }
-        else
-        {
-            @logs
-        }
-    </div>
+    <div style="white-space: pre-wrap; font-size: 14px;">@logOutput</div>
 
-    <button @onclick="RunRepair" style="padding: 15px 30px; font-size: 18px; background: #2563eb; color: white; border: none; border-radius: 5px; cursor: pointer;">
-        🛠️ Fix Users Table
-    </button>
-    
-    <br/><br/>
-    <a href="/login" style="color: #888;">Return to Login</a>
+    @if (isComplete)
+    {
+        <div style="margin-top: 30px;">
+            <a href="/login" style="background: #2563eb; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; font-family: sans-serif;">
+                ✅ Repair Complete - Go to Login
+            </a>
+        </div>
+    }
 </div>
 
 @code {
-    private string logs = "";
+    private string logOutput = "Initializing...\n";
+    private bool isComplete = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RunRepair();
+    }
 
     private async Task RunRepair()
     {
-        logs = "Starting repair...\n";
         try
         {
-            // 1. Fix Users Table (The cause of your login crash)
-            logs += "Adding missing columns to 'Users'...\n";
+            logOutput += "Checking Database Connection...\n";
+            
+            // 1. Fix Users Table (The specific error blocking login)
+            logOutput += ">> Patching 'Users' table schema...\n";
             await Db.Database.ExecuteSqlRawAsync(@"
                 ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""Age"" integer DEFAULT 30;
                 ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""HeightInches"" double precision DEFAULT 70;
                 ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""Gender"" text DEFAULT 'Male';
                 ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""ActivityLevel"" text DEFAULT 'Sedentary';
             ");
-            logs += "✅ 'Users' table updated.\n";
+            logOutput += "   SUCCESS: Users table columns verified.\n\n";
 
-            // 2. Ensure new Bullet tables exist (Prevent future crashes)
-            logs += "Checking Bullet tables...\n";
+            // 2. Create/Verify Bullet Tables (For calendar features)
+            logOutput += ">> Verifying Bullet Calendar tables...\n";
             await Db.Database.ExecuteSqlRawAsync(@"
                 CREATE TABLE IF NOT EXISTS ""BulletHabits"" (""Id"" serial PRIMARY KEY, ""UserId"" integer NOT NULL, ""Title"" text, ""Date"" timestamp with time zone NOT NULL, ""Category"" text DEFAULT 'personal', ""Type"" text DEFAULT 'habit', ""StreakCount"" integer DEFAULT 0, ""TargetStreak"" integer DEFAULT 0, ""IsCompleted"" boolean DEFAULT false, ""Notes"" text DEFAULT '', ""LinkUrl"" text, ""ImgUrl"" text, ""ImageId"" integer, ""Tags"" text DEFAULT '', ""OriginalStringId"" text);
                 CREATE TABLE IF NOT EXISTS ""BulletMacroTrackers"" (""Id"" serial PRIMARY KEY, ""UserId"" integer NOT NULL, ""Date"" timestamp with time zone NOT NULL, ""Weight"" double precision DEFAULT 0, ""TDEE"" double precision DEFAULT 0, ""WaterIntake"" double precision DEFAULT 0, ""Notes"" text, ""Category"" text DEFAULT 'health', ""Type"" text DEFAULT 'health', ""OriginalStringId"" text);
                 CREATE TABLE IF NOT EXISTS ""BulletMeals"" (""Id"" serial PRIMARY KEY, ""BulletMacroTrackerId"" integer NOT NULL, ""Name"" text, ""MealType"" text, ""Calories"" double precision DEFAULT 0, ""Protein"" double precision DEFAULT 0, ""Fat"" double precision DEFAULT 0, ""Carbs"" double precision DEFAULT 0, ""Fiber"" double precision DEFAULT 0);
                 CREATE TABLE IF NOT EXISTS ""BulletWorkouts"" (""Id"" serial PRIMARY KEY, ""BulletMacroTrackerId"" integer NOT NULL, ""Description"" text, ""CaloriesBurned"" double precision DEFAULT 0, ""DurationMinutes"" integer DEFAULT 0);
             ");
-            logs += "✅ Bullet tables verified.\n";
-            
-            logs += "\n🎉 REPAIR COMPLETE. You can now log in.";
+            logOutput += "   SUCCESS: Bullet tables verified.\n\n";
+
+            isComplete = true;
+            logOutput += "--- ALL OPERATIONS COMPLETED SUCCESSFULLY ---";
         }
         catch (Exception ex)
         {
-            logs += $"❌ ERROR: {ex.Message}\n";
+            logOutput += $"\n❌ CRITICAL ERROR:\n{ex.Message}\n\n{ex.StackTrace}";
         }
+        
+        // Force refresh of the UI
         StateHasChanged();
     }
 }
