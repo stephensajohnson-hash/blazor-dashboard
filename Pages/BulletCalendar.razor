@@ -7,10 +7,12 @@
 @using System.Text.Json
 @using Microsoft.JSInterop
 @using System.Globalization
+@using System.IO
 @inject AppDbContext Db
 @inject HttpClient Http
 @inject IJSRuntime JS
 @inject NavigationManager Nav
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
 
 <div class="min-h-screen bg-gray-900 text-white overflow-x-hidden pb-40">
 
@@ -26,7 +28,7 @@
     }
     else
     {
-        <main class="w-full p-8 relative scroll-smooth" @onclick="CloseMenus">
+        <main class="w-full p-8 relative scroll-smooth">
             
             <div class="mb-10 border-b border-gray-800 pb-4 flex items-center justify-between">
                 <div>
@@ -34,7 +36,7 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v1.1.3 (Debug Mode)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v1.2.0 (Server File Import)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -92,28 +94,45 @@
 
             <div class="max-w-6xl mx-auto">
                 
-                <div class="flex justify-between items-center mb-6">
-                    <h3 class="text-xl font-bold text-gray-200">Database Verification</h3>
+                <div class="flex justify-between items-start mb-6">
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-200">Database Verification</h3>
+                        <p class="text-xs text-gray-500">Checking: wwwroot/bullet_calendar.json</p>
+                    </div>
+                    
                     <div class="flex gap-3">
-                         <button @onclick="OpenImportModal" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm">
-                            📂 Import JSON
+                         <button @onclick="ImportFromServer" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm" disabled="@isImporting">
+                             @if(isImporting) { <span>⏳ Processing...</span> } else { <span>📂 Import from Server</span> }
                         </button>
                          <button @onclick="LoadData" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm">
-                            🔄 Refresh Data
+                            🔄 Refresh
                         </button>
                          <button @onclick="WipeData" class="bg-red-900/50 hover:bg-red-800 text-red-200 px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm">
                             🗑️ Wipe Table
                         </button>
                     </div>
                 </div>
+                
+                @if (debugLogs.Any())
+                {
+                    <div class="bg-black border border-gray-700 rounded-lg p-3 mb-6 font-mono text-[10px] text-green-400 max-h-40 overflow-y-auto">
+                        <div class="flex justify-between border-b border-gray-800 pb-1 mb-1 text-gray-500 uppercase font-bold">
+                            <span>Console Output</span>
+                            <button @onclick="ClearLogs" class="hover:text-white">Clear</button>
+                        </div>
+                        @foreach(var log in debugLogs)
+                        {
+                            <div>@log</div>
+                        }
+                    </div>
+                }
 
                 @if (!Items.Any())
                 {
                     <div class="flex flex-col items-center justify-center h-64 border-2 border-dashed border-gray-800 rounded-2xl bg-gray-900/50">
                         <div class="text-4xl mb-4">📭</div>
                         <p class="text-gray-500 font-bold">Database is empty</p>
-                        <p class="text-gray-600 text-sm mt-2">Click "Import JSON" above to load your data.</p>
-                        <p class="text-xs text-gray-700 mt-1">Checking for User ID: @currentUser?.Id</p>
+                        <p class="text-gray-600 text-sm mt-2">Click "Import from Server" to load data from wwwroot.</p>
                     </div>
                 }
                 else
@@ -157,40 +176,6 @@
     }
 </div>
 
-@if (showImportModal)
-{
-    <div class="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div class="bg-gray-800 border border-gray-600 p-6 rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
-            <h3 class="text-xl font-bold text-white mb-2">Import Data</h3>
-            
-            <div class="flex gap-4 h-full min-h-0">
-                <div class="flex-1 flex flex-col">
-                    <p class="text-sm text-gray-400 mb-2">Paste JSON below:</p>
-                    <textarea @bind="jsonContent" class="flex-1 bg-gray-900 border border-gray-700 rounded-lg p-4 text-xs font-mono text-green-400 resize-none focus:outline-none focus:border-blue-500 mb-4" placeholder='[ { "id": "1", "content": "Sample Task", "date": "2024-05-20", "type": "task" } ]'></textarea>
-                </div>
-
-                <div class="w-1/3 flex flex-col bg-black rounded-lg border border-gray-700 p-4 font-mono text-[10px] overflow-y-auto text-gray-300">
-                    <div class="text-white font-bold mb-2 border-b border-gray-700 pb-1">Debug Log</div>
-                    @foreach(var log in debugLogs)
-                    {
-                        <div class="mb-1 border-b border-gray-900 pb-1">@log</div>
-                    }
-                </div>
-            </div>
-            
-            <div class="mt-6 flex justify-between items-center">
-                <button @onclick="ClearLogs" class="text-xs text-gray-500 hover:text-white underline">Clear Logs</button>
-                <div class="flex gap-2">
-                    <button @onclick="() => showImportModal = false" class="px-4 py-2 text-gray-400 hover:text-white">Close</button>
-                    <button @onclick="ProcessImport" class="px-6 py-2 bg-green-600 hover:bg-green-500 text-white rounded font-bold shadow-lg flex items-center gap-2">
-                        @if(isImporting) { <span>⏳ Processing...</span> } else { <span>🚀 Run Import</span> }
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-}
-
 <script>window.getUserOffset = () => { return new Date().getTimezoneOffset(); };</script>
 
 @code {
@@ -204,8 +189,6 @@
 
     // Data Logic
     private List<BulletItem> Items = new();
-    private bool showImportModal = false;
-    private string jsonContent = "";
     private bool isImporting = false;
     private List<string> debugLogs = new();
 
@@ -242,12 +225,11 @@
     {
         var line = $"{DateTime.Now:HH:mm:ss} - {msg}";
         debugLogs.Add(line);
-        Console.WriteLine($"[BULLET IMPORT] {msg}");
-        StateHasChanged();
+        Console.WriteLine($"[BULLET] {msg}"); 
+        InvokeAsync(StateHasChanged);
     }
     
     private void ClearLogs() => debugLogs.Clear();
-    private void OpenImportModal() { showImportModal = true; ClearLogs(); }
 
     private async Task LoadData()
     {
@@ -271,38 +253,47 @@
         }
     }
 
-    private async Task ProcessImport()
+    private async Task ImportFromServer()
     {
-        if (string.IsNullOrWhiteSpace(jsonContent) || currentUser == null) 
-        {
-            Log("JSON is empty or user not logged in.");
-            return;
-        }
-
+        if (currentUser == null) return;
         isImporting = true;
-        Log("Starting Import Process...");
-        
+        ClearLogs();
+        Log("Starting server-side import...");
+
         try
         {
+            var filePath = Path.Combine(Env.WebRootPath, "bullet_calendar.json");
+            Log($"Looking for file at: {filePath}");
+
+            if (!File.Exists(filePath))
+            {
+                Log("ERROR: File not found in wwwroot folder.");
+                return;
+            }
+
+            Log("File found. Reading content...");
+            var jsonContent = await File.ReadAllTextAsync(filePath);
+            Log($"Read {jsonContent.Length} characters.");
+
+            if (string.IsNullOrWhiteSpace(jsonContent))
+            {
+                Log("File is empty.");
+                return;
+            }
+
             var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            // Step 1: Deserialize to generic elements to inspect keys
             var rawItems = JsonSerializer.Deserialize<List<JsonElement>>(jsonContent, options);
 
             if (rawItems == null || !rawItems.Any()) 
             {
-                Log("Deserialization returned 0 items.");
+                Log("JSON parsed but list is empty.");
                 return;
             }
 
-            Log($"Found {rawItems.Count} raw items. Processing...");
-
-            // Debug first item keys to help user
-            var first = rawItems.First();
-            Log("First Item Keys detected: " + string.Join(", ", first.EnumerateObject().Select(p => p.Name)));
+            Log($"Found {rawItems.Count} items. Mapping to database entities...");
 
             var newItems = new List<BulletItem>();
-            int successCount = 0;
-            int failCount = 0;
+            int success = 0;
 
             foreach (var raw in rawItems)
             {
@@ -321,12 +312,13 @@
                     if (raw.TryGetProperty("date", out var d))
                     {
                         string dateStr = d.ToString();
+                        // Try standard formats first
                         if (DateTime.TryParse(dateStr, out var dt))
                             item.Date = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
                         else
                         {
-                            Log($"Invalid Date format: {dateStr}. Using Now.");
-                            item.Date = DateTime.UtcNow;
+                             // Fallback
+                             item.Date = DateTime.UtcNow;
                         }
                     }
                     else
@@ -350,32 +342,23 @@
                         item.OriginalStringId = oldId.ToString();
 
                     newItems.Add(item);
-                    successCount++;
+                    success++;
                 }
-                catch (Exception ex)
+                catch (Exception itemEx)
                 {
-                    failCount++;
-                    Log($"Error parsing item: {ex.Message}");
+                    Log($"Skipped item error: {itemEx.Message}");
                 }
             }
 
-            Log($"Prepared {successCount} items for DB. ({failCount} failed)");
+            Log($"Successfully mapped {success} items.");
 
             if (newItems.Any())
             {
                 Log("Saving to Database...");
                 await Db.Set<BulletItem>().AddRangeAsync(newItems);
                 await Db.SaveChangesAsync();
-                Log("Database Save Complete!");
-                
+                Log("SAVE COMPLETE!");
                 await LoadData();
-                Log("Table reloaded. Closing modal in 2s...");
-                await Task.Delay(2000);
-                showImportModal = false;
-            }
-            else
-            {
-                Log("No valid items to save.");
             }
         }
         catch (Exception ex)
@@ -406,7 +389,7 @@
                 );
             ");
             isDbError = false;
-            Log("Database Table Created/Verified.");
+            Log("Table created successfully.");
             await LoadData();
         }
         catch (Exception ex)
