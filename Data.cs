@@ -28,8 +28,9 @@ public class AppDbContext : DbContext
     // Bullet Calendar
     public DbSet<BulletItem> BulletItems { get; set; } // Catch-all (Legacy)
     public DbSet<BulletMedia> BulletMedia { get; set; }
-    public DbSet<BulletTask> BulletTasks { get; set; } // NEW: Tasks
-    public DbSet<BulletMeeting> BulletMeetings { get; set; } // NEW
+    public DbSet<BulletTask> BulletTasks { get; set; } 
+    public DbSet<BulletMeeting> BulletMeetings { get; set; } 
+    public DbSet<BulletHabit> BulletHabits { get; set; } // NEW
 }
 
 // --- NEW TASK MODEL ---
@@ -113,10 +114,38 @@ public class BulletMeeting
     public string? OriginalStringId { get; set; }
 }
 
+// --- NEW HABIT MODEL ---
+public class BulletHabit
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    
+    public DateTime Date { get; set; } = DateTime.UtcNow;
+    public string Title { get; set; } = "";
+    public string Category { get; set; } = "personal"; 
+    public string Type { get; set; } = "habit";
+
+    // Habit Specifics
+    public int StreakCount { get; set; } = 0;
+    public int TargetStreak { get; set; } = 0; // Optional Goal
+    public bool IsCompleted { get; set; } = false;
+
+    // Content
+    public string Notes { get; set; } = "";
+    public string LinkUrl { get; set; } = "";
+    public string ImgUrl { get; set; } = "";
+    public int? ImageId { get; set; }
+    public string Tags { get; set; } = "";
+    
+    public string? OriginalStringId { get; set; }
+}
+
 // ... (Keep BulletItem, StoredImage, Recipe, etc. exactly as they were) ...
 // (I will omit the rest of the existing classes to save space, assuming they remain unchanged)
-public class BulletItem { public int Id { get; set; } public int UserId { get; set; } public string Type { get; set; } = "task"; public string Content { get; set; } = ""; public DateTime Date { get; set; } public bool IsCompleted { get; set; } public int Order { get; set; } public string DataJson { get; set; } = "{}"; public string? OriginalStringId { get; set; } }
-public class StoredImage { public int Id { get; set; } public byte[] Data { get; set; } = Array.Empty<byte>(); public string ContentType { get; set; } = "image/jpeg"; public string OriginalName { get; set; } = ""; public DateTime UploadedAt { get; set; } = DateTime.UtcNow; }
+public class BulletMeeting { public int Id { get; set; } public int UserId { get; set; } public DateTime Date { get; set; } = DateTime.UtcNow; public string Title { get; set; } = ""; public string Description { get; set; } = ""; public string Category { get; set; } = "work"; public string Type { get; set; } = "meeting"; public string StartTime { get; set; } = ""; public int DurationPlanned { get; set; } public int DurationActual { get; set; } public string Location { get; set; } = ""; public string MeetingLeader { get; set; } = ""; public string Attendees { get; set; } = ""; public string LinkUrl { get; set; } = ""; public string ImgUrl { get; set; } = ""; public int? ImageId { get; set; } public bool IsCompleted { get; set; } = false; public string Tags { get; set; } = ""; public string? OriginalStringId { get; set; } }
+public class BulletTask { public int Id { get; set; } public int UserId { get; set; } public string Title { get; set; } = ""; public string Description { get; set; } = ""; public DateTime Date { get; set; } = DateTime.UtcNow; public DateTime? DueDate { get; set; } public string Category { get; set; } = "personal"; public string Type { get; set; } = "task"; public bool IsCompleted { get; set; } = false; public string Priority { get; set; } = "Normal"; public string LinkUrl { get; set; } = ""; public string ImgUrl { get; set; } = ""; public int? ImageId { get; set; } public string TicketNumber { get; set; } = ""; public string TicketUrl { get; set; } = ""; public string Tags { get; set; } = ""; public string? OriginalStringId { get; set; } }
+public class BulletMedia { public int Id { get; set; } public int UserId { get; set; } public string Title { get; set; } = ""; public DateTime Date { get; set; } = DateTime.UtcNow; public string Category { get; set; } = "Movie"; public string LinkUrl { get; set; } = ""; public string ImgUrl { get; set; } = ""; public int? ImageId { get; set; } public string Description { get; set; } = ""; public int Rating { get; set; } = 0; public int ReleaseYear { get; set; } public string Actors { get; set; } = ""; public string Tags { get; set; } = ""; public string? OriginalStringId { get; set; } }
+public class BulletItem { public int Id { get; set; } public int UserId { get; set; } public string Type { get; set; } = "task"; public string Content { get; set; } = ""; public DateTime Date { get; set; } public bool IsCompleted { get; set; } public int Order { get; set; } public string DataJson { get; set; } = "{}"; public string? OriginalStringId { get; set; } }public class StoredImage { public int Id { get; set; } public byte[] Data { get; set; } = Array.Empty<byte>(); public string ContentType { get; set; } = "image/jpeg"; public string OriginalName { get; set; } = ""; public DateTime UploadedAt { get; set; } = DateTime.UtcNow; }
 public class Recipe { public int Id { get; set; } public int UserId { get; set; } public string Title { get; set; } = ""; public string Description { get; set; } = ""; public string Category { get; set; } = ""; public int Servings { get; set; } public string? ServingSize { get; set; } public string PrepTime { get; set; } = ""; public string CookTime { get; set; } = ""; public string? ImageUrl { get; set; } public int? ImageId { get; set; } public string SourceName { get; set; } = ""; public string SourceUrl { get; set; } = ""; public string TagsJson { get; set; } = "[]"; public List<RecipeIngredient> Ingredients { get; set; } = new(); public List<RecipeInstruction> Instructions { get; set; } = new(); }
 public class RecipeCategory { public int Id { get; set; } public int UserId { get; set; } public string Name { get; set; } = ""; public string? ImageUrl { get; set; } public int? ImageId { get; set; } }
 public class RecipeIngredient { public int Id { get; set; } public int RecipeId { get; set; } public string Section { get; set; } = "Main"; public int SectionOrder { get; set; } public int Order { get; set; } public string Name { get; set; } = ""; public string Quantity { get; set; } = ""; public string Unit { get; set; } = ""; public string Notes { get; set; } = ""; public double Calories { get; set; } public double Protein { get; set; } public double Carbs { get; set; } public double Fat { get; set; } public double Fiber { get; set; } }

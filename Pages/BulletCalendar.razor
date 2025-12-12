@@ -105,16 +105,8 @@
                         <div class="bg-gray-800/40 rounded-xl border border-gray-700 flex flex-col h-full overflow-hidden">
                             <div class="p-3 bg-gray-800/80 border-b border-gray-700 text-center font-bold text-blue-400 uppercase tracking-wider text-sm sticky top-0 backdrop-blur">Work</div>
                             <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide">
-                                @foreach(var m in GetMeetingsForDate(viewDate))
-                                {
-                                    @RenderMeetingCard(m)
-                                }
-
-                                @foreach(var t in GetTasksForDate(viewDate, "work"))
-                                {
-                                    @RenderTaskCard(t)
-                                }
-                                
+                                @foreach(var m in GetMeetingsForDate(viewDate)) { @RenderMeetingCard(m) }
+                                @foreach(var t in GetTasksForDate(viewDate, "work")) { @RenderTaskCard(t) }
                                 @if(!GetTasksForDate(viewDate, "work").Any() && !GetMeetingsForDate(viewDate).Any())
                                 {
                                     <div class="text-center text-gray-600 text-xs italic mt-10">No work items</div>
@@ -125,17 +117,11 @@
                         <div class="bg-gray-800/40 rounded-xl border border-gray-700 flex flex-col h-full overflow-hidden">
                             <div class="p-3 bg-gray-800/80 border-b border-gray-700 text-center font-bold text-green-400 uppercase tracking-wider text-sm sticky top-0 backdrop-blur">Personal</div>
                             <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide">
-                                @foreach(var t in GetTasksForDate(viewDate, "personal"))
-                                {
-                                    @RenderTaskCard(t)
-                                }
+                                @foreach(var h in GetHabitsForDate(viewDate)) { @RenderHabitCard(h) }
+                                @foreach(var t in GetTasksForDate(viewDate, "personal")) { @RenderTaskCard(t) }
+                                @foreach(var m in GetMediaForDate(viewDate)) { @RenderMediaCard(m) }
                                 
-                                @foreach(var m in GetMediaForDate(viewDate))
-                                {
-                                    @RenderMediaCard(m)
-                                }
-                                
-                                @if(!GetTasksForDate(viewDate, "personal").Any() && !GetMediaForDate(viewDate).Any())
+                                @if(!GetTasksForDate(viewDate, "personal").Any() && !GetMediaForDate(viewDate).Any() && !GetHabitsForDate(viewDate).Any())
                                 {
                                     <div class="text-center text-gray-600 text-xs italic mt-10">No items</div>
                                 }
@@ -166,6 +152,7 @@
                             var dayMedia = GetMediaForDate(d);
                             var dayTasks = GetTasksForDate(d);
                             var dayMeetings = GetMeetingsForDate(d);
+                            var dayHabits = GetHabitsForDate(d);
 
                             <div class="flex flex-col h-full rounded-xl border overflow-hidden transition hover:border-gray-500 @borderClass @bgClass">
                                 <div class="p-2 text-center border-b border-gray-700/50 cursor-pointer hover:bg-gray-700/50 transition @(isToday ? "bg-blue-900/50 text-white" : "text-gray-400")" @onclick="() => GoToDate(d)">
@@ -173,6 +160,7 @@
                                     <div class="text-lg font-bold">@d.Day</div>
                                 </div>
                                 <div class="flex-1 overflow-y-auto p-1 space-y-1 scrollbar-hide">
+                                    @foreach(var h in dayHabits) { @RenderHabitPill(h) }
                                     @foreach(var m in dayMeetings) { @RenderMeetingPill(m) }
                                     @foreach(var t in dayTasks) { @RenderTaskPill(t) }
                                     @foreach(var m in dayMedia) { @RenderMediaCard(m, true) }
@@ -211,10 +199,12 @@
                                 var dayMedia = GetMediaForDate(currentDay);
                                 var dayTasks = GetTasksForDate(currentDay);
                                 var dayMeetings = GetMeetingsForDate(currentDay);
+                                var dayHabits = GetHabitsForDate(currentDay);
 
                                 <div class="relative flex flex-col rounded-lg border overflow-hidden p-1 hover:bg-gray-700 transition cursor-pointer @borderClass @bgClass" @onclick="() => GoToDate(currentDay)">
                                     <div class="text-right text-xs font-bold text-gray-500 mb-1 @(isToday ? "text-yellow-400" : "")">@d</div>
                                     <div class="flex-1 overflow-y-auto space-y-1 scrollbar-hide max-h-32">
+                                        @foreach(var h in dayHabits) { @RenderHabitPill(h) }
                                         @foreach(var m in dayMeetings) { @RenderMeetingPill(m) }
                                         @foreach(var t in dayTasks) { @RenderTaskPill(t) }
                                         @foreach(var m in dayMedia) { @RenderMediaCard(m, true) }
@@ -236,22 +226,12 @@
             <h3 class="text-xl font-bold text-white mb-2">Import Data</h3>
             
             <div class="flex gap-2 mb-4 flex-wrap">
-                 <button @onclick="UpgradeDatabase" class="bg-blue-800 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm">
-                     🛠️ Create Missing Tables
-                 </button>
-                 
-                 <button @onclick="ImportTasks" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm" disabled="@isImporting">
-                     @if(isImporting) { <span>⏳ Processing...</span> } else { <span>📋 Import Tasks Only</span> }
-                </button>
-                <button @onclick="ImportMeetings" class="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm" disabled="@isImporting">
-                     @if(isImporting) { <span>⏳ Processing...</span> } else { <span>⏰ Import Meetings</span> }
-                </button>
-                 <button @onclick="ImportMedia" class="bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm" disabled="@isImporting">
-                     🎬 Import Media
-                </button>
-                 <button @onclick="WipeAll" class="bg-red-900/50 hover:bg-red-800 text-red-200 px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm">
-                    🗑️ Wipe All Data
-                </button>
+                 <button @onclick="UpgradeDatabase" class="bg-blue-800 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm">🛠️ Missing Tables</button>
+                 <button @onclick="ImportTasks" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm" disabled="@isImporting">📋 Import Tasks</button>
+                 <button @onclick="ImportMeetings" class="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm" disabled="@isImporting">⏰ Import Meetings</button>
+                 <button @onclick="ImportHabits" class="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm" disabled="@isImporting">🔥 Import Habits</button>
+                 <button @onclick="ImportMedia" class="bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm" disabled="@isImporting">🎬 Import Media</button>
+                 <button @onclick="WipeAll" class="bg-red-900/50 hover:bg-red-800 text-red-200 px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm">🗑️ Wipe All</button>
             </div>
             
             <div class="flex-1 bg-black rounded-lg border border-gray-700 p-4 font-mono text-[10px] overflow-y-auto text-gray-300 relative group">
@@ -288,14 +268,13 @@
     private bool showImportModal = false;
     private User? currentUser;
 
-    // View State
     private string currentView = "day"; 
     private DateTime viewDate = DateTime.UtcNow;
 
-    // Data
     private List<BulletMedia> AllMedia = new();
     private List<BulletTask> AllTasks = new();
     private List<BulletMeeting> AllMeetings = new();
+    private List<BulletHabit> AllHabits = new();
     
     private bool isImporting = false;
     private List<string> debugLogs = new();
@@ -337,192 +316,52 @@
 
     // --- VIEW LOGIC ---
     private void SwitchView(string view) { currentView = view; StateHasChanged(); }
-    
-    private void Prev() 
-    {
-        if (currentView == "day") viewDate = viewDate.AddDays(-1);
-        else if (currentView == "week") viewDate = viewDate.AddDays(-7);
-        else if (currentView == "month") viewDate = viewDate.AddMonths(-1);
-    }
-
-    private void Next() 
-    {
-        if (currentView == "day") viewDate = viewDate.AddDays(1);
-        else if (currentView == "week") viewDate = viewDate.AddDays(7);
-        else if (currentView == "month") viewDate = viewDate.AddMonths(1);
-    }
-
+    private void Prev() { if (currentView == "day") viewDate = viewDate.AddDays(-1); else if (currentView == "week") viewDate = viewDate.AddDays(-7); else viewDate = viewDate.AddMonths(-1); }
+    private void Next() { if (currentView == "day") viewDate = viewDate.AddDays(1); else if (currentView == "week") viewDate = viewDate.AddDays(7); else viewDate = viewDate.AddMonths(1); }
     private void GoToday() { viewDate = DateTime.UtcNow.AddMinutes(-clientOffsetMinutes); SwitchView("day"); }
     private void GoToDate(DateTime d) { viewDate = d; SwitchView("day"); }
+    private string GetHeaderDate() => currentView == "day" ? viewDate.ToString("dddd, MMMM d, yyyy") : (currentView == "week" ? $"Week of {GetStartOfWeek(viewDate):MMM d, yyyy}" : viewDate.ToString("MMMM yyyy"));
+    private DateTime GetStartOfWeek(DateTime d) => d.AddDays(-1 * ((7 + (d.DayOfWeek - DayOfWeek.Monday)) % 7)).Date;
 
-    private string GetHeaderDate()
-    {
-        if (currentView == "day") return viewDate.ToString("dddd, MMMM d, yyyy");
-        if (currentView == "week") {
-            var start = GetStartOfWeek(viewDate);
-            return $"Week of {start:MMM d, yyyy}";
-        }
-        if (currentView == "month") return viewDate.ToString("MMMM yyyy");
-        return "";
-    }
-
-    private DateTime GetStartOfWeek(DateTime d)
-    {
-        var diff = (7 + (d.DayOfWeek - DayOfWeek.Monday)) % 7;
-        return d.AddDays(-1 * diff).Date;
-    }
-
+    // --- FILTERS ---
     private List<BulletMedia> GetMediaForDate(DateTime d) => AllMedia.Where(m => m.Date.Date == d.Date).ToList();
-    
-    private List<BulletTask> GetTasksForDate(DateTime d, string? category = null)
-    {
-        var tasks = AllTasks.Where(t => t.Date.Date == d.Date);
-        if (!string.IsNullOrEmpty(category)) return tasks.Where(t => t.Category == category).ToList();
-        return tasks.ToList();
-    }
+    private List<BulletTask> GetTasksForDate(DateTime d, string? category = null) { var t = AllTasks.Where(x => x.Date.Date == d.Date); return category == null ? t.ToList() : t.Where(x => x.Category == category).ToList(); }
     private List<BulletMeeting> GetMeetingsForDate(DateTime d) => AllMeetings.Where(m => m.Date.Date == d.Date).OrderBy(m => m.StartTime).ToList();
+    private List<BulletHabit> GetHabitsForDate(DateTime d) => AllHabits.Where(h => h.Date.Date == d.Date).ToList();
 
     // --- RENDERERS ---
+    private RenderFragment RenderHabitCard(BulletHabit h) => __builder =>
+    {
+        <div class="bg-gray-900 border border-green-900/50 rounded-lg p-3 mb-2 hover:border-green-500 transition shadow-md group flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <div class="text-xl">🔥</div>
+                <div>
+                    <h4 class="text-base font-bold text-white leading-tight">@h.Title</h4>
+                    <div class="text-xs text-gray-500">@h.StreakCount Day Streak</div>
+                </div>
+            </div>
+            <input type="checkbox" checked="@h.IsCompleted" disabled class="w-5 h-5 rounded border-green-600 text-green-600 bg-gray-800" />
+        </div>
+    };
+    private RenderFragment RenderHabitPill(BulletHabit h) => __builder => {
+        <div class="text-xs px-1 py-0.5 rounded truncate mb-1 border @(h.IsCompleted ? "bg-green-900/40 text-green-200 border-green-800" : "bg-orange-900/40 text-orange-200 border-orange-800")">
+            🔥 @h.Title
+        </div>
+    };
+
     private RenderFragment RenderMediaCard(BulletMedia m, bool compact = false) => __builder =>
     {
-        if (compact)
-        {
-            <div class="bg-gray-900 border border-gray-700 rounded overflow-hidden group relative hover:border-purple-500 transition shadow mb-1 flex items-stretch h-14">
-                 @if(!string.IsNullOrEmpty(m.ImgUrl)) { <div class="w-10 shrink-0 bg-black"><img src="@m.ImgUrl" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition" loading="lazy" /></div> }
-                <div class="flex-1 p-1 min-w-0 flex flex-col justify-center">
-                    <h4 class="font-bold text-white text-xs truncate leading-tight">@m.Title</h4>
-                    @if(m.Rating > 0) { <div class="text-xs text-yellow-400">@m.Rating ★</div> }
-                </div>
-            </div>
-        }
-        else
-        {
-            <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden group relative hover:border-purple-500 transition shadow-lg w-full mb-3 flex flex-row">
-                <div class="w-[40%] bg-black relative">
-                    @if(!string.IsNullOrEmpty(m.ImgUrl)) { <img src="@m.ImgUrl" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition" loading="lazy" style="min-height: 120px;" /> }
-                    else { <div class="w-full h-full flex items-center justify-center text-3xl text-gray-700">🎬</div> }
-                </div>
-                <div class="w-[60%] p-3 flex flex-col justify-between">
-                    <div>
-                        <div class="flex justify-between items-start mb-1">
-                             <h4 class="font-bold text-white text-base leading-tight truncate mr-2">@m.Title</h4>
-                             @if(m.Rating > 0) { <div class="shrink-0 bg-yellow-900/30 text-yellow-400 text-xs font-bold px-1.5 py-0.5 rounded border border-yellow-700/50">@m.Rating ★</div> }
-                        </div>
-                        @if(!string.IsNullOrEmpty(m.Description)) { <p class="text-sm text-gray-400 line-clamp-3 leading-snug">@m.Description</p> }
-                    </div>
-                </div>
-            </div>
-        }
+        if (compact) { <div class="bg-gray-900 border border-gray-700 rounded overflow-hidden group relative hover:border-purple-500 transition shadow mb-1 flex items-stretch h-14">@if(!string.IsNullOrEmpty(m.ImgUrl)){<div class="w-10 shrink-0 bg-black"><img src="@m.ImgUrl" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition" loading="lazy"/></div>}<div class="flex-1 p-1 min-w-0 flex flex-col justify-center"><h4 class="font-bold text-white text-xs truncate leading-tight">@m.Title</h4>@if(m.Rating>0){<div class="text-xs text-yellow-400">@m.Rating ★</div>}</div></div> }
+        else { <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden group relative hover:border-purple-500 transition shadow-lg w-full mb-3 flex flex-row"><div class="w-[40%] bg-black relative">@if(!string.IsNullOrEmpty(m.ImgUrl)){<img src="@m.ImgUrl" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition" loading="lazy" style="min-height: 120px;"/>}else{<div class="w-full h-full flex items-center justify-center text-3xl text-gray-700">🎬</div>}</div><div class="w-[60%] p-3 flex flex-col justify-between"><div><div class="flex justify-between items-start mb-1"><h4 class="font-bold text-white text-base leading-tight truncate mr-2">@m.Title</h4>@if(m.Rating>0){<div class="shrink-0 bg-yellow-900/30 text-yellow-400 text-sm font-bold px-1.5 py-0.5 rounded border border-yellow-700/50">@m.Rating ★</div>}</div>@if(!string.IsNullOrEmpty(m.Description)){<p class="text-sm text-gray-400 line-clamp-3 leading-snug">@m.Description</p>}</div></div></div> }
     };
-
     private RenderFragment RenderTaskCard(BulletTask t) => __builder =>
     {
-        if(!string.IsNullOrEmpty(t.ImgUrl))
-        {
-            <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden group relative hover:border-blue-500 transition shadow-md mb-2 flex flex-row">
-                <div class="w-[30%] bg-black relative">
-                    <img src="@t.ImgUrl" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition" loading="lazy" style="min-height: 80px;" />
-                </div>
-                <div class="w-[70%] p-3 flex items-start gap-2">
-                    <input type="checkbox" checked="@t.IsCompleted" disabled class="mt-1 w-4 h-4 rounded bg-gray-800 border-gray-600 shrink-0" />
-                    <div class="flex-1 min-w-0">
-                        <h4 class="text-base font-bold text-white leading-tight @(t.IsCompleted ? "line-through text-gray-500" : "")">@t.Title</h4>
-                        @if(!string.IsNullOrEmpty(t.Description)) { <p class="text-sm text-gray-500 mt-1 line-clamp-2">@t.Description</p> }
-                        @if(!string.IsNullOrEmpty(t.TicketNumber)) { <span class="inline-block bg-gray-800 text-xs text-blue-300 px-1.5 rounded border border-blue-900 mt-1">@t.TicketNumber</span> }
-                    </div>
-                </div>
-            </div>
-        }
-        else
-        {
-            <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 mb-2 hover:border-blue-500 transition shadow-md group">
-                <div class="flex items-start gap-2">
-                    <input type="checkbox" checked="@t.IsCompleted" disabled class="mt-1 w-4 h-4 rounded bg-gray-800 border-gray-600 shrink-0" />
-                    <div class="flex-1 min-w-0">
-                        <h4 class="text-base font-bold text-white leading-tight @(t.IsCompleted ? "line-through text-gray-500" : "")">@t.Title</h4>
-                        @if(!string.IsNullOrEmpty(t.Description)) { <p class="text-sm text-gray-500 mt-1 line-clamp-2">@t.Description</p> }
-                        @if(!string.IsNullOrEmpty(t.TicketNumber)) { <span class="inline-block bg-gray-800 text-xs text-blue-300 px-1.5 rounded border border-blue-900 mt-1">@t.TicketNumber</span> }
-                    </div>
-                </div>
-            </div>
-        }
+        if(!string.IsNullOrEmpty(t.ImgUrl)){ <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden group relative hover:border-blue-500 transition shadow-md mb-2 flex flex-row"><div class="w-[30%] bg-black relative"><img src="@t.ImgUrl" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition" loading="lazy" style="min-height: 80px;"/></div><div class="w-[70%] p-3 flex items-start gap-2"><input type="checkbox" checked="@t.IsCompleted" disabled class="mt-1 w-4 h-4 rounded bg-gray-800 border-gray-600 shrink-0"/><div class="flex-1 min-w-0"><h4 class="text-base font-bold text-white leading-tight @(t.IsCompleted?"line-through text-gray-500":"")">@t.Title</h4>@if(!string.IsNullOrEmpty(t.Description)){<p class="text-sm text-gray-500 mt-1 line-clamp-2">@t.Description</p>}@if(!string.IsNullOrEmpty(t.TicketNumber)){<span class="inline-block bg-gray-800 text-xs text-blue-300 px-1.5 rounded border border-blue-900 mt-1">@t.TicketNumber</span>}</div></div></div> }
+        else{ <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 mb-2 hover:border-blue-500 transition shadow-md group"><div class="flex items-start gap-2"><input type="checkbox" checked="@t.IsCompleted" disabled class="mt-1 w-4 h-4 rounded bg-gray-800 border-gray-600 shrink-0"/><div class="flex-1 min-w-0"><h4 class="text-base font-bold text-white leading-tight @(t.IsCompleted?"line-through text-gray-500":"")">@t.Title</h4>@if(!string.IsNullOrEmpty(t.Description)){<p class="text-sm text-gray-500 mt-1 line-clamp-2">@t.Description</p>}@if(!string.IsNullOrEmpty(t.TicketNumber)){<span class="inline-block bg-gray-800 text-xs text-blue-300 px-1.5 rounded border border-blue-900 mt-1">@t.TicketNumber</span>}</div></div></div> }
     };
-
-    private RenderFragment RenderTaskPill(BulletTask t) => __builder =>
-    {
-        if(!string.IsNullOrEmpty(t.ImgUrl))
-        {
-            <div class="bg-gray-900 border border-gray-700 rounded overflow-hidden group relative hover:border-blue-500 transition shadow mb-1 flex items-stretch h-14">
-                <div class="w-10 shrink-0 bg-black">
-                    <img src="@t.ImgUrl" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition" loading="lazy" />
-                </div>
-                <div class="flex-1 p-1 min-w-0 flex flex-col justify-center">
-                    <div class="flex items-center gap-1">
-                        <span class="text-xs @(t.IsCompleted ? "text-green-500" : "text-blue-400")">@(t.IsCompleted ? "✓" : "•")</span>
-                        <h4 class="font-bold text-white text-xs truncate leading-tight @(t.IsCompleted ? "line-through text-gray-500" : "")">@t.Title</h4>
-                    </div>
-                </div>
-            </div>
-        }
-        else
-        {
-            <div class="text-xs px-1 py-0.5 rounded truncate mb-1 border flex items-center gap-1 @(t.IsCompleted ? "bg-gray-800 text-gray-500 border-gray-700 line-through" : "bg-blue-900/30 text-blue-200 border-blue-800")">
-                <span class="@(t.IsCompleted ? "text-green-500" : "text-blue-400")">@(t.IsCompleted ? "✓" : "•")</span>
-                @t.Title
-            </div>
-        }
-    };
-    
-    private RenderFragment RenderMeetingCard(BulletMeeting m) => __builder =>
-    {
-        if(!string.IsNullOrEmpty(m.ImgUrl))
-        {
-            <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden group relative hover:border-indigo-500 transition shadow-md mb-2 flex flex-row">
-                <div class="w-[30%] bg-black relative"><img src="@m.ImgUrl" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition" loading="lazy" style="min-height: 80px;" /></div>
-                <div class="w-[70%] p-3">
-                    <div class="flex justify-between items-start mb-1">
-                        <span class="text-indigo-400 text-xs font-bold font-mono">@m.StartTime</span>
-                        <span class="text-xs text-gray-500">@m.DurationPlanned min</span>
-                    </div>
-                    <h4 class="text-base font-bold text-white leading-tight">@m.Title</h4>
-                    @if(!string.IsNullOrEmpty(m.Description)) { <p class="text-sm text-gray-500 mt-1 line-clamp-2">@m.Description</p> }
-                </div>
-            </div>
-        }
-        else
-        {
-            <div class="bg-gray-900 border border-indigo-900/50 rounded-lg p-3 mb-2 hover:border-indigo-500 transition shadow-md group border-l-4 border-l-indigo-600">
-                <div class="flex justify-between items-start mb-1">
-                    <span class="text-indigo-300 text-xs font-bold font-mono flex items-center gap-1">⏰ @m.StartTime</span>
-                    <span class="text-xs text-gray-500">@m.DurationPlanned min</span>
-                </div>
-                <h4 class="text-base font-bold text-white leading-tight">@m.Title</h4>
-                @if(!string.IsNullOrEmpty(m.Location)) { <div class="text-xs text-gray-400 mt-1">📍 @m.Location</div> }
-            </div>
-        }
-    };
-
-    private RenderFragment RenderMeetingPill(BulletMeeting m) => __builder =>
-    {
-        if(!string.IsNullOrEmpty(m.ImgUrl))
-        {
-             <div class="bg-gray-900 border border-indigo-900 rounded overflow-hidden group relative hover:border-indigo-500 transition shadow mb-1 flex items-stretch h-14">
-                <div class="w-10 shrink-0 bg-black">
-                    <img src="@m.ImgUrl" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition" loading="lazy" />
-                </div>
-                <div class="flex-1 p-1 min-w-0 flex flex-col justify-center">
-                     <div class="text-[9px] text-indigo-300 font-bold leading-none mb-0.5">@m.StartTime</div>
-                     <div class="font-bold text-white text-[10px] truncate leading-tight">@m.Title</div>
-                </div>
-            </div>
-        }
-        else
-        {
-            <div class="text-xs px-1 py-0.5 rounded truncate mb-1 border border-indigo-800 bg-indigo-900/30 text-indigo-200">
-                <span class="font-bold">@m.StartTime</span> @m.Title
-            </div>
-        }
-    };
+    private RenderFragment RenderTaskPill(BulletTask t) => __builder => { if(!string.IsNullOrEmpty(t.ImgUrl)){ <div class="bg-gray-900 border border-gray-700 rounded overflow-hidden group relative hover:border-blue-500 transition shadow mb-1 flex items-stretch h-14"><div class="w-10 shrink-0 bg-black"><img src="@t.ImgUrl" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition" loading="lazy"/></div><div class="flex-1 p-1 min-w-0 flex flex-col justify-center"><div class="flex items-center gap-1"><span class="text-xs @(t.IsCompleted?"text-green-500":"text-blue-400")">@(t.IsCompleted?"✓":"•")</span><h4 class="font-bold text-white text-xs truncate leading-tight @(t.IsCompleted?"line-through text-gray-500":"")">@t.Title</h4></div></div></div> } else { <div class="text-xs px-1 py-0.5 rounded truncate mb-1 border flex items-center gap-1 @(t.IsCompleted?"bg-gray-800 text-gray-500 border-gray-700 line-through":"bg-blue-900/30 text-blue-200 border-blue-800")"><span class="@(t.IsCompleted?"text-green-500":"text-blue-400")">@(t.IsCompleted?"✓":"•")</span>@t.Title</div> } };
+    private RenderFragment RenderMeetingCard(BulletMeeting m) => __builder => { if(!string.IsNullOrEmpty(m.ImgUrl)){ <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden group relative hover:border-indigo-500 transition shadow-md mb-2 flex flex-row"><div class="w-[30%] bg-black relative"><img src="@m.ImgUrl" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition" loading="lazy" style="min-height: 80px;"/></div><div class="w-[70%] p-3"><div class="flex justify-between items-start mb-1"><span class="text-indigo-400 text-xs font-bold font-mono">@m.StartTime</span><span class="text-xs text-gray-500">@m.DurationPlanned min</span></div><h4 class="text-base font-bold text-white leading-tight">@m.Title</h4>@if(!string.IsNullOrEmpty(m.Description)){<p class="text-sm text-gray-500 mt-1 line-clamp-2">@m.Description</p>}</div></div> } else { <div class="bg-gray-900 border border-indigo-900/50 rounded-lg p-3 mb-2 hover:border-indigo-500 transition shadow-md group border-l-4 border-l-indigo-600"><div class="flex justify-between items-start mb-1"><span class="text-indigo-300 text-xs font-bold font-mono flex items-center gap-1">⏰ @m.StartTime</span><span class="text-xs text-gray-500">@m.DurationPlanned min</span></div><h4 class="text-base font-bold text-white leading-tight">@m.Title</h4>@if(!string.IsNullOrEmpty(m.Location)){<div class="text-xs text-gray-400 mt-1">📍 @m.Location</div>}</div> } };
+    private RenderFragment RenderMeetingPill(BulletMeeting m) => __builder => { if(!string.IsNullOrEmpty(m.ImgUrl)){ <div class="bg-gray-900 border border-indigo-900 rounded overflow-hidden group relative hover:border-indigo-500 transition shadow mb-1 flex items-stretch h-14"><div class="w-10 shrink-0 bg-black"><img src="@m.ImgUrl" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition" loading="lazy"/></div><div class="flex-1 p-1 min-w-0 flex flex-col justify-center"><div class="text-[9px] text-indigo-300 font-bold leading-none mb-0.5">@m.StartTime</div><div class="font-bold text-white text-[10px] truncate leading-tight">@m.Title</div></div></div> } else { <div class="text-xs px-1 py-0.5 rounded truncate mb-1 border border-indigo-800 bg-indigo-900/30 text-indigo-200"><span class="font-bold">@m.StartTime</span> @m.Title</div> } };
 
     // --- DATA OPERATIONS ---
     private async Task LoadData()
@@ -530,10 +369,10 @@
         if (currentUser == null) return;
         try 
         {
-            // Try Loading all. If table missing, specific error catch will handle it.
             AllMedia = await Db.Set<BulletMedia>().Where(i => i.UserId == currentUser.Id).ToListAsync();
             AllTasks = await Db.Set<BulletTask>().Where(i => i.UserId == currentUser.Id).ToListAsync();
             AllMeetings = await Db.Set<BulletMeeting>().Where(i => i.UserId == currentUser.Id).ToListAsync();
+            AllHabits = await Db.Set<BulletHabit>().Where(i => i.UserId == currentUser.Id).ToListAsync();
             StateHasChanged();
         }
         catch (Exception ex)
@@ -565,18 +404,12 @@
             }
             
             var newItems = new List<T>();
-            int skipped = 0;
             foreach (var raw in rawList)
             {
-                // Basic Type Check
                 string type = "";
                 if (raw.TryGetProperty("type", out var t)) type = t.ToString().ToLower();
-                if (type != typeName.ToLower()) { skipped++; continue; }
-                
-                try {
-                    var mapped = mapper(raw);
-                    if (mapped != null) newItems.Add(mapped);
-                }
+                if (type != typeName.ToLower()) continue;
+                try { var mapped = mapper(raw); if (mapped != null) newItems.Add(mapped); }
                 catch (Exception ex) { Log($"Error mapping: {ex.Message}"); }
             }
             if (newItems.Any()) { await table.AddRangeAsync(newItems); await Db.SaveChangesAsync(); Log($"Imported {newItems.Count} {typeName}s."); await LoadData(); }
@@ -589,7 +422,23 @@
     private async Task ImportTasks() => await ImportList("task", MapTask, Db.Set<BulletTask>());
     private async Task ImportMedia() => await ImportList("media", MapMedia, Db.Set<BulletMedia>());
     private async Task ImportMeetings() => await ImportList("meeting", MapMeeting, Db.Set<BulletMeeting>());
+    private async Task ImportHabits() => await ImportList("habit", MapHabit, Db.Set<BulletHabit>());
     
+    private BulletHabit? MapHabit(JsonElement raw)
+    {
+        var item = new BulletHabit { UserId = currentUser!.Id };
+        if (raw.TryGetProperty("title", out var c)) item.Title = c.ToString(); else if (raw.TryGetProperty("content", out c)) item.Title = c.ToString();
+        if (raw.TryGetProperty("date", out var d) && DateTime.TryParse(d.ToString(), out var dt)) item.Date = DateTime.SpecifyKind(dt, DateTimeKind.Utc); else item.Date = DateTime.UtcNow;
+        if (raw.TryGetProperty("streakCount", out var sc) && sc.TryGetInt32(out int s)) item.StreakCount = s;
+        if (raw.TryGetProperty("status", out var st) && st.ToString() == "completed") item.IsCompleted = true;
+        if (raw.TryGetProperty("isCompleted", out var ic) && ic.ValueKind == JsonValueKind.True) item.IsCompleted = true;
+        if (raw.TryGetProperty("notes", out var n)) item.Notes = n.ToString();
+        if (raw.TryGetProperty("linkUrl", out var lnk)) item.LinkUrl = lnk.ToString();
+        if (raw.TryGetProperty("imgUrl", out var img)) item.ImgUrl = img.ToString();
+        if (raw.TryGetProperty("id", out var oldId)) item.OriginalStringId = oldId.ToString();
+        return item;
+    }
+
     private BulletTask? MapTask(JsonElement raw)
     {
         var item = new BulletTask { UserId = currentUser!.Id };
@@ -640,6 +489,7 @@
             Db.Set<BulletTask>().RemoveRange(await Db.Set<BulletTask>().Where(i => i.UserId == currentUser!.Id).ToListAsync());
             Db.Set<BulletMedia>().RemoveRange(await Db.Set<BulletMedia>().Where(i => i.UserId == currentUser!.Id).ToListAsync());
             Db.Set<BulletMeeting>().RemoveRange(await Db.Set<BulletMeeting>().Where(i => i.UserId == currentUser!.Id).ToListAsync());
+            Db.Set<BulletHabit>().RemoveRange(await Db.Set<BulletHabit>().Where(i => i.UserId == currentUser!.Id).ToListAsync());
             await Db.SaveChangesAsync(); await LoadData();
         }
     }
@@ -657,6 +507,7 @@
                 CREATE TABLE IF NOT EXISTS ""BulletMedia"" (""Id"" serial PRIMARY KEY, ""UserId"" integer NOT NULL, ""Title"" text, ""Date"" timestamp with time zone NOT NULL, ""Category"" text DEFAULT 'Movie', ""LinkUrl"" text, ""ImgUrl"" text, ""ImageId"" integer, ""Description"" text, ""Rating"" integer DEFAULT 0, ""ReleaseYear"" integer DEFAULT 0, ""Actors"" text DEFAULT '', ""Tags"" text DEFAULT '', ""OriginalStringId"" text);
                 CREATE TABLE IF NOT EXISTS ""BulletTasks"" (""Id"" serial PRIMARY KEY, ""UserId"" integer NOT NULL, ""Title"" text, ""Date"" timestamp with time zone NOT NULL, ""Category"" text DEFAULT 'personal', ""Type"" text DEFAULT 'task', ""IsCompleted"" boolean DEFAULT false, ""Priority"" text DEFAULT 'Normal', ""LinkUrl"" text, ""ImgUrl"" text, ""ImageId"" integer, ""Description"" text, ""TicketNumber"" text, ""TicketUrl"" text, ""Tags"" text, ""DueDate"" timestamp with time zone, ""OriginalStringId"" text);
                 CREATE TABLE IF NOT EXISTS ""BulletMeetings"" (""Id"" serial PRIMARY KEY, ""UserId"" integer NOT NULL, ""Title"" text, ""Date"" timestamp with time zone NOT NULL, ""Category"" text DEFAULT 'work', ""Type"" text DEFAULT 'meeting', ""StartTime"" text DEFAULT '', ""DurationPlanned"" integer DEFAULT 0, ""DurationActual"" integer DEFAULT 0, ""Location"" text DEFAULT '', ""MeetingLeader"" text DEFAULT '', ""Attendees"" text DEFAULT '', ""LinkUrl"" text, ""ImgUrl"" text, ""ImageId"" integer, ""IsCompleted"" boolean DEFAULT false, ""Tags"" text DEFAULT '', ""Description"" text, ""OriginalStringId"" text);
+                CREATE TABLE IF NOT EXISTS ""BulletHabits"" (""Id"" serial PRIMARY KEY, ""UserId"" integer NOT NULL, ""Title"" text, ""Date"" timestamp with time zone NOT NULL, ""Category"" text DEFAULT 'personal', ""Type"" text DEFAULT 'habit', ""StreakCount"" integer DEFAULT 0, ""TargetStreak"" integer DEFAULT 0, ""IsCompleted"" boolean DEFAULT false, ""Notes"" text DEFAULT '', ""LinkUrl"" text, ""ImgUrl"" text, ""ImageId"" integer, ""Tags"" text DEFAULT '', ""OriginalStringId"" text);
              ");
              isDbError = false; await LoadData();
              Log("Tables Created Successfully");
