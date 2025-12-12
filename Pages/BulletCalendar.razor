@@ -22,7 +22,9 @@
         <div class="flex flex-col items-center justify-center h-screen space-y-6">
             <div class="text-red-500 text-xl font-bold">⚠️ Database Setup Required</div>
             <p class="text-gray-400 max-w-md text-center">@errorMessage</p>
-            <button @onclick="UpgradeDatabase" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">Create Missing Tables</button>
+            <button @onclick="UpgradeDatabase" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">
+                Create Missing Tables
+            </button>
         </div>
     }
     else
@@ -75,9 +77,11 @@
                             </div>
                         </div>
                     }
+
                     <div class="relative group z-50">
                         <button class="flex items-center gap-3 focus:outline-none" @onclick="ToggleUserMenu" @onclick:stopPropagation="true">
-                            <img src="@(string.IsNullOrEmpty(currentUser?.AvatarUrl) ? "https://i.imgur.com/7Y5j5Yx.png" : currentUser.AvatarUrl)" class="w-9 h-9 rounded-full border-2 border-gray-700 transition object-cover bg-gray-800" />
+                            <img src="@(string.IsNullOrEmpty(currentUser?.AvatarUrl) ? "https://i.imgur.com/7Y5j5Yx.png" : currentUser.AvatarUrl)" 
+                                 class="w-9 h-9 rounded-full border-2 border-gray-700 transition object-cover bg-gray-800" />
                         </button>
                         @if (showUserMenu) {
                             <div class="absolute right-0 top-full mt-2 w-56 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 z-50">
@@ -249,6 +253,7 @@
         public int Rating { get; set; } 
         public int ReleaseYear { get; set; } 
         public int Streak { get; set; }
+        // Health
         public double Weight { get; set; }
         public double Water { get; set; }
         public List<BulletMeal> Meals { get; set; } = new();
@@ -274,7 +279,14 @@
         }
     }
     
-    // --- TDEE / STATS ---
+    // FILTERS
+    private List<BulletMedia> GetMediaForDate(DateTime d, string? category = null) { var q = AllMedia.Where(m => m.Date.Date == d.Date); return category == null ? q.ToList() : q.Where(x => x.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList(); }
+    private List<BulletTask> GetTasksForDate(DateTime d, string? category = null) { var t = AllTasks.Where(x => x.Date.Date == d.Date); return category == null ? t.ToList() : t.Where(x => x.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList(); }
+    private List<BulletMeeting> GetMeetingsForDate(DateTime d, string? category = null) { var q = AllMeetings.Where(m => m.Date.Date == d.Date).OrderBy(m => m.StartTime); return category == null ? q.ToList() : q.Where(x => x.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList(); }
+    private List<BulletHabit> GetHabitsForDate(DateTime d, string? category = null) { var q = AllHabits.Where(h => h.Date.Date == d.Date); return category == null ? q.ToList() : q.Where(x => x.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList(); }
+    private List<BulletMacroTracker> GetHealthForDate(DateTime d) => AllHealth.Where(h => h.Date.Date == d.Date).ToList();
+
+    // CALCULATIONS & DATA
     private double CalculateTDEE(double weightLbs) {
         if (currentUser == null) return 2000;
         double weightKg = weightLbs * 0.453592; double heightCm = currentUser.HeightInches * 2.54; int age = currentUser.Age > 0 ? currentUser.Age : 30;
@@ -295,8 +307,22 @@
         }
         return (totalDeficit, daysCounted);
     }
+    private async Task LoadData() {
+        if (currentUser == null) return;
+        try {
+            AllMedia = await Db.Set<BulletMedia>().Where(i => i.UserId == currentUser.Id).ToListAsync();
+            AllTasks = await Db.Set<BulletTask>().Where(i => i.UserId == currentUser.Id).ToListAsync();
+            AllMeetings = await Db.Set<BulletMeeting>().Where(i => i.UserId == currentUser.Id).ToListAsync();
+            AllHabits = await Db.Set<BulletHabit>().Where(i => i.UserId == currentUser.Id).ToListAsync();
+            AllHealth = await Db.Set<BulletMacroTracker>().Where(i => i.UserId == currentUser.Id).ToListAsync();
+            AllMeals = await Db.Set<BulletMeal>().ToListAsync();
+            AllWorkouts = await Db.Set<BulletWorkout>().ToListAsync();
+            StateHasChanged();
+        } catch (Exception ex) { if (ex.Message.Contains("42P01")) { isDbError = true; errorMessage = "Missing Tables."; } }
+    }
+    private DateTime GetStartOfWeek(DateTime d) => d.AddDays(-1 * ((7 + (d.DayOfWeek - DayOfWeek.Monday)) % 7)).Date;
 
-    // --- ACTIONS ---
+    // ACTIONS
     private async Task ToggleTaskComplete(BulletTask t) { t.IsCompleted = !t.IsCompleted; await Db.SaveChangesAsync(); }
     private async Task ToggleMeetingComplete(BulletMeeting m) { m.IsCompleted = !m.IsCompleted; await Db.SaveChangesAsync(); }
     private async Task ToggleHabitComplete(BulletHabit h) { h.IsCompleted = !h.IsCompleted; await Db.SaveChangesAsync(); }
@@ -387,7 +413,7 @@
                     <div class="bg-green-500 h-full" style="width: @(Math.Min(100, (carb * 4 / tdee) * 100))%" title="Carbs"></div>
                 </div>
 
-                <div class="grid grid-cols-3 gap-1 text-[10px] text-center">
+                <div class="grid grid-cols-3 gap-1 text-xs text-center">
                     <div><div class="text-blue-400 font-bold">Protein</div><div class="text-gray-400">@pro.ToString("0") / @proteinGoal.ToString("0")g</div></div>
                     <div><div class="text-yellow-400 font-bold">Fat</div><div class="text-gray-400">@fat.ToString("0") / @fatGoal.ToString("0")g</div></div>
                     <div><div class="text-green-400 font-bold">Carbs</div><div class="text-gray-400">@carb.ToString("0") / @carbGoal.ToString("0")g</div></div>
@@ -395,7 +421,7 @@
             </div>
 
             <div class="bg-gray-800/50 rounded p-2 text-center mb-2 border border-gray-700">
-                <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">Weekly Deficit Goal: 3,500</div>
+                <div class="text-xs text-gray-500 uppercase font-bold mb-1">Weekly Deficit Goal: 3,500</div>
                 <div class="flex items-center justify-center gap-2">
                     <span class="text-sm font-bold @(wkDeficit >= 0 ? "text-green-400" : "text-red-400")">@wkDeficit.ToString("N0")</span>
                     <span class="text-xs text-gray-500">/ 3,500</span>
@@ -405,8 +431,8 @@
                 </div>
             </div>
 
-            @if(meals.Any()) { <div class="space-y-1 border-t border-gray-800 pt-2"><div class="text-[10px] font-bold text-gray-500 uppercase">Meals</div>@foreach(var m in meals){ <div class="flex justify-between text-xs text-gray-400"><span class="truncate pr-2">@m.Name</span><span>@m.Calories</span></div> }</div> }
-            @if(workouts.Any()) { <div class="space-y-1 border-t border-gray-800 pt-2"><div class="text-[10px] font-bold text-gray-500 uppercase">Workouts</div>@foreach(var w in workouts){ <div class="flex justify-between text-xs text-blue-300"><span class="truncate pr-2">@w.Description</span><span>-@w.CaloriesBurned</span></div> }</div> }
+            @if(meals.Any()) { <div class="space-y-1 border-t border-gray-800 pt-2"><div class="text-xs font-bold text-gray-500 uppercase">Meals</div>@foreach(var m in meals){ <div class="flex justify-between text-xs text-gray-400"><span class="truncate pr-2">@m.Name</span><span>@m.Calories</span></div> }</div> }
+            @if(workouts.Any()) { <div class="space-y-1 border-t border-gray-800 pt-2"><div class="text-xs font-bold text-gray-500 uppercase">Workouts</div>@foreach(var w in workouts){ <div class="flex justify-between text-xs text-blue-300"><span class="truncate pr-2">@w.Description</span><span>-@w.CaloriesBurned</span></div> }</div> }
         </div>
     };
     private RenderFragment RenderTaskCard(BulletTask t) => __builder => { if(!string.IsNullOrEmpty(t.ImgUrl)){ <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden group relative hover:border-blue-500 transition shadow-md mb-2 flex flex-row">@RenderActions("task", t.Id)<div class="w-[30%] bg-black relative"><img src="@t.ImgUrl" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition" loading="lazy" style="min-height: 80px;"/></div><div class="w-[70%] p-3 flex items-start gap-2"><input type="checkbox" checked="@t.IsCompleted" @onchange="() => ToggleTaskComplete(t)" @onclick:stopPropagation="true" class="mt-1 w-4 h-4 rounded bg-gray-800 border-gray-600 shrink-0 cursor-pointer"/><div class="flex-1 min-w-0"><h4 class="text-base font-bold text-white leading-tight @(t.IsCompleted?"line-through text-gray-500":"")">@t.Title</h4>@if(!string.IsNullOrEmpty(t.Description)){<p class="text-sm text-gray-500 mt-1 line-clamp-2">@t.Description</p>}@if(!string.IsNullOrEmpty(t.TicketNumber)){<span class="inline-block bg-gray-800 text-xs text-blue-300 px-1.5 rounded border border-blue-900 mt-1">@t.TicketNumber</span>}</div></div></div> } else{ <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 mb-2 hover:border-blue-500 transition shadow-md group relative">@RenderActions("task", t.Id)<div class="flex items-start gap-2"><input type="checkbox" checked="@t.IsCompleted" @onchange="() => ToggleTaskComplete(t)" @onclick:stopPropagation="true" class="mt-1 w-4 h-4 rounded bg-gray-800 border-gray-600 shrink-0 cursor-pointer"/><div class="flex-1 min-w-0"><h4 class="text-base font-bold text-white leading-tight @(t.IsCompleted?"line-through text-gray-500":"")">@t.Title</h4>@if(!string.IsNullOrEmpty(t.Description)){<p class="text-sm text-gray-500 mt-1 line-clamp-2">@t.Description</p>}@if(!string.IsNullOrEmpty(t.TicketNumber)){<span class="inline-block bg-gray-800 text-xs text-blue-300 px-1.5 rounded border border-blue-900 mt-1">@t.TicketNumber</span>}</div></div></div> } };
