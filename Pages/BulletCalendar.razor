@@ -22,7 +22,7 @@
             <div class="text-red-500 text-xl font-bold">⚠️ Database Setup Required</div>
             <p class="text-gray-400 max-w-md text-center">@errorMessage</p>
             <button @onclick="UpgradeDatabase" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">
-                Create BulletTasks Table
+                Create Missing Tables
             </button>
         </div>
     }
@@ -216,7 +216,12 @@
     <div class="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div class="bg-gray-800 border border-gray-600 p-6 rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
             <h3 class="text-xl font-bold text-white mb-2">Import Data</h3>
-            <div class="flex gap-3 mb-4">
+            
+            <div class="flex gap-2 mb-4 flex-wrap">
+                 <button @onclick="UpgradeDatabase" class="bg-blue-800 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm">
+                     🛠️ Create Missing Tables
+                 </button>
+                 
                  <button @onclick="ImportTasks" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm" disabled="@isImporting">
                      @if(isImporting) { <span>⏳ Processing...</span> } else { <span>📋 Import Tasks Only</span> }
                 </button>
@@ -225,7 +230,14 @@
                 </button>
             </div>
             
-            <div class="flex-1 bg-black rounded-lg border border-gray-700 p-4 font-mono text-[10px] overflow-y-auto text-gray-300">
+            <div class="flex-1 bg-black rounded-lg border border-gray-700 p-4 font-mono text-[10px] overflow-y-auto text-gray-300 relative group">
+                 <div class="flex justify-between border-b border-gray-800 pb-1 mb-1 text-gray-500 uppercase font-bold sticky top-0 bg-black z-10">
+                    <span>Console Output</span>
+                    <div class="flex gap-2">
+                        <button @onclick="CopyLogs" class="hover:text-white">📋 Copy Logs</button>
+                        <button @onclick="ClearLogs" class="hover:text-white">Clear</button>
+                    </div>
+                </div>
                 @foreach(var log in debugLogs) { <div class="mb-1 border-b border-gray-900/50 pb-1 break-all">@log</div> }
             </div>
             <div class="mt-4 flex justify-end">
@@ -344,12 +356,11 @@
         return tasks.ToList();
     }
 
-    // --- UPDATED MEDIA CARD (SPLIT LAYOUT) ---
+    // --- RENDERERS ---
     private RenderFragment RenderMediaCard(BulletMedia m, bool compact = false) => __builder =>
     {
         if (compact)
         {
-            // Week/Month View: Compact Layout (Image left, text right, smaller)
             <div class="bg-gray-900 border border-gray-700 rounded overflow-hidden group relative hover:border-purple-500 transition shadow mb-1 flex items-stretch h-14">
                  @if(!string.IsNullOrEmpty(m.ImgUrl)) {
                     <div class="w-10 shrink-0 bg-black">
@@ -364,35 +375,17 @@
         }
         else
         {
-            // Day View: Horizontal Split Layout (50% Image | 50% Content)
             <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden group relative hover:border-purple-500 transition shadow-lg w-full mb-3 flex flex-row">
                 <div class="w-1/2 bg-black relative">
-                    @if(!string.IsNullOrEmpty(m.ImgUrl))
-                    {
-                        <img src="@m.ImgUrl" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition" loading="lazy" style="min-height: 120px;" />
-                    }
-                    else
-                    {
-                        <div class="w-full h-full flex items-center justify-center text-3xl text-gray-700">🎬</div>
-                    }
+                    @if(!string.IsNullOrEmpty(m.ImgUrl)) { <img src="@m.ImgUrl" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition" loading="lazy" style="min-height: 120px;" /> }
+                    else { <div class="w-full h-full flex items-center justify-center text-3xl text-gray-700">🎬</div> }
                 </div>
-
                 <div class="w-1/2 p-3 flex flex-col justify-between">
                     <div>
                         <h4 class="font-bold text-white text-sm leading-tight mb-1">@m.Title</h4>
                         <div class="text-[10px] text-gray-400 mb-2">@m.Date.ToString("MMM d")</div>
-                        
-                        @if(m.Rating > 0)
-                        {
-                            <div class="inline-flex items-center gap-1 bg-yellow-900/30 text-yellow-400 text-[10px] px-1.5 py-0.5 rounded border border-yellow-700/50 mb-2">
-                                <span>★</span> @m.Rating
-                            </div>
-                        }
-
-                        @if(!string.IsNullOrEmpty(m.Description))
-                        {
-                            <p class="text-[10px] text-gray-500 line-clamp-3 leading-snug">@m.Description</p>
-                        }
+                        @if(m.Rating > 0) { <div class="inline-flex items-center gap-1 bg-yellow-900/30 text-yellow-400 text-[10px] px-1.5 py-0.5 rounded border border-yellow-700/50 mb-2"><span>★</span> @m.Rating</div> }
+                        @if(!string.IsNullOrEmpty(m.Description)) { <p class="text-[10px] text-gray-500 line-clamp-3 leading-snug">@m.Description</p> }
                     </div>
                 </div>
             </div>
@@ -433,15 +426,26 @@
         if (currentUser == null) return;
         try 
         {
+            // Try Loading all. If table missing, specific error catch will handle it.
             AllMedia = await Db.Set<BulletMedia>().Where(i => i.UserId == currentUser.Id).ToListAsync();
             AllTasks = await Db.Set<BulletTask>().Where(i => i.UserId == currentUser.Id).ToListAsync();
             StateHasChanged();
         }
-        catch {}
+        catch (Exception ex)
+        {
+            if (ex.Message.Contains("42P01")) // Table missing error code
+            {
+                isDbError = true;
+                errorMessage = "Database Tables missing. Please create them.";
+            }
+        }
     }
 
     // --- IMPORT LOGIC ---
     private void Log(string msg) { debugLogs.Add($"{DateTime.Now:HH:mm:ss} - {msg}"); InvokeAsync(StateHasChanged); }
+    private void ClearLogs() => debugLogs.Clear();
+    private async Task CopyLogs() { var text = string.Join("\n", debugLogs); await JS.InvokeVoidAsync("copyTextToClipboard", text); Log("Logs copied."); }
+
     private async Task ImportTasks()
     {
         if (currentUser == null) return;
@@ -514,10 +518,14 @@
     
     private async Task UpgradeDatabase() {
         try {
-             // Creates BulletTasks table
-             await Db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletTasks"" (""Id"" serial PRIMARY KEY, ""UserId"" integer NOT NULL, ""Title"" text, ""Date"" timestamp with time zone NOT NULL, ""Category"" text DEFAULT 'personal', ""Type"" text DEFAULT 'task', ""IsCompleted"" boolean DEFAULT false, ""Priority"" text DEFAULT 'Normal', ""LinkUrl"" text, ""ImgUrl"" text, ""ImageId"" integer, ""Description"" text, ""TicketNumber"" text, ""TicketUrl"" text, ""Tags"" text, ""DueDate"" timestamp with time zone, ""OriginalStringId"" text);");
+             // Explicitly Create BulletTasks and BulletMedia if missing
+             await Db.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""BulletMedia"" (""Id"" serial PRIMARY KEY, ""UserId"" integer NOT NULL, ""Title"" text, ""Date"" timestamp with time zone NOT NULL, ""Category"" text DEFAULT 'Movie', ""LinkUrl"" text, ""ImgUrl"" text, ""ImageId"" integer, ""Description"" text, ""Rating"" integer DEFAULT 0, ""ReleaseYear"" integer DEFAULT 0, ""Actors"" text DEFAULT '', ""Tags"" text DEFAULT '', ""OriginalStringId"" text);
+                CREATE TABLE IF NOT EXISTS ""BulletTasks"" (""Id"" serial PRIMARY KEY, ""UserId"" integer NOT NULL, ""Title"" text, ""Date"" timestamp with time zone NOT NULL, ""Category"" text DEFAULT 'personal', ""Type"" text DEFAULT 'task', ""IsCompleted"" boolean DEFAULT false, ""Priority"" text DEFAULT 'Normal', ""LinkUrl"" text, ""ImgUrl"" text, ""ImageId"" integer, ""Description"" text, ""TicketNumber"" text, ""TicketUrl"" text, ""Tags"" text, ""DueDate"" timestamp with time zone, ""OriginalStringId"" text);
+             ");
              isDbError = false; await LoadData();
-        } catch (Exception ex) { errorMessage = ex.Message; }
+             Log("Tables Created Successfully");
+        } catch (Exception ex) { errorMessage = ex.Message; Log($"DB Error: {ex.Message}"); }
     }
 
     private async Task StartClock() { var now = DateTime.Now; await Task.Delay((60 - now.Second) * 1000); using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1)); UpdateTime(); while (await timer.WaitForNextTickAsync()) { UpdateTime(); } }
