@@ -20,6 +20,51 @@
             </a>
         </div>
 
+        @if (currentUser != null)
+        {
+            <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-xl mb-8">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="text-xl font-bold text-orange-400 flex items-center gap-2">
+                            <span>❤️</span> Health Profile
+                        </h2>
+                        <div class="text-xs text-gray-500 mt-1">Used to calculate your TDEE and calorie goals automatically</div>
+                    </div>
+                    <button @onclick="SaveProfile" class="text-xs bg-orange-600 hover:bg-orange-500 px-4 py-2 rounded text-white transition font-bold shadow-lg">
+                        Save Profile
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Age</label>
+                        <input type="number" @bind="currentUser.Age" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:border-orange-500 outline-none" />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Height (Inches)</label>
+                        <input type="number" @bind="currentUser.HeightInches" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:border-orange-500 outline-none" placeholder="e.g. 70 for 5'10&quot;" />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Gender</label>
+                        <select @bind="currentUser.Gender" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:border-orange-500 outline-none">
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Activity Level</label>
+                        <select @bind="currentUser.ActivityLevel" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:border-orange-500 outline-none">
+                            <option value="Sedentary">Sedentary (Desk Job)</option>
+                            <option value="Light">Lightly Active (1-3 days)</option>
+                            <option value="Moderate">Moderately Active (3-5 days)</option>
+                            <option value="Active">Very Active (6-7 days)</option>
+                            <option value="Extra">Extra Active (Physical Job)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        }
+
         <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-xl mb-8">
             <div class="flex justify-between items-center mb-6">
                 <div>
@@ -131,7 +176,6 @@
     private User? currentUser;
     private Feed? editingFeed = null;
     private bool isDbError = false;
-    // Initialized immediately so it's never empty
     private List<string> CategoryOptions = new() { "Tech", "Sports", "Finance", "Shopping", "News", "Gaming", "Coding", "Lifestyle", "General" };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -159,6 +203,32 @@
         }
     }
 
+    // --- HEALTH PROFILE LOGIC ---
+    private async Task SaveProfile()
+    {
+        if (currentUser == null) return;
+        
+        try {
+            // Ensure columns exist (Safety migration)
+            await Db.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""Age"" integer DEFAULT 30;
+                ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""HeightInches"" double precision DEFAULT 70;
+                ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""Gender"" text DEFAULT 'Male';
+                ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""ActivityLevel"" text DEFAULT 'Sedentary';
+            ");
+            
+            Db.Users.Update(currentUser);
+            await Db.SaveChangesAsync();
+            await JS.InvokeVoidAsync("alert", "Profile Saved Successfully!");
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", "Error saving profile: " + ex.Message);
+        }
+    }
+
+    // --- FEEDS LOGIC ---
+
     private async Task LoadFeeds()
     {
         if (currentUser == null) return;
@@ -177,11 +247,7 @@
     
     private void UpdateCategories()
     {
-        <!-- if (Feeds == null || !Feeds.Any()) return; -->
-        <!-- var dbCats = Feeds.Select(f => f.Category).Where(c => !string.IsNullOrEmpty(c)).Distinct();
-        var defaultCategories = new List<string> { "Tech", "Sports", "Finance", "Shopping", "News", "Gaming", "Coding", "Lifestyle", "General" };
-        // Merge and sort
-        CategoryOptions = dbCats.Union(defaultCategories).Where(c => c != "System").OrderBy(c => c).ToList(); -->
+        // Add dynamic categories if needed
     }
 
     private async Task Toggle(Feed feed)
@@ -190,8 +256,6 @@
         Db.Feeds.Update(feed);
         await Db.SaveChangesAsync();
     }
-
-    // --- CRUD OPERATIONS ---
 
     private void OpenAddModal()
     {

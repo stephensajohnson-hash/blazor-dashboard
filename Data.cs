@@ -306,6 +306,12 @@ public class User
     public string PasswordHash { get; set; } = "";
     public string ZipCode { get; set; } = "75482"; 
     public string AvatarUrl { get; set; } = "";
+    
+    // NEW: Health Profile
+    public int Age { get; set; } = 30;
+    public double HeightInches { get; set; } = 70; // 5'10" default
+    public string Gender { get; set; } = "Male"; // Male/Female
+    public string ActivityLevel { get; set; } = "Sedentary"; // Sedentary, Light, Moderate, Active, VeryActive
 }
 
 public static class PasswordHelper
