@@ -29,6 +29,7 @@ public class AppDbContext : DbContext
     public DbSet<BulletItem> BulletItems { get; set; } // Catch-all (Legacy)
     public DbSet<BulletMedia> BulletMedia { get; set; }
     public DbSet<BulletTask> BulletTasks { get; set; } // NEW: Tasks
+    public DbSet<BulletMeeting> BulletMeetings { get; set; } // NEW
 }
 
 // --- NEW TASK MODEL ---
@@ -79,6 +80,36 @@ public class BulletMedia
     public int ReleaseYear { get; set; }
     public string Actors { get; set; } = "";
     public string Tags { get; set; } = "";
+    public string? OriginalStringId { get; set; }
+}
+
+// --- NEW MEETING MODEL ---
+public class BulletMeeting
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    
+    public DateTime Date { get; set; } = DateTime.UtcNow;
+    public string Title { get; set; } = "";
+    public string Description { get; set; } = ""; // Agenda / Notes
+    public string Category { get; set; } = "work"; 
+    public string Type { get; set; } = "meeting";
+
+    // Logistics
+    public string StartTime { get; set; } = ""; // "14:30"
+    public int DurationPlanned { get; set; } // Minutes
+    public int DurationActual { get; set; } // Minutes
+    public string Location { get; set; } = ""; // Zoom, Room 202
+    public string MeetingLeader { get; set; } = ""; 
+    public string Attendees { get; set; } = ""; 
+
+    // Visuals & Status
+    public string LinkUrl { get; set; } = "";
+    public string ImgUrl { get; set; } = "";
+    public int? ImageId { get; set; }
+    public bool IsCompleted { get; set; } = false;
+    public string Tags { get; set; } = "";
+
     public string? OriginalStringId { get; set; }
 }
 
