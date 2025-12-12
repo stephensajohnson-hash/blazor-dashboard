@@ -1,0 +1,162 @@
+@page "/bullet-calendar"
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Forms
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Dashboard
+@using Microsoft.EntityFrameworkCore
+@using System.Text.Json
+@using Microsoft.JSInterop
+@using System.Globalization
+@inject AppDbContext Db
+@inject HttpClient Http
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+<div class="min-h-screen bg-gray-900 text-white overflow-x-hidden pb-40">
+
+    @if (isDbError)
+    {
+        <div class="flex flex-col items-center justify-center h-screen space-y-6">
+            <div class="text-red-500 text-xl font-bold">⚠️ Database Error</div>
+            <p class="text-gray-400 max-w-md text-center">@errorMessage</p>
+        </div>
+    }
+    else
+    {
+        <main class="w-full p-8 relative scroll-smooth">
+            
+            <div class="mb-10 border-b border-gray-800 pb-4 flex justify-between items-start">
+                
+                <div class="flex flex-col gap-4">
+                    <div>
+                        <div class="flex items-baseline gap-4">
+                            <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
+                            <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
+                        </div>
+                    </div>
+
+                    @if (weather?.current != null)
+                    {
+                        <div class="flex items-center gap-4 animate-fade-in bg-gray-800/30 p-2 rounded-xl border border-gray-700/30 self-start">
+                            <div class="flex items-center gap-2 pr-4 border-r border-gray-600">
+                                <span class="text-2xl">@GetWeatherIcon(weather.current.weather_code)</span>
+                                <div>
+                                    <div class="font-bold text-white text-lg leading-none">@weather.current.temperature_2m.ToString("0")°</div>
+                                    <div class="text-[10px] text-gray-400">Now</div>
+                                </div>
+                            </div>
+                            <div class="flex gap-3">
+                                @if (weather.daily?.time != null)
+                                {
+                                    @for (int i = 1; i <= 5 && i < weather.daily.time.Length; i++)
+                                    {
+                                        <div class="flex flex-col items-center">
+                                            <span class="text-[9px] text-gray-500 uppercase font-bold">@GetDayName(weather.daily.time[i])</span>
+                                            <span class="text-xs my-0.5">@GetWeatherIcon(weather.daily.weather_code[i])</span>
+                                            <div class="text-[9px] font-mono leading-none">
+                                                <span class="text-white">@weather.daily.temperature_2m_max[i].ToString("0")°</span>
+                                                <span class="text-gray-500">@weather.daily.temperature_2m_min[i].ToString("0")°</span>
+                                            </div>
+                                        </div>
+                                    }
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md self-center">
+                    <a href="/" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Home">🏠</a>
+                    <a href="/recipes" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Recipes">🍴</a>
+                    <a href="/bullet-calendar" class="text-2xl hover:scale-125 transition grayscale-0 drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]" title="Bullet Calendar">✅</a>
+                    <span class="text-2xl opacity-20 cursor-not-allowed" title="Coming Soon - Budget Tracker">💵</span>
+                </div>
+
+                <div class="flex items-center gap-8 self-center">
+                    <div class="relative group z-50">
+                        <button class="flex items-center gap-3 focus:outline-none" @onclick="ToggleUserMenu">
+                            <img src="@(string.IsNullOrEmpty(currentUser?.AvatarUrl) ? "https://i.imgur.com/7Y5j5Yx.png" : currentUser.AvatarUrl)" 
+                                 class="w-10 h-10 rounded-full border-2 border-gray-700 transition object-cover bg-gray-800" />
+                        </button>
+                        @if (showUserMenu)
+                        {
+                            <div class="absolute right-0 top-full mt-2 w-56 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 z-50">
+                                <a href="settings" class="block w-full text-left text-xs text-gray-300 hover:bg-gray-700 p-2 rounded mb-1 transition flex items-center gap-2"><span>⚙️</span> Settings</a>
+                                <div class="border-t border-gray-700 my-1"></div>
+                                <button type="button" @onclick="Logout" class="w-full text-left text-xs text-red-500 font-bold hover:bg-gray-700 p-2 rounded">Logout</button>
+                            </div>
+                            <div class="fixed inset-0 z-40" @onclick="ToggleUserMenu"></div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex flex-col items-center justify-center h-[50vh] text-gray-500">
+                <div class="text-6xl mb-4">📅</div>
+                <h2 class="text-3xl font-bold text-gray-300 mb-2">Bullet Calendar</h2>
+                <p class="text-sm">Your new productivity tool is coming soon.</p>
+            </div>
+
+        </main>
+    }
+</div>
+
+<script>window.getUserOffset = () => { return new Date().getTimezoneOffset(); };</script>
+
+@code {
+    private string CurrentDate = "", CurrentTime = "";
+    private WeatherData? weather;
+    private int clientOffsetMinutes = 0;
+    private bool isDbError = false;
+    private string errorMessage = "";
+    private bool showUserMenu = false;
+    private User? currentUser;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) 
+        { 
+            try 
+            { 
+                var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
+                if (string.IsNullOrEmpty(json)) { Nav.NavigateTo("/login", forceLoad: true); return; }
+                
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var session = JsonSerializer.Deserialize<SessionData>(json, options);
+                
+                if (session == null || session.Expiry < DateTime.UtcNow) { Nav.NavigateTo("/login", forceLoad: true); return; }
+
+                currentUser = await Db.Users.FindAsync(session.UserId);
+                
+                if (currentUser != null) {
+                    _ = FetchWeather();
+                }
+
+                try { clientOffsetMinutes = await JS.InvokeAsync<int>("getUserOffset"); UpdateTime(); } catch {}
+                _ = StartClock();
+                StateHasChanged();
+            } 
+            catch { Nav.NavigateTo("/login", forceLoad: true); }
+        }
+    }
+
+    private void ToggleUserMenu() { showUserMenu = !showUserMenu; }
+
+    private async Task Logout()
+    {
+        await JS.InvokeVoidAsync("localStorage.removeItem", "dashboard_session");
+        Nav.NavigateTo("/login", forceLoad: true);
+    }
+
+    private async Task StartClock() { var now = DateTime.Now; await Task.Delay((60 - now.Second) * 1000); using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1)); UpdateTime(); while (await timer.WaitForNextTickAsync()) { UpdateTime(); } }
+    private void UpdateTime() { var now = DateTime.UtcNow.AddMinutes(-clientOffsetMinutes); string suffix = (now.Day % 10 == 1 && now.Day != 11) ? "st" : (now.Day % 10 == 2 && now.Day != 12) ? "nd" : (now.Day % 10 == 3 && now.Day != 13) ? "rd" : "th"; CurrentDate = $"{now:dddd, MMMM d}{suffix} {now:yyyy}"; CurrentTime = now.ToString("h:mm tt").ToLower(); InvokeAsync(StateHasChanged); }
+    
+    private async Task FetchWeather() { if (currentUser == null) return; try { var url = "https://api.open-meteo.com/v1/forecast?latitude=33.1383&longitude=-95.6011&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto"; weather = await Http.GetFromJsonAsync<WeatherData>(url); StateHasChanged(); } catch {} }
+    private string GetDayName(string s) => DateTime.TryParse(s, out var d) ? d.ToString("ddd") : "";
+    private string GetWeatherIcon(int c) => c switch { 0=>"☀️", 1=>"🌤️", 2=>"Qw", 3=>"☁️", 45 or 48=>"🌫️", 51 or 53 or 55=>"🌦️", 61 or 63 or 65=>"🌧️", 80 or 81 or 82=>"🌦️", 71 or 73 or 75=>"❄️", 95 or 96 or 99=>"⚡", _=>"🌡️" };
+
+    public class WeatherData { public CurrentWeather current { get; set; } = new(); public DailyWeather daily { get; set; } = new(); }
+    public class CurrentWeather { public double temperature_2m { get; set; } public int weather_code { get; set; } }
+    public class DailyWeather { public string[] time { get; set; } = Array.Empty<string>(); public int[] weather_code { get; set; } = Array.Empty<int>(); public double[] temperature_2m_max { get; set; } = Array.Empty<double>(); public double[] temperature_2m_min { get; set; } = Array.Empty<double>(); }
+    public class SessionData { public int UserId { get; set; } public DateTime Expiry { get; set; } }
+}
