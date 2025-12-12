@@ -24,6 +24,21 @@ public class AppDbContext : DbContext
     public DbSet<RecipeIngredient> RecipeIngredients { get; set; }
     public DbSet<RecipeInstruction> RecipeInstructions { get; set; }
     public DbSet<RecipeCategory> RecipeCategories { get; set; }
+
+    // Bullet Calendar
+    public DbSet<BulletItem> BulletItems { get; set; }
+}
+
+public class BulletItem
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public string Type { get; set; } = "task"; // 'task', 'event', 'note'
+    public string Content { get; set; } = "";
+    public DateTime Date { get; set; }
+    public bool IsCompleted { get; set; }
+    public int Order { get; set; }
+    public string? OriginalStringId { get; set; } // Helper for migration from JSON
 }
 
 public class StoredImage

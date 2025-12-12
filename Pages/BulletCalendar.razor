@@ -19,6 +19,9 @@
         <div class="flex flex-col items-center justify-center h-screen space-y-6">
             <div class="text-red-500 text-xl font-bold">⚠️ Database Error</div>
             <p class="text-gray-400 max-w-md text-center">@errorMessage</p>
+            <button @onclick="UpgradeDatabase" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">
+                Create BulletItems Table
+            </button>
         </div>
     }
     else
@@ -32,7 +35,7 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v1.0.0 (Coming Soon)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v1.1.0 (Data Import)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -89,15 +92,94 @@
                 </div>
             </div>
 
-            <div class="flex flex-col items-center justify-center h-[50vh] text-gray-500">
-                <div class="text-6xl mb-4">📅</div>
-                <h2 class="text-3xl font-bold text-gray-300 mb-2">Bullet Calendar</h2>
-                <p class="text-sm">Your new productivity tool is coming soon.</p>
+            <div class="max-w-4xl mx-auto">
+                
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-xl font-bold text-gray-200">Database Data Verification</h3>
+                    <div class="flex gap-3">
+                         <button @onclick="() => showImportModal = true" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm">
+                            📂 Import JSON
+                        </button>
+                         <button @onclick="LoadData" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm">
+                            🔄 Refresh
+                        </button>
+                    </div>
+                </div>
+
+                @if (!Items.Any())
+                {
+                    <div class="flex flex-col items-center justify-center h-64 border-2 border-dashed border-gray-800 rounded-2xl bg-gray-900/50">
+                        <div class="text-4xl mb-4">📭</div>
+                        <p class="text-gray-500 font-bold">Database is empty</p>
+                        <p class="text-gray-600 text-sm mt-2">Click "Import JSON" to load your data.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden shadow-xl">
+                        <table class="w-full text-left border-collapse">
+                            <thead class="bg-gray-900/50 text-xs uppercase text-gray-400 font-bold">
+                                <tr>
+                                    <th class="p-4 border-b border-gray-700">ID</th>
+                                    <th class="p-4 border-b border-gray-700">Type</th>
+                                    <th class="p-4 border-b border-gray-700">Date</th>
+                                    <th class="p-4 border-b border-gray-700">Content</th>
+                                    <th class="p-4 border-b border-gray-700 text-center">Done?</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-sm divide-y divide-gray-700">
+                                @foreach (var item in Items)
+                                {
+                                    <tr class="hover:bg-gray-700/50 transition">
+                                        <td class="p-4 font-mono text-gray-500">@item.Id</td>
+                                        <td class="p-4">
+                                            <span class="px-2 py-1 rounded text-[10px] font-bold uppercase @GetTypeColor(item.Type)">
+                                                @item.Type
+                                            </span>
+                                        </td>
+                                        <td class="p-4 text-gray-300">@item.Date.ToShortDateString()</td>
+                                        <td class="p-4 text-white font-medium">@item.Content</td>
+                                        <td class="p-4 text-center">
+                                            @if (item.IsCompleted) { <span class="text-green-400">✔</span> }
+                                            else { <span class="text-gray-600">·</span> }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="text-center text-xs text-gray-500 mt-4">Showing first 50 items for verification</div>
+                }
             </div>
 
         </main>
     }
 </div>
+
+@if (showImportModal)
+{
+    <div class="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 border border-gray-600 p-6 rounded-xl shadow-2xl w-full max-w-2xl h-[80vh] flex flex-col">
+            <h3 class="text-xl font-bold text-white mb-2">Import from bullet_calendar.json</h3>
+            <p class="text-sm text-gray-400 mb-4">Paste the contents of your JSON file below. Existing IDs will be converted to integers.</p>
+            
+            <textarea @bind="jsonContent" class="flex-1 bg-gray-900 border border-gray-700 rounded-lg p-4 text-xs font-mono text-green-400 resize-none focus:outline-none focus:border-blue-500" placeholder='[ { "id": "uuid...", "content": "Task 1", "date": "2024-01-01" } ]'></textarea>
+            
+            <div class="mt-6 flex justify-end gap-3">
+                <button @onclick="() => showImportModal = false" class="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
+                <button @onclick="ProcessImport" class="px-6 py-2 bg-green-600 hover:bg-green-500 text-white rounded font-bold shadow-lg flex items-center gap-2">
+                    @if(isImporting) { <span>⏳ Processing...</span> } else { <span>🚀 Import Data</span> }
+                </button>
+            </div>
+            @if(!string.IsNullOrEmpty(importStatus))
+            {
+                <div class="mt-2 text-xs text-center @(importStatus.StartsWith("Error") ? "text-red-400" : "text-green-400")">
+                    @importStatus
+                </div>
+            }
+        </div>
+    </div>
+}
 
 <script>window.getUserOffset = () => { return new Date().getTimezoneOffset(); };</script>
 
@@ -110,9 +192,16 @@
     private bool showUserMenu = false;
     private User? currentUser;
 
+    // Data Logic
+    private List<BulletItem> Items = new();
+    private bool showImportModal = false;
+    private string jsonContent = "";
+    private bool isImporting = false;
+    private string importStatus = "";
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender) 
+        if (firstRender && !isDbError) 
         { 
             try 
             { 
@@ -127,6 +216,7 @@
                 currentUser = await Db.Users.FindAsync(session.UserId);
                 
                 if (currentUser != null) {
+                    await LoadData();
                     _ = FetchWeather();
                 }
 
@@ -137,6 +227,138 @@
             catch { Nav.NavigateTo("/login", forceLoad: true); }
         }
     }
+
+    private async Task LoadData()
+    {
+        if (currentUser == null) return;
+        try 
+        {
+            // Use generic Set if table not in context yet, or standard way if it is
+            // Assuming we added DbSet<BulletItem> to AppDbContext, otherwise this might throw until updated
+            Items = await Db.Set<BulletItem>()
+                            .Where(i => i.UserId == currentUser.Id)
+                            .OrderByDescending(i => i.Date)
+                            .Take(50)
+                            .ToListAsync();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            if (ex.Message.Contains("42P01")) // Table undefined
+            {
+                isDbError = true;
+                errorMessage = "Table 'BulletItems' does not exist.";
+            }
+        }
+    }
+
+    private async Task ProcessImport()
+    {
+        if (string.IsNullOrWhiteSpace(jsonContent) || currentUser == null) return;
+        isImporting = true;
+        importStatus = "Parsing JSON...";
+        StateHasChanged();
+
+        try
+        {
+            // 1. Parse JSON flexibly (assume list of objects)
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var rawItems = JsonSerializer.Deserialize<List<JsonElement>>(jsonContent, options);
+
+            if (rawItems == null || !rawItems.Any()) throw new Exception("No items found in JSON.");
+
+            importStatus = $"Found {rawItems.Count} items. converting...";
+            StateHasChanged();
+
+            var newItems = new List<BulletItem>();
+
+            foreach (var raw in rawItems)
+            {
+                var item = new BulletItem();
+                item.UserId = currentUser.Id;
+                
+                // Map fields flexibly
+                if (raw.TryGetProperty("content", out var c) || raw.TryGetProperty("text", out c) || raw.TryGetProperty("title", out c))
+                    item.Content = c.ToString();
+                
+                if (raw.TryGetProperty("date", out var d) && d.TryGetDateTime(out var dt))
+                    item.Date = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+                else
+                    item.Date = DateTime.UtcNow;
+
+                if (raw.TryGetProperty("type", out var t))
+                    item.Type = t.ToString().ToLower();
+                else
+                    item.Type = "task"; // Default
+
+                if (raw.TryGetProperty("isCompleted", out var ic) || raw.TryGetProperty("completed", out ic) || raw.TryGetProperty("done", out ic))
+                    item.IsCompleted = ic.GetBoolean();
+                
+                // Capture old ID just in case
+                if (raw.TryGetProperty("id", out var oldId))
+                    item.OriginalStringId = oldId.ToString();
+
+                newItems.Add(item);
+            }
+
+            // 2. Save to DB
+            importStatus = "Saving to Database...";
+            StateHasChanged();
+
+            await Db.Set<BulletItem>().AddRangeAsync(newItems);
+            await Db.SaveChangesAsync();
+
+            importStatus = "Success! Import Complete.";
+            jsonContent = ""; // Clear
+            await LoadData();
+            
+            // Auto close after 1s
+            await Task.Delay(1000);
+            showImportModal = false;
+            importStatus = "";
+        }
+        catch (Exception ex)
+        {
+            importStatus = "Error: " + ex.Message;
+        }
+        finally
+        {
+            isImporting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task UpgradeDatabase()
+    {
+        try 
+        {
+            await Db.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""BulletItems"" (
+                    ""Id"" serial PRIMARY KEY,
+                    ""UserId"" integer NOT NULL,
+                    ""Type"" text NOT NULL,
+                    ""Content"" text,
+                    ""Date"" timestamp with time zone NOT NULL,
+                    ""IsCompleted"" boolean DEFAULT false,
+                    ""Order"" integer DEFAULT 0,
+                    ""OriginalStringId"" text
+                );
+            ");
+            isDbError = false;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private string GetTypeColor(string type) => type switch {
+        "task" => "bg-blue-900 text-blue-300",
+        "event" => "bg-purple-900 text-purple-300",
+        "note" => "bg-gray-700 text-gray-300",
+        _ => "bg-gray-800 text-white"
+    };
 
     private void ToggleUserMenu() { showUserMenu = !showUserMenu; }
     private void CloseMenus() { showUserMenu = false; }
@@ -153,6 +375,18 @@
     private async Task FetchWeather() { if (currentUser == null) return; try { var url = "https://api.open-meteo.com/v1/forecast?latitude=33.1383&longitude=-95.6011&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto"; weather = await Http.GetFromJsonAsync<WeatherData>(url); StateHasChanged(); } catch {} }
     private string GetDayName(string s) => DateTime.TryParse(s, out var d) ? d.ToString("ddd") : "";
     private string GetWeatherIcon(int c) => c switch { 0=>"☀️", 1=>"🌤️", 2=>"Qw", 3=>"☁️", 45 or 48=>"🌫️", 51 or 53 or 55=>"🌦️", 61 or 63 or 65=>"🌧️", 80 or 81 or 82=>"🌦️", 71 or 73 or 75=>"❄️", 95 or 96 or 99=>"⚡", _=>"🌡️" };
+
+    public class BulletItem
+    {
+        public int Id { get; set; }
+        public int UserId { get; set; }
+        public string Type { get; set; } = "task"; 
+        public string Content { get; set; } = "";
+        public DateTime Date { get; set; }
+        public bool IsCompleted { get; set; }
+        public int Order { get; set; }
+        public string? OriginalStringId { get; set; }
+    }
 
     public class WeatherData { public CurrentWeather current { get; set; } = new(); public DailyWeather daily { get; set; } = new(); }
     public class CurrentWeather { public double temperature_2m { get; set; } public int weather_code { get; set; } }
