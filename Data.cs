@@ -27,6 +27,7 @@ public class AppDbContext : DbContext
 
     // Bullet Calendar
     public DbSet<BulletItem> BulletItems { get; set; }
+    public DbSet<BulletMedia> BulletMedia { get; set; } // New Table
 }
 
 public class BulletItem
@@ -39,6 +40,34 @@ public class BulletItem
     public bool IsCompleted { get; set; }
     public int Order { get; set; }
     public string? OriginalStringId { get; set; } // Helper for migration from JSON
+}
+
+public class BulletMedia
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    
+    // Core Data
+    public string Title { get; set; } = "";
+    public DateTime Date { get; set; } = DateTime.UtcNow; // Date Watched
+    public string Category { get; set; } = "Movie"; // Movie, Series, etc.
+    
+    // visuals & Links
+    public string LinkUrl { get; set; } = "";
+    public string ImgUrl { get; set; } = "";
+    public int? ImageId { get; set; } // For local uploads later
+
+    // Metadata
+    public int Rating { get; set; } = 0; // 1-10
+    public int ReleaseYear { get; set; }
+    public string Actors { get; set; } = ""; // Comma separated
+    public string Tags { get; set; } = ""; // Comma separated
+    
+    // Content
+    public string Description { get; set; } = ""; // Main review/notes
+    
+    // Migration
+    public string? OriginalStringId { get; set; }
 }
 
 public class StoredImage
