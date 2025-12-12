@@ -36,7 +36,7 @@
                         <h2 class="text-3xl font-bold text-white tracking-tight">@CurrentDate</h2>
                         <span class="text-xl font-medium text-gray-400">@CurrentTime</span>
                     </div>
-                    <div class="text-[10px] text-gray-600 font-mono mt-1">v1.2.0 (Server File Import)</div>
+                    <div class="text-[10px] text-gray-600 font-mono mt-1">v1.1.5 (JSON Structure Fix)</div>
                 </div>
 
                 <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
@@ -115,14 +115,17 @@
                 
                 @if (debugLogs.Any())
                 {
-                    <div class="bg-black border border-gray-700 rounded-lg p-3 mb-6 font-mono text-[10px] text-green-400 max-h-40 overflow-y-auto">
-                        <div class="flex justify-between border-b border-gray-800 pb-1 mb-1 text-gray-500 uppercase font-bold">
+                    <div class="bg-black border border-gray-700 rounded-lg p-3 mb-6 font-mono text-[10px] text-green-400 max-h-40 overflow-y-auto relative group">
+                        <div class="flex justify-between border-b border-gray-800 pb-1 mb-1 text-gray-500 uppercase font-bold sticky top-0 bg-black z-10">
                             <span>Console Output</span>
-                            <button @onclick="ClearLogs" class="hover:text-white">Clear</button>
+                            <div class="flex gap-2">
+                                <button @onclick="CopyLogs" class="hover:text-white">📋 Copy Logs</button>
+                                <button @onclick="ClearLogs" class="hover:text-white">Clear</button>
+                            </div>
                         </div>
                         @foreach(var log in debugLogs)
                         {
-                            <div>@log</div>
+                            <div class="mb-1 border-b border-gray-900/50 pb-1 break-all">@log</div>
                         }
                     </div>
                 }
@@ -176,7 +179,16 @@
     }
 </div>
 
-<script>window.getUserOffset = () => { return new Date().getTimezoneOffset(); };</script>
+<script>
+    window.getUserOffset = () => { return new Date().getTimezoneOffset(); };
+    window.copyTextToClipboard = async (text) => {
+        try {
+            await navigator.clipboard.writeText(text);
+        } catch (err) {
+            console.error('Failed to copy: ', err);
+        }
+    };
+</script>
 
 @code {
     private string CurrentDate = "", CurrentTime = "";
@@ -230,6 +242,13 @@
     }
     
     private void ClearLogs() => debugLogs.Clear();
+    
+    private async Task CopyLogs()
+    {
+        var text = string.Join("\n", debugLogs);
+        await JS.InvokeVoidAsync("copyTextToClipboard", text);
+        Log("Logs copied to clipboard.");
+    }
 
     private async Task LoadData()
     {
@@ -281,21 +300,56 @@
                 return;
             }
 
+            // --- SMART PARSING LOGIC ---
             var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            var rawItems = JsonSerializer.Deserialize<List<JsonElement>>(jsonContent, options);
+            using var doc = JsonDocument.Parse(jsonContent);
+            var root = doc.RootElement;
 
-            if (rawItems == null || !rawItems.Any()) 
+            List<JsonElement> rawList = new();
+
+            if (root.ValueKind == JsonValueKind.Array)
             {
-                Log("JSON parsed but list is empty.");
+                Log("Root is Array. proceeding...");
+                foreach (var el in root.EnumerateArray()) rawList.Add(el);
+            }
+            else if (root.ValueKind == JsonValueKind.Object)
+            {
+                Log("Root is Object. Searching for array property...");
+                // Common property names for lists
+                if (root.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array) 
+                {
+                    Log("Found 'items' array.");
+                    foreach (var el in items.EnumerateArray()) rawList.Add(el);
+                }
+                else if (root.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array) 
+                {
+                    Log("Found 'data' array.");
+                    foreach (var el in data.EnumerateArray()) rawList.Add(el);
+                }
+                else if (root.TryGetProperty("bulletItems", out var bi) && bi.ValueKind == JsonValueKind.Array) 
+                {
+                    Log("Found 'bulletItems' array.");
+                    foreach (var el in bi.EnumerateArray()) rawList.Add(el);
+                }
+                else
+                {
+                     Log("Could not find a valid array property. Trying to map root properties as single item...");
+                     // Maybe it's a single item export?
+                     rawList.Add(root);
+                }
+            }
+            else
+            {
+                Log($"Unknown Root Type: {root.ValueKind}");
                 return;
             }
 
-            Log($"Found {rawItems.Count} items. Mapping to database entities...");
+            Log($"Found {rawList.Count} items to process.");
 
             var newItems = new List<BulletItem>();
             int success = 0;
 
-            foreach (var raw in rawItems)
+            foreach (var raw in rawList)
             {
                 try
                 {
@@ -312,13 +366,13 @@
                     if (raw.TryGetProperty("date", out var d))
                     {
                         string dateStr = d.ToString();
-                        // Try standard formats first
                         if (DateTime.TryParse(dateStr, out var dt))
                             item.Date = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
                         else
                         {
                              // Fallback
                              item.Date = DateTime.UtcNow;
+                             Log($"Invalid date '{dateStr}'. Used Now.");
                         }
                     }
                     else
