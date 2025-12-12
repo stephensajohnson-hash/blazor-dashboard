@@ -30,10 +30,55 @@ public class AppDbContext : DbContext
     public DbSet<BulletMedia> BulletMedia { get; set; }
     public DbSet<BulletTask> BulletTasks { get; set; }
     public DbSet<BulletMeeting> BulletMeetings { get; set; }
-    public DbSet<BulletHabit> BulletHabits { get; set; } // NEW
+    public DbSet<BulletHabit> BulletHabits { get; set; } 
+    public DbSet<BulletMacroTracker> BulletMacroTrackers { get; set; }
+    public DbSet<BulletMeal> BulletMeals { get; set; }
+    public DbSet<BulletWorkout> BulletWorkouts { get; set; }
 }
 
 // --- BULLET CALENDAR MODELS ---
+
+public class BulletMacroTracker
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public DateTime Date { get; set; } = DateTime.UtcNow;
+    
+    // Core Stats
+    public double Weight { get; set; }
+    public double TDEE { get; set; } // Total Daily Energy Expenditure
+    public double WaterIntake { get; set; } // Ounces/Cups
+    
+    public string Notes { get; set; } = "";
+    public string Category { get; set; } = "health";
+    public string Type { get; set; } = "health";
+    public string OriginalStringId { get; set; }
+}
+
+public class BulletMeal
+{
+    public int Id { get; set; }
+    public int BulletMacroTrackerId { get; set; } // FK
+    
+    public string Name { get; set; } = "";
+    public string MealType { get; set; } = "Snack"; // Breakfast, Lunch, Dinner, Snack
+    
+    public double Calories { get; set; }
+    public double Protein { get; set; }
+    public double Fat { get; set; }
+    public double Carbs { get; set; }
+    public double Fiber { get; set; }
+}
+
+public class BulletWorkout
+{
+    public int Id { get; set; }
+    public int BulletMacroTrackerId { get; set; } // FK
+    
+    public string Description { get; set; } = "";
+    public double CaloriesBurned { get; set; }
+    public int DurationMinutes { get; set; } // Added field
+}
 
 public class BulletHabit
 {
