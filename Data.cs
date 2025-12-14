@@ -33,6 +33,8 @@ public class AppDbContext : DbContext
     public DbSet<BulletMacroTracker> BulletMacroTrackers { get; set; }
     public DbSet<BulletMeal> BulletMeals { get; set; }
     public DbSet<BulletWorkout> BulletWorkouts { get; set; }
+
+    public DbSet<BulletHoliday> BulletHolidays { get; set; }
 }
 
 // --- HEALTH MODELS ---
@@ -101,3 +103,17 @@ public class User {
     public string ActivityLevel { get; set; } = "Sedentary"; 
 }
 public static class PasswordHelper { public static string HashPassword(string password) { using var sha256 = SHA256.Create(); var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password)); return Convert.ToBase64String(bytes); } public static bool VerifyPassword(string password, string storedHash) => HashPassword(password) == storedHash; }
+public class BulletHoliday
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public string Type { get; set; } = "holiday";
+    public string Category { get; set; } = "public"; // e.g. "Public", "Company"
+    public string Title { get; set; } = "";
+    public string LinkUrl { get; set; } = "";
+    public string ImgUrl { get; set; } = "";
+    public string Description { get; set; } = "";
+    public bool IsWorkHoliday { get; set; } = false; // Does it count as a day off?
+    public DateTime Date { get; set; }
+    public string? OriginalStringId { get; set; }
+}
