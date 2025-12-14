@@ -36,6 +36,7 @@ public class AppDbContext : DbContext
 
     public DbSet<BulletHoliday> BulletHolidays { get; set; }
     public DbSet<BulletBirthday> BulletBirthdays { get; set; }
+    public DbSet<BulletAnniversary> BulletAnniversaries { get; set; }
 }
 
 // --- HEALTH MODELS ---
@@ -131,5 +132,19 @@ public class BulletBirthday
     public string Description { get; set; } = "";
     public DateTime Date { get; set; } // The birthday date for THIS year
     public int? BirthYear { get; set; } // The original birth year (1980)
+    public string? OriginalStringId { get; set; }
+}
+public class BulletAnniversary
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public string Type { get; set; } = "anniversary";
+    public string Category { get; set; } = "personal"; 
+    public string Title { get; set; } = ""; 
+    public string LinkUrl { get; set; } = "";
+    public string ImgUrl { get; set; } = "";
+    public string Description { get; set; } = "";
+    public DateTime Date { get; set; }
+    public int? FirstYear { get; set; } // e.g. 2010
     public string? OriginalStringId { get; set; }
 }
