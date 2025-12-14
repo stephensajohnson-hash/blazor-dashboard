@@ -38,6 +38,10 @@ public class AppDbContext : DbContext
     public DbSet<BulletBirthday> BulletBirthdays { get; set; }
     public DbSet<BulletAnniversary> BulletAnniversaries { get; set; }
     public DbSet<BulletVacation> BulletVacations { get; set; }
+
+    public DbSet<BulletLeague> BulletLeagues { get; set; }
+    public DbSet<BulletSeason> BulletSeasons { get; set; }
+    public DbSet<BulletTeam> BulletTeams { get; set; }
 }
 
 // --- HEALTH MODELS ---
@@ -166,4 +170,36 @@ public class BulletVacation
     public string GroupId { get; set; } = ""; // Links days of same trip
     public string Location { get; set; } = ""; // e.g. "Maui, HI"
     public string? OriginalStringId { get; set; }
+}
+
+public class BulletLeague
+{
+    [Key]
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public string Name { get; set; } = "";
+    public string LinkUrl { get; set; } = "";
+    public string ImgUrl { get; set; } = "";
+}
+
+public class BulletSeason
+{
+    [Key]
+    public int Id { get; set; }
+    public int BulletLeagueId { get; set; }
+    public string Name { get; set; } = ""; // e.g. "2025-2026"
+    public string LinkUrl { get; set; } = "";
+    public string ImgUrl { get; set; } = "";
+}
+
+public class BulletTeam
+{
+    [Key]
+    public int Id { get; set; }
+    public int BulletLeagueId { get; set; }
+    public string Name { get; set; } = "";
+    public string Abbreviation { get; set; } = ""; // e.g. "DAL"
+    public string LogoUrl { get; set; } = "";
+    public string LinkUrl { get; set; } = "";
+    public bool IsFavorite { get; set; } = false;
 }
