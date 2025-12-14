@@ -184,7 +184,7 @@
                     </div>
                     <div class="border-t border-gray-700 pt-3">
                         <div class="flex justify-between items-center mb-1"><label class="text-xs font-bold text-gray-500 uppercase">Workouts</label><button type="button" @onclick="AddWorkout" class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">＋ Add</button></div>
-                        <div class="flex gap-1 mb-1 px-1 text-[10px] uppercase font-bold text-gray-500 text-center"><div class="flex-1 text-left">Exercise</div><div class="w-16">Min</div><div class="w-16">Cal Burned</div><div class="w-6"></div></div>
+                        <div class="flex gap-1 mb-1 px-1 text-[10px] uppercase font-bold text-gray-500 text-center"><div class="flex-1 text-left">Exercise</div><div class="w-16">Min</div><div class="w-16">Cal Burn</div><div class="w-6"></div></div>
                         @foreach(var work in editingItem.Workouts) { <div class="flex gap-1 mb-2"><input @bind="work.Description" placeholder="Exercise" class="flex-1 bg-gray-800 border border-gray-700 rounded p-1 text-xs text-white" /><input @bind="work.DurationMinutes" type="number" placeholder="0" class="w-16 bg-gray-800 border border-gray-700 rounded p-1 text-xs text-white text-center" /><input @bind="work.CaloriesBurned" type="number" placeholder="0" class="w-16 bg-gray-800 border border-gray-700 rounded p-1 text-xs text-white text-center" /><button type="button" @onclick="() => editingItem.Workouts.Remove(work)" class="text-red-400 px-1">✕</button></div> }
                     </div>
                 }
@@ -358,8 +358,13 @@
                 var log = AllHealth.FirstOrDefault(h => h.Date.Date == day);
                 if (log != null && log.Weight > 0) {
                     var meals = AllMeals.Where(m => m.BulletMacroTrackerId == log.Id); var works = AllWorkouts.Where(w => w.BulletMacroTrackerId == log.Id);
-                    double net = meals.Sum(m => m.Calories) - works.Sum(w => w.CaloriesBurned); double tdee = CalculateTDEE(log.Weight);
-                    totalDeficit += (tdee - net); daysCounted++;
+                    double calIn = meals.Sum(m => m.Calories);
+                    double calOut = works.Sum(w => w.CaloriesBurned);
+                    double tdee = CalculateTDEE(log.Weight);
+                    
+                    // Deficit = (TDEE + Workouts) - Food
+                    totalDeficit += ((tdee + calOut) - calIn); 
+                    daysCounted++;
                 }
             }
             return (totalDeficit, daysCounted);
@@ -396,14 +401,35 @@
         else if (editingItem.Type == "habit") { BulletHabit h; if(editingItem.Id > 0) h = await Db.BulletHabits.FindAsync(editingItem.Id) ?? new BulletHabit(); else { h = new BulletHabit { UserId = currentUser.Id }; await Db.BulletHabits.AddAsync(h); } h.Title = editingItem.Title; h.Category = editingItem.Category; h.Date = editingItem.Date; h.Notes = editingItem.Description; h.ImgUrl = editingItem.ImgUrl; h.StreakCount = editingItem.Streak; }
         else if (editingItem.Type == "health") {
             BulletMacroTracker h;
-            if(editingItem.Id > 0) h = await Db.BulletMacroTrackers.FindAsync(editingItem.Id) ?? new BulletMacroTracker();
-            else { h = new BulletMacroTracker { UserId = currentUser.Id }; await Db.BulletMacroTrackers.AddAsync(h); }
-            h.Date = editingItem.Date; h.Weight = editingItem.Weight; h.WaterIntake = editingItem.Water; h.TDEE = CalculateTDEE(h.Weight);
-            await Db.SaveChangesAsync(); 
-            var oldMeals = await Db.BulletMeals.Where(m => m.BulletMacroTrackerId == h.Id).ToListAsync(); Db.BulletMeals.RemoveRange(oldMeals);
-            var oldWorks = await Db.BulletWorkouts.Where(w => w.BulletMacroTrackerId == h.Id).ToListAsync(); Db.BulletWorkouts.RemoveRange(oldWorks);
-            foreach(var m in editingItem.Meals) { m.Id = 0; m.BulletMacroTrackerId = h.Id; await Db.BulletMeals.AddAsync(m); }
-            foreach(var w in editingItem.Workouts) { w.Id = 0; w.BulletMacroTrackerId = h.Id; await Db.BulletWorkouts.AddAsync(w); }
+            if(editingItem.Id > 0) {
+                h = await Db.BulletMacroTrackers.Include(x => x.Id).FirstOrDefaultAsync(x => x.Id == editingItem.Id) ?? new BulletMacroTracker();
+                // Clear existing entries to prevent duplication
+                var existingMeals = await Db.BulletMeals.Where(m => m.BulletMacroTrackerId == h.Id).ToListAsync();
+                Db.BulletMeals.RemoveRange(existingMeals);
+                var existingWorkouts = await Db.BulletWorkouts.Where(w => w.BulletMacroTrackerId == h.Id).ToListAsync();
+                Db.BulletWorkouts.RemoveRange(existingWorkouts);
+            }
+            else { 
+                h = new BulletMacroTracker { UserId = currentUser.Id }; 
+                await Db.BulletMacroTrackers.AddAsync(h); 
+            }
+            
+            h.Date = editingItem.Date; 
+            h.Weight = editingItem.Weight; 
+            h.WaterIntake = editingItem.Water; 
+            h.TDEE = CalculateTDEE(h.Weight);
+            await Db.SaveChangesAsync(); // Save to get ID if new
+
+            foreach(var m in editingItem.Meals) { 
+                m.Id = 0; // Ensure inserted as new
+                m.BulletMacroTrackerId = h.Id; 
+                await Db.BulletMeals.AddAsync(m); 
+            }
+            foreach(var w in editingItem.Workouts) { 
+                w.Id = 0; // Ensure inserted as new
+                w.BulletMacroTrackerId = h.Id; 
+                await Db.BulletWorkouts.AddAsync(w); 
+            }
         }
         await Db.SaveChangesAsync(); editingItem = null; await LoadData();
     }
@@ -430,6 +456,11 @@
         double calIn = meals.Sum(m => m.Calories); double calOut = workouts.Sum(w => w.CaloriesBurned); double net = calIn - calOut; double tdee = CalculateTDEE(h.Weight);
         double targetCal = tdee - 500;
         
+        // BUDGET MODEL: Remaining = (Goal + Exercise) - Food
+        // If I exercise, my "budget" goes UP, so I have more room to eat.
+        double budget = targetCal + calOut; 
+        double remaining = budget - calIn;
+
         // Goals: Protein (30%), Fat (35%), Carb (35%)
         double proteinGoal = Math.Max(1, (tdee * 0.30) / 4); 
         double fatGoal = Math.Max(1, (tdee * 0.35) / 9);
@@ -439,7 +470,6 @@
         double netCarbs = carb - fib;
         
         var (wkDeficit, days) = CalculateWeeklyDeficit(h.Date);
-        double dailyDeficit = tdee - net;
         
         <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 mb-2 hover:border-orange-500 transition shadow-md group relative">@RenderActions("health", h.Id)
             
@@ -462,25 +492,28 @@
                 </div>
             </div>
 
-            <div class="flex justify-between items-center mb-3 px-1">
+            <div class="flex justify-between items-center mb-1 px-1">
                  <div class="text-xs text-gray-400 font-bold uppercase">Remaining Calories</div>
-                 <div class="text-sm font-bold @(targetCal - net >= 0 ? "text-green-400" : "text-red-400")">
-                     @((targetCal - net).ToString("N0")) <span class="text-[10px] text-gray-500 font-normal">left</span>
+                 <div class="text-sm font-bold @(remaining >= 0 ? "text-green-400" : "text-red-400")">
+                     @remaining.ToString("N0") <span class="text-[10px] text-gray-500 font-normal">left</span>
                  </div>
             </div>
             
-            <div class="text-center text-[10px] text-gray-500 mb-2 uppercase tracking-wider">Calories Burned: <span class="text-blue-400 font-bold">@calOut.ToString("N0")</span></div>
+            <div class="flex justify-between text-[10px] text-gray-500 mb-4 uppercase tracking-wider px-1 border-b border-gray-800 pb-2">
+                <span>Burned: <span class="text-blue-400 font-bold">@calOut.ToString("N0")</span></span>
+                <span>TDEE: @tdee.ToString("N0")</span>
+            </div>
 
             <div class="space-y-4 mb-4">
                  <div>
                     <div class="flex justify-between text-xs mb-1">
-                        <span class="font-bold text-white">Calories (Net)</span>
-                        <span class="text-gray-400">@net.ToString("N0") / @targetCal.ToString("N0") <span class="text-[10px] text-gray-500">(TDEE: @tdee.ToString("N0"))</span></span>
+                        <span class="font-bold text-white">Calories Eaten</span>
+                        <span class="text-gray-400">@calIn.ToString("N0") / @budget.ToString("N0")</span>
                     </div>
                     <div class="h-2 w-full bg-gray-800 rounded-full overflow-hidden border border-gray-700">
-                        <div class="@(net <= targetCal ? "bg-green-500" : "bg-red-500") h-full" style="width: @(Math.Min(100, (net / tdee) * 100))%"></div>
+                        <div class="@(calIn <= budget ? "bg-green-500" : "bg-red-500") h-full" style="width: @(Math.Min(100, (calIn / budget) * 100))%"></div>
                     </div>
-                    <div class="text-[10px] text-right text-gray-500">@((net/targetCal*100).ToString("0"))% of Goal</div>
+                    <div class="text-[10px] text-right text-gray-500">@((calIn/budget*100).ToString("0"))% of Budget</div>
                  </div>
                  
                  <div>
