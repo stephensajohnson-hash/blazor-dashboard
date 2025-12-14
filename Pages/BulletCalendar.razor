@@ -222,7 +222,6 @@
 </script>
 
 @code {
-    // --- STATE ---
     private string CurrentTime = "";
     private WeatherData? weather;
     private int clientOffsetMinutes = 0;
@@ -271,7 +270,6 @@
     private bool isImporting = false;
     private List<string> debugLogs = new();
 
-    // --- INITIALIZATION ---
     protected override async Task OnAfterRenderAsync(bool firstRender) {
         if (firstRender && !isDbError) { 
             try { 
@@ -287,20 +285,8 @@
             } catch { Nav.NavigateTo("/login", true); }
         }
     }
-
-    // --- NAVIGATION LOGIC ---
-    private void ToggleUserMenu() { showUserMenu = !showUserMenu; }
-    private void CloseMenus() { showUserMenu = false; }
-    private async Task Logout() { await JS.InvokeVoidAsync("localStorage.removeItem", "dashboard_session"); Nav.NavigateTo("/login", true); }
-    private void SwitchView(string view) { currentView = view; StateHasChanged(); }
-    private void Prev() { if (currentView == "day") viewDate = viewDate.AddDays(-1); else if (currentView == "week") viewDate = viewDate.AddDays(-7); else viewDate = viewDate.AddMonths(-1); }
-    private void Next() { if (currentView == "day") viewDate = viewDate.AddDays(1); else if (currentView == "week") viewDate = viewDate.AddDays(7); else viewDate = viewDate.AddMonths(1); }
-    private void GoToday() { viewDate = DateTime.UtcNow.AddMinutes(-clientOffsetMinutes); SwitchView("day"); }
-    private void GoToDate(DateTime d) { viewDate = d; SwitchView("day"); }
-    private string GetHeaderDate() => currentView == "day" ? viewDate.ToString("dddd, MMMM d, yyyy") : (currentView == "week" ? $"Week of {GetStartOfWeek(viewDate):MMM d, yyyy}" : viewDate.ToString("MMMM yyyy"));
-    private DateTime GetStartOfWeek(DateTime d) => d.AddDays(-1 * ((7 + (d.DayOfWeek - DayOfWeek.Monday)) % 7)).Date;
-
-    // --- DATA LOADING & FILTERING ---
+    
+    // FILTERS
     private List<BulletMedia> GetMediaForDate(DateTime d, string? category = null) { var q = AllMedia.Where(m => m.Date.Date == d.Date); return category == null ? q.ToList() : q.Where(x => x.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList(); }
     private List<BulletTask> GetTasksForDate(DateTime d, string? category = null) { var t = AllTasks.Where(x => x.Date.Date == d.Date); return category == null ? t.ToList() : t.Where(x => x.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList(); }
     private List<BulletMeeting> GetMeetingsForDate(DateTime d, string? category = null) { var q = AllMeetings.Where(m => m.Date.Date == d.Date).OrderBy(m => m.StartTime); return category == null ? q.ToList() : q.Where(x => x.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList(); }
@@ -311,38 +297,7 @@
         try { return AllHealth.Where(h => h.Date.Date == d.Date).ToList(); } catch { return new List<BulletMacroTracker>(); }
     }
 
-    private async Task LoadData() {
-        if (currentUser == null) return;
-        Console.WriteLine("Loading Data...");
-        try {
-            AllMedia = await Db.Set<BulletMedia>().Where(i => i.UserId == currentUser.Id).ToListAsync();
-            AllTasks = await Db.Set<BulletTask>().Where(i => i.UserId == currentUser.Id).ToListAsync();
-            AllMeetings = await Db.Set<BulletMeeting>().Where(i => i.UserId == currentUser.Id).ToListAsync();
-            AllHabits = await Db.Set<BulletHabit>().Where(i => i.UserId == currentUser.Id).ToListAsync();
-            AllHealth = await Db.Set<BulletMacroTracker>().Where(i => i.UserId == currentUser.Id).ToListAsync();
-            AllMeals = await Db.Set<BulletMeal>().ToListAsync();
-            AllWorkouts = await Db.Set<BulletWorkout>().ToListAsync();
-            Console.WriteLine($"Loaded {AllHealth.Count} Health Logs");
-            
-            // DUPLICATE CHECK
-            foreach(var h in AllHealth) {
-                var count = AllMeals.Count(m => m.BulletMacroTrackerId == h.Id);
-                if (count > 10) { 
-                    Console.WriteLine($"WARNING: Tracker {h.Id} on {h.Date.ToShortDateString()} has {count} meals!");
-                    foreach(var m in AllMeals.Where(m => m.BulletMacroTrackerId == h.Id)) {
-                        Console.WriteLine($" - Meal ID: {m.Id}, Name: {m.Name}");
-                    }
-                }
-            }
-
-            StateHasChanged();
-        } catch (Exception ex) { 
-            Console.WriteLine("Load Error: " + ex.Message);
-            if (ex.Message.Contains("42P01")) { isDbError = true; errorMessage = "Missing Tables."; } 
-        }
-    }
-
-    // --- HEALTH CALCULATIONS ---
+    // CALCULATIONS & DATA
     private double CalculateTDEE(double weightLbs) {
         if (currentUser == null) return 2000;
         double weightKg = Math.Max(weightLbs, 1) * 0.453592; double heightCm = Math.Max(currentUser.HeightInches, 1) * 2.54; int age = Math.Max(currentUser.Age, 1);
@@ -358,20 +313,35 @@
                 var log = AllHealth.FirstOrDefault(h => h.Date.Date == day);
                 if (log != null && log.Weight > 0) {
                     var meals = AllMeals.Where(m => m.BulletMacroTrackerId == log.Id); var works = AllWorkouts.Where(w => w.BulletMacroTrackerId == log.Id);
-                    double calIn = meals.Sum(m => m.Calories);
-                    double calOut = works.Sum(w => w.CaloriesBurned);
-                    double tdee = CalculateTDEE(log.Weight);
-                    
-                    // Deficit = (TDEE + Workouts) - Food
-                    totalDeficit += ((tdee + calOut) - calIn); 
-                    daysCounted++;
+                    double net = meals.Sum(m => m.Calories) - works.Sum(w => w.CaloriesBurned); double tdee = CalculateTDEE(log.Weight);
+                    totalDeficit += (tdee - net); daysCounted++;
                 }
             }
             return (totalDeficit, daysCounted);
         } catch { return (0, 0); }
     }
 
-    // --- ACTIONS (CRUD) ---
+    private async Task LoadData() {
+        if (currentUser == null) return;
+        Console.WriteLine("Loading Data...");
+        try {
+            AllMedia = await Db.Set<BulletMedia>().Where(i => i.UserId == currentUser.Id).ToListAsync();
+            AllTasks = await Db.Set<BulletTask>().Where(i => i.UserId == currentUser.Id).ToListAsync();
+            AllMeetings = await Db.Set<BulletMeeting>().Where(i => i.UserId == currentUser.Id).ToListAsync();
+            AllHabits = await Db.Set<BulletHabit>().Where(i => i.UserId == currentUser.Id).ToListAsync();
+            AllHealth = await Db.Set<BulletMacroTracker>().Where(i => i.UserId == currentUser.Id).ToListAsync();
+            AllMeals = await Db.Set<BulletMeal>().ToListAsync();
+            AllWorkouts = await Db.Set<BulletWorkout>().ToListAsync();
+            Console.WriteLine($"Loaded {AllHealth.Count} Health Logs");
+            StateHasChanged();
+        } catch (Exception ex) { 
+            Console.WriteLine("Load Error: " + ex.Message);
+            if (ex.Message.Contains("42P01")) { isDbError = true; errorMessage = "Missing Tables."; } 
+        }
+    }
+    private DateTime GetStartOfWeek(DateTime d) => d.AddDays(-1 * ((7 + (d.DayOfWeek - DayOfWeek.Monday)) % 7)).Date;
+
+    // ACTIONS
     private async Task ToggleTaskComplete(BulletTask t) { t.IsCompleted = !t.IsCompleted; await Db.SaveChangesAsync(); }
     private async Task ToggleMeetingComplete(BulletMeeting m) { m.IsCompleted = !m.IsCompleted; await Db.SaveChangesAsync(); }
     private async Task ToggleHabitComplete(BulletHabit h) { h.IsCompleted = !h.IsCompleted; await Db.SaveChangesAsync(); }
@@ -402,31 +372,34 @@
         else if (editingItem.Type == "health") {
             BulletMacroTracker h;
             if(editingItem.Id > 0) {
-                h = await Db.BulletMacroTrackers.Include(x => x.Id).FirstOrDefaultAsync(x => x.Id == editingItem.Id) ?? new BulletMacroTracker();
-                // Clear existing entries to prevent duplication
-                var existingMeals = await Db.BulletMeals.Where(m => m.BulletMacroTrackerId == h.Id).ToListAsync();
-                Db.BulletMeals.RemoveRange(existingMeals);
-                var existingWorkouts = await Db.BulletWorkouts.Where(w => w.BulletMacroTrackerId == h.Id).ToListAsync();
-                Db.BulletWorkouts.RemoveRange(existingWorkouts);
+                h = await Db.BulletMacroTrackers.FindAsync(editingItem.Id) ?? new BulletMacroTracker();
+                // 1. DELETE OLD
+                var oldMeals = await Db.BulletMeals.Where(m => m.BulletMacroTrackerId == h.Id).ToListAsync();
+                Db.BulletMeals.RemoveRange(oldMeals);
+                var oldWorks = await Db.BulletWorkouts.Where(w => w.BulletMacroTrackerId == h.Id).ToListAsync();
+                Db.BulletWorkouts.RemoveRange(oldWorks);
+                await Db.SaveChangesAsync(); // Commit the delete immediately
             }
             else { 
                 h = new BulletMacroTracker { UserId = currentUser.Id }; 
                 await Db.BulletMacroTrackers.AddAsync(h); 
+                await Db.SaveChangesAsync(); // Save first to get the ID
             }
             
+            // 2. UPDATE PARENT
             h.Date = editingItem.Date; 
             h.Weight = editingItem.Weight; 
             h.WaterIntake = editingItem.Water; 
             h.TDEE = CalculateTDEE(h.Weight);
-            await Db.SaveChangesAsync(); // Save to get ID if new
-
+            
+            // 3. ADD NEW
             foreach(var m in editingItem.Meals) { 
-                m.Id = 0; // Ensure inserted as new
+                m.Id = 0; // Force insert
                 m.BulletMacroTrackerId = h.Id; 
                 await Db.BulletMeals.AddAsync(m); 
             }
             foreach(var w in editingItem.Workouts) { 
-                w.Id = 0; // Ensure inserted as new
+                w.Id = 0; // Force insert
                 w.BulletMacroTrackerId = h.Id; 
                 await Db.BulletWorkouts.AddAsync(w); 
             }
@@ -455,12 +428,8 @@
         var meals = AllMeals.Where(m => m.BulletMacroTrackerId == h.Id).ToList(); var workouts = AllWorkouts.Where(w => w.BulletMacroTrackerId == h.Id).ToList();
         double calIn = meals.Sum(m => m.Calories); double calOut = workouts.Sum(w => w.CaloriesBurned); double net = calIn - calOut; double tdee = CalculateTDEE(h.Weight);
         double targetCal = tdee - 500;
+        double remaining = targetCal - net;
         
-        // BUDGET MODEL: Remaining = (Goal + Exercise) - Food
-        // If I exercise, my "budget" goes UP, so I have more room to eat.
-        double budget = targetCal + calOut; 
-        double remaining = budget - calIn;
-
         // Goals: Protein (30%), Fat (35%), Carb (35%)
         double proteinGoal = Math.Max(1, (tdee * 0.30) / 4); 
         double fatGoal = Math.Max(1, (tdee * 0.35) / 9);
@@ -470,6 +439,7 @@
         double netCarbs = carb - fib;
         
         var (wkDeficit, days) = CalculateWeeklyDeficit(h.Date);
+        double dailyDeficit = tdee - net;
         
         <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 mb-2 hover:border-orange-500 transition shadow-md group relative">@RenderActions("health", h.Id)
             
@@ -492,7 +462,7 @@
                 </div>
             </div>
 
-            <div class="flex justify-between items-center mb-1 px-1">
+            <div class="flex justify-between items-center mb-3 px-1">
                  <div class="text-xs text-gray-400 font-bold uppercase">Remaining Calories</div>
                  <div class="text-sm font-bold @(remaining >= 0 ? "text-green-400" : "text-red-400")">
                      @remaining.ToString("N0") <span class="text-[10px] text-gray-500 font-normal">left</span>
@@ -507,13 +477,13 @@
             <div class="space-y-4 mb-4">
                  <div>
                     <div class="flex justify-between text-xs mb-1">
-                        <span class="font-bold text-white">Calories Eaten</span>
-                        <span class="text-gray-400">@calIn.ToString("N0") / @budget.ToString("N0")</span>
+                        <span class="font-bold text-white">Calories (Net)</span>
+                        <span class="text-gray-400">@net.ToString("N0") / @targetCal.ToString("N0")</span>
                     </div>
                     <div class="h-2 w-full bg-gray-800 rounded-full overflow-hidden border border-gray-700">
-                        <div class="@(calIn <= budget ? "bg-green-500" : "bg-red-500") h-full" style="width: @(Math.Min(100, (calIn / budget) * 100))%"></div>
+                        <div class="@(net <= targetCal ? "bg-green-500" : "bg-red-500") h-full" style="width: @(Math.Min(100, (net / tdee) * 100))%"></div>
                     </div>
-                    <div class="text-[10px] text-right text-gray-500">@((calIn/budget*100).ToString("0"))% of Budget</div>
+                    <div class="text-[10px] text-right text-gray-500">@((net/targetCal*100).ToString("0"))% of Goal</div>
                  </div>
                  
                  <div>
