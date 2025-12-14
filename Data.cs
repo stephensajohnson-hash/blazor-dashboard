@@ -35,6 +35,7 @@ public class AppDbContext : DbContext
     public DbSet<BulletWorkout> BulletWorkouts { get; set; }
 
     public DbSet<BulletHoliday> BulletHolidays { get; set; }
+    public DbSet<BulletBirthday> BulletBirthdays { get; set; }
 }
 
 // --- HEALTH MODELS ---
@@ -115,5 +116,20 @@ public class BulletHoliday
     public string Description { get; set; } = "";
     public bool IsWorkHoliday { get; set; } = false; // Does it count as a day off?
     public DateTime Date { get; set; }
+    public string? OriginalStringId { get; set; }
+}
+
+public class BulletBirthday
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public string Type { get; set; } = "birthday";
+    public string Category { get; set; } = "personal"; // e.g., Family, Friend
+    public string Title { get; set; } = ""; // Person's Name
+    public string LinkUrl { get; set; } = "";
+    public string ImgUrl { get; set; } = "";
+    public string Description { get; set; } = "";
+    public DateTime Date { get; set; } // The birthday date for THIS year
+    public int? BirthYear { get; set; } // The original birth year (1980)
     public string? OriginalStringId { get; set; }
 }
