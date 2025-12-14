@@ -174,7 +174,6 @@ public class BulletVacation
 
 public class BulletLeague
 {
-    [Key]
     public int Id { get; set; }
     public int UserId { get; set; }
     public string Name { get; set; } = "";
@@ -184,7 +183,6 @@ public class BulletLeague
 
 public class BulletSeason
 {
-    [Key]
     public int Id { get; set; }
     public int BulletLeagueId { get; set; }
     public string Name { get; set; } = ""; // e.g. "2025-2026"
@@ -194,7 +192,6 @@ public class BulletSeason
 
 public class BulletTeam
 {
-    [Key]
     public int Id { get; set; }
     public int BulletLeagueId { get; set; }
     public string Name { get; set; } = "";
