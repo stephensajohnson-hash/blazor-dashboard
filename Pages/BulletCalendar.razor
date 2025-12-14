@@ -22,15 +22,12 @@
         <div class="flex flex-col items-center justify-center h-screen space-y-6">
             <div class="text-red-500 text-xl font-bold">⚠️ Database Setup Required</div>
             <p class="text-gray-400 max-w-md text-center">@errorMessage</p>
-            <button @onclick="UpgradeDatabase" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">
-                Create Missing Tables
-            </button>
+            <button @onclick="UpgradeDatabase" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">Create Missing Tables</button>
         </div>
     }
     else
     {
         <main class="w-full p-6 relative h-screen flex flex-col" @onclick="CloseMenus">
-            
             <div class="mb-4 border-b border-gray-800 pb-2 flex items-center justify-between shrink-0">
                 <div class="min-w-[200px]">
                     <div class="flex flex-col">
@@ -38,7 +35,6 @@
                         <span class="text-lg font-medium text-gray-400">@CurrentTime</span>
                     </div>
                 </div>
-
                 <div class="flex items-center gap-4 bg-gray-800/50 px-4 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
                     <div class="flex items-center gap-4 border-r border-gray-600 pr-4">
                         <a href="/" class="text-xl hover:scale-125 transition grayscale-0" title="Home">🏠</a>
@@ -55,9 +51,8 @@
                         <button @onclick="Next" class="w-8 h-8 flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded-full text-gray-300 transition">▶</button>
                     </div>
                 </div>
-
                 <div class="flex items-center gap-6 min-w-[200px] justify-end">
-                    @if (weather?.current != null)
+                     @if (weather?.current != null)
                     {
                         <div class="flex items-center gap-3 bg-gray-800/30 px-3 py-1.5 rounded-xl border border-gray-700/30">
                             <div class="flex items-center gap-2 pr-3 border-r border-gray-600">
@@ -77,11 +72,9 @@
                             </div>
                         </div>
                     }
-
                     <div class="relative group z-50">
                         <button class="flex items-center gap-3 focus:outline-none" @onclick="ToggleUserMenu" @onclick:stopPropagation="true">
-                            <img src="@(string.IsNullOrEmpty(currentUser?.AvatarUrl) ? "https://i.imgur.com/7Y5j5Yx.png" : currentUser.AvatarUrl)" 
-                                 class="w-9 h-9 rounded-full border-2 border-gray-700 transition object-cover bg-gray-800" />
+                            <img src="@(string.IsNullOrEmpty(currentUser?.AvatarUrl) ? "https://i.imgur.com/7Y5j5Yx.png" : currentUser.AvatarUrl)" class="w-9 h-9 rounded-full border-2 border-gray-700 transition object-cover bg-gray-800" />
                         </button>
                         @if (showUserMenu) {
                             <div class="absolute right-0 top-full mt-2 w-56 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 z-50">
@@ -222,6 +215,7 @@
 </script>
 
 @code {
+    // --- STATE ---
     private string CurrentTime = "";
     private WeatherData? weather;
     private int clientOffsetMinutes = 0;
@@ -270,6 +264,7 @@
     private bool isImporting = false;
     private List<string> debugLogs = new();
 
+    // --- INITIALIZATION ---
     protected override async Task OnAfterRenderAsync(bool firstRender) {
         if (firstRender && !isDbError) { 
             try { 
@@ -285,8 +280,20 @@
             } catch { Nav.NavigateTo("/login", true); }
         }
     }
-    
-    // FILTERS
+
+    // --- NAVIGATION LOGIC ---
+    private void ToggleUserMenu() { showUserMenu = !showUserMenu; }
+    private void CloseMenus() { showUserMenu = false; }
+    private async Task Logout() { await JS.InvokeVoidAsync("localStorage.removeItem", "dashboard_session"); Nav.NavigateTo("/login", true); }
+    private void SwitchView(string view) { currentView = view; StateHasChanged(); }
+    private void Prev() { if (currentView == "day") viewDate = viewDate.AddDays(-1); else if (currentView == "week") viewDate = viewDate.AddDays(-7); else viewDate = viewDate.AddMonths(-1); }
+    private void Next() { if (currentView == "day") viewDate = viewDate.AddDays(1); else if (currentView == "week") viewDate = viewDate.AddDays(7); else viewDate = viewDate.AddMonths(1); }
+    private void GoToday() { viewDate = DateTime.UtcNow.AddMinutes(-clientOffsetMinutes); SwitchView("day"); }
+    private void GoToDate(DateTime d) { viewDate = d; SwitchView("day"); }
+    private string GetHeaderDate() => currentView == "day" ? viewDate.ToString("dddd, MMMM d, yyyy") : (currentView == "week" ? $"Week of {GetStartOfWeek(viewDate):MMM d, yyyy}" : viewDate.ToString("MMMM yyyy"));
+    private DateTime GetStartOfWeek(DateTime d) => d.AddDays(-1 * ((7 + (d.DayOfWeek - DayOfWeek.Monday)) % 7)).Date;
+
+    // --- DATA LOADING & FILTERING ---
     private List<BulletMedia> GetMediaForDate(DateTime d, string? category = null) { var q = AllMedia.Where(m => m.Date.Date == d.Date); return category == null ? q.ToList() : q.Where(x => x.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList(); }
     private List<BulletTask> GetTasksForDate(DateTime d, string? category = null) { var t = AllTasks.Where(x => x.Date.Date == d.Date); return category == null ? t.ToList() : t.Where(x => x.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList(); }
     private List<BulletMeeting> GetMeetingsForDate(DateTime d, string? category = null) { var q = AllMeetings.Where(m => m.Date.Date == d.Date).OrderBy(m => m.StartTime); return category == null ? q.ToList() : q.Where(x => x.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList(); }
@@ -297,7 +304,24 @@
         try { return AllHealth.Where(h => h.Date.Date == d.Date).ToList(); } catch { return new List<BulletMacroTracker>(); }
     }
 
-    // CALCULATIONS & DATA
+    private async Task LoadData() {
+        if (currentUser == null) return;
+        try {
+            AllMedia = await Db.Set<BulletMedia>().Where(i => i.UserId == currentUser.Id).ToListAsync();
+            AllTasks = await Db.Set<BulletTask>().Where(i => i.UserId == currentUser.Id).ToListAsync();
+            AllMeetings = await Db.Set<BulletMeeting>().Where(i => i.UserId == currentUser.Id).ToListAsync();
+            AllHabits = await Db.Set<BulletHabit>().Where(i => i.UserId == currentUser.Id).ToListAsync();
+            AllHealth = await Db.Set<BulletMacroTracker>().Where(i => i.UserId == currentUser.Id).ToListAsync();
+            AllMeals = await Db.Set<BulletMeal>().ToListAsync();
+            AllWorkouts = await Db.Set<BulletWorkout>().ToListAsync();
+            StateHasChanged();
+        } catch (Exception ex) { 
+            Console.WriteLine("Load Error: " + ex.Message);
+            if (ex.Message.Contains("42P01")) { isDbError = true; errorMessage = "Missing Tables."; } 
+        }
+    }
+
+    // --- HEALTH CALCULATIONS ---
     private double CalculateTDEE(double weightLbs) {
         if (currentUser == null) return 2000;
         double weightKg = Math.Max(weightLbs, 1) * 0.453592; double heightCm = Math.Max(currentUser.HeightInches, 1) * 2.54; int age = Math.Max(currentUser.Age, 1);
@@ -321,27 +345,7 @@
         } catch { return (0, 0); }
     }
 
-    private async Task LoadData() {
-        if (currentUser == null) return;
-        Console.WriteLine("Loading Data...");
-        try {
-            AllMedia = await Db.Set<BulletMedia>().Where(i => i.UserId == currentUser.Id).ToListAsync();
-            AllTasks = await Db.Set<BulletTask>().Where(i => i.UserId == currentUser.Id).ToListAsync();
-            AllMeetings = await Db.Set<BulletMeeting>().Where(i => i.UserId == currentUser.Id).ToListAsync();
-            AllHabits = await Db.Set<BulletHabit>().Where(i => i.UserId == currentUser.Id).ToListAsync();
-            AllHealth = await Db.Set<BulletMacroTracker>().Where(i => i.UserId == currentUser.Id).ToListAsync();
-            AllMeals = await Db.Set<BulletMeal>().ToListAsync();
-            AllWorkouts = await Db.Set<BulletWorkout>().ToListAsync();
-            Console.WriteLine($"Loaded {AllHealth.Count} Health Logs");
-            StateHasChanged();
-        } catch (Exception ex) { 
-            Console.WriteLine("Load Error: " + ex.Message);
-            if (ex.Message.Contains("42P01")) { isDbError = true; errorMessage = "Missing Tables."; } 
-        }
-    }
-    private DateTime GetStartOfWeek(DateTime d) => d.AddDays(-1 * ((7 + (d.DayOfWeek - DayOfWeek.Monday)) % 7)).Date;
-
-    // ACTIONS
+    // --- ACTIONS (CRUD) ---
     private async Task ToggleTaskComplete(BulletTask t) { t.IsCompleted = !t.IsCompleted; await Db.SaveChangesAsync(); }
     private async Task ToggleMeetingComplete(BulletMeeting m) { m.IsCompleted = !m.IsCompleted; await Db.SaveChangesAsync(); }
     private async Task ToggleHabitComplete(BulletHabit h) { h.IsCompleted = !h.IsCompleted; await Db.SaveChangesAsync(); }
