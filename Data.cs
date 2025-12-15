@@ -131,3 +131,11 @@ public class BulletBirthday { public int Id { get; set; } public int UserId { ge
 public class BulletAnniversary { public int Id { get; set; } public int UserId { get; set; } public string Type { get; set; }=""; public string Category { get; set; }=""; public string Title { get; set; }=""; public DateTime Date { get; set; } public int? FirstYear { get; set; } public string LinkUrl { get; set; }=""; public string ImgUrl { get; set; }=""; public int? ImageId { get; set; } public string Description { get; set; }=""; public string? OriginalStringId { get; set; } }
 public class BulletVacation { public int Id { get; set; } public int UserId { get; set; } public string Type { get; set; }=""; public string Category { get; set; }=""; public string Title { get; set; }=""; public DateTime Date { get; set; } public string GroupId { get; set; }=""; public string Location { get; set; }=""; public string LinkUrl { get; set; }=""; public string ImgUrl { get; set; }=""; public int? ImageId { get; set; } public string Description { get; set; }=""; public string? OriginalStringId { get; set; } }
 public class BulletGame { public int Id { get; set; } public int UserId { get; set; } public string Type { get; set; }="sports"; public string Category { get; set; }="sports"; public string Title { get; set; }=""; public DateTime Date { get; set; } public int BulletLeagueId { get; set; } public int BulletSeasonId { get; set; } public int HomeTeamId { get; set; } public int AwayTeamId { get; set; } public int? HomeScore { get; set; } public int? AwayScore { get; set; } public string Status { get; set; }="Scheduled"; public string StartTime { get; set; }=""; public string TvChannel { get; set; }=""; public string? OriginalStringId { get; set; } }
+
+public static class BulletViewConfig
+{
+    // Common Image Widths for all card types
+    public const string ImgWidthDay = "25%";
+    public const string ImgWidthWeek = "20%";
+    public const string ImgWidthMonth = "15%";
+}
