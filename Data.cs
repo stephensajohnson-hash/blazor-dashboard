@@ -42,6 +42,7 @@ public class AppDbContext : DbContext
     public DbSet<BulletLeague> BulletLeagues { get; set; }
     public DbSet<BulletSeason> BulletSeasons { get; set; }
     public DbSet<BulletTeam> BulletTeams { get; set; }
+    public DbSet<BulletGame> BulletGames { get; set; } // NEW
 }
 
 // --- HEALTH MODELS ---
@@ -184,6 +185,7 @@ public class BulletLeague
 public class BulletSeason
 {
     public int Id { get; set; }
+    public int UserId { get; set; } // NEW
     public int BulletLeagueId { get; set; }
     public string Name { get; set; } = ""; 
     public string LinkUrl { get; set; } = "";
@@ -193,10 +195,36 @@ public class BulletSeason
 public class BulletTeam
 {
     public int Id { get; set; }
+    public int UserId { get; set; } // NEW
     public int BulletLeagueId { get; set; }
     public string Name { get; set; } = "";
     public string Abbreviation { get; set; } = "";
     public string LogoUrl { get; set; } = "";
     public string LinkUrl { get; set; } = "";
     public bool IsFavorite { get; set; } = false;
+}
+
+public class BulletGame
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public string Type { get; set; } = "sports";
+    public string Category { get; set; } = "personal";
+    public string Title { get; set; } = ""; // e.g. "Cowboys vs Giants"
+    public DateTime Date { get; set; }
+    
+    // Relationships
+    public int BulletLeagueId { get; set; }
+    public int BulletSeasonId { get; set; } // Optional if you want just league
+    public int HomeTeamId { get; set; }
+    public int AwayTeamId { get; set; }
+    
+    // Game Data
+    public int? HomeScore { get; set; }
+    public int? AwayScore { get; set; }
+    public string Status { get; set; } = "Scheduled"; // Scheduled, Final
+    public string StartTime { get; set; } = ""; // e.g. "7:30 PM"
+    public string TvChannel { get; set; } = ""; // e.g. "NBC"
+    
+    public string? OriginalStringId { get; set; }
 }
