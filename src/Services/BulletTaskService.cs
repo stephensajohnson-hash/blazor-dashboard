@@ -13,6 +13,7 @@ public class BulletTaskService
 
     public async Task CreateTable()
     {
+        // Create table if missing
         await _db.Database.ExecuteSqlRawAsync(@"
             CREATE TABLE IF NOT EXISTS ""BulletTaskDetails"" (
                 ""BulletItemId"" integer PRIMARY KEY, 
@@ -33,9 +34,14 @@ public class BulletTaskService
 
     // --- READ ---
 
+    // FIX FOR BUILD ERROR: Added this method to satisfy calls from older/mixed code
+    public async Task<List<TaskDTO>> GetTasksForDate(int userId, DateTime date)
+    {
+        return await GetTasksForRange(userId, date, date);
+    }
+
     public async Task<List<TaskDTO>> GetTasksForRange(int userId, DateTime start, DateTime end)
     {
-        // Fetch all tasks within the date range
         var query = from baseItem in _db.BulletItems
                     join detail in _db.BulletTaskDetails on baseItem.Id equals detail.BulletItemId
                     where baseItem.UserId == userId 
@@ -61,28 +67,24 @@ public class BulletTaskService
 
         if (dto.Id > 0)
         {
-            // UPDATE
             item = await _db.BulletItems.FindAsync(dto.Id);
-            if (item == null) return; // Should not happen
+            if (item == null) return;
         }
         else
         {
-            // CREATE
             item = new BulletItem { UserId = dto.UserId, Type = "task", CreatedAt = DateTime.UtcNow };
             await _db.BulletItems.AddAsync(item);
         }
 
-        // Map Base Fields
         item.Title = dto.Title;
         item.Category = dto.Category;
-        item.Date = dto.Date; // Important: Save as UTC or local depending on your preference, usually keep as is from UI
+        item.Date = dto.Date;
         item.Description = dto.Description;
         item.ImgUrl = dto.ImgUrl;
         item.LinkUrl = dto.LinkUrl;
 
-        await _db.SaveChangesAsync(); // Save base to get ID
+        await _db.SaveChangesAsync();
 
-        // Manage Detail
         var detail = await _db.BulletTaskDetails.FindAsync(item.Id);
         if (detail == null)
         {
@@ -90,7 +92,6 @@ public class BulletTaskService
             await _db.BulletTaskDetails.AddAsync(detail);
         }
 
-        // Map Detail Fields
         detail.Status = dto.Detail.IsCompleted ? "Done" : "Pending";
         detail.IsCompleted = dto.Detail.IsCompleted;
         detail.Priority = dto.Detail.Priority;
@@ -111,7 +112,6 @@ public class BulletTaskService
         }
     }
 
-    // --- IMPORT (Existing) ---
     public async Task ImportFromOldJson(int userId, string jsonContent)
     {
         using var doc = JsonDocument.Parse(jsonContent);
