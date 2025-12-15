@@ -4,6 +4,7 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Dashboard
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.JSInterop
 @using System.IO
 @inject AppDbContext Db
 @inject BulletBaseService BaseService
@@ -15,9 +16,9 @@
 <div class="min-h-screen bg-gray-900 text-white overflow-x-hidden pb-40">
     
     <div class="bg-blue-900/50 border-b border-blue-700 p-2 flex justify-between items-center text-xs">
-        <span class="font-bold text-blue-200">🛠️ New Architecture Migration</span>
+        <span class="font-bold text-blue-200">🛠️ Task Migration</span>
         <div class="flex gap-2">
-            <button @onclick="SetupTables" class="px-3 py-1 bg-blue-700 hover:bg-blue-600 rounded transition">1. Create New Tables</button>
+            <button @onclick="SetupTables" class="px-3 py-1 bg-blue-700 hover:bg-blue-600 rounded transition">1. Create Tables</button>
             <button @onclick="RunTaskImport" class="px-3 py-1 bg-green-700 hover:bg-green-600 rounded transition" disabled="@isBusy">2. Import Tasks</button>
             <button @onclick="DropLegacy" class="px-3 py-1 bg-red-900/50 hover:bg-red-700 rounded transition border border-red-800">3. Drop Legacy Tables</button>
         </div>
@@ -43,7 +44,6 @@
                 </button>
                 @if (showUserMenu) {
                     <div class="absolute right-0 top-full mt-2 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-xl p-2">
-                        <a href="manage-sports" class="block w-full text-left text-xs text-blue-400 hover:bg-gray-700 p-2 rounded mb-1">🏈 Manage Sports</a>
                         <button @onclick="Logout" class="w-full text-left text-xs text-red-400 hover:bg-gray-700 p-2 rounded">Logout</button>
                     </div>
                 }
@@ -84,11 +84,13 @@
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
                 if (string.IsNullOrEmpty(json)) { Nav.NavigateTo("/login", true); return; }
                 
+                // Simple parser to avoid complex DTOs for now
                 var idStr = System.Text.Json.JsonDocument.Parse(json).RootElement.GetProperty("UserId").GetInt32();
                 currentUser = await Db.Users.FindAsync(idStr);
                 
                 if (currentUser != null) 
                 {
+                    // Adjust for local time offset roughly
                     int offset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()");
                     viewDate = DateTime.UtcNow.AddMinutes(-offset);
                     await LoadData(); 
@@ -112,11 +114,12 @@
     
     private void GoToday()
     {
-        viewDate = DateTime.Now; 
+        viewDate = DateTime.Now; // Simplification for now
         _ = LoadData();
     }
 
     // --- MIGRATION COMMANDS ---
+
     private async Task SetupTables()
     {
         isBusy = true; statusMessage = "Creating Base and Task tables...";
@@ -161,6 +164,7 @@
     }
 
     // --- RENDERERS ---
+
     private RenderFragment RenderColumn(string title, string category) => __builder => {
         var tasks = DayTasks.Where(t => t.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList();
 
