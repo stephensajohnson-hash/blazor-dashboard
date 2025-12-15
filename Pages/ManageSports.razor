@@ -187,7 +187,7 @@
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender) {
-        if(firstRender) {
+        if(firstRender && !isDbError) {
             try {
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
                 if (string.IsNullOrEmpty(json)) { Nav.NavigateTo("/login", true); return; }
@@ -197,7 +197,6 @@
                 if (currentUser != null) await LoadData();
             } catch (Exception ex) { 
                 Console.WriteLine("Error in ManageSports: " + ex.Message);
-                // Do not redirect, stay here to show DB error if any
             }
         }
     }
@@ -239,14 +238,10 @@
         }
     }
 
-    // --- HELPER FOR JSON IMPORT ---
     private string GetProp(JsonElement el, string propName) {
         if (el.ValueKind != JsonValueKind.Object) return "";
-        // Case insensitive property search
         foreach (var prop in el.EnumerateObject()) {
-            if (prop.Name.Equals(propName, StringComparison.OrdinalIgnoreCase)) {
-                return prop.Value.ToString();
-            }
+            if (prop.Name.Equals(propName, StringComparison.OrdinalIgnoreCase)) return prop.Value.ToString();
         }
         return "";
     }
@@ -254,9 +249,7 @@
     private bool GetBoolProp(JsonElement el, string propName) {
         if (el.ValueKind != JsonValueKind.Object) return false;
         foreach (var prop in el.EnumerateObject()) {
-            if (prop.Name.Equals(propName, StringComparison.OrdinalIgnoreCase)) {
-                return prop.Value.ValueKind == JsonValueKind.True;
-            }
+            if (prop.Name.Equals(propName, StringComparison.OrdinalIgnoreCase)) return prop.Value.ValueKind == JsonValueKind.True;
         }
         return false;
     }
@@ -271,38 +264,27 @@
             var content = await File.ReadAllTextAsync(filePath);
             using var doc = JsonDocument.Parse(content);
             var root = doc.RootElement;
-            JsonElement items = root;
-            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("items", out var i)) items = i;
-
-            int count = 0;
-            if(items.ValueKind == JsonValueKind.Array) {
-                foreach (var el in items.EnumerateArray()) {
-                    var type = GetProp(el, "type");
-                    // Debug output first few items
-                    if(count < 3) Log($"Scanning item type: '{type}'");
-
-                    if (type.Equals("league", StringComparison.OrdinalIgnoreCase)) {
-                        var name = GetProp(el, "name");
-                        if(!Leagues.Any(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase))) {
-                            var l = new BulletLeague { UserId = currentUser.Id };
-                            l.Name = name;
-                            l.LinkUrl = GetProp(el, "linkUrl");
-                            l.ImgUrl = GetProp(el, "imgUrl");
-                            await Db.BulletLeagues.AddAsync(l);
-                            count++;
-                            Log($"Queued League: {l.Name}");
-                        } else {
-                            Log($"Skipped duplicate League: {name}");
-                        }
+            
+            // Look specifically for "leagues" array
+            if(root.TryGetProperty("leagues", out var leaguesArray) && leaguesArray.ValueKind == JsonValueKind.Array) {
+                int count = 0;
+                foreach (var el in leaguesArray.EnumerateArray()) {
+                    string leagueName = el.ToString(); // It's just a string in the array
+                    if(!Leagues.Any(x => x.Name.Equals(leagueName, StringComparison.OrdinalIgnoreCase))) {
+                        var l = new BulletLeague { UserId = currentUser.Id, Name = leagueName };
+                        await Db.BulletLeagues.AddAsync(l);
+                        count++;
+                        Log($"Queued League: {l.Name}");
+                    } else {
+                        Log($"Skipped duplicate: {leagueName}");
                     }
                 }
+                await Db.SaveChangesAsync();
+                Log($"Imported {count} leagues.");
+                await LoadData();
             } else {
-                Log("JSON root is not an array and has no 'items' array property.");
+                Log("Could not find 'leagues' array in JSON.");
             }
-
-            await Db.SaveChangesAsync();
-            Log($"Imported {count} leagues.");
-            await LoadData();
         } catch (Exception ex) { Log($"Import Error: {ex.Message}"); }
         finally { isImporting = false; }
     }
@@ -315,49 +297,44 @@
             var content = await File.ReadAllTextAsync(filePath);
             using var doc = JsonDocument.Parse(content);
             var root = doc.RootElement;
-            JsonElement items = root;
-            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("items", out var i)) items = i;
 
             // Refresh leagues to ensure we have IDs
             var leagues = await Db.BulletLeagues.Where(u => u.UserId == currentUser.Id).ToListAsync();
             if(!leagues.Any()) { Log("No leagues found! Import leagues first."); isImporting = false; return; }
 
-            int count = 0;
-            if(items.ValueKind == JsonValueKind.Array) {
-                foreach (var el in items.EnumerateArray()) {
-                    var type = GetProp(el, "type");
-                    
-                    if (type.Equals("team", StringComparison.OrdinalIgnoreCase)) {
-                        string leagueName = GetProp(el, "league");
-                        string teamName = GetProp(el, "name");
+            // Look specifically for "teams" array
+            if(root.TryGetProperty("teams", out var teamsArray) && teamsArray.ValueKind == JsonValueKind.Array) {
+                int count = 0;
+                foreach (var el in teamsArray.EnumerateArray()) {
+                    string leagueName = GetProp(el, "league");
+                    string teamName = GetProp(el, "name");
 
-                        // Find league ID
-                        var league = leagues.FirstOrDefault(l => l.Name.Equals(leagueName, StringComparison.OrdinalIgnoreCase));
-                        if (league == null) {
-                            Log($"League '{leagueName}' not found for team '{teamName}'. Skipping.");
-                            continue;
-                        }
+                    // Find league ID
+                    var league = leagues.FirstOrDefault(l => l.Name.Equals(leagueName, StringComparison.OrdinalIgnoreCase));
+                    if (league == null) {
+                        Log($"League '{leagueName}' not found for team '{teamName}'. Using first available.");
+                        league = leagues.First(); // Fallback
+                    }
 
-                        // Check duplicate
-                        if(!Teams.Any(t => t.Name.Equals(teamName, StringComparison.OrdinalIgnoreCase) && t.BulletLeagueId == league.Id)) {
-                            var tm = new BulletTeam { BulletLeagueId = league.Id };
-                            tm.Name = teamName;
-                            tm.Abbreviation = GetProp(el, "abbreviation");
-                            tm.LogoUrl = GetProp(el, "logoUrl");
-                            if(string.IsNullOrEmpty(tm.LogoUrl)) tm.LogoUrl = GetProp(el, "imgUrl"); // Fallback
-                            tm.LinkUrl = GetProp(el, "linkUrl");
-                            tm.IsFavorite = GetBoolProp(el, "isFavorite");
-                            
-                            await Db.BulletTeams.AddAsync(tm);
-                            count++;
-                            Log($"Queued Team: {tm.Name}");
-                        }
+                    // Check duplicate
+                    if(!Teams.Any(t => t.Name.Equals(teamName, StringComparison.OrdinalIgnoreCase) && t.BulletLeagueId == league.Id)) {
+                        var tm = new BulletTeam { BulletLeagueId = league.Id };
+                        tm.Name = teamName;
+                        tm.Abbreviation = GetProp(el, "abbrev"); // Note: JSON uses "abbrev"
+                        tm.LogoUrl = GetProp(el, "logo"); // Note: JSON uses "logo"
+                        tm.IsFavorite = GetBoolProp(el, "isFavorite");
+                        
+                        await Db.BulletTeams.AddAsync(tm);
+                        count++;
+                        Log($"Queued Team: {tm.Name}");
                     }
                 }
+                await Db.SaveChangesAsync();
+                Log($"Imported {count} teams.");
+                await LoadData();
+            } else {
+                Log("Could not find 'teams' array in JSON.");
             }
-            await Db.SaveChangesAsync();
-            Log($"Imported {count} teams.");
-            await LoadData();
         } catch (Exception ex) { Log($"Import Error: {ex.Message}"); }
         finally { isImporting = false; }
     }
