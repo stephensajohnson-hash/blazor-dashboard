@@ -33,6 +33,9 @@ builder.Services.AddScoped(sp =>
     };
 });
 
+builder.Services.AddScoped<BulletBaseService>();
+builder.Services.AddScoped<BulletTaskService>();
+
 // Database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (!string.IsNullOrEmpty(connectionString))
