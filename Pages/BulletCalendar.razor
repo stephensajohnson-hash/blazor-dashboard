@@ -83,8 +83,6 @@
     private DateTime viewDate = DateTime.UtcNow;
     private bool showUserMenu = false;
     private bool isBusy = false;
-    
-    // Error State
     private bool isDbError = false;
     private string errorMessage = "";
     private string statusMessage = "";
@@ -97,46 +95,49 @@
         if (firstRender)
         {
             try {
-                // 1. AUTHENTICATION (Safe check)
+                // 1. Check LocalStorage
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
-                
-                if (string.IsNullOrEmpty(json)) 
-                { 
-                    Nav.NavigateTo("/login", true); 
-                    return; 
-                }
+                if (string.IsNullOrEmpty(json)) { Nav.NavigateTo("/login", true); return; }
                 
                 var root = System.Text.Json.JsonDocument.Parse(json).RootElement;
-                if (!root.TryGetProperty("UserId", out var idProp)) 
-                { 
-                    Nav.NavigateTo("/login", true); 
-                    return; 
+                if(!root.TryGetProperty("UserId", out var idProp)) { Nav.NavigateTo("/login", true); return; }
+                
+                int userId = idProp.GetInt32();
+
+                // 2. Fetch User (Protected Block)
+                // We wrap this specifically to catch Model Validation errors (Missing tables)
+                // so we don't treat them as "User Not Found"
+                try {
+                    currentUser = await Db.Users.FindAsync(userId);
+                } 
+                catch (Exception dbEx) 
+                {
+                    // IF WE CRASH HERE, IT'S A DB SCHEMA ISSUE, NOT AN AUTH ISSUE
+                    Console.WriteLine("DB Schema Error: " + dbEx.Message);
+                    isDbError = true;
+                    errorMessage = "Database schema mismatch. Please click 'Create Tables'.";
+                    StateHasChanged();
+                    return; // STAY ON PAGE
                 }
                 
-                // 2. USER LOADING
-                int userId = idProp.GetInt32();
-                currentUser = await Db.Users.FindAsync(userId);
-                
-                if (currentUser == null) 
-                {
-                    Nav.NavigateTo("/login", true); 
+                // 3. Validate User
+                if (currentUser == null) {
+                    Nav.NavigateTo("/login", true);
                     return;
                 }
 
-                // 3. INIT VIEW
+                // 4. View Setup
                 try {
                     int offset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()");
                     viewDate = DateTime.UtcNow.AddMinutes(-offset);
-                } catch { /* ignore JS error */ }
+                } catch {}
 
-                // 4. DATA LOADING (Isolated Try/Catch)
+                // 5. Load Data
                 await LoadData(); 
 
             } catch (Exception ex) {
-                // Only redirect if it looks like a critical Auth failure. 
-                // DB errors are handled in LoadData.
-                if (currentUser == null) Nav.NavigateTo("/login", true);
-                else Console.WriteLine("Auth Init Error: " + ex.Message);
+                // Generic fallback
+                Console.WriteLine("Critical Error: " + ex.Message);
             }
         }
     }
@@ -147,16 +148,16 @@
         
         try {
             DayTasks = await TaskService.GetTasksForDate(currentUser.Id, viewDate);
-            isDbError = false; // Clear error if successful
-            StateHasChanged();
+            isDbError = false;
         } 
         catch (Exception ex) 
         {
-            // Capture DB errors here to show the "Create Tables" button
+            // Catch data loading errors (e.g. Tasks table missing)
             isDbError = true;
-            errorMessage = ex.Message; // Likely "relation does not exist"
-            StateHasChanged();
+            errorMessage = "Data tables missing. Click 'Create Tables' above.";
+            Console.WriteLine("LoadData Error: " + ex.Message);
         }
+        StateHasChanged();
     }
 
     private void ChangeDate(int days)
