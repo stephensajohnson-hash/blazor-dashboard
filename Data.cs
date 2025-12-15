@@ -185,7 +185,7 @@ public class BulletSeason
 {
     public int Id { get; set; }
     public int BulletLeagueId { get; set; }
-    public string Name { get; set; } = ""; // e.g. "2025-2026"
+    public string Name { get; set; } = ""; 
     public string LinkUrl { get; set; } = "";
     public string ImgUrl { get; set; } = "";
 }
@@ -195,7 +195,7 @@ public class BulletTeam
     public int Id { get; set; }
     public int BulletLeagueId { get; set; }
     public string Name { get; set; } = "";
-    public string Abbreviation { get; set; } = ""; // e.g. "DAL"
+    public string Abbreviation { get; set; } = "";
     public string LogoUrl { get; set; } = "";
     public string LinkUrl { get; set; } = "";
     public bool IsFavorite { get; set; } = false;
