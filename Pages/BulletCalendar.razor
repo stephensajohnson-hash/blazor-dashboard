@@ -16,9 +16,9 @@
 <div class="min-h-screen bg-gray-900 text-white overflow-x-hidden pb-40">
     
     <div class="bg-blue-900/50 border-b border-blue-700 p-2 flex justify-between items-center text-xs">
-        <span class="font-bold text-blue-200">🛠️ New Architecture Migration</span>
+        <span class="font-bold text-blue-200">🛠️ Task Migration</span>
         <div class="flex gap-2">
-            <button @onclick="SetupTables" class="px-3 py-1 bg-blue-700 hover:bg-blue-600 rounded transition">1. Create New Tables</button>
+            <button @onclick="SetupTables" class="px-3 py-1 bg-blue-700 hover:bg-blue-600 rounded transition">1. Create Tables</button>
             <button @onclick="RunTaskImport" class="px-3 py-1 bg-green-700 hover:bg-green-600 rounded transition" disabled="@isBusy">2. Import Tasks</button>
             <button @onclick="DropLegacy" class="px-3 py-1 bg-red-900/50 hover:bg-red-700 rounded transition border border-red-800">3. Drop Legacy Tables</button>
         </div>
@@ -26,11 +26,11 @@
 
     @if (isDbError)
     {
-        <div class="flex flex-col items-center justify-center h-64 space-y-4 border border-red-800 bg-red-900/10 m-6 rounded-xl">
-            <div class="text-red-500 text-xl font-bold">⚠️ Database Setup Required</div>
-            <p class="text-gray-400 max-w-md text-center text-sm">@errorMessage</p>
-            <button @onclick="SetupTables" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded shadow-lg transition">
-                Click Here to Create Tables
+        <div class="flex flex-col items-center justify-center h-64 m-6 rounded-xl bg-red-900/20 border border-red-800">
+            <div class="text-red-500 text-xl font-bold mb-2">⚠️ Database Setup Required</div>
+            <p class="text-gray-400 max-w-md text-center text-xs mb-4">@errorMessage</p>
+            <button @onclick="SetupTables" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">
+                Create Missing Tables
             </button>
         </div>
     }
@@ -83,6 +83,8 @@
     private DateTime viewDate = DateTime.UtcNow;
     private bool showUserMenu = false;
     private bool isBusy = false;
+    
+    // Error State
     private bool isDbError = false;
     private string errorMessage = "";
     private string statusMessage = "";
@@ -95,38 +97,46 @@
         if (firstRender)
         {
             try {
-                // 1. Check Session - If this fails, THEN redirect
+                // 1. AUTHENTICATION (Safe check)
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
-                if (string.IsNullOrEmpty(json)) { Nav.NavigateTo("/login", true); return; }
+                
+                if (string.IsNullOrEmpty(json)) 
+                { 
+                    Nav.NavigateTo("/login", true); 
+                    return; 
+                }
                 
                 var root = System.Text.Json.JsonDocument.Parse(json).RootElement;
-                if(!root.TryGetProperty("UserId", out var idProp)) { Nav.NavigateTo("/login", true); return; }
+                if (!root.TryGetProperty("UserId", out var idProp)) 
+                { 
+                    Nav.NavigateTo("/login", true); 
+                    return; 
+                }
                 
-                int idStr = idProp.GetInt32();
-                currentUser = await Db.Users.FindAsync(idStr);
+                // 2. USER LOADING
+                int userId = idProp.GetInt32();
+                currentUser = await Db.Users.FindAsync(userId);
                 
-                if (currentUser != null) 
+                if (currentUser == null) 
                 {
+                    Nav.NavigateTo("/login", true); 
+                    return;
+                }
+
+                // 3. INIT VIEW
+                try {
                     int offset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()");
                     viewDate = DateTime.UtcNow.AddMinutes(-offset);
-                    
-                    // 2. Load Data - If this fails, SHOW ERROR (Don't redirect)
-                    await LoadData(); 
-                }
-                else {
-                     Nav.NavigateTo("/login", true);
-                }
-            } 
-            catch (Exception ex) 
-            { 
-                // Only redirect if it looks like an auth error (User is null), otherwise show DB error
-                if(currentUser == null) Nav.NavigateTo("/login", true);
-                else 
-                {
-                    isDbError = true;
-                    errorMessage = ex.Message;
-                    StateHasChanged();
-                }
+                } catch { /* ignore JS error */ }
+
+                // 4. DATA LOADING (Isolated Try/Catch)
+                await LoadData(); 
+
+            } catch (Exception ex) {
+                // Only redirect if it looks like a critical Auth failure. 
+                // DB errors are handled in LoadData.
+                if (currentUser == null) Nav.NavigateTo("/login", true);
+                else Console.WriteLine("Auth Init Error: " + ex.Message);
             }
         }
     }
@@ -134,15 +144,19 @@
     private async Task LoadData()
     {
         if(currentUser == null) return;
+        
         try {
             DayTasks = await TaskService.GetTasksForDate(currentUser.Id, viewDate);
-            isDbError = false;
-        } catch (Exception ex) {
+            isDbError = false; // Clear error if successful
+            StateHasChanged();
+        } 
+        catch (Exception ex) 
+        {
+            // Capture DB errors here to show the "Create Tables" button
             isDbError = true;
-            errorMessage = "Database tables missing. Click 'Create New Tables' above.";
-            Console.WriteLine(ex.Message);
+            errorMessage = ex.Message; // Likely "relation does not exist"
+            StateHasChanged();
         }
-        StateHasChanged();
     }
 
     private void ChangeDate(int days)
