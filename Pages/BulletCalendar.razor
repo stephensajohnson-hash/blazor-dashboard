@@ -41,7 +41,7 @@
                 <span>＋</span> New Task
             </button>
             
-            <button @onclick="SetupTables" class="bg-gray-800 hover:bg-gray-700 border border-gray-600 text-gray-300 px-3 py-2 rounded-lg text-xs font-bold">
+            <button @onclick="SetupTables" class="bg-gray-800 hover:bg-gray-700 border border-gray-600 text-gray-300 px-3 py-2 rounded-lg text-xs font-bold" title="Re-run DB Migrations">
                ⚙️ Fix DB
             </button>
 
@@ -52,15 +52,18 @@
                 @if (showUserMenu) {
                     <div class="absolute right-0 top-full mt-2 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-xl p-2 z-50">
                         <button @onclick="RunTaskImport" class="block w-full text-left text-xs text-green-400 hover:bg-gray-700 p-2 rounded mb-1">Import Tasks</button>
-                        <button @onclick="Logout" class="w-full text-left text-xs text-red-400 hover:bg-gray-700 p-2 rounded">Logout</button>
+                        <button @onclick="DropLegacy" class="block w-full text-left text-xs text-red-300 hover:bg-gray-700 p-2 rounded mb-1">Drop Old Tables</button>
+                        <button @onclick="Logout" class="w-full text-left text-xs text-gray-400 hover:bg-gray-700 p-2 rounded">Logout</button>
                     </div>
                 }
             </div>
         </div>
     </div>
 
-    @if(!string.IsNullOrEmpty(statusMessage)) {
-        <div class="mx-6 mb-4 p-2 rounded bg-blue-900/20 border border-blue-800 text-xs font-mono text-blue-300">@statusMessage</div>
+    @if(!string.IsNullOrEmpty(statusMessage) || isDbError) {
+        <div class="mx-6 mb-4 p-2 rounded @(isDbError ? "bg-red-900/50 border-red-600 text-red-200" : "bg-blue-900/20 border-blue-800 text-blue-300") border text-xs font-mono">
+            @(isDbError ? "ERROR: " + errorMessage : statusMessage)
+        </div>
     }
 
     <div class="px-6 h-[calc(100vh-100px)] overflow-hidden">
@@ -127,7 +130,7 @@
             <div class="p-6 space-y-4 overflow-y-auto">
                 <div>
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Title</label>
-                    <input @bind="editingItem.Title" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white focus:border-blue-500 outline-none" placeholder="Task name..." />
+                    <input @bind="editingItem.Title" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white focus:border-blue-500 outline-none" />
                 </div>
                 
                 <div class="grid grid-cols-2 gap-4">
@@ -148,7 +151,7 @@
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Ticket #</label>
-                        <input @bind="editingItem.Detail.TicketNumber" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white" placeholder="JIRA-123" />
+                        <input @bind="editingItem.Detail.TicketNumber" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white" />
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Priority</label>
@@ -162,7 +165,7 @@
 
                 <div>
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Image URL</label>
-                    <input @bind="editingItem.ImgUrl" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white text-xs" placeholder="https://..." />
+                    <input @bind="editingItem.ImgUrl" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white text-xs" />
                     @if(!string.IsNullOrEmpty(editingItem.ImgUrl)) {
                         <div class="mt-2 h-32 w-full rounded bg-black overflow-hidden border border-gray-700">
                             <img src="@editingItem.ImgUrl" class="w-full h-full object-contain" />
@@ -171,7 +174,7 @@
                 </div>
 
                 <div>
-                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Notes</label>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Description</label>
                     <textarea @bind="editingItem.Description" rows="3" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white text-sm"></textarea>
                 </div>
             </div>
@@ -196,6 +199,8 @@
     private string currentView = "day";
     private int clientOffset = 0;
     private bool showUserMenu = false;
+    private bool isDbError = false;
+    private string errorMessage = "";
     private string statusMessage = "";
     
     // Data
@@ -212,27 +217,31 @@
         if (firstRender)
         {
             try {
+                // 1. SESSION CHECK
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
                 if (string.IsNullOrEmpty(json)) { Nav.NavigateTo("/login", true); return; }
                 
-                // Safe Parse
+                // 2. PARSE ID (Safe)
                 int userId = 0;
                 using(var doc = JsonDocument.Parse(json)) {
                     if(doc.RootElement.TryGetProperty("UserId", out var p)) userId = p.GetInt32();
                 }
 
                 if(userId > 0) {
+                    // 3. FETCH USER (Database Safe)
                     try {
                         currentUser = await Db.Users.FindAsync(userId);
-                    } catch { /* DB schema error ignored here, handled in LoadData */ }
+                    } catch { /* Ignore DB error here, will catch in LoadData */ }
                     
                     if(currentUser != null) {
                         try { clientOffset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()"); } catch {}
                         viewDate = DateTime.UtcNow.AddMinutes(-clientOffset);
                         await LoadData();
+                    } else {
+                        Nav.NavigateTo("/login", true);
                     }
                 }
-            } catch { /* Safe init */ }
+            } catch { /* Prevent loop */ }
         }
     }
 
@@ -240,62 +249,101 @@
     {
         if (currentUser == null) return;
 
+        // CALCULATE RANGE based on View
         DateTime start, end;
-        if (currentView == "week") { start = weekStart; end = start.AddDays(7); }
-        else if (currentView == "month") { start = new DateTime(viewDate.Year, viewDate.Month, 1); end = start.AddMonths(1); }
-        else { start = viewDate.Date; end = viewDate.Date; } // Day
+        if (currentView == "week") { 
+            start = weekStart; 
+            end = start.AddDays(7); 
+        }
+        else if (currentView == "month") { 
+            start = new DateTime(viewDate.Year, viewDate.Month, 1); 
+            end = start.AddMonths(1).AddSeconds(-1); 
+        }
+        else { 
+            start = viewDate.Date; 
+            end = viewDate.Date.AddDays(1).AddSeconds(-1); 
+        } 
 
         try {
+            // FIX: Call correct service method for range
             loadedTasks = await TaskService.GetTasksForRange(currentUser.Id, start, end);
-            statusMessage = "";
+            isDbError = false;
         } catch(Exception ex) {
-            statusMessage = "DB Error: " + ex.Message + " (Click Fix DB)";
+            isDbError = true;
+            errorMessage = "Data Load Failed: " + ex.Message;
         }
         StateHasChanged();
     }
 
-    private async Task SetupTables()
-    {
-        statusMessage = "Fixing DB...";
-        await BaseService.CreateBaseTablesIfMissing();
-        await TaskService.CreateTable();
-        statusMessage = "DB Fixed. Reloading...";
-        await LoadData();
-    }
-
-    private async Task RunTaskImport()
-    {
-        statusMessage = "Importing...";
-        var path = Path.Combine(Env.WebRootPath, "bullet_calendar.json");
-        if(File.Exists(path)) {
-            var content = await File.ReadAllTextAsync(path);
-            await TaskService.ImportFromOldJson(currentUser!.Id, content);
-            statusMessage = "Imported.";
-            await LoadData();
-        } else { statusMessage = "File not found."; }
-    }
-
     // --- VIEW LOGIC ---
     private void SwitchView(string view) { currentView = view; _ = LoadData(); }
+    
     private void Prev() { 
         if(currentView == "day") viewDate = viewDate.AddDays(-1);
         else if(currentView == "week") viewDate = viewDate.AddDays(-7);
         else viewDate = viewDate.AddMonths(-1);
         _ = LoadData(); 
     }
+    
     private void Next() { 
         if(currentView == "day") viewDate = viewDate.AddDays(1);
         else if(currentView == "week") viewDate = viewDate.AddDays(7);
         else viewDate = viewDate.AddMonths(1);
         _ = LoadData(); 
     }
+    
     private void GoToday() { viewDate = DateTime.UtcNow.AddMinutes(-clientOffset); _ = LoadData(); }
+    
     private void GoToDate(DateTime d) { viewDate = d; SwitchView("day"); }
+    
     private string GetHeaderDate() => currentView == "day" ? viewDate.ToString("dddd, MMM d") : (currentView == "week" ? $"Week of {weekStart:MMM d}" : viewDate.ToString("MMMM yyyy"));
 
+    // Helper for rendering
     private List<BulletTaskService.TaskDTO> GetTasksForDate(DateTime d) => loadedTasks.Where(t => t.Date.Date == d.Date).ToList();
 
     // --- ACTIONS ---
+    private async Task SetupTables()
+    {
+        statusMessage = "Fixing DB Schema...";
+        try {
+            await BaseService.CreateBaseTablesIfMissing();
+            await TaskService.CreateTable();
+            statusMessage = "Schema Fixed. Reloading...";
+            isDbError = false;
+            await LoadData();
+        } catch (Exception ex) {
+            isDbError = true;
+            errorMessage = ex.Message;
+        }
+        StateHasChanged();
+    }
+
+    private async Task RunTaskImport()
+    {
+        if(currentUser == null) return;
+        statusMessage = "Importing...";
+        try {
+            var path = Path.Combine(Env.WebRootPath, "bullet_calendar.json");
+            if(File.Exists(path)) {
+                var content = await File.ReadAllTextAsync(path);
+                await TaskService.ImportFromOldJson(currentUser.Id, content);
+                statusMessage = "Imported Successfully.";
+                await LoadData();
+            } else { statusMessage = "File not found."; }
+        } catch(Exception ex) { 
+            statusMessage = "Error: " + ex.Message; 
+        }
+        StateHasChanged();
+    }
+
+    private async Task DropLegacy()
+    {
+        if(!await JS.InvokeAsync<bool>("confirm", "Delete old tables?")) return;
+        await BaseService.DropLegacyTables();
+        statusMessage = "Legacy tables dropped.";
+        StateHasChanged();
+    }
+
     private async Task ToggleComplete(BulletTaskService.TaskDTO t)
     {
         t.Detail.IsCompleted = !t.Detail.IsCompleted;

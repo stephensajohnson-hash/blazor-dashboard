@@ -13,7 +13,6 @@ public class BulletTaskService
 
     public async Task CreateTable()
     {
-        // Create table if missing
         await _db.Database.ExecuteSqlRawAsync(@"
             CREATE TABLE IF NOT EXISTS ""BulletTaskDetails"" (
                 ""BulletItemId"" integer PRIMARY KEY, 
@@ -34,19 +33,24 @@ public class BulletTaskService
 
     // --- READ ---
 
-    // FIX FOR BUILD ERROR: Added this method to satisfy calls from older/mixed code
+    // Used for Day View
     public async Task<List<TaskDTO>> GetTasksForDate(int userId, DateTime date)
     {
         return await GetTasksForRange(userId, date, date);
     }
 
+    // Used for Week/Month Views
     public async Task<List<TaskDTO>> GetTasksForRange(int userId, DateTime start, DateTime end)
     {
+        // Ensure strictly Date comparison (ignore time)
+        var s = start.Date;
+        var e = end.Date.AddDays(1).AddSeconds(-1); // End of the day
+
         var query = from baseItem in _db.BulletItems
                     join detail in _db.BulletTaskDetails on baseItem.Id equals detail.BulletItemId
                     where baseItem.UserId == userId 
-                          && baseItem.Date >= start.Date 
-                          && baseItem.Date <= end.Date
+                          && baseItem.Date >= s 
+                          && baseItem.Date <= e
                           && baseItem.Type == "task"
                     select new TaskDTO 
                     { 
