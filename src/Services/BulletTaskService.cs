@@ -33,18 +33,16 @@ public class BulletTaskService
 
     // --- READ ---
 
-    // Used for Day View
     public async Task<List<TaskDTO>> GetTasksForDate(int userId, DateTime date)
     {
         return await GetTasksForRange(userId, date, date);
     }
 
-    // Used for Week/Month Views
     public async Task<List<TaskDTO>> GetTasksForRange(int userId, DateTime start, DateTime end)
     {
-        // Ensure strictly Date comparison (ignore time)
-        var s = start.Date;
-        var e = end.Date.AddDays(1).AddSeconds(-1); // End of the day
+        // FIX: Explicitly set Kind to UTC for PostgreSQL
+        var s = DateTime.SpecifyKind(start.Date, DateTimeKind.Utc);
+        var e = DateTime.SpecifyKind(end.Date.AddDays(1).AddSeconds(-1), DateTimeKind.Utc);
 
         var query = from baseItem in _db.BulletItems
                     join detail in _db.BulletTaskDetails on baseItem.Id equals detail.BulletItemId
@@ -68,6 +66,12 @@ public class BulletTaskService
     public async Task SaveTask(TaskDTO dto)
     {
         BulletItem? item = null;
+
+        // Ensure Date is UTC before saving
+        if (dto.Date.Kind == DateTimeKind.Unspecified) 
+            dto.Date = DateTime.SpecifyKind(dto.Date, DateTimeKind.Utc);
+        else if (dto.Date.Kind == DateTimeKind.Local)
+            dto.Date = dto.Date.ToUniversalTime();
 
         if (dto.Id > 0)
         {
@@ -132,7 +136,11 @@ public class BulletTaskService
                     string title = ""; if(el.TryGetProperty("title", out var val)) title = val.ToString();
                     var item = new BulletItem { UserId = userId, Type = "task", CreatedAt = DateTime.UtcNow, Title = title };
                     
-                    if(el.TryGetProperty("date", out val) && DateTime.TryParse(val.ToString(), out var dt)) item.Date = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+                    if(el.TryGetProperty("date", out val) && DateTime.TryParse(val.ToString(), out var dt)) 
+                        item.Date = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+                    else 
+                        item.Date = DateTime.UtcNow;
+
                     if(el.TryGetProperty("category", out val)) item.Category = val.ToString();
                     if(el.TryGetProperty("description", out val)) item.Description = val.ToString();
                     if(el.TryGetProperty("imgUrl", out val)) item.ImgUrl = val.ToString();
