@@ -12,6 +12,7 @@ public class BulletBaseService
 
     public async Task CreateBaseTablesIfMissing()
     {
+        // 1. Create Tables if they don't exist
         await _db.Database.ExecuteSqlRawAsync(@"
             CREATE TABLE IF NOT EXISTS ""BulletItems"" (
                 ""Id"" serial PRIMARY KEY, 
@@ -36,6 +37,21 @@ public class BulletBaseService
                 ""Order"" integer DEFAULT 0
             );
         ");
+
+        // 2. FORCE ADD COLUMNS (Fixes 'Column does not exist' errors on existing tables)
+        var columns = new[] { "Category", "Type", "Title", "Description", "ImgUrl", "LinkUrl", "OriginalStringId" };
+        foreach (var col in columns)
+        {
+            try {
+                await _db.Database.ExecuteSqlRawAsync($@"
+                    DO $$ 
+                    BEGIN 
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='BulletItems' AND column_name='{col}') THEN 
+                            ALTER TABLE ""BulletItems"" ADD COLUMN ""{col}"" text DEFAULT ''; 
+                        END IF; 
+                    END $$;");
+            } catch { /* Ignore if already exists */ }
+        }
     }
 
     public async Task DropLegacyTables()
