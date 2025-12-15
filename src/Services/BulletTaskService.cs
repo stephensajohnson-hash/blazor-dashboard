@@ -26,13 +26,12 @@ public class BulletTaskService
         ");
     }
 
-    // DTO to Flatten Data for the UI
     public class TaskDTO : BulletItem
     {
         public BulletTaskDetail Detail { get; set; } = new();
     }
 
-    public async Task<List<TaskDTO>> GetTasksForDate(int userId, DateTime date, string? category = null)
+    public async Task<List<TaskDTO>> GetTasksForDate(int userId, DateTime date)
     {
         var query = from baseItem in _db.BulletItems
                     join detail in _db.BulletTaskDetails on baseItem.Id equals detail.BulletItemId
@@ -46,13 +45,6 @@ public class BulletTaskService
                         ImgUrl = baseItem.ImgUrl, LinkUrl = baseItem.LinkUrl,
                         Detail = detail
                     };
-
-        if (!string.IsNullOrEmpty(category))
-        {
-            // Client-side eval for case-insensitive string compare if needed, 
-            // or just ensure DB is consistent.
-            query = query.Where(x => x.Category == category); 
-        }
 
         return await query.ToListAsync();
     }
@@ -70,40 +62,32 @@ public class BulletTaskService
             {
                 if (el.TryGetProperty("type", out var t) && t.ToString().ToLower() == "task")
                 {
-                    // 1. Create Base Item
-                    var item = new BulletItem { UserId = userId, Type = "task", CreatedAt = DateTime.UtcNow };
+                    // 1. Check duplicate by title + date
+                    string title = ""; 
+                    if(el.TryGetProperty("title", out var val)) title = val.ToString();
                     
-                    if(el.TryGetProperty("title", out var val)) item.Title = val.ToString();
+                    // Simple dupe check
+                    // if(await _db.BulletItems.AnyAsync(x => x.UserId == userId && x.Title == title && x.Type == "task")) continue;
+
+                    var item = new BulletItem { UserId = userId, Type = "task", CreatedAt = DateTime.UtcNow, Title = title };
+                    
                     if(el.TryGetProperty("date", out val) && DateTime.TryParse(val.ToString(), out var dt)) item.Date = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
                     if(el.TryGetProperty("category", out val)) item.Category = val.ToString();
                     if(el.TryGetProperty("description", out val)) item.Description = val.ToString();
                     if(el.TryGetProperty("imgUrl", out val)) item.ImgUrl = val.ToString();
                     if(el.TryGetProperty("linkUrl", out val)) item.LinkUrl = val.ToString();
-                    if(el.TryGetProperty("id", out val)) item.OriginalStringId = val.ToString(); // Store old ID to prevent dupes later
+                    if(el.TryGetProperty("id", out val)) item.OriginalStringId = val.ToString();
 
-                    // Check for duplicate by OriginalStringId if needed, skipping for now for speed
-                    
                     await _db.BulletItems.AddAsync(item);
-                    await _db.SaveChangesAsync(); // SAVE to generate the ID
+                    await _db.SaveChangesAsync(); 
 
-                    // 2. Create Task Detail
                     var detail = new BulletTaskDetail { BulletItemId = item.Id };
-                    
                     if(el.TryGetProperty("ticketNumber", out val)) detail.TicketNumber = val.ToString();
-                    if(el.TryGetProperty("ticketUrl", out val)) detail.TicketUrl = val.ToString(); // Mapped your new field
+                    if(el.TryGetProperty("ticketUrl", out val)) detail.TicketUrl = val.ToString();
                     if(el.TryGetProperty("priority", out val)) detail.Priority = val.ToString();
                     
-                    // Handle status/completed
-                    if(el.TryGetProperty("isCompleted", out val) && val.ValueKind == JsonValueKind.True) 
-                    {
-                        detail.IsCompleted = true;
-                        detail.Status = "Done";
-                    }
-                    else if(el.TryGetProperty("status", out val) && val.ToString().ToLower() == "completed")
-                    {
-                        detail.IsCompleted = true;
-                        detail.Status = "Done";
-                    }
+                    if(el.TryGetProperty("isCompleted", out val) && val.ValueKind == JsonValueKind.True) { detail.IsCompleted = true; detail.Status = "Done"; }
+                    else if(el.TryGetProperty("status", out val) && val.ToString().ToLower() == "completed") { detail.IsCompleted = true; detail.Status = "Done"; }
                     
                     await _db.BulletTaskDetails.AddAsync(detail);
                 }

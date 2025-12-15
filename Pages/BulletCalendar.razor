@@ -18,7 +18,7 @@
         <span class="font-bold text-blue-200">🛠️ New Architecture Migration</span>
         <div class="flex gap-2">
             <button @onclick="SetupTables" class="px-3 py-1 bg-blue-700 hover:bg-blue-600 rounded transition">1. Create New Tables</button>
-            <button @onclick="RunTaskImport" class="px-3 py-1 bg-green-700 hover:bg-green-600 rounded transition" disabled="@isBusy">2. Import Tasks from JSON</button>
+            <button @onclick="RunTaskImport" class="px-3 py-1 bg-green-700 hover:bg-green-600 rounded transition" disabled="@isBusy">2. Import Tasks</button>
             <button @onclick="DropLegacy" class="px-3 py-1 bg-red-900/50 hover:bg-red-700 rounded transition border border-red-800">3. Drop Legacy Tables</button>
         </div>
     </div>
@@ -43,6 +43,7 @@
                 </button>
                 @if (showUserMenu) {
                     <div class="absolute right-0 top-full mt-2 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-xl p-2">
+                        <a href="manage-sports" class="block w-full text-left text-xs text-blue-400 hover:bg-gray-700 p-2 rounded mb-1">🏈 Manage Sports</a>
                         <button @onclick="Logout" class="w-full text-left text-xs text-red-400 hover:bg-gray-700 p-2 rounded">Logout</button>
                     </div>
                 }
@@ -83,13 +84,11 @@
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
                 if (string.IsNullOrEmpty(json)) { Nav.NavigateTo("/login", true); return; }
                 
-                // Simple parser to avoid complex DTOs for now
                 var idStr = System.Text.Json.JsonDocument.Parse(json).RootElement.GetProperty("UserId").GetInt32();
                 currentUser = await Db.Users.FindAsync(idStr);
                 
                 if (currentUser != null) 
                 {
-                    // Adjust for local time offset roughly
                     int offset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()");
                     viewDate = DateTime.UtcNow.AddMinutes(-offset);
                     await LoadData(); 
@@ -113,12 +112,11 @@
     
     private void GoToday()
     {
-        viewDate = DateTime.Now; // Simplification for now
+        viewDate = DateTime.Now; 
         _ = LoadData();
     }
 
     // --- MIGRATION COMMANDS ---
-
     private async Task SetupTables()
     {
         isBusy = true; statusMessage = "Creating Base and Task tables...";
@@ -149,7 +147,7 @@
 
     private async Task DropLegacy()
     {
-        if(!await JS.InvokeAsync<bool>("confirm", "This will DELETE the old tables (BulletTasks, BulletMeetings, etc). Are you sure?")) return;
+        if(!await JS.InvokeAsync<bool>("confirm", "This will DELETE the old tables (BulletTasks, etc). Are you sure?")) return;
         isBusy = true; statusMessage = "Dropping legacy tables...";
         await BaseService.DropLegacyTables();
         statusMessage = "Legacy tables dropped.";
@@ -163,7 +161,6 @@
     }
 
     // --- RENDERERS ---
-
     private RenderFragment RenderColumn(string title, string category) => __builder => {
         var tasks = DayTasks.Where(t => t.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList();
 
@@ -185,7 +182,7 @@
                                 }
                             </div>
                         </div>
-                        </div>
+                    </div>
                 }
                 @if(!tasks.Any()) { <div class="text-center text-gray-600 text-xs italic mt-4">No items</div> }
             </div>
