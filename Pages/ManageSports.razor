@@ -21,73 +21,100 @@
             <p class="text-gray-400 text-sm">Configure Leagues, Seasons, and Teams</p>
         </div>
         <div class="flex gap-2">
-             <button @onclick="UpgradeDatabase" class="px-4 py-2 bg-red-600 hover:bg-red-500 rounded text-sm font-bold transition">⚠️ Update Database Schema</button>
-             <button @onclick="ImportLeagues" class="px-3 py-2 bg-blue-700 hover:bg-blue-600 rounded text-xs font-bold transition" disabled="@isImporting">📥 Import Leagues</button>
-             <button @onclick="ImportTeams" class="px-3 py-2 bg-indigo-700 hover:bg-indigo-600 rounded text-xs font-bold transition" disabled="@isImporting">📥 Import Teams</button>
+             @if (isDbError)
+             {
+                 <button @onclick="UpgradeDatabase" class="px-4 py-2 bg-red-600 hover:bg-red-500 rounded text-sm font-bold transition">⚠️ Create Missing Tables</button>
+             }
+             else
+             {
+                 <button @onclick="ImportLeagues" class="px-3 py-2 bg-blue-700 hover:bg-blue-600 rounded text-xs font-bold transition" disabled="@isImporting">📥 Import Leagues</button>
+                 <button @onclick="ImportTeams" class="px-3 py-2 bg-indigo-700 hover:bg-indigo-600 rounded text-xs font-bold transition" disabled="@isImporting">📥 Import Teams</button>
+             }
             <a href="/bullet-calendar" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded text-sm font-bold transition">← Back to Calendar</a>
         </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div class="bg-gray-800/50 rounded-xl border border-gray-700 flex flex-col h-[75vh]">
-            <div class="p-4 border-b border-gray-700 bg-gray-800 rounded-t-xl flex justify-between items-center">
-                <h2 class="font-bold text-lg">Leagues</h2>
-                <button @onclick='() => NewItem("league")' class="text-xs bg-blue-600 hover:bg-blue-500 px-3 py-1 rounded transition">＋ Add</button>
-            </div>
-            <div class="flex-1 overflow-y-auto p-2 space-y-2">
-                @foreach (var l in Leagues) {
-                    <div class="p-3 rounded-lg border cursor-pointer transition flex items-center gap-3 @(selectedLeague?.Id == l.Id ? "bg-blue-900/30 border-blue-500" : "bg-gray-900 border-gray-700 hover:border-gray-500")" @onclick="() => SelectLeague(l)">
-                        @if(!string.IsNullOrEmpty(l.ImgUrl)) { <img src="@l.ImgUrl" class="w-8 h-8 object-contain rounded bg-white/10 p-0.5" /> }
-                        else { <div class="w-8 h-8 rounded bg-gray-700 flex items-center justify-center text-xs">🏆</div> }
-                        <div class="flex-1 min-w-0"><div class="font-bold truncate">@l.Name</div></div>
-                        <button @onclick='() => EditItem("league", l.Id)' @onclick:stopPropagation="true" class="text-gray-400 hover:text-white">✎</button>
-                        <button @onclick='() => DeleteItem("league", l.Id)' @onclick:stopPropagation="true" class="text-red-400 hover:text-red-200">✕</button>
-                    </div>
-                }
-            </div>
+    @if (isDbError)
+    {
+        <div class="p-10 text-center border border-red-800 rounded-xl bg-red-900/20">
+            <h3 class="text-xl font-bold text-red-400 mb-2">Database Configuration Needed</h3>
+            <p class="text-gray-300">The sports tables (Leagues, Seasons, Teams) were not found. Click the button above to create them.</p>
+            <div class="mt-4 text-xs font-mono text-gray-500">@errorMessage</div>
         </div>
-
-        <div class="bg-gray-800/50 rounded-xl border border-gray-700 flex flex-col h-[75vh] @(selectedLeague == null ? "opacity-50 pointer-events-none" : "")">
-            <div class="p-4 border-b border-gray-700 bg-gray-800 rounded-t-xl flex justify-between items-center">
-                <h2 class="font-bold text-lg">Seasons</h2>
-                <button @onclick='() => NewItem("season")' class="text-xs bg-green-600 hover:bg-green-500 px-3 py-1 rounded transition">＋ Add</button>
-            </div>
-            <div class="flex-1 overflow-y-auto p-2 space-y-2">
-                @if(selectedLeague != null) {
-                    @foreach (var s in GetSeasons(selectedLeague.Id)) {
-                        <div class="p-3 rounded-lg border bg-gray-900 border-gray-700 hover:border-gray-500 transition flex items-center gap-3">
-                            <div class="flex-1 min-w-0"><div class="font-bold truncate">@s.Name</div></div>
-                            <button @onclick='() => EditItem("season", s.Id)' class="text-gray-400 hover:text-white">✎</button>
-                            <button @onclick='() => DeleteItem("season", s.Id)' class="text-red-400 hover:text-red-200">✕</button>
-                        </div>
-                    }
-                } else { <div class="p-4 text-center text-gray-500 italic">Select a league</div> }
-            </div>
-        </div>
-
-        <div class="bg-gray-800/50 rounded-xl border border-gray-700 flex flex-col h-[75vh] @(selectedLeague == null ? "opacity-50 pointer-events-none" : "")">
-            <div class="p-4 border-b border-gray-700 bg-gray-800 rounded-t-xl flex justify-between items-center">
-                <h2 class="font-bold text-lg">Teams</h2>
-                <button @onclick='() => NewItem("team")' class="text-xs bg-indigo-600 hover:bg-indigo-500 px-3 py-1 rounded transition">＋ Add</button>
-            </div>
-            <div class="flex-1 overflow-y-auto p-2 space-y-2">
-                @if(selectedLeague != null) {
-                    @foreach (var t in GetTeams(selectedLeague.Id)) {
-                        <div class="p-3 rounded-lg border bg-gray-900 border-gray-700 hover:border-gray-500 transition flex items-center gap-3">
-                            @if(!string.IsNullOrEmpty(t.LogoUrl)) { <img src="@t.LogoUrl" class="w-8 h-8 object-contain rounded bg-white/10 p-0.5" /> }
-                            else { <div class="w-8 h-8 rounded bg-gray-700 flex items-center justify-center text-xs">🛡️</div> }
+    }
+    else
+    {
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <div class="bg-gray-800/50 rounded-xl border border-gray-700 flex flex-col h-[75vh]">
+                <div class="p-4 border-b border-gray-700 bg-gray-800 rounded-t-xl flex justify-between items-center">
+                    <h2 class="font-bold text-lg">Leagues</h2>
+                    <button @onclick='() => NewItem("league")' class="text-xs bg-blue-600 hover:bg-blue-500 px-3 py-1 rounded transition">＋ Add</button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-2 space-y-2">
+                    @foreach (var l in Leagues)
+                    {
+                        <div class="p-3 rounded-lg border cursor-pointer transition flex items-center gap-3 @(selectedLeague?.Id == l.Id ? "bg-blue-900/30 border-blue-500" : "bg-gray-900 border-gray-700 hover:border-gray-500")" @onclick="() => SelectLeague(l)">
+                            @if(!string.IsNullOrEmpty(l.ImgUrl)) { <img src="@l.ImgUrl" class="w-8 h-8 object-contain rounded bg-white/10 p-0.5" /> }
+                            else { <div class="w-8 h-8 rounded bg-gray-700 flex items-center justify-center text-xs">🏆</div> }
                             <div class="flex-1 min-w-0">
-                                <div class="font-bold truncate flex items-center gap-2">@t.Name @if(t.IsFavorite){<span class="text-yellow-400 text-xs">★</span>}</div>
-                                <div class="text-xs text-gray-500">@t.Abbreviation</div>
+                                <div class="font-bold truncate">@l.Name</div>
+                                <div class="text-[10px] text-gray-500 truncate">@l.LinkUrl</div>
                             </div>
-                            <button @onclick='() => EditItem("team", t.Id)' class="text-gray-400 hover:text-white">✎</button>
-                            <button @onclick='() => DeleteItem("team", t.Id)' class="text-red-400 hover:text-red-200">✕</button>
+                            <button @onclick='() => EditItem("league", l.Id)' @onclick:stopPropagation="true" class="text-gray-400 hover:text-white">✎</button>
+                            <button @onclick='() => DeleteItem("league", l.Id)' @onclick:stopPropagation="true" class="text-red-400 hover:text-red-200">✕</button>
                         </div>
                     }
-                } else { <div class="p-4 text-center text-gray-500 italic">Select a league</div> }
+                    @if(!Leagues.Any()) { <div class="p-4 text-center text-gray-500 italic text-xs">No leagues found.</div> }
+                </div>
+            </div>
+
+            <div class="bg-gray-800/50 rounded-xl border border-gray-700 flex flex-col h-[75vh] @(selectedLeague == null ? "opacity-50 pointer-events-none" : "")">
+                <div class="p-4 border-b border-gray-700 bg-gray-800 rounded-t-xl flex justify-between items-center">
+                    <h2 class="font-bold text-lg">Seasons @(selectedLeague != null ? $"for {selectedLeague.Name}" : "")</h2>
+                    <button @onclick='() => NewItem("season")' class="text-xs bg-green-600 hover:bg-green-500 px-3 py-1 rounded transition">＋ Add</button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-2 space-y-2">
+                    @if(selectedLeague != null) {
+                        @foreach (var s in GetSeasons(selectedLeague.Id))
+                        {
+                            <div class="p-3 rounded-lg border bg-gray-900 border-gray-700 hover:border-gray-500 transition flex items-center gap-3">
+                                <div class="flex-1 min-w-0">
+                                    <div class="font-bold truncate">@s.Name</div>
+                                </div>
+                                <button @onclick='() => EditItem("season", s.Id)' class="text-gray-400 hover:text-white">✎</button>
+                                <button @onclick='() => DeleteItem("season", s.Id)' class="text-red-400 hover:text-red-200">✕</button>
+                            </div>
+                        }
+                    } else { <div class="p-4 text-center text-gray-500 italic text-xs">Select a league first</div> }
+                </div>
+            </div>
+
+            <div class="bg-gray-800/50 rounded-xl border border-gray-700 flex flex-col h-[75vh] @(selectedLeague == null ? "opacity-50 pointer-events-none" : "")">
+                <div class="p-4 border-b border-gray-700 bg-gray-800 rounded-t-xl flex justify-between items-center">
+                    <h2 class="font-bold text-lg">Teams @(selectedLeague != null ? $"for {selectedLeague.Name}" : "")</h2>
+                    <button @onclick='() => NewItem("team")' class="text-xs bg-indigo-600 hover:bg-indigo-500 px-3 py-1 rounded transition">＋ Add</button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-2 space-y-2">
+                    @if(selectedLeague != null) {
+                        @foreach (var t in GetTeams(selectedLeague.Id))
+                        {
+                            <div class="p-3 rounded-lg border bg-gray-900 border-gray-700 hover:border-gray-500 transition flex items-center gap-3">
+                                @if(!string.IsNullOrEmpty(t.LogoUrl)) { <img src="@t.LogoUrl" class="w-8 h-8 object-contain rounded bg-white/10 p-0.5" /> }
+                                else { <div class="w-8 h-8 rounded bg-gray-700 flex items-center justify-center text-xs">🛡️</div> }
+                                <div class="flex-1 min-w-0">
+                                    <div class="font-bold truncate flex items-center gap-2">@t.Name @if(t.IsFavorite){<span class="text-yellow-400 text-xs">★</span>}</div>
+                                    <div class="text-xs text-gray-500">@t.Abbreviation</div>
+                                </div>
+                                <button @onclick='() => EditItem("team", t.Id)' class="text-gray-400 hover:text-white">✎</button>
+                                <button @onclick='() => DeleteItem("team", t.Id)' class="text-red-400 hover:text-red-200">✕</button>
+                            </div>
+                        }
+                    } else { <div class="p-4 text-center text-gray-500 italic text-xs">Select a league first</div> }
+                </div>
             </div>
         </div>
-    </div>
+    }
     
     <div class="mt-6 p-4 bg-black/80 rounded-lg border border-gray-700 font-mono text-[10px] text-green-400 h-64 overflow-y-auto shadow-inner">
         <div class="flex justify-between mb-2 font-bold text-white border-b border-gray-700 pb-1 sticky top-0 bg-black/90"><span>Console Output</span><button @onclick="()=>debugLogs.Clear()" class="hover:text-white text-xs bg-gray-800 px-2 rounded">Clear</button></div>
@@ -133,6 +160,7 @@
 }
 
 @code {
+    // STATE
     private List<BulletLeague> Leagues = new();
     private List<BulletSeason> Seasons = new();
     private List<BulletTeam> Teams = new();
@@ -141,6 +169,7 @@
     private bool isUploading = false;
     private User? currentUser;
     
+    // ERROR / STATUS
     private bool isDbError = false;
     private string errorMessage = "";
     private bool isImporting = false;
@@ -148,16 +177,17 @@
 
     private class DraftItem {
         public int Id { get; set; }
-        public string Type { get; set; } = "league"; 
+        public string Type { get; set; } = "league"; // league, season, team
         public string Name { get; set; } = "";
         public string LinkUrl { get; set; } = "";
         public string ImgUrl { get; set; } = "";
+        // Team specific
         public string Abbreviation { get; set; } = "";
         public bool IsFavorite { get; set; }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender) {
-        if(firstRender) {
+        if(firstRender && !isDbError) {
             try {
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
                 if (string.IsNullOrEmpty(json)) { Nav.NavigateTo("/login", true); return; }
@@ -165,9 +195,7 @@
                 if (session == null || session.Expiry < DateTime.UtcNow) { Nav.NavigateTo("/login", true); return; }
                 currentUser = await Db.Users.FindAsync(session.UserId);
                 if (currentUser != null) await LoadData();
-            } catch (Exception ex) { 
-                Console.WriteLine("Error in ManageSports: " + ex.Message);
-            }
+            } catch { Nav.NavigateTo("/login", true); }
         }
     }
 
@@ -175,8 +203,8 @@
         if(currentUser == null) return;
         try {
             Leagues = await Db.BulletLeagues.Where(l => l.UserId == currentUser.Id).ToListAsync();
-            Seasons = await Db.BulletSeasons.Where(s => s.UserId == currentUser.Id).ToListAsync();
-            Teams = await Db.BulletTeams.Where(t => t.UserId == currentUser.Id).ToListAsync();
+            Seasons = await Db.BulletSeasons.ToListAsync();
+            Teams = await Db.BulletTeams.ToListAsync();
             isDbError = false; 
             StateHasChanged();
         } catch (Exception ex) {
@@ -210,7 +238,7 @@
                     END IF;
                 END $$;
             ");
-            Log("Tables created/updated successfully.");
+            Log("Tables created successfully.");
             isDbError = false;
             await LoadData();
         } catch (Exception ex) {
@@ -240,44 +268,29 @@
         isImporting = true; Log("Starting League Import...");
         try {
             var filePath = Path.Combine(Env.WebRootPath, "bullet_calendar.json");
+            if(!File.Exists(filePath)) { Log("JSON File not found!"); return; }
+
             var content = await File.ReadAllTextAsync(filePath);
             using var doc = JsonDocument.Parse(content);
             var root = doc.RootElement;
-            JsonElement items = root;
-            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("items", out var i)) items = i;
-
-            int count = 0;
-            // Check for top-level "leagues" array
-            if(root.TryGetProperty("leagues", out var leaguesArr) && leaguesArr.ValueKind == JsonValueKind.Array) {
-                 foreach (var el in leaguesArr.EnumerateArray()) {
-                    string name = el.ToString();
-                    if(!Leagues.Any(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase) && x.UserId == currentUser.Id)) {
-                        var l = new BulletLeague { UserId = currentUser.Id, Name = name };
+            
+            if(root.TryGetProperty("leagues", out var leaguesArray) && leaguesArray.ValueKind == JsonValueKind.Array) {
+                int count = 0;
+                foreach (var el in leaguesArray.EnumerateArray()) {
+                    string leagueName = el.ToString();
+                    if(!Leagues.Any(x => x.Name.Equals(leagueName, StringComparison.OrdinalIgnoreCase) && x.UserId == currentUser.Id)) {
+                        var l = new BulletLeague { UserId = currentUser.Id, Name = leagueName };
                         await Db.BulletLeagues.AddAsync(l);
                         count++;
-                        Log($"Queued League: {name}");
+                        Log($"Queued League: {l.Name}");
                     }
                 }
+                await Db.SaveChangesAsync();
+                Log($"Imported {count} leagues.");
+                await LoadData();
+            } else {
+                Log("Could not find 'leagues' array in JSON.");
             }
-            // Fallback to mixed list
-            else if(items.ValueKind == JsonValueKind.Array) {
-                foreach (var el in items.EnumerateArray()) {
-                    var type = GetProp(el, "type");
-                    if (type.Equals("league", StringComparison.OrdinalIgnoreCase)) {
-                        var name = GetProp(el, "name");
-                        if(!Leagues.Any(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase) && x.UserId == currentUser.Id)) {
-                            var l = new BulletLeague { UserId = currentUser.Id, Name = name, LinkUrl = GetProp(el, "linkUrl"), ImgUrl = GetProp(el, "imgUrl") };
-                            await Db.BulletLeagues.AddAsync(l);
-                            count++;
-                            Log($"Queued League: {l.Name}");
-                        }
-                    }
-                }
-            }
-
-            await Db.SaveChangesAsync();
-            Log($"Imported {count} leagues.");
-            await LoadData();
         } catch (Exception ex) { Log($"Import Error: {ex.Message}"); }
         finally { isImporting = false; }
     }
@@ -290,24 +303,18 @@
             var content = await File.ReadAllTextAsync(filePath);
             using var doc = JsonDocument.Parse(content);
             var root = doc.RootElement;
-            JsonElement items = root;
-            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("items", out var i)) items = i;
 
-            // Refresh leagues
             var leagues = await Db.BulletLeagues.Where(u => u.UserId == currentUser.Id).ToListAsync();
             if(!leagues.Any()) { Log("No leagues found! Import leagues first."); isImporting = false; return; }
 
-            int count = 0;
-            
-            // Check for top-level "teams" array
-            if(root.TryGetProperty("teams", out var teamsArr) && teamsArr.ValueKind == JsonValueKind.Array) {
-                 foreach (var el in teamsArr.EnumerateArray()) {
+            if(root.TryGetProperty("teams", out var teamsArray) && teamsArray.ValueKind == JsonValueKind.Array) {
+                int count = 0;
+                foreach (var el in teamsArray.EnumerateArray()) {
                     string leagueName = GetProp(el, "league");
                     string teamName = GetProp(el, "name");
+
                     var league = leagues.FirstOrDefault(l => l.Name.Equals(leagueName, StringComparison.OrdinalIgnoreCase));
-                    
-                    // Fallback league if not found
-                    if(league == null) league = leagues.First();
+                    if (league == null) league = leagues.First(); // Fallback
 
                     if(!Teams.Any(t => t.Name.Equals(teamName, StringComparison.OrdinalIgnoreCase) && t.UserId == currentUser.Id)) {
                         var tm = new BulletTeam { BulletLeagueId = league.Id, UserId = currentUser.Id };
@@ -315,44 +322,24 @@
                         tm.Abbreviation = GetProp(el, "abbrev");
                         tm.LogoUrl = GetProp(el, "logo");
                         if(string.IsNullOrEmpty(tm.LogoUrl)) tm.LogoUrl = GetProp(el, "imgUrl");
+                        tm.LinkUrl = GetProp(el, "linkUrl");
                         tm.IsFavorite = GetBoolProp(el, "isFavorite");
+                        
                         await Db.BulletTeams.AddAsync(tm);
                         count++;
                         Log($"Queued Team: {tm.Name}");
                     }
                 }
+                await Db.SaveChangesAsync();
+                Log($"Imported {count} teams.");
+                await LoadData();
+            } else {
+                Log("Could not find 'teams' array in JSON.");
             }
-            // Fallback to mixed
-            else if(items.ValueKind == JsonValueKind.Array) {
-                foreach (var el in items.EnumerateArray()) {
-                    var type = GetProp(el, "type");
-                    if (type.Equals("team", StringComparison.OrdinalIgnoreCase)) {
-                        string leagueName = GetProp(el, "league");
-                        string teamName = GetProp(el, "name");
-                        var league = leagues.FirstOrDefault(l => l.Name.Equals(leagueName, StringComparison.OrdinalIgnoreCase));
-                        if(league == null) league = leagues.First();
-
-                        if(!Teams.Any(t => t.Name.Equals(teamName, StringComparison.OrdinalIgnoreCase) && t.UserId == currentUser.Id)) {
-                            var tm = new BulletTeam { BulletLeagueId = league.Id, UserId = currentUser.Id };
-                            tm.Name = teamName;
-                            tm.Abbreviation = GetProp(el, "abbreviation");
-                            tm.LogoUrl = GetProp(el, "logoUrl");
-                            if(string.IsNullOrEmpty(tm.LogoUrl)) tm.LogoUrl = GetProp(el, "imgUrl");
-                            tm.IsFavorite = GetBoolProp(el, "isFavorite");
-                            await Db.BulletTeams.AddAsync(tm);
-                            count++;
-                            Log($"Queued Team: {tm.Name}");
-                        }
-                    }
-                }
-            }
-
-            await Db.SaveChangesAsync();
-            Log($"Imported {count} teams.");
-            await LoadData();
         } catch (Exception ex) { Log($"Import Error: {ex.Message}"); }
         finally { isImporting = false; }
     }
+
 
     private List<BulletSeason> GetSeasons(int leagueId) => Seasons.Where(s => s.BulletLeagueId == leagueId).ToList();
     private List<BulletTeam> GetTeams(int leagueId) => Teams.Where(t => t.BulletLeagueId == leagueId).ToList();
@@ -406,4 +393,24 @@
         await Db.SaveChangesAsync();
         await LoadData();
     }
+
+    private async Task HandleImageUpload(InputFileChangeEventArgs e) {
+        if (editingItem == null) return;
+        try {
+            var file = e.File;
+            using var content = new MultipartFormDataContent();
+            using var stream = file.OpenReadStream(5 * 1024 * 1024);
+            var fileContent = new StreamContent(stream);
+            fileContent.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType);
+            content.Add(fileContent, "file", file.Name);
+            var response = await Http.PostAsync("/api/images/upload", content);
+            if (response.IsSuccessStatusCode) {
+                var result = await response.Content.ReadFromJsonAsync<UploadResult>();
+                if (result != null) editingItem.ImgUrl = result.Url;
+            }
+        } catch {}
+    }
+
+    private class UploadResult { public string Url { get; set; } = ""; }
+    public class SessionData { public int UserId { get; set; } public DateTime Expiry { get; set; } }
 }
