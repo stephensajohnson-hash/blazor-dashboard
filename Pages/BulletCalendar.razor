@@ -16,7 +16,7 @@
 <div class="min-h-screen bg-gray-900 text-white overflow-x-hidden pb-40">
     
     <div class="bg-blue-900/50 border-b border-blue-700 p-2 flex justify-between items-center text-xs">
-        <span class="font-bold text-blue-200">🛠️ Task Migration</span>
+        <span class="font-bold text-blue-200">🛠️ Task Migration (Safe Mode)</span>
         <div class="flex gap-2">
             <button @onclick="SetupTables" class="px-3 py-1 bg-blue-700 hover:bg-blue-600 rounded transition">1. Create Tables</button>
             <button @onclick="RunTaskImport" class="px-3 py-1 bg-green-700 hover:bg-green-600 rounded transition" disabled="@isBusy">2. Import Tasks</button>
@@ -24,58 +24,66 @@
         </div>
     </div>
 
-    @if (isDbError)
+    @if (isError)
     {
-        <div class="flex flex-col items-center justify-center h-64 m-6 rounded-xl bg-red-900/20 border border-red-800">
-            <div class="text-red-500 text-xl font-bold mb-2">⚠️ Database Error</div>
-            <div class="text-gray-400 max-w-lg text-center text-xs mb-4 font-mono bg-black/30 p-2 rounded">@errorMessage</div>
-            <button @onclick="SetupTables" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">
-                Create Tables & Fix
-            </button>
+        <div class="m-6 p-6 rounded-xl bg-red-900/30 border border-red-500">
+            <h2 class="text-xl font-bold text-red-400 mb-2">⚠️ System Status</h2>
+            <div class="font-mono text-xs bg-black/50 p-4 rounded text-gray-300 mb-4 whitespace-pre-wrap">@errorMessage</div>
+            
+            <div class="flex gap-4">
+                <button @onclick="SetupTables" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded shadow-lg">
+                    Attempt to Create Tables
+                </button>
+                <a href="/login" class="px-6 py-2 bg-gray-700 hover:bg-gray-600 text-white font-bold rounded shadow-lg">
+                    Go to Login
+                </a>
+            </div>
         </div>
     }
 
-    <main class="w-full p-6 relative h-screen flex flex-col" @onclick="() => showUserMenu = false">
-        
-        <div class="mb-4 border-b border-gray-800 pb-2 flex items-center justify-between shrink-0">
-            <div class="min-w-[200px]">
-                <h2 class="text-2xl font-bold text-white tracking-tight">@viewDate.ToString("dddd, MMMM d, yyyy")</h2>
-                <span class="text-lg font-medium text-gray-400">@DateTime.Now.ToString("h:mm tt").ToLower()</span>
+    @if (currentUser != null)
+    {
+        <main class="w-full p-6 relative h-screen flex flex-col" @onclick="() => showUserMenu = false">
+            
+            <div class="mb-4 border-b border-gray-800 pb-2 flex items-center justify-between shrink-0">
+                <div class="min-w-[200px]">
+                    <h2 class="text-2xl font-bold text-white tracking-tight">@viewDate.ToString("dddd, MMMM d, yyyy")</h2>
+                    <span class="text-lg font-medium text-gray-400">@DateTime.Now.ToString("h:mm tt").ToLower()</span>
+                </div>
+
+                <div class="flex items-center gap-2 bg-gray-800/50 px-4 py-2 rounded-full border border-gray-700/50">
+                    <button @onclick="() => ChangeDate(-1)" class="w-8 h-8 flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded-full text-gray-300">◀</button>
+                    <button @onclick="GoToday" class="px-3 h-8 bg-gray-700 hover:bg-blue-600 hover:text-white text-gray-300 rounded-lg text-xs font-bold uppercase tracking-wider">Today</button>
+                    <button @onclick="() => ChangeDate(1)" class="w-8 h-8 flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded-full text-gray-300">▶</button>
+                </div>
+
+                <div class="relative z-50">
+                    <button @onclick="() => showUserMenu = !showUserMenu" @onclick:stopPropagation="true">
+                        <img src="@(currentUser?.AvatarUrl ?? "https://i.imgur.com/7Y5j5Yx.png")" class="w-9 h-9 rounded-full border-2 border-gray-700 object-cover bg-gray-800" />
+                    </button>
+                    @if (showUserMenu) {
+                        <div class="absolute right-0 top-full mt-2 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-xl p-2">
+                            <button @onclick="Logout" class="w-full text-left text-xs text-red-400 hover:bg-gray-700 p-2 rounded">Logout</button>
+                        </div>
+                    }
+                </div>
             </div>
 
-            <div class="flex items-center gap-2 bg-gray-800/50 px-4 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
-                <button @onclick="() => ChangeDate(-1)" class="w-8 h-8 flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded-full text-gray-300 transition">◀</button>
-                <button @onclick="GoToday" class="px-3 h-8 bg-gray-700 hover:bg-blue-600 hover:text-white text-gray-300 rounded-lg text-xs font-bold uppercase tracking-wider transition">Today</button>
-                <button @onclick="() => ChangeDate(1)" class="w-8 h-8 flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded-full text-gray-300 transition">▶</button>
+            @if (!string.IsNullOrEmpty(statusMessage))
+            {
+                <div class="mb-4 p-2 rounded bg-gray-800 border border-gray-600 text-xs font-mono text-green-400">
+                    @statusMessage
+                </div>
+            }
+
+            <div class="flex-1 grid grid-cols-3 gap-4 h-full overflow-hidden">
+                @RenderColumn("Work", "work")
+                @RenderColumn("Personal", "personal")
+                @RenderColumn("Health", "health")
             </div>
 
-            <div class="relative z-50">
-                <button @onclick="() => showUserMenu = !showUserMenu" @onclick:stopPropagation="true">
-                    <img src="@(currentUser?.AvatarUrl ?? "https://i.imgur.com/7Y5j5Yx.png")" class="w-9 h-9 rounded-full border-2 border-gray-700 transition object-cover bg-gray-800" />
-                </button>
-                @if (showUserMenu) {
-                    <div class="absolute right-0 top-full mt-2 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-xl p-2">
-                        <a href="manage-sports" class="block w-full text-left text-xs text-blue-400 hover:bg-gray-700 p-2 rounded mb-1">🏈 Manage Sports</a>
-                        <button @onclick="Logout" class="w-full text-left text-xs text-red-400 hover:bg-gray-700 p-2 rounded">Logout</button>
-                    </div>
-                }
-            </div>
-        </div>
-
-        @if (!string.IsNullOrEmpty(statusMessage))
-        {
-            <div class="mb-4 p-2 rounded bg-gray-800 border border-gray-600 text-xs font-mono text-green-400">
-                @statusMessage
-            </div>
-        }
-
-        <div class="flex-1 grid grid-cols-3 gap-4 h-full overflow-hidden">
-            @RenderColumn("Work", "work")
-            @RenderColumn("Personal", "personal")
-            @RenderColumn("Health", "health")
-        </div>
-
-    </main>
+        </main>
+    }
 </div>
 
 @code {
@@ -84,8 +92,8 @@
     private bool showUserMenu = false;
     private bool isBusy = false;
     
-    // Error State
-    private bool isDbError = false;
+    // Error Handling
+    private bool isError = false;
     private string errorMessage = "";
     private string statusMessage = "";
 
@@ -96,53 +104,58 @@
     {
         if (firstRender)
         {
-            // 1. AUTH CHECK (No DB access here)
-            string json;
+            // GLOBAL TRY-CATCH: Prevents any crash from killing the circuit and causing a reload loop
             try {
-                json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
-            } catch { 
-                Nav.NavigateTo("/login", true); return; 
+                // 1. GET TOKEN
+                var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
+                
+                if (string.IsNullOrEmpty(json)) { 
+                    SetError("No session token found. Please log in."); 
+                    return; 
+                }
+                
+                // 2. PARSE TOKEN
+                int userId = 0;
+                try {
+                    var root = System.Text.Json.JsonDocument.Parse(json).RootElement;
+                    if(root.TryGetProperty("UserId", out var idProp)) userId = idProp.GetInt32();
+                } catch { 
+                    SetError("Invalid session format."); 
+                    return; 
+                }
+
+                if (userId == 0) { SetError("Invalid User ID (0)."); return; }
+
+                // 3. FETCH USER (Database Call)
+                try {
+                    currentUser = await Db.Users.FindAsync(userId);
+                } catch (Exception ex) {
+                    SetError($"Database Error (Users table): {ex.Message}");
+                    return;
+                }
+
+                if (currentUser == null) { SetError("User not found in database."); return; }
+
+                // 4. SETUP VIEW
+                try {
+                    int offset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()");
+                    viewDate = DateTime.UtcNow.AddMinutes(-offset);
+                } catch { /* ignore JS error */ }
+
+                // 5. LOAD TASKS
+                await LoadData(); 
+
+            } catch (Exception ex) {
+                SetError($"Critical Initialization Error: {ex.Message}");
             }
-
-            if (string.IsNullOrEmpty(json)) { Nav.NavigateTo("/login", true); return; }
-
-            int userId = 0;
-            try {
-                var root = System.Text.Json.JsonDocument.Parse(json).RootElement;
-                if(root.TryGetProperty("UserId", out var idProp)) userId = idProp.GetInt32();
-            } catch { Nav.NavigateTo("/login", true); return; }
-
-            if (userId == 0) { Nav.NavigateTo("/login", true); return; }
-
-            // 2. DB ACCESS (Wrapped in dedicated Try/Catch so we don't redirect on DB error)
-            try {
-                currentUser = await Db.Users.FindAsync(userId);
-            } 
-            catch (Exception ex) {
-                // THIS IS THE FIX: If DB crashes, show error, DO NOT REDIRECT
-                Console.WriteLine($"DB Error fetching User: {ex.Message}");
-                isDbError = true;
-                errorMessage = $"System Error: {ex.Message}. Tables may be missing.";
-                StateHasChanged();
-                return;
-            }
-
-            // 3. VALIDATE USER
-            if (currentUser == null) {
-                // DB is fine, but user doesn't exist. Redirect.
-                Nav.NavigateTo("/login", true);
-                return;
-            }
-
-            // 4. VIEW SETUP
-            try {
-                int offset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()");
-                viewDate = DateTime.UtcNow.AddMinutes(-offset);
-            } catch {}
-
-            // 5. LOAD DATA
-            await LoadData(); 
         }
+    }
+
+    private void SetError(string msg)
+    {
+        isError = true;
+        errorMessage = msg;
+        StateHasChanged();
     }
 
     private async Task LoadData()
@@ -151,45 +164,30 @@
         
         try {
             DayTasks = await TaskService.GetTasksForDate(currentUser.Id, viewDate);
-            isDbError = false; 
-            StateHasChanged();
+            isError = false; // Clear error if success
         } 
         catch (Exception ex) 
         {
-            // Capture table missing errors
-            isDbError = true;
-            errorMessage = $"Data Load Error: {ex.Message}";
-            StateHasChanged();
+            SetError($"Error Loading Data: {ex.Message} \n(Tables likely missing - click Create Tables above)");
         }
+        StateHasChanged();
     }
 
-    private void ChangeDate(int days)
-    {
-        viewDate = viewDate.AddDays(days);
-        _ = LoadData();
-    }
-    
-    private void GoToday()
-    {
-        viewDate = DateTime.Now; 
-        _ = LoadData();
-    }
+    private void ChangeDate(int days) { viewDate = viewDate.AddDays(days); _ = LoadData(); }
+    private void GoToday() { viewDate = DateTime.Now; _ = LoadData(); }
 
     // --- MIGRATION COMMANDS ---
 
     private async Task SetupTables()
     {
-        isBusy = true; statusMessage = "Creating tables...";
+        isBusy = true; statusMessage = "Running migrations...";
         try {
             await BaseService.CreateBaseTablesIfMissing();
             await TaskService.CreateTable();
-            statusMessage = "Tables created. Reloading...";
-            isDbError = false;
+            statusMessage = "Tables created successfully. Reloading data...";
             await LoadData();
         } catch (Exception ex) {
-            statusMessage = "Error: " + ex.Message;
-            errorMessage = ex.Message;
-            isDbError = true;
+            SetError($"Migration Failed: {ex.Message}");
         }
         isBusy = false;
         StateHasChanged();
@@ -206,18 +204,18 @@
                 var content = await File.ReadAllTextAsync(path);
                 statusMessage = "Importing Tasks...";
                 await TaskService.ImportFromOldJson(currentUser.Id, content);
-                statusMessage = "Tasks Imported! Loading...";
+                statusMessage = "Tasks Imported! Reloading...";
                 await LoadData();
             }
             else { statusMessage = "File not found."; }
-        } catch(Exception ex) { statusMessage = "Error: " + ex.Message; }
+        } catch(Exception ex) { SetError($"Import Failed: {ex.Message}"); }
         isBusy = false;
         StateHasChanged();
     }
 
     private async Task DropLegacy()
     {
-        if(!await JS.InvokeAsync<bool>("confirm", "This will DELETE the old tables (BulletTasks, etc). Are you sure?")) return;
+        if(!await JS.InvokeAsync<bool>("confirm", "This will DELETE old tables. Are you sure?")) return;
         isBusy = true; statusMessage = "Dropping legacy tables...";
         await BaseService.DropLegacyTables();
         statusMessage = "Legacy tables dropped.";
