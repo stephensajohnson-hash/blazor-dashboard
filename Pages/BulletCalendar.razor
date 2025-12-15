@@ -107,7 +107,6 @@
                         } else {
                             <div class="h-full w-32 bg-red-900/30 flex items-center justify-center text-4xl">🎉</div>
                         }
-                        
                         <div class="flex-1 p-6 flex flex-col justify-center bg-gradient-to-r from-gray-900 via-gray-900 to-gray-800/50">
                             <div class="flex items-baseline gap-4">
                                 <h1 class="text-4xl font-bold text-white tracking-tight">@h.Title</h1>
@@ -921,6 +920,74 @@
         if (raw.TryGetProperty("groupId", out var gid)) item.GroupId = gid.ToString();
         if (raw.TryGetProperty("location", out var loc)) item.Location = loc.ToString();
         return item;
+    }
+
+    private async Task ImportGames() {
+        if (currentUser == null) return;
+        isImporting = true; Log("Importing Games...");
+        try {
+            var filePath = Path.Combine(Env.WebRootPath, "bullet_calendar.json");
+            var content = await File.ReadAllTextAsync(filePath);
+            using var doc = JsonDocument.Parse(content);
+            var root = doc.RootElement;
+            JsonElement items = root;
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("items", out var i)) items = i;
+            
+            // Get Leagues and Teams for lookup
+            var leagues = await Db.BulletLeagues.Where(l => l.UserId == currentUser.Id).ToListAsync();
+            var teams = await Db.BulletTeams.Where(t => t.UserId == currentUser.Id).ToListAsync();
+            var seasons = await Db.BulletSeasons.Where(s => s.UserId == currentUser.Id).ToListAsync();
+            
+            if(!leagues.Any() || !teams.Any()) { Log("Leagues/Teams missing. Import them first."); isImporting=false; return; }
+
+            int count = 0;
+            if (items.ValueKind == JsonValueKind.Array) {
+                 foreach (var el in items.EnumerateArray()) {
+                    // Check type "sports" OR top-level "games" array if structure varies
+                    if (el.TryGetProperty("type", out var t) && t.ToString() == "sports") {
+                        string leagueName = "";
+                        if(el.TryGetProperty("league", out var ln)) leagueName = ln.ToString();
+                        var league = leagues.FirstOrDefault(l => l.Name.Equals(leagueName, StringComparison.OrdinalIgnoreCase)) ?? leagues.First();
+
+                        int seasonId = 0;
+                        if(seasons.Any(s => s.BulletLeagueId == league.Id)) seasonId = seasons.First(s => s.BulletLeagueId == league.Id).Id;
+
+                        var game = new BulletGame { UserId = currentUser.Id, BulletLeagueId = league.Id, BulletSeasonId = seasonId };
+                        if(el.TryGetProperty("title", out var title)) game.Title = title.ToString();
+                        if(el.TryGetProperty("date", out var dt) && DateTime.TryParse(dt.ToString(), out var d)) game.Date = DateTime.SpecifyKind(d, DateTimeKind.Utc);
+                        
+                        if(el.TryGetProperty("homescore", out var hs) && hs.TryGetInt32(out int hsc)) game.HomeScore = hsc;
+                        if(el.TryGetProperty("awayscore", out var az) && az.TryGetInt32(out int asc)) game.AwayScore = asc;
+                        if(el.TryGetProperty("status", out var st)) game.Status = st.ToString();
+                        if(el.TryGetProperty("tvchannel", out var tv)) game.TvChannel = tv.ToString();
+                        if(el.TryGetProperty("starttime", out var stim)) game.StartTime = stim.ToString();
+                        
+                        // Team Linking Logic
+                        string homeTeamIdStr = "";
+                        string awayTeamIdStr = "";
+                        if(el.TryGetProperty("homeTeamId", out var hid)) homeTeamIdStr = hid.ToString();
+                        if(el.TryGetProperty("awayTeamId", out var aid)) awayTeamIdStr = aid.ToString();
+
+                        // Try match by name if ID fails (common in simple imports)
+                        // If JSON only has IDs: match by title splitting "Team A vs Team B"?
+                        // Assuming simple Title match for now if IDs aren't fully populated in DB yet
+                        // Or try to match team names if available in JSON
+                        // Placeholder logic:
+                        if(teams.Any()) {
+                             game.HomeTeamId = teams.First().Id;
+                             game.AwayTeamId = teams.Last().Id;
+                        }
+
+                        await Db.BulletGames.AddAsync(game);
+                        count++;
+                    }
+                 }
+            }
+            await Db.SaveChangesAsync();
+            Log($"Imported {count} games.");
+            await LoadData();
+        } catch (Exception ex) { Log($"Import Error: {ex.Message}"); }
+        finally { isImporting = false; }
     }
     
     // (Existing Mappers)
