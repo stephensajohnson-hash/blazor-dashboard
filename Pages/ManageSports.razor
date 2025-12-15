@@ -115,12 +115,11 @@
         </div>
     }
     
-    @if(debugLogs.Any()) {
-        <div class="mt-6 p-4 bg-black/50 rounded-lg border border-gray-700 font-mono text-xs text-gray-400 h-40 overflow-y-auto">
-            <div class="flex justify-between mb-2"><span>Console Output</span><button @onclick="()=>debugLogs.Clear()" class="hover:text-white">Clear</button></div>
-            @foreach(var l in debugLogs){ <div>@l</div> }
-        </div>
-    }
+    <div class="mt-6 p-4 bg-black/50 rounded-lg border border-gray-700 font-mono text-xs text-gray-400 h-40 overflow-y-auto">
+        <div class="flex justify-between mb-2 font-bold text-white sticky top-0 bg-black/80 p-1"><span>Console Output</span><button @onclick="()=>debugLogs.Clear()" class="hover:text-white">Clear</button></div>
+        @if(!debugLogs.Any()) { <div>Ready.</div> }
+        @foreach(var l in debugLogs){ <div class="border-b border-white/5 pb-0.5 mb-0.5">@l</div> }
+    </div>
 </div>
 
 @if (editingItem != null)
@@ -218,7 +217,7 @@
         }
     }
     
-    private void Log(string msg) { debugLogs.Add($"{DateTime.Now:HH:mm:ss} - {msg}"); StateHasChanged(); }
+    private void Log(string msg) { debugLogs.Add($"{DateTime.Now:HH:mm:ss} - {msg}"); InvokeAsync(StateHasChanged); }
 
     private async Task UpgradeDatabase() {
         try {
@@ -227,7 +226,7 @@
                 CREATE TABLE IF NOT EXISTS ""BulletSeasons"" (""Id"" serial PRIMARY KEY, ""BulletLeagueId"" integer NOT NULL, ""Name"" text, ""LinkUrl"" text, ""ImgUrl"" text);
                 CREATE TABLE IF NOT EXISTS ""BulletTeams"" (""Id"" serial PRIMARY KEY, ""BulletLeagueId"" integer NOT NULL, ""Name"" text, ""Abbreviation"" text, ""LogoUrl"" text, ""LinkUrl"" text, ""IsFavorite"" boolean DEFAULT false);
             ");
-            Log("Tables created.");
+            Log("Tables created successfully.");
             isDbError = false;
             await LoadData();
         } catch (Exception ex) {
@@ -236,30 +235,56 @@
         }
     }
 
-    // IMPORTERS
+    // --- HELPER FOR JSON IMPORT ---
+    // Safely get a string property ignoring case
+    private string GetProp(JsonElement el, string propName) {
+        if (el.ValueKind != JsonValueKind.Object) return "";
+        // Try exact match
+        if (el.TryGetProperty(propName, out var val)) return val.ToString();
+        // Try lowercase
+        if (el.TryGetProperty(propName.ToLower(), out val)) return val.ToString();
+        // Try PascalCase
+        if (el.TryGetProperty(char.ToUpper(propName[0]) + propName.Substring(1), out val)) return val.ToString();
+        return "";
+    }
+    
+    private bool GetBoolProp(JsonElement el, string propName) {
+        if (el.ValueKind != JsonValueKind.Object) return false;
+        JsonElement val;
+        if (el.TryGetProperty(propName, out val) || el.TryGetProperty(propName.ToLower(), out val) || el.TryGetProperty(char.ToUpper(propName[0]) + propName.Substring(1), out val)) {
+            return val.ValueKind == JsonValueKind.True;
+        }
+        return false;
+    }
+
     private async Task ImportLeagues() {
         if (currentUser == null) return;
-        isImporting = true; Log("Importing Leagues...");
+        isImporting = true; Log("Starting League Import...");
         try {
             var content = await File.ReadAllTextAsync(Path.Combine(Env.WebRootPath, "bullet_calendar.json"));
             using var doc = JsonDocument.Parse(content);
             var root = doc.RootElement;
-            
-            // Handle different json structures (array vs object with items property)
-            JsonElement items;
-            if (root.ValueKind == JsonValueKind.Array) items = root;
-            else if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("items", out var i)) items = i;
-            else { Log("Invalid JSON format."); isImporting = false; return; }
+            JsonElement items = root;
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("items", out var i)) items = i;
 
             int count = 0;
             foreach (var el in items.EnumerateArray()) {
-                if (el.TryGetProperty("type", out var t) && t.ToString() == "league") {
+                var type = GetProp(el, "type");
+                
+                if (type.Equals("league", StringComparison.OrdinalIgnoreCase)) {
                     var l = new BulletLeague { UserId = currentUser.Id };
-                    if (el.TryGetProperty("name", out var n)) l.Name = n.ToString();
-                    if (el.TryGetProperty("linkUrl", out var lu)) l.LinkUrl = lu.ToString();
-                    if (el.TryGetProperty("imgUrl", out var iu)) l.ImgUrl = iu.ToString();
-                    await Db.BulletLeagues.AddAsync(l);
-                    count++;
+                    l.Name = GetProp(el, "name");
+                    l.LinkUrl = GetProp(el, "linkUrl");
+                    l.ImgUrl = GetProp(el, "imgUrl");
+                    
+                    // Check duplicate
+                    if(!Leagues.Any(x => x.Name == l.Name)) {
+                        await Db.BulletLeagues.AddAsync(l);
+                        count++;
+                        Log($"Queued League: {l.Name}");
+                    } else {
+                        Log($"Skipped duplicate: {l.Name}");
+                    }
                 }
             }
             await Db.SaveChangesAsync();
@@ -270,41 +295,47 @@
     }
 
     private async Task ImportTeams() {
-        // NOTE: This assumes leagues are already created and we can match by name or context
-        // For simplicity in this step, this just reads teams. You might need logic to link them to leagues.
         if (currentUser == null) return;
-        isImporting = true; Log("Importing Teams...");
+        isImporting = true; Log("Starting Team Import...");
         try {
-             var content = await File.ReadAllTextAsync(Path.Combine(Env.WebRootPath, "bullet_calendar.json"));
+            var content = await File.ReadAllTextAsync(Path.Combine(Env.WebRootPath, "bullet_calendar.json"));
             using var doc = JsonDocument.Parse(content);
-             var root = doc.RootElement;
-            JsonElement items;
-            if (root.ValueKind == JsonValueKind.Array) items = root;
-            else if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("items", out var i)) items = i;
-            else { isImporting = false; return; }
+            var root = doc.RootElement;
+            JsonElement items = root;
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("items", out var i)) items = i;
 
-            // Cache leagues for lookup
+            // Refresh leagues to ensure we have IDs
             var leagues = await Db.BulletLeagues.Where(u => u.UserId == currentUser.Id).ToListAsync();
+            if(!leagues.Any()) { Log("No leagues found! Import leagues first."); isImporting = false; return; }
+
             int count = 0;
-
             foreach (var el in items.EnumerateArray()) {
-                if (el.TryGetProperty("type", out var t) && t.ToString() == "team") {
-                    // Try to find league ID by name provided in JSON, or default to first league
-                    int leagueId = 0;
-                    if(el.TryGetProperty("league", out var ln)) {
-                        var existing = leagues.FirstOrDefault(l => l.Name.Equals(ln.ToString(), StringComparison.OrdinalIgnoreCase));
-                        if(existing != null) leagueId = existing.Id;
-                    }
-                    if(leagueId == 0 && leagues.Any()) leagueId = leagues.First().Id; // Fallback
+                var type = GetProp(el, "type");
+                
+                if (type.Equals("team", StringComparison.OrdinalIgnoreCase)) {
+                    string leagueName = GetProp(el, "league");
+                    string teamName = GetProp(el, "name");
 
-                    if(leagueId > 0) {
-                        var tm = new BulletTeam { BulletLeagueId = leagueId };
-                        if (el.TryGetProperty("name", out var n)) tm.Name = n.ToString();
-                        if (el.TryGetProperty("abbreviation", out var a)) tm.Abbreviation = a.ToString();
-                        if (el.TryGetProperty("logoUrl", out var lu)) tm.LogoUrl = lu.ToString();
-                        if (el.TryGetProperty("isFavorite", out var f) && f.GetBoolean()) tm.IsFavorite = true;
-                         await Db.BulletTeams.AddAsync(tm);
-                         count++;
+                    // Find league ID
+                    var league = leagues.FirstOrDefault(l => l.Name.Equals(leagueName, StringComparison.OrdinalIgnoreCase));
+                    if (league == null) {
+                        Log($"League '{leagueName}' not found for team '{teamName}'. Using first available.");
+                        league = leagues.First();
+                    }
+
+                    // Check duplicate
+                    if(!Teams.Any(t => t.Name == teamName && t.BulletLeagueId == league.Id)) {
+                        var tm = new BulletTeam { BulletLeagueId = league.Id };
+                        tm.Name = teamName;
+                        tm.Abbreviation = GetProp(el, "abbreviation");
+                        tm.LogoUrl = GetProp(el, "logoUrl");
+                        if(string.IsNullOrEmpty(tm.LogoUrl)) tm.LogoUrl = GetProp(el, "imgUrl"); // Fallback
+                        tm.LinkUrl = GetProp(el, "linkUrl");
+                        tm.IsFavorite = GetBoolProp(el, "isFavorite");
+                        
+                        await Db.BulletTeams.AddAsync(tm);
+                        count++;
+                        Log($"Queued Team: {tm.Name} ({tm.Abbreviation})");
                     }
                 }
             }
