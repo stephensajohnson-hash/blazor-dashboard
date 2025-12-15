@@ -53,7 +53,7 @@ public class BulletBaseService
                 END $$;");
         }
 
-        // B. Date Columns (The one causing your error!)
+        // B. Date Columns
         var dateCols = new[] { "Date", "CreatedAt" };
         foreach (var col in dateCols)
         {
@@ -79,6 +79,25 @@ public class BulletBaseService
     private async Task RunPatch(string sql)
     {
         try { await _db.Database.ExecuteSqlRawAsync(sql); } catch { /* Ignore harmless errors */ }
+    }
+
+    // --- REQUIRED FOR DELETE BUTTON ---
+    public async Task DeleteItem(int itemId)
+    {
+        // 1. Delete Notes
+        var notes = await _db.BulletItemNotes.Where(n => n.BulletItemId == itemId).ToListAsync();
+        if(notes.Any()) _db.BulletItemNotes.RemoveRange(notes);
+
+        // 2. Delete Details (Task)
+        // Note: As we add other types (Sports, etc), we will add their detail delete calls here
+        var taskDetails = await _db.BulletTaskDetails.Where(t => t.BulletItemId == itemId).ToListAsync();
+        if(taskDetails.Any()) _db.BulletTaskDetails.RemoveRange(taskDetails);
+
+        // 3. Delete Base Item
+        var item = await _db.BulletItems.FindAsync(itemId);
+        if(item != null) _db.BulletItems.Remove(item);
+        
+        await _db.SaveChangesAsync();
     }
 
     public async Task DropLegacyTables()
