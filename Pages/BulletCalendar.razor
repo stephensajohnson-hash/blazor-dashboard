@@ -27,10 +27,10 @@
     @if (isDbError)
     {
         <div class="flex flex-col items-center justify-center h-64 m-6 rounded-xl bg-red-900/20 border border-red-800">
-            <div class="text-red-500 text-xl font-bold mb-2">⚠️ Database Setup Required</div>
+            <div class="text-red-500 text-xl font-bold mb-2">⚠️ Database Error</div>
             <div class="text-gray-400 max-w-lg text-center text-xs mb-4 font-mono bg-black/30 p-2 rounded">@errorMessage</div>
             <button @onclick="SetupTables" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">
-                Create Missing Tables
+                Create Tables & Fix
             </button>
         </div>
     }
@@ -96,11 +96,13 @@
     {
         if (firstRender)
         {
-            // 1. Get Session Key
+            // 1. AUTH CHECK (No DB access here)
             string json;
             try {
                 json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
-            } catch { Nav.NavigateTo("/login", true); return; }
+            } catch { 
+                Nav.NavigateTo("/login", true); return; 
+            }
 
             if (string.IsNullOrEmpty(json)) { Nav.NavigateTo("/login", true); return; }
 
@@ -112,34 +114,33 @@
 
             if (userId == 0) { Nav.NavigateTo("/login", true); return; }
 
-            // 2. Try Fetch User (CRITICAL FIX: Catch DB Errors here)
+            // 2. DB ACCESS (Wrapped in dedicated Try/Catch so we don't redirect on DB error)
             try {
                 currentUser = await Db.Users.FindAsync(userId);
             } 
             catch (Exception ex) {
-                // If this fails, it's a DB connection/schema error, NOT an auth error.
-                // Do NOT redirect. Show error UI.
-                Console.WriteLine($"DB Error: {ex.Message}");
+                // THIS IS THE FIX: If DB crashes, show error, DO NOT REDIRECT
+                Console.WriteLine($"DB Error fetching User: {ex.Message}");
                 isDbError = true;
-                errorMessage = $"System Error: {ex.Message}. Click 'Create Tables' to fix.";
+                errorMessage = $"System Error: {ex.Message}. Tables may be missing.";
                 StateHasChanged();
                 return;
             }
 
-            // 3. User Valid?
+            // 3. VALIDATE USER
             if (currentUser == null) {
-                // DB worked, but user ID is wrong. Redirect.
+                // DB is fine, but user doesn't exist. Redirect.
                 Nav.NavigateTo("/login", true);
                 return;
             }
 
-            // 4. View Setup
+            // 4. VIEW SETUP
             try {
                 int offset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()");
                 viewDate = DateTime.UtcNow.AddMinutes(-offset);
             } catch {}
 
-            // 5. Load Data
+            // 5. LOAD DATA
             await LoadData(); 
         }
     }
@@ -155,7 +156,7 @@
         } 
         catch (Exception ex) 
         {
-            // Catch table missing errors specifically
+            // Capture table missing errors
             isDbError = true;
             errorMessage = $"Data Load Error: {ex.Message}";
             StateHasChanged();
@@ -180,12 +181,8 @@
     {
         isBusy = true; statusMessage = "Creating tables...";
         try {
-            // Force create Users table if missing (unlikely but possible if wiped)
-            // Note: Normally managed by Identity, but safety first
-            
             await BaseService.CreateBaseTablesIfMissing();
             await TaskService.CreateTable();
-            
             statusMessage = "Tables created. Reloading...";
             isDbError = false;
             await LoadData();
