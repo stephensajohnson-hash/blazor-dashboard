@@ -24,6 +24,17 @@
         </div>
     </div>
 
+    @if (isDbError)
+    {
+        <div class="flex flex-col items-center justify-center h-64 space-y-4 border border-red-800 bg-red-900/10 m-6 rounded-xl">
+            <div class="text-red-500 text-xl font-bold">⚠️ Database Setup Required</div>
+            <p class="text-gray-400 max-w-md text-center text-sm">@errorMessage</p>
+            <button @onclick="SetupTables" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded shadow-lg transition">
+                Click Here to Create Tables
+            </button>
+        </div>
+    }
+
     <main class="w-full p-6 relative h-screen flex flex-col" @onclick="() => showUserMenu = false">
         
         <div class="mb-4 border-b border-gray-800 pb-2 flex items-center justify-between shrink-0">
@@ -53,7 +64,9 @@
 
         @if (!string.IsNullOrEmpty(statusMessage))
         {
-            <div class="mb-4 p-2 rounded bg-gray-800 border border-gray-600 text-xs font-mono text-green-400">@statusMessage</div>
+            <div class="mb-4 p-2 rounded bg-gray-800 border border-gray-600 text-xs font-mono text-green-400">
+                @statusMessage
+            </div>
         }
 
         <div class="flex-1 grid grid-cols-3 gap-4 h-full overflow-hidden">
@@ -70,6 +83,8 @@
     private DateTime viewDate = DateTime.UtcNow;
     private bool showUserMenu = false;
     private bool isBusy = false;
+    private bool isDbError = false;
+    private string errorMessage = "";
     private string statusMessage = "";
 
     // Data Holders
@@ -80,26 +95,53 @@
         if (firstRender)
         {
             try {
+                // 1. Check Session - If this fails, THEN redirect
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
                 if (string.IsNullOrEmpty(json)) { Nav.NavigateTo("/login", true); return; }
                 
-                var idStr = System.Text.Json.JsonDocument.Parse(json).RootElement.GetProperty("UserId").GetInt32();
+                var root = System.Text.Json.JsonDocument.Parse(json).RootElement;
+                if(!root.TryGetProperty("UserId", out var idProp)) { Nav.NavigateTo("/login", true); return; }
+                
+                int idStr = idProp.GetInt32();
                 currentUser = await Db.Users.FindAsync(idStr);
                 
                 if (currentUser != null) 
                 {
                     int offset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()");
                     viewDate = DateTime.UtcNow.AddMinutes(-offset);
+                    
+                    // 2. Load Data - If this fails, SHOW ERROR (Don't redirect)
                     await LoadData(); 
                 }
-            } catch { Nav.NavigateTo("/login", true); }
+                else {
+                     Nav.NavigateTo("/login", true);
+                }
+            } 
+            catch (Exception ex) 
+            { 
+                // Only redirect if it looks like an auth error (User is null), otherwise show DB error
+                if(currentUser == null) Nav.NavigateTo("/login", true);
+                else 
+                {
+                    isDbError = true;
+                    errorMessage = ex.Message;
+                    StateHasChanged();
+                }
+            }
         }
     }
 
     private async Task LoadData()
     {
         if(currentUser == null) return;
-        DayTasks = await TaskService.GetTasksForDate(currentUser.Id, viewDate);
+        try {
+            DayTasks = await TaskService.GetTasksForDate(currentUser.Id, viewDate);
+            isDbError = false;
+        } catch (Exception ex) {
+            isDbError = true;
+            errorMessage = "Database tables missing. Click 'Create New Tables' above.";
+            Console.WriteLine(ex.Message);
+        }
         StateHasChanged();
     }
 
@@ -115,12 +157,20 @@
         _ = LoadData();
     }
 
+    // --- MIGRATION COMMANDS ---
+
     private async Task SetupTables()
     {
         isBusy = true; statusMessage = "Creating Base and Task tables...";
-        await BaseService.CreateBaseTablesIfMissing();
-        await TaskService.CreateTable();
-        statusMessage = "Tables created successfully.";
+        try {
+            await BaseService.CreateBaseTablesIfMissing();
+            await TaskService.CreateTable();
+            statusMessage = "Tables created successfully. Reloading...";
+            isDbError = false;
+            await LoadData();
+        } catch (Exception ex) {
+            statusMessage = "Error: " + ex.Message;
+        }
         isBusy = false;
     }
 
@@ -145,7 +195,7 @@
 
     private async Task DropLegacy()
     {
-        if(!await JS.InvokeAsync<bool>("confirm", "This will DELETE the old tables. Are you sure?")) return;
+        if(!await JS.InvokeAsync<bool>("confirm", "This will DELETE the old tables (BulletTasks, etc). Are you sure?")) return;
         isBusy = true; statusMessage = "Dropping legacy tables...";
         await BaseService.DropLegacyTables();
         statusMessage = "Legacy tables dropped.";
@@ -157,6 +207,8 @@
         await JS.InvokeVoidAsync("localStorage.removeItem", "dashboard_session"); 
         Nav.NavigateTo("/login", true); 
     }
+
+    // --- RENDERERS ---
 
     private RenderFragment RenderColumn(string title, string category) => __builder => {
         var tasks = DayTasks.Where(t => t.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList();
