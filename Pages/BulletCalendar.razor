@@ -27,7 +27,7 @@
         </div>
 
         <div class="flex items-center gap-4">
-            <div class="min-w-[180px] text-center">
+            <div class="min-w-[250px] text-center">
                 <h2 class="text-xl font-bold text-white tracking-tight">@GetHeaderDate()</h2>
             </div>
 
@@ -50,11 +50,9 @@
             </button>
             @if (showUserMenu) {
                 <div class="absolute right-0 top-full mt-2 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-xl p-2 z-50">
-                    <button @onclick="RunTaskImport" class="block w-full text-left text-xs text-green-400 hover:bg-gray-700 p-2 rounded mb-1">📥 Import Tasks</button>
-                    <button @onclick="SetupTables" class="block w-full text-left text-xs text-blue-400 hover:bg-gray-700 p-2 rounded mb-1">🛠️ Fix DB</button>
-                    <button @onclick="DropLegacy" class="block w-full text-left text-xs text-red-300 hover:bg-gray-700 p-2 rounded mb-1">🗑️ Drop Legacy</button>
+                    <a href="/manage-data" class="block w-full text-left text-xs text-blue-400 hover:bg-gray-700 p-2 rounded mb-1">💾 Manage Data</a>
                     <div class="h-px bg-gray-700 my-1"></div>
-                    <button @onclick="Logout" class="w-full text-left text-xs text-gray-400 hover:bg-gray-700 p-2 rounded">Logout</button>
+                    <button @onclick="Logout" class="w-full text-left text-xs text-red-400 hover:bg-gray-700 p-2 rounded">Logout</button>
                 </div>
             }
         </div>
@@ -80,7 +78,7 @@
                     var d = weekStart.AddDays(i);
                     var isToday = d.Date == DateTime.UtcNow.AddMinutes(clientOffset).Date;
                     <div class="flex flex-col h-full rounded-xl border overflow-hidden bg-gray-800/40 @(isToday ? "border-blue-500" : "border-gray-700")">
-                        <div class="p-2 text-center border-b border-gray-700/50 bg-gray-800/60">
+                        <div class="p-2 text-center border-b border-gray-700/50 bg-gray-800/60 cursor-pointer hover:bg-gray-700 transition" @onclick="() => GoToDate(d)">
                             <div class="text-[10px] uppercase font-bold text-gray-500">@d.ToString("ddd")</div>
                             <div class="text-lg font-bold @(isToday ? "text-blue-400" : "text-white")">@d.Day</div>
                         </div>
@@ -190,7 +188,18 @@
     }
     private void GoToday() { viewDate = DateTime.UtcNow.AddMinutes(-clientOffset); _ = LoadData(); }
     private void GoToDate(DateTime d) { viewDate = d; SwitchView("day"); }
-    private string GetHeaderDate() => currentView == "day" ? viewDate.ToString("dddd, MMM d") : (currentView == "week" ? $"Week of {weekStart:MMM d}" : viewDate.ToString("MMMM yyyy"));
+    
+    // --- DATE FORMATTER ---
+    private string GetHeaderDate() 
+    {
+        if(currentView == "day") {
+            var day = viewDate.Day;
+            var suffix = day switch { 1 or 21 or 31 => "st", 2 or 22 => "nd", 3 or 23 => "rd", _ => "th" };
+            return $"{viewDate:dddd, MMMM} {day}{suffix}, {viewDate:yyyy}";
+        }
+        return currentView == "week" ? $"Week of {weekStart:MMM d}" : viewDate.ToString("MMMM yyyy");
+    }
+
     private List<BulletTaskService.TaskDTO> GetTasksForDate(DateTime d) => loadedTasks.Where(t => t.Date.Date == d.Date).ToList();
 
     private async Task ToggleComplete(BulletTaskService.TaskDTO t)
@@ -220,18 +229,19 @@
         }
     }
 
-    private async Task DeleteItem()
+    private async Task DeleteItem(int id)
     {
-        if(editingItem != null && editingItem.Id > 0) {
-            if(await JS.InvokeAsync<bool>("confirm", "Delete?")) {
-                await BaseService.DeleteItem(editingItem.Id);
-                editingItem = null;
-                await LoadData();
-            }
+        if(await JS.InvokeAsync<bool>("confirm", "Delete this task?")) {
+            await BaseService.DeleteItem(id);
+            // If editing from modal, close it
+            editingItem = null;
+            await LoadData();
         }
     }
     
     private async Task Logout() { await JS.InvokeVoidAsync("localStorage.removeItem", "dashboard_session"); Nav.NavigateTo("/login", true); }
+    private string GetCategoryColor(string cat) => cat.ToLower() switch { "work" => "bg-blue-500", "personal" => "bg-green-500", "health" => "bg-orange-500", _ => "bg-gray-500" };
+
     private async Task SetupTables() { try { await BaseService.CreateBaseTablesIfMissing(); await TaskService.CreateTable(); statusMessage = "DB Ready"; await LoadData(); } catch (Exception ex) { statusMessage = ex.Message; } }
     private async Task RunTaskImport() { try { var path = Path.Combine(Env.WebRootPath, "bullet_calendar.json"); if(File.Exists(path)) { var c = await File.ReadAllTextAsync(path); await TaskService.ImportFromOldJson(currentUser!.Id, c); statusMessage = "Imported"; await LoadData(); } } catch (Exception ex) { statusMessage = ex.Message; } }
     private async Task DropLegacy() { if(await JS.InvokeAsync<bool>("confirm", "Delete?")) { await BaseService.DropLegacyTables(); statusMessage = "Dropped"; } }
@@ -245,7 +255,7 @@
             </div>
             <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide">
                 @foreach(var t in tasks) { 
-                    <TaskCard Task="t" OnClick="OpenEdit" OnToggle="ToggleComplete" />
+                    <TaskCard Task="t" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteItem" />
                 }
                 @if(!tasks.Any()) { <div class="text-center text-gray-600 text-xs italic mt-4">No tasks</div> }
             </div>
