@@ -6,6 +6,7 @@
 @using Microsoft.EntityFrameworkCore
 @using System.IO
 @using Microsoft.JSInterop
+@using System.Text.Json
 @inject AppDbContext Db
 @inject BulletBaseService BaseService
 @inject BulletTaskService TaskService
@@ -19,7 +20,7 @@
         <span class="font-bold text-blue-200">🛠️ Task Migration (Safe Mode)</span>
         <div class="flex gap-2">
             <button @onclick="SetupTables" class="px-3 py-1 bg-blue-700 hover:bg-blue-600 rounded transition">1. Create Tables</button>
-            <button @onclick="RunTaskImport" class="px-3 py-1 bg-green-700 hover:bg-green-600 rounded transition" disabled="@isBusy">2. Import Tasks</button>
+            <button @onclick="RunTaskImport" class="px-3 py-1 bg-green-700 hover:bg-green-600 rounded transition" disabled="@(currentUser == null || isBusy)">2. Import Tasks</button>
             <button @onclick="DropLegacy" class="px-3 py-1 bg-red-900/50 hover:bg-red-700 rounded transition border border-red-800">3. Drop Legacy Tables</button>
         </div>
     </div>
@@ -34,9 +35,9 @@
                 <button @onclick="SetupTables" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded shadow-lg">
                     Attempt to Create Tables
                 </button>
-                <a href="/login" class="px-6 py-2 bg-gray-700 hover:bg-gray-600 text-white font-bold rounded shadow-lg">
-                    Go to Login
-                </a>
+                <button @onclick="ForceReload" class="px-6 py-2 bg-gray-700 hover:bg-gray-600 text-white font-bold rounded shadow-lg">
+                    Retry Loading
+                </button>
             </div>
         </div>
     }
@@ -99,12 +100,14 @@
 
     // Data Holders
     private List<BulletTaskService.TaskDTO> DayTasks = new();
+    
+    // Helper Class for JSON Deserialization
+    public class SessionData { public int UserId { get; set; } public DateTime Expiry { get; set; } }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            // GLOBAL TRY-CATCH: Prevents any crash from killing the circuit and causing a reload loop
             try {
                 // 1. GET TOKEN
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
@@ -114,27 +117,26 @@
                     return; 
                 }
                 
-                // 2. PARSE TOKEN
-                int userId = 0;
+                // 2. PARSE TOKEN (Case Insensitive Fix)
+                SessionData? session = null;
                 try {
-                    var root = System.Text.Json.JsonDocument.Parse(json).RootElement;
-                    if(root.TryGetProperty("UserId", out var idProp)) userId = idProp.GetInt32();
+                    session = JsonSerializer.Deserialize<SessionData>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 } catch { 
-                    SetError("Invalid session format."); 
+                    SetError($"Invalid session format: {json}"); 
                     return; 
                 }
 
-                if (userId == 0) { SetError("Invalid User ID (0)."); return; }
+                if (session == null || session.UserId == 0) { SetError($"Invalid User ID parsed: {session?.UserId}"); return; }
 
                 // 3. FETCH USER (Database Call)
                 try {
-                    currentUser = await Db.Users.FindAsync(userId);
+                    currentUser = await Db.Users.FindAsync(session.UserId);
                 } catch (Exception ex) {
-                    SetError($"Database Error (Users table): {ex.Message}");
+                    SetError($"Database Connection Error: {ex.Message}");
                     return;
                 }
 
-                if (currentUser == null) { SetError("User not found in database."); return; }
+                if (currentUser == null) { SetError($"User ID {session.UserId} not found in DB."); return; }
 
                 // 4. SETUP VIEW
                 try {
@@ -153,9 +155,15 @@
 
     private void SetError(string msg)
     {
+        Console.WriteLine("Error Set: " + msg);
         isError = true;
         errorMessage = msg;
         StateHasChanged();
+    }
+    
+    private void ForceReload()
+    {
+        Nav.NavigateTo("/bullet-calendar", true);
     }
 
     private async Task LoadData()
@@ -163,12 +171,15 @@
         if(currentUser == null) return;
         
         try {
+            Console.WriteLine("Loading Data...");
             DayTasks = await TaskService.GetTasksForDate(currentUser.Id, viewDate);
-            isError = false; // Clear error if success
+            isError = false; 
+            statusMessage = "Data loaded successfully.";
         } 
         catch (Exception ex) 
         {
-            SetError($"Error Loading Data: {ex.Message} \n(Tables likely missing - click Create Tables above)");
+            Console.WriteLine("LoadData Failed: " + ex.Message);
+            SetError($"Error Loading Data: {ex.Message} \n\n(This usually means tables are missing. Click 'Attempt to Create Tables' below.)");
         }
         StateHasChanged();
     }
@@ -181,10 +192,12 @@
     private async Task SetupTables()
     {
         isBusy = true; statusMessage = "Running migrations...";
+        Console.WriteLine("SetupTables Clicked");
         try {
             await BaseService.CreateBaseTablesIfMissing();
             await TaskService.CreateTable();
             statusMessage = "Tables created successfully. Reloading data...";
+            isError = false; // Clear error on success
             await LoadData();
         } catch (Exception ex) {
             SetError($"Migration Failed: {ex.Message}");
@@ -195,8 +208,11 @@
 
     private async Task RunTaskImport()
     {
-        if(currentUser == null) return;
+        if(currentUser == null) { SetError("Cannot import: No User Logged In"); return; }
+        
         isBusy = true; statusMessage = "Reading JSON...";
+        Console.WriteLine("RunTaskImport Clicked");
+        
         try {
             var path = Path.Combine(Env.WebRootPath, "bullet_calendar.json");
             if(File.Exists(path))
@@ -207,7 +223,10 @@
                 statusMessage = "Tasks Imported! Reloading...";
                 await LoadData();
             }
-            else { statusMessage = "File not found."; }
+            else { 
+                statusMessage = "File 'bullet_calendar.json' not found in WebRoot."; 
+                Console.WriteLine(statusMessage);
+            }
         } catch(Exception ex) { SetError($"Import Failed: {ex.Message}"); }
         isBusy = false;
         StateHasChanged();
