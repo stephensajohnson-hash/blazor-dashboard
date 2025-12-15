@@ -28,7 +28,7 @@
     {
         <div class="flex flex-col items-center justify-center h-64 m-6 rounded-xl bg-red-900/20 border border-red-800">
             <div class="text-red-500 text-xl font-bold mb-2">⚠️ Database Setup Required</div>
-            <p class="text-gray-400 max-w-md text-center text-xs mb-4">@errorMessage</p>
+            <div class="text-gray-400 max-w-lg text-center text-xs mb-4 font-mono bg-black/30 p-2 rounded">@errorMessage</div>
             <button @onclick="SetupTables" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition">
                 Create Missing Tables
             </button>
@@ -83,6 +83,8 @@
     private DateTime viewDate = DateTime.UtcNow;
     private bool showUserMenu = false;
     private bool isBusy = false;
+    
+    // Error State
     private bool isDbError = false;
     private string errorMessage = "";
     private string statusMessage = "";
@@ -94,51 +96,51 @@
     {
         if (firstRender)
         {
+            // 1. Get Session Key
+            string json;
             try {
-                // 1. Check LocalStorage
-                var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
-                if (string.IsNullOrEmpty(json)) { Nav.NavigateTo("/login", true); return; }
-                
+                json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
+            } catch { Nav.NavigateTo("/login", true); return; }
+
+            if (string.IsNullOrEmpty(json)) { Nav.NavigateTo("/login", true); return; }
+
+            int userId = 0;
+            try {
                 var root = System.Text.Json.JsonDocument.Parse(json).RootElement;
-                if(!root.TryGetProperty("UserId", out var idProp)) { Nav.NavigateTo("/login", true); return; }
-                
-                int userId = idProp.GetInt32();
+                if(root.TryGetProperty("UserId", out var idProp)) userId = idProp.GetInt32();
+            } catch { Nav.NavigateTo("/login", true); return; }
 
-                // 2. Fetch User (Protected Block)
-                // We wrap this specifically to catch Model Validation errors (Missing tables)
-                // so we don't treat them as "User Not Found"
-                try {
-                    currentUser = await Db.Users.FindAsync(userId);
-                } 
-                catch (Exception dbEx) 
-                {
-                    // IF WE CRASH HERE, IT'S A DB SCHEMA ISSUE, NOT AN AUTH ISSUE
-                    Console.WriteLine("DB Schema Error: " + dbEx.Message);
-                    isDbError = true;
-                    errorMessage = "Database schema mismatch. Please click 'Create Tables'.";
-                    StateHasChanged();
-                    return; // STAY ON PAGE
-                }
-                
-                // 3. Validate User
-                if (currentUser == null) {
-                    Nav.NavigateTo("/login", true);
-                    return;
-                }
+            if (userId == 0) { Nav.NavigateTo("/login", true); return; }
 
-                // 4. View Setup
-                try {
-                    int offset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()");
-                    viewDate = DateTime.UtcNow.AddMinutes(-offset);
-                } catch {}
-
-                // 5. Load Data
-                await LoadData(); 
-
-            } catch (Exception ex) {
-                // Generic fallback
-                Console.WriteLine("Critical Error: " + ex.Message);
+            // 2. Try Fetch User (CRITICAL FIX: Catch DB Errors here)
+            try {
+                currentUser = await Db.Users.FindAsync(userId);
+            } 
+            catch (Exception ex) {
+                // If this fails, it's a DB connection/schema error, NOT an auth error.
+                // Do NOT redirect. Show error UI.
+                Console.WriteLine($"DB Error: {ex.Message}");
+                isDbError = true;
+                errorMessage = $"System Error: {ex.Message}. Click 'Create Tables' to fix.";
+                StateHasChanged();
+                return;
             }
+
+            // 3. User Valid?
+            if (currentUser == null) {
+                // DB worked, but user ID is wrong. Redirect.
+                Nav.NavigateTo("/login", true);
+                return;
+            }
+
+            // 4. View Setup
+            try {
+                int offset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()");
+                viewDate = DateTime.UtcNow.AddMinutes(-offset);
+            } catch {}
+
+            // 5. Load Data
+            await LoadData(); 
         }
     }
 
@@ -148,16 +150,16 @@
         
         try {
             DayTasks = await TaskService.GetTasksForDate(currentUser.Id, viewDate);
-            isDbError = false;
+            isDbError = false; 
+            StateHasChanged();
         } 
         catch (Exception ex) 
         {
-            // Catch data loading errors (e.g. Tasks table missing)
+            // Catch table missing errors specifically
             isDbError = true;
-            errorMessage = "Data tables missing. Click 'Create Tables' above.";
-            Console.WriteLine("LoadData Error: " + ex.Message);
+            errorMessage = $"Data Load Error: {ex.Message}";
+            StateHasChanged();
         }
-        StateHasChanged();
     }
 
     private void ChangeDate(int days)
@@ -176,17 +178,24 @@
 
     private async Task SetupTables()
     {
-        isBusy = true; statusMessage = "Creating Base and Task tables...";
+        isBusy = true; statusMessage = "Creating tables...";
         try {
+            // Force create Users table if missing (unlikely but possible if wiped)
+            // Note: Normally managed by Identity, but safety first
+            
             await BaseService.CreateBaseTablesIfMissing();
             await TaskService.CreateTable();
-            statusMessage = "Tables created successfully. Reloading...";
+            
+            statusMessage = "Tables created. Reloading...";
             isDbError = false;
             await LoadData();
         } catch (Exception ex) {
             statusMessage = "Error: " + ex.Message;
+            errorMessage = ex.Message;
+            isDbError = true;
         }
         isBusy = false;
+        StateHasChanged();
     }
 
     private async Task RunTaskImport()
@@ -206,6 +215,7 @@
             else { statusMessage = "File not found."; }
         } catch(Exception ex) { statusMessage = "Error: " + ex.Message; }
         isBusy = false;
+        StateHasChanged();
     }
 
     private async Task DropLegacy()
@@ -215,6 +225,7 @@
         await BaseService.DropLegacyTables();
         statusMessage = "Legacy tables dropped.";
         isBusy = false;
+        StateHasChanged();
     }
     
     private async Task Logout() 
