@@ -15,13 +15,25 @@ public class BulletBaseService
     public async Task CreateBaseTablesIfMissing()
     {
         try {
+            // Existing tables...
             await _db.Database.ExecuteSqlRawAsync(@"
                 CREATE TABLE IF NOT EXISTS ""BulletItems"" (""Id"" serial PRIMARY KEY, ""UserId"" integer, ""Type"" text, ""Category"" text, ""Date"" timestamp with time zone, ""CreatedAt"" timestamp with time zone, ""Title"" text, ""Description"" text, ""ImgUrl"" text, ""LinkUrl"" text, ""OriginalStringId"" text);
                 CREATE TABLE IF NOT EXISTS ""BulletItemNotes"" (""Id"" serial PRIMARY KEY, ""BulletItemId"" integer, ""Content"" text, ""ImgUrl"" text, ""LinkUrl"" text, ""Order"" integer DEFAULT 0);
                 CREATE TABLE IF NOT EXISTS ""BulletTaskDetails"" (""BulletItemId"" integer PRIMARY KEY, ""Status"" text, ""IsCompleted"" boolean, ""Priority"" text, ""TicketNumber"" text, ""TicketUrl"" text, ""DueDate"" timestamp with time zone);
                 CREATE TABLE IF NOT EXISTS ""StoredImages"" (""Id"" serial PRIMARY KEY, ""Data"" bytea, ""ContentType"" text, ""OriginalName"" text, ""UploadedAt"" timestamp with time zone);
             ");
+
+            // NEW: Meeting Table
+            await _db.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""BulletMeetingDetails"" (
+                    ""BulletItemId"" integer PRIMARY KEY, 
+                    ""StartTime"" timestamp with time zone, 
+                    ""DurationMinutes"" integer DEFAULT 0, 
+                    ""ActualDurationMinutes"" integer DEFAULT 0
+                );
+            ");
             
+            // Patches
             await _db.Database.ExecuteSqlRawAsync(@"DO $$ BEGIN 
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='BulletItems' AND column_name='LinkUrl') THEN ALTER TABLE ""BulletItems"" ADD COLUMN ""LinkUrl"" text DEFAULT ''; END IF;
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='BulletTaskDetails' AND column_name='TicketUrl') THEN ALTER TABLE ""BulletTaskDetails"" ADD COLUMN ""TicketUrl"" text DEFAULT ''; END IF;
@@ -41,11 +53,18 @@ public class BulletBaseService
 
     public async Task<int> ClearDataByType(int userId, string type)
     {
-        // ExecuteRawSqlAsync with {0} placeholders is safe and prevents interpolation errors
+        // 1. Delete Notes
         try { await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletItemNotes"" WHERE ""BulletItemId"" IN (SELECT ""Id"" FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1})", userId, type); } catch {}
-        try { await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletTaskDetails"" WHERE ""BulletItemId"" IN (SELECT ""Id"" FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1})", userId, type); } catch {}
-        
-        // Return count of deleted parent items
+
+        // 2. Delete Specific Details based on type
+        if (type == "task") {
+            try { await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletTaskDetails"" WHERE ""BulletItemId"" IN (SELECT ""Id"" FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1})", userId, type); } catch {}
+        }
+        else if (type == "meeting") {
+            try { await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletMeetingDetails"" WHERE ""BulletItemId"" IN (SELECT ""Id"" FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1})", userId, type); } catch {}
+        }
+
+        // 3. Delete Parent Items
         return await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1}", userId, type);
     }
 
@@ -53,6 +72,7 @@ public class BulletBaseService
     {
         try { await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletItemNotes"" WHERE ""BulletItemId"" = {0}", itemId); } catch {}
         try { await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletTaskDetails"" WHERE ""BulletItemId"" = {0}", itemId); } catch {}
+        try { await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletMeetingDetails"" WHERE ""BulletItemId"" = {0}", itemId); } catch {}
         await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletItems"" WHERE ""Id"" = {0}", itemId);
     }
 

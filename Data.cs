@@ -13,41 +13,29 @@ public class AppDbContext : DbContext
 
     public DbSet<User> Users { get; set; }
     
-    // --- DASHBOARD & RECIPES ---
+    // --- DASHBOARD
     public DbSet<LinkGroup> LinkGroups { get; set; }
     public DbSet<Link> Links { get; set; }
     public DbSet<Countdown> Countdowns { get; set; }
     public DbSet<Stock> Stocks { get; set; }
     public DbSet<Feed> Feeds { get; set; }
+    
+    // Images
     public DbSet<StoredImage> StoredImages { get; set; }
+
+    // Recipes
     public DbSet<Recipe> Recipes { get; set; }
     public DbSet<RecipeIngredient> RecipeIngredients { get; set; }
     public DbSet<RecipeInstruction> RecipeInstructions { get; set; }
     public DbSet<RecipeCategory> RecipeCategories { get; set; }
 
-    // --- NEW CORE ARCHITECTURE ---
+    // Bullet Calendar
     public DbSet<BulletItem> BulletItems { get; set; }
     public DbSet<BulletItemNote> BulletItemNotes { get; set; }
     public DbSet<BulletTaskDetail> BulletTaskDetails { get; set; }
+    public DbSet<BulletMeetingDetail> BulletMeetingDetails { get; set; } // NEW
 
-    // --- SPORTS (Required for ManageSports.razor) ---
-    public DbSet<BulletLeague> BulletLeagues { get; set; }
-    public DbSet<BulletSeason> BulletSeasons { get; set; }
-    public DbSet<BulletTeam> BulletTeams { get; set; }
 
-    // --- LEGACY (Keep for now to prevent build errors in old files) ---
-    public DbSet<BulletTask> BulletTasks { get; set; }
-    public DbSet<BulletMeeting> BulletMeetings { get; set; }
-    public DbSet<BulletMedia> BulletMedia { get; set; }
-    public DbSet<BulletHabit> BulletHabits { get; set; }
-    public DbSet<BulletMacroTracker> BulletMacroTrackers { get; set; }
-    public DbSet<BulletMeal> BulletMeals { get; set; }
-    public DbSet<BulletWorkout> BulletWorkouts { get; set; }
-    public DbSet<BulletHoliday> BulletHolidays { get; set; }
-    public DbSet<BulletBirthday> BulletBirthdays { get; set; }
-    public DbSet<BulletAnniversary> BulletAnniversaries { get; set; }
-    public DbSet<BulletVacation> BulletVacations { get; set; }
-    public DbSet<BulletGame> BulletGames { get; set; }
 }
 
 // --- UTILITIES ---
@@ -100,10 +88,6 @@ public class BulletTaskDetail
     public DateTime? DueDate { get; set; }
 }
 
-// --- SPORTS MODELS ---
-public class BulletLeague { public int Id { get; set; } public int UserId { get; set; } public string Name { get; set; } = ""; public string LinkUrl { get; set; } = ""; public string ImgUrl { get; set; } = ""; }
-public class BulletSeason { public int Id { get; set; } public int UserId { get; set; } public int BulletLeagueId { get; set; } public string Name { get; set; } = ""; public string LinkUrl { get; set; } = ""; public string ImgUrl { get; set; } = ""; }
-public class BulletTeam { public int Id { get; set; } public int UserId { get; set; } public int BulletLeagueId { get; set; } public string Name { get; set; } = ""; public string Abbreviation { get; set; } = ""; public string LogoUrl { get; set; } = ""; public string LinkUrl { get; set; } = ""; public bool IsFavorite { get; set; } = false; }
 
 // --- EXISTING MODELS ---
 public class User { public int Id { get; set; } public string Username { get; set; } = ""; public string PasswordHash { get; set; } = ""; public string ZipCode { get; set; } = "75482"; public string AvatarUrl { get; set; } = ""; public int Age { get; set; } = 30; public double HeightInches { get; set; } = 70; public string Gender { get; set; } = "Male"; public string ActivityLevel { get; set; } = "Sedentary"; }
@@ -118,24 +102,20 @@ public class Countdown { public int Id { get; set; } public int UserId { get; se
 public class Stock { public int Id { get; set; } public int UserId { get; set; } public string Symbol { get; set; } = ""; public string ImgUrl { get; set; } = ""; public string LinkUrl { get; set; } = ""; public double Shares { get; set; } public int Order { get; set; } }
 public class Feed { public int Id { get; set; } public int UserId { get; set; } public string Name { get; set; } = ""; public string Url { get; set; } = ""; public string Category { get; set; } = "General"; public bool IsEnabled { get; set; } = false; }
 
-// --- LEGACY STUBS (To prevent build errors in old files) ---
-public class BulletTask { public int Id { get; set; } public int UserId { get; set; } public string Title { get; set; }=""; public DateTime Date { get; set; } public string Category { get; set; }=""; public string Type { get; set; }=""; public bool IsCompleted { get; set; } public string Priority { get; set; }=""; public string LinkUrl { get; set; }=""; public string ImgUrl { get; set; }=""; public int? ImageId { get; set; } public string Description { get; set; }=""; public string TicketNumber { get; set; }=""; public string TicketUrl { get; set; }=""; public string Tags { get; set; }=""; public DateTime? DueDate { get; set; } public string? OriginalStringId { get; set; } }
-public class BulletMeeting { public int Id { get; set; } public int UserId { get; set; } public string Title { get; set; }=""; public DateTime Date { get; set; } public string Category { get; set; }=""; public string Type { get; set; }=""; public string StartTime { get; set; }=""; public int DurationPlanned { get; set; } public int DurationActual { get; set; } public string Location { get; set; }=""; public string MeetingLeader { get; set; }=""; public string Attendees { get; set; }=""; public string LinkUrl { get; set; }=""; public string ImgUrl { get; set; }=""; public int? ImageId { get; set; } public bool IsCompleted { get; set; } public string Tags { get; set; }=""; public string Description { get; set; }=""; public string? OriginalStringId { get; set; } }
-public class BulletMedia { public int Id { get; set; } public int UserId { get; set; } public string Title { get; set; }=""; public DateTime Date { get; set; } public string Category { get; set; }=""; public string LinkUrl { get; set; }=""; public string ImgUrl { get; set; }=""; public int? ImageId { get; set; } public string Description { get; set; }=""; public int Rating { get; set; } public int ReleaseYear { get; set; } public string Actors { get; set; }=""; public string Tags { get; set; }=""; public string? OriginalStringId { get; set; } }
-public class BulletHabit { public int Id { get; set; } public int UserId { get; set; } public string Title { get; set; }=""; public DateTime Date { get; set; } public string Category { get; set; }=""; public string Type { get; set; }=""; public int StreakCount { get; set; } public int TargetStreak { get; set; } public bool IsCompleted { get; set; } public string Notes { get; set; }=""; public string LinkUrl { get; set; }=""; public string ImgUrl { get; set; }=""; public int? ImageId { get; set; } public string Tags { get; set; }=""; public string? OriginalStringId { get; set; } }
-public class BulletMacroTracker { public int Id { get; set; } public int UserId { get; set; } public DateTime Date { get; set; } public double Weight { get; set; } public double TDEE { get; set; } public double WaterIntake { get; set; } public string? Notes { get; set; } public string Category { get; set; }=""; public string Type { get; set; }=""; public string? OriginalStringId { get; set; } }
-public class BulletMeal { public int Id { get; set; } public int BulletMacroTrackerId { get; set; } public string? Name { get; set; } public string? MealType { get; set; } public double Calories { get; set; } public double Protein { get; set; } public double Fat { get; set; } public double Carbs { get; set; } public double Fiber { get; set; } }
-public class BulletWorkout { public int Id { get; set; } public int BulletMacroTrackerId { get; set; } public string? Description { get; set; } public double CaloriesBurned { get; set; } public int DurationMinutes { get; set; } }
-public class BulletHoliday { public int Id { get; set; } public int UserId { get; set; } public string Type { get; set; }=""; public string Category { get; set; }=""; public string Title { get; set; }=""; public string LinkUrl { get; set; }=""; public string ImgUrl { get; set; }=""; public int? ImageId { get; set; } public string Description { get; set; }=""; public bool IsWorkHoliday { get; set; } public DateTime Date { get; set; } public string? OriginalStringId { get; set; } }
-public class BulletBirthday { public int Id { get; set; } public int UserId { get; set; } public string Type { get; set; }=""; public string Category { get; set; }=""; public string Title { get; set; }=""; public DateTime Date { get; set; } public int? BirthYear { get; set; } public string LinkUrl { get; set; }=""; public string ImgUrl { get; set; }=""; public int? ImageId { get; set; } public string Description { get; set; }=""; public string? OriginalStringId { get; set; } }
-public class BulletAnniversary { public int Id { get; set; } public int UserId { get; set; } public string Type { get; set; }=""; public string Category { get; set; }=""; public string Title { get; set; }=""; public DateTime Date { get; set; } public int? FirstYear { get; set; } public string LinkUrl { get; set; }=""; public string ImgUrl { get; set; }=""; public int? ImageId { get; set; } public string Description { get; set; }=""; public string? OriginalStringId { get; set; } }
-public class BulletVacation { public int Id { get; set; } public int UserId { get; set; } public string Type { get; set; }=""; public string Category { get; set; }=""; public string Title { get; set; }=""; public DateTime Date { get; set; } public string GroupId { get; set; }=""; public string Location { get; set; }=""; public string LinkUrl { get; set; }=""; public string ImgUrl { get; set; }=""; public int? ImageId { get; set; } public string Description { get; set; }=""; public string? OriginalStringId { get; set; } }
-public class BulletGame { public int Id { get; set; } public int UserId { get; set; } public string Type { get; set; }="sports"; public string Category { get; set; }="sports"; public string Title { get; set; }=""; public DateTime Date { get; set; } public int BulletLeagueId { get; set; } public int BulletSeasonId { get; set; } public int HomeTeamId { get; set; } public int AwayTeamId { get; set; } public int? HomeScore { get; set; } public int? AwayScore { get; set; } public string Status { get; set; }="Scheduled"; public string StartTime { get; set; }=""; public string TvChannel { get; set; }=""; public string? OriginalStringId { get; set; } }
-
 public static class BulletViewConfig
 {
     // Common Image Widths for all card types
     public const string ImgWidthDay = "25%";
     public const string ImgWidthWeek = "20%";
     public const string ImgWidthMonth = "15%";
+}
+
+// NEW: Meeting Details
+public class BulletMeetingDetail
+{
+    [System.ComponentModel.DataAnnotations.Key]
+    public int BulletItemId { get; set; }
+    public DateTime? StartTime { get; set; }
+    public int DurationMinutes { get; set; }
+    public int ActualDurationMinutes { get; set; }
 }
