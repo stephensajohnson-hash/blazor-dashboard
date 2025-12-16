@@ -16,7 +16,7 @@ public class BulletBaseService
 
     public async Task CreateBaseTablesIfMissing()
     {
-        // 1. Base Table (Tasks/Meetings/Habits)
+        // 1. Base Table
         await _db.Database.ExecuteSqlRawAsync(@"
             CREATE TABLE IF NOT EXISTS ""BulletItems"" (
                 ""Id"" SERIAL PRIMARY KEY,
@@ -75,7 +75,7 @@ public class BulletBaseService
             );
         ");
 
-        // 5. NEW: Habit Details (This was missing!)
+        // 5. Habit Details
         await _db.Database.ExecuteSqlRawAsync(@"
             CREATE TABLE IF NOT EXISTS ""BulletHabitDetails"" (
                 ""BulletItemId"" INTEGER NOT NULL PRIMARY KEY,
@@ -103,5 +103,22 @@ public class BulletBaseService
         _db.BulletItems.RemoveRange(items);
         await _db.SaveChangesAsync();
         return items.Count;
+    }
+
+    // --- IMAGE HANDLING ---
+    public async Task<string> SaveImageAsync(byte[] data, string contentType)
+    {
+        var img = new StoredImage
+        {
+            Data = data,
+            ContentType = contentType,
+            UploadedAt = DateTime.UtcNow,
+            OriginalName = "upload.jpg"
+        };
+
+        await _db.StoredImages.AddAsync(img);
+        await _db.SaveChangesAsync();
+
+        return $"/images/db/{img.Id}";
     }
 }
