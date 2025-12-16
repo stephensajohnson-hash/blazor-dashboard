@@ -1,36 +1,66 @@
 @page "/manage-data"
 @using Dashboard
 @using Microsoft.JSInterop
+@using Microsoft.Extensions.DependencyInjection
+@using Microsoft.EntityFrameworkCore
 @using System.Text.Json
 @inject BulletBaseService BaseService
 @inject BulletTaskService TaskService
+@inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject IServiceScopeFactory ScopeFactory
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
 
 <div class="min-h-screen bg-gray-900 text-white p-8">
     <div class="max-w-4xl mx-auto">
-        <h1 class="text-3xl font-bold mb-4">Data Management</h1>
-        <a href="/bullet-calendar" class="text-gray-400 hover:text-white mb-8 block">← Back to Calendar</a>
+        <div class="flex items-center justify-between mb-8">
+            <h1 class="text-3xl font-bold">💾 Data Management</h1>
+            <a href="/bullet-calendar" class="text-gray-400 hover:text-white">← Back to Calendar</a>
+        </div>
 
-        <div class="bg-black font-mono text-xs text-green-400 p-4 rounded border border-gray-700 mb-6 h-64 overflow-y-auto">
+        <div class="bg-black font-mono text-xs text-green-400 p-4 rounded-lg border border-gray-700 mb-6 h-48 overflow-y-auto">
+            @if(logs.Count == 0) { <span class="text-gray-600">// Ready. Logs will appear here.</span> }
             @foreach(var log in logs) { <div class="border-b border-gray-800 pb-1 mb-1">@log</div> }
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div class="bg-gray-800 border border-gray-700 p-4 rounded">
-                <h3 class="font-bold text-blue-400 mb-2">1. Schema</h3>
-                <button @onclick="FixSchema" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded font-bold">Fix Tables</button>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div class="bg-gray-800 border border-gray-700 p-6 rounded-xl">
+                <h2 class="text-xl font-bold text-blue-400 mb-4">1. Repair Database</h2>
+                <button @onclick="FixSchema" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded font-bold transition">
+                    🛠️ Create Tables & Columns
+                </button>
             </div>
 
-            <div class="bg-gray-800 border border-gray-700 p-4 rounded">
-                <h3 class="font-bold text-green-400 mb-2">2. Import</h3>
-                <button @onclick="ImportTasks" class="w-full bg-gray-700 hover:bg-gray-600 text-white py-2 rounded font-bold">Import JSON</button>
+            <div class="bg-gray-800 border border-gray-700 p-6 rounded-xl">
+                <h2 class="text-xl font-bold text-green-400 mb-4">2. Import Data</h2>
+                <button @onclick="ImportTasks" class="w-full bg-gray-700 hover:bg-gray-600 text-white py-3 rounded font-bold border border-gray-600 transition">
+                    📥 Import JSON File
+                </button>
             </div>
+        </div>
 
-            <div class="bg-gray-800 border border-red-900 p-4 rounded">
-                <h3 class="font-bold text-red-400 mb-2">3. Cleanup</h3>
-                <button @onclick="DeleteAllTasks" class="w-full bg-red-900/50 hover:bg-red-600 text-red-200 hover:text-white py-2 rounded font-bold mb-2">Delete ALL Tasks</button>
-                <button @onclick="DropLegacy" class="w-full bg-gray-900 hover:bg-red-900/30 text-gray-400 py-2 rounded border border-gray-700">Drop Legacy</button>
+        <div class="bg-gray-800 border border-red-900/50 p-6 rounded-xl">
+            <h2 class="text-xl font-bold text-red-400 mb-4">3. Danger Zone</h2>
+            <div class="flex gap-4 items-center">
+                @if(!confirmDelete)
+                {
+                    <button @onclick="() => confirmDelete = true" class="bg-red-900/30 hover:bg-red-900/50 text-red-300 border border-red-800 px-6 py-3 rounded font-bold transition">
+                        🗑️ Delete ALL Tasks
+                    </button>
+                }
+                else
+                {
+                    <button @onclick="DeleteAllTasks" class="bg-red-600 hover:bg-red-500 text-white border border-red-500 px-6 py-3 rounded font-bold transition animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.5)]">
+                        ⚠️ CLICK TO CONFIRM
+                    </button>
+                    <button @onclick="() => confirmDelete = false" class="text-gray-400 hover:text-white underline">Cancel</button>
+                }
+                
+                <div class="w-px h-10 bg-gray-700 mx-4"></div>
+
+                <button @onclick="DropLegacy" class="text-xs text-gray-500 hover:text-red-300 transition">
+                    Drop Legacy Tables
+                </button>
             </div>
         </div>
     </div>
@@ -39,11 +69,9 @@
 @code {
     private List<string> logs = new();
     private int userId = 1;
+    private bool confirmDelete = false;
 
-    private void Log(string msg) { 
-        logs.Add($"{DateTime.Now:HH:mm:ss} > {msg}"); 
-        StateHasChanged(); 
-    }
+    private void Log(string msg) { logs.Add($"{DateTime.Now:HH:mm:ss} > {msg}"); StateHasChanged(); }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -56,38 +84,47 @@
                     if(doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p)) 
                         userId = p.GetInt32();
                 }
-                Log($"Ready. User ID: {userId}");
-            } catch { Log("Session Error. Defaulting to User 1"); }
+                Log($"Session Active. User ID: {userId}");
+            } catch { Log("Session Warning: Defaulting to User 1"); }
         }
     }
 
     private async Task FixSchema()
     {
-        Log("Fixing Schema...");
-        try { await BaseService.CreateBaseTablesIfMissing(); Log("Success."); } 
-        catch(Exception ex) { Log($"Error: {ex.Message}"); }
+        Log("Checking Schema...");
+        try { await BaseService.CreateBaseTablesIfMissing(); Log("✅ Schema Verified."); } 
+        catch(Exception ex) { Log($"❌ Error: {ex.Message}"); }
     }
 
     private async Task ImportTasks()
     {
-        Log("Importing...");
+        Log("Starting Import...");
         try {
+            // Use FRESH scope to avoid conflicts
+            using var scope = ScopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<BulletTaskService>();
+            
             var path = System.IO.Path.Combine(Env.WebRootPath, "bullet_calendar.json");
             if(System.IO.File.Exists(path)) {
                 var content = await System.IO.File.ReadAllTextAsync(path);
-                await TaskService.ImportFromOldJson(userId, content);
-                Log("Import Complete.");
-            } else { Log("File not found."); }
-        } catch(Exception ex) { Log($"Error: {ex.Message}"); }
+                await svc.ImportFromOldJson(userId, content);
+                Log("✅ Import Successful.");
+            } else { Log("❌ 'bullet_calendar.json' not found in wwwroot."); }
+        } catch(Exception ex) { Log($"❌ Import Failed: {ex.Message}"); }
     }
 
     private async Task DeleteAllTasks()
     {
         Log("Deleting tasks...");
+        confirmDelete = false;
         try {
-            int count = await BaseService.ClearDataByType(userId, "task");
-            Log($"Deleted {count} items.");
-        } catch(Exception ex) { Log($"Error: {ex.Message}"); }
+            // Use FRESH scope to ensure connection is alive
+            using var scope = ScopeFactory.CreateScope();
+            var baseSvc = scope.ServiceProvider.GetRequiredService<BulletBaseService>();
+            
+            int count = await baseSvc.ClearDataByType(userId, "task");
+            Log($"✅ Deleted {count} tasks.");
+        } catch(Exception ex) { Log($"❌ Delete Failed: {ex.Message}"); }
     }
 
     private async Task DropLegacy()

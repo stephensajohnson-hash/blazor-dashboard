@@ -12,7 +12,7 @@ public class BulletBaseService
 
     public async Task CreateBaseTablesIfMissing()
     {
-        // 1. Base Tables
+        // 1. Ensure Tables Exist
         await _db.Database.ExecuteSqlRawAsync(@"
             CREATE TABLE IF NOT EXISTS ""BulletItems"" (
                 ""Id"" serial PRIMARY KEY, ""UserId"" integer NOT NULL, ""Type"" text, ""Category"" text, 
@@ -28,11 +28,12 @@ public class BulletBaseService
                 ""Priority"" text, ""TicketNumber"" text, ""TicketUrl"" text, ""DueDate"" timestamp with time zone
             );
             CREATE TABLE IF NOT EXISTS ""StoredImages"" (
-                ""Id"" serial PRIMARY KEY, ""Data"" bytea, ""ContentType"" text, ""OriginalName"" text, ""UploadedAt"" timestamp with time zone
+                ""Id"" serial PRIMARY KEY, ""Data"" bytea, ""ContentType"" text, ""OriginalName"" text, 
+                ""UploadedAt"" timestamp with time zone DEFAULT now()
             );
         ");
         
-        // 2. Patch Columns
+        // 2. Patch Missing Columns (Idempotent)
         await RunPatch(@"DO $$ BEGIN 
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='BulletItems' AND column_name='LinkUrl') THEN 
                 ALTER TABLE ""BulletItems"" ADD COLUMN ""LinkUrl"" text DEFAULT ''; 
@@ -56,29 +57,30 @@ public class BulletBaseService
         return img.Id;
     }
 
-    // --- NUCLEAR DELETE OPTION (Pure SQL) ---
+    // --- NUCLEAR OPTION: Interpolated SQL (Crash Proof) ---
     public async Task<int> ClearDataByType(int userId, string type)
     {
-        // Delete Children (Notes)
-        await _db.Database.ExecuteSqlRawAsync(
-            @"DELETE FROM ""BulletItemNotes"" WHERE ""BulletItemId"" IN (SELECT ""Id"" FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1})", userId, type);
+        // Delete Notes (Children)
+        await _db.Database.ExecuteSqlInterpolatedAsync(
+            $"DELETE FROM \"BulletItemNotes\" WHERE \"BulletItemId\" IN (SELECT \"Id\" FROM \"BulletItems\" WHERE \"UserId\" = {userId} AND \"Type\" = {type})");
 
-        // Delete Children (Details)
-        await _db.Database.ExecuteSqlRawAsync(
-            @"DELETE FROM ""BulletTaskDetails"" WHERE ""BulletItemId"" IN (SELECT ""Id"" FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1})", userId, type);
+        // Delete Details (Children)
+        await _db.Database.ExecuteSqlInterpolatedAsync(
+            $"DELETE FROM \"BulletTaskDetails\" WHERE \"BulletItemId\" IN (SELECT \"Id\" FROM \"BulletItems\" WHERE \"UserId\" = {userId} AND \"Type\" = {type})");
 
-        // Delete Parents
-        int count = await _db.Database.ExecuteSqlRawAsync(
-            @"DELETE FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1}", userId, type);
+        // Delete Base Items (Parents)
+        int count = await _db.Database.ExecuteSqlInterpolatedAsync(
+            $"DELETE FROM \"BulletItems\" WHERE \"UserId\" = {userId} AND \"Type\" = {type}");
             
         return count;
     }
 
     public async Task DeleteItem(int itemId)
     {
-        await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletItemNotes"" WHERE ""BulletItemId"" = {0}", itemId);
-        await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletTaskDetails"" WHERE ""BulletItemId"" = {0}", itemId);
-        await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletItems"" WHERE ""Id"" = {0}", itemId);
+        // Use Interpolated SQL to safely delete by ID without loading data first
+        await _db.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM \"BulletItemNotes\" WHERE \"BulletItemId\" = {itemId}");
+        await _db.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM \"BulletTaskDetails\" WHERE \"BulletItemId\" = {itemId}");
+        await _db.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM \"BulletItems\" WHERE \"Id\" = {itemId}");
     }
 
     public async Task DropLegacyTables()
