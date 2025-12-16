@@ -16,7 +16,7 @@
         </div>
 
         <div class="bg-black font-mono text-xs text-green-400 p-4 rounded-lg border border-gray-700 mb-6 h-40 overflow-y-auto">
-            @if(logs.Count == 0) { <span class="text-gray-600">// Console logs will appear here...</span> }
+            @if(logs.Count == 0) { <span class="text-gray-600">// Logs will appear here...</span> }
             @foreach(var log in logs)
             {
                 <div class="border-b border-gray-800 pb-1 mb-1">@log</div>
@@ -43,12 +43,24 @@
         <div class="bg-gray-800 border border-red-900/50 rounded-xl p-6">
             <h2 class="text-xl font-bold text-red-400 mb-4">3. Danger Zone</h2>
             
-            <div class="flex gap-4">
-                <button @onclick='() => ClearData("task")' class="bg-red-900/30 hover:bg-red-900/50 text-red-300 border border-red-800 px-4 py-2 rounded font-bold transition">
-                    🗑️ Delete ALL Tasks
-                </button>
+            <div class="flex gap-4 items-center">
+                @if(!confirmDeleteTask)
+                {
+                    <button @onclick="() => confirmDeleteTask = true" class="bg-red-900/30 hover:bg-red-900/50 text-red-300 border border-red-800 px-4 py-2 rounded font-bold transition">
+                        🗑️ Delete ALL Tasks
+                    </button>
+                }
+                else
+                {
+                    <button @onclick='() => ClearData("task")' class="bg-red-600 hover:bg-red-500 text-white border border-red-500 px-4 py-2 rounded font-bold transition animate-pulse">
+                        ⚠️ CLICK TO CONFIRM DELETE
+                    </button>
+                    <button @onclick="() => confirmDeleteTask = false" class="text-gray-400 hover:text-white text-sm">Cancel</button>
+                }
+
+                <div class="w-px h-8 bg-gray-700 mx-2"></div>
                 
-                <button @onclick="DropLegacy" class="bg-red-900/30 hover:bg-red-900/50 text-red-300 border border-red-800 px-4 py-2 rounded font-bold transition">
+                <button @onclick="DropLegacy" class="bg-gray-800 hover:bg-red-900/30 text-gray-400 hover:text-red-300 border border-gray-600 hover:border-red-800 px-4 py-2 rounded font-bold transition">
                     💣 Drop Legacy Tables
                 </button>
             </div>
@@ -59,12 +71,13 @@
 @code {
     private List<string> logs = new();
     private int userId;
+    private bool confirmDeleteTask = false;
 
     private void Log(string msg) 
     { 
         var formatted = $"{DateTime.Now:HH:mm:ss} > {msg}";
         logs.Add(formatted); 
-        Console.WriteLine(formatted); // Also log to server console
+        Console.WriteLine(formatted); 
         StateHasChanged(); 
     }
 
@@ -81,15 +94,7 @@
                         userId = p.GetInt32();
                         Log($"Session Loaded. UserId: {userId}");
                     }
-                    else 
-                    {
-                        Log("Error: UserId property not found in session JSON.");
-                    }
-                } catch (Exception ex) {
-                    Log("Session Parse Error: " + ex.Message);
-                }
-            } else {
-                Log("No session found.");
+                } catch { Log("Session Error"); }
             }
         }
     }
@@ -107,8 +112,6 @@
     private async Task ImportTasks()
     {
         Log("Starting Import...");
-        if(userId == 0) { Log("❌ Cannot Import: UserId is 0"); return; }
-
         try {
             var path = System.IO.Path.Combine(Env.WebRootPath, "bullet_calendar.json");
             if(System.IO.File.Exists(path)) {
@@ -121,42 +124,26 @@
 
     private async Task ClearData(string type)
     {
-        try 
-        {
-            Log($"ClearData initiated for type: {type}");
-            
-            if(userId == 0) { 
-                Log("❌ Cannot Delete: UserId is 0"); 
-                return; 
-            }
+        Log($"Attempting to delete type: {type}...");
+        confirmDeleteTask = false; // Reset button
 
-            bool confirmed = await JS.InvokeAsync<bool>("confirm", $"Delete ALL {type}s? This cannot be undone.");
-            if(!confirmed) {
-                Log("Action cancelled by user.");
-                return;
-            }
-
-            Log($"Deleting all items of type '{type}' for User {userId}...");
-            
-            // Get count from new service method
+        try {
+            // New robust delete method
             int count = await BaseService.ClearDataByType(userId, type);
-            Log($"✅ Success. Deleted {count} items.");
+            Log($"✅ SUCCESS: Deleted {count} items.");
         } 
         catch (Exception ex) 
         {
-            Log($"❌ CRITICAL ERROR: {ex.Message}");
-            Log($"Stack Trace: {ex.StackTrace}");
+            Log($"❌ ERROR: {ex.Message}");
         }
     }
 
     private async Task DropLegacy()
     {
+        Log("Dropping legacy tables...");
         try {
-            if(await JS.InvokeAsync<bool>("confirm", "Delete old unused tables?")) {
-                Log("Dropping legacy tables...");
-                await BaseService.DropLegacyTables();
-                Log("✅ Legacy tables dropped.");
-            }
+            await BaseService.DropLegacyTables();
+            Log("✅ Legacy tables dropped.");
         } catch (Exception ex) {
             Log($"❌ Drop Error: {ex.Message}");
         }
