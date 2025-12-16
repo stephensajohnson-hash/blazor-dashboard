@@ -26,9 +26,11 @@ public class BulletTaskService
         ");
     }
 
+    // DTO UPDATED TO INCLUDE NOTES
     public class TaskDTO : BulletItem
     {
         public BulletTaskDetail Detail { get; set; } = new();
+        public List<BulletItemNote> Notes { get; set; } = new();
     }
 
     // --- READ ---
@@ -38,13 +40,13 @@ public class BulletTaskService
         return await GetTasksForRange(userId, date, date);
     }
 
-    public async Task<List<TaskDTO>> GetTasksForRange(int userId, DateTime start, DateTime end)
+public async Task<List<TaskDTO>> GetTasksForRange(int userId, DateTime start, DateTime end)
     {
-        // FIX: Explicitly set Kind to UTC for PostgreSQL
         var s = DateTime.SpecifyKind(start.Date, DateTimeKind.Utc);
         var e = DateTime.SpecifyKind(end.Date.AddDays(1).AddSeconds(-1), DateTimeKind.Utc);
 
-        var query = from baseItem in _db.BulletItems
+        // 1. Fetch base items and details
+        var tasks = await (from baseItem in _db.BulletItems
                     join detail in _db.BulletTaskDetails on baseItem.Id equals detail.BulletItemId
                     where baseItem.UserId == userId 
                           && baseItem.Date >= s 
@@ -56,23 +58,37 @@ public class BulletTaskService
                         Date = baseItem.Date, Title = baseItem.Title, Description = baseItem.Description, 
                         ImgUrl = baseItem.ImgUrl, LinkUrl = baseItem.LinkUrl, OriginalStringId = baseItem.OriginalStringId,
                         Detail = detail
-                    };
+                    }).ToListAsync();
 
-        return await query.ToListAsync();
+        // 2. Fetch notes for these tasks
+        var taskIds = tasks.Select(t => t.Id).ToList();
+        var notes = await _db.BulletItemNotes
+                             .Where(n => taskIds.Contains(n.BulletItemId))
+                             .OrderBy(n => n.Id) // Maintain insert order
+                             .ToListAsync();
+
+        // 3. Stitch notes into tasks in memory
+        foreach (var task in tasks)
+        {
+            task.Notes = notes.Where(n => n.BulletItemId == task.Id).ToList();
+        }
+
+        return tasks;
     }
 
     // --- WRITE ---
 
-    public async Task SaveTask(TaskDTO dto)
+public async Task SaveTask(TaskDTO dto)
     {
         BulletItem? item = null;
 
-        // Ensure Date is UTC before saving
+        // Ensure Date is UTC
         if (dto.Date.Kind == DateTimeKind.Unspecified) 
             dto.Date = DateTime.SpecifyKind(dto.Date, DateTimeKind.Utc);
         else if (dto.Date.Kind == DateTimeKind.Local)
             dto.Date = dto.Date.ToUniversalTime();
 
+        // 1. Save Base Item
         if (dto.Id > 0)
         {
             item = await _db.BulletItems.FindAsync(dto.Id);
@@ -89,10 +105,11 @@ public class BulletTaskService
         item.Date = dto.Date;
         item.Description = dto.Description;
         item.ImgUrl = dto.ImgUrl;
-        item.LinkUrl = dto.LinkUrl;
+        item.LinkUrl = dto.LinkUrl; // Added LinkUrl update
 
         await _db.SaveChangesAsync();
 
+        // 2. Save Details
         var detail = await _db.BulletTaskDetails.FindAsync(item.Id);
         if (detail == null)
         {
@@ -104,8 +121,21 @@ public class BulletTaskService
         detail.IsCompleted = dto.Detail.IsCompleted;
         detail.Priority = dto.Detail.Priority;
         detail.TicketNumber = dto.Detail.TicketNumber;
-        detail.TicketUrl = dto.Detail.TicketUrl;
+        detail.TicketUrl = dto.Detail.TicketUrl; // Added TicketUrl update
 
+        await _db.SaveChangesAsync();
+
+        // 3. Save Notes (Strategy: Delete existing, insert current list)
+        var existingNotes = await _db.BulletItemNotes.Where(n => n.BulletItemId == item.Id).ToListAsync();
+        _db.BulletItemNotes.RemoveRange(existingNotes);
+        
+        foreach (var note in dto.Notes)
+        {
+            // Ensure ID is reset so it inserts as new
+            note.Id = 0; 
+            note.BulletItemId = item.Id;
+            await _db.BulletItemNotes.AddAsync(note);
+        }
         await _db.SaveChangesAsync();
     }
 
