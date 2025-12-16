@@ -17,7 +17,6 @@ public class BulletTaskService
 
     public Task CreateTable() 
     { 
-        // No-op: handled by BaseService
         return Task.CompletedTask; 
     }
 
@@ -97,9 +96,48 @@ public class BulletTaskService
         if (detail != null) { detail.IsCompleted = isComplete; detail.Status = isComplete ? "Done" : "Pending"; await _db.SaveChangesAsync(); }
     }
 
-    public Task<int> ImportFromOldJson(int userId, string json) 
-    { 
-        // Handled in ManageData now or BaseService import
-        return Task.FromResult(0); 
+    // --- FIX: Now returns int (Count) ---
+    public async Task<int> ImportFromOldJson(int userId, string jsonContent)
+    {
+        int count = 0;
+        using var doc = JsonDocument.Parse(jsonContent);
+        var root = doc.RootElement;
+        JsonElement items = root;
+        if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("items", out var i)) items = i;
+
+        if(items.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var el in items.EnumerateArray())
+            {
+                string type = "task";
+                if (el.TryGetProperty("type", out var t)) type = t.ToString().ToLower();
+
+                if (type == "task")
+                {
+                    string title = ""; if(el.TryGetProperty("title", out var val)) title = val.ToString();
+                    var item = new BulletItem { UserId = userId, Type = "task", CreatedAt = DateTime.UtcNow, Title = title };
+                    
+                    if(el.TryGetProperty("date", out val) && DateTime.TryParse(val.ToString(), out var dt)) 
+                        item.Date = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+                    else item.Date = DateTime.UtcNow;
+
+                    if(el.TryGetProperty("category", out val)) item.Category = val.ToString();
+                    if(el.TryGetProperty("description", out val)) item.Description = val.ToString();
+                    if(el.TryGetProperty("id", out val)) item.OriginalStringId = val.ToString();
+
+                    await _db.BulletItems.AddAsync(item);
+                    await _db.SaveChangesAsync();
+
+                    var detail = new BulletTaskDetail { BulletItemId = item.Id };
+                    if(el.TryGetProperty("status", out val)) detail.Status = val.ToString();
+                    if(el.TryGetProperty("isCompleted", out val)) detail.IsCompleted = val.GetBoolean();
+                    
+                    await _db.BulletTaskDetails.AddAsync(detail);
+                    count++;
+                }
+            }
+            await _db.SaveChangesAsync();
+        }
+        return count;
     }
 }
