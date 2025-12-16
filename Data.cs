@@ -118,4 +118,5 @@ public class BulletMeetingDetail
     public DateTime? StartTime { get; set; }
     public int DurationMinutes { get; set; }
     public int ActualDurationMinutes { get; set; }
+    public bool IsCompleted { get; set; } // NEW
 }
