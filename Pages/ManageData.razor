@@ -19,7 +19,7 @@
             @if(logs.Count == 0) { <span class="text-gray-600">// Console logs will appear here...</span> }
             @foreach(var log in logs)
             {
-                <div>> @log</div>
+                <div class="border-b border-gray-800 pb-1 mb-1">@log</div>
             }
         </div>
 
@@ -60,7 +60,13 @@
     private List<string> logs = new();
     private int userId;
 
-    private void Log(string msg) { logs.Add($"{DateTime.Now:HH:mm:ss} {msg}"); StateHasChanged(); }
+    private void Log(string msg) 
+    { 
+        var formatted = $"{DateTime.Now:HH:mm:ss} > {msg}";
+        logs.Add(formatted); 
+        Console.WriteLine(formatted); // Also log to server console
+        StateHasChanged(); 
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -70,7 +76,6 @@
             if (!string.IsNullOrEmpty(json)) { 
                 try {
                     using var doc = JsonDocument.Parse(json);
-                    // Check both casing variations
                     if(doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p)) 
                     {
                         userId = p.GetInt32();
@@ -116,30 +121,44 @@
 
     private async Task ClearData(string type)
     {
-        if(userId == 0) { Log("❌ Cannot Delete: UserId is 0"); return; }
-
-        if(await JS.InvokeAsync<bool>("confirm", $"Delete ALL {type}s? This cannot be undone.")) {
-            Log($"Deleting all items of type '{type}' for User {userId}...");
-            try {
-                // Now getting the count back
-                int count = await BaseService.ClearDataByType(userId, type);
-                Log($"✅ Success. Deleted {count} items.");
-            } catch (Exception ex) {
-                Log($"❌ Delete Error: {ex.Message}");
+        try 
+        {
+            Log($"ClearData initiated for type: {type}");
+            
+            if(userId == 0) { 
+                Log("❌ Cannot Delete: UserId is 0"); 
+                return; 
             }
+
+            bool confirmed = await JS.InvokeAsync<bool>("confirm", $"Delete ALL {type}s? This cannot be undone.");
+            if(!confirmed) {
+                Log("Action cancelled by user.");
+                return;
+            }
+
+            Log($"Deleting all items of type '{type}' for User {userId}...");
+            
+            // Get count from new service method
+            int count = await BaseService.ClearDataByType(userId, type);
+            Log($"✅ Success. Deleted {count} items.");
+        } 
+        catch (Exception ex) 
+        {
+            Log($"❌ CRITICAL ERROR: {ex.Message}");
+            Log($"Stack Trace: {ex.StackTrace}");
         }
     }
 
     private async Task DropLegacy()
     {
-        if(await JS.InvokeAsync<bool>("confirm", "Delete old unused tables?")) {
-            Log("Dropping legacy tables...");
-            try {
+        try {
+            if(await JS.InvokeAsync<bool>("confirm", "Delete old unused tables?")) {
+                Log("Dropping legacy tables...");
                 await BaseService.DropLegacyTables();
                 Log("✅ Legacy tables dropped.");
-            } catch (Exception ex) {
-                Log($"❌ Drop Error: {ex.Message}");
             }
+        } catch (Exception ex) {
+            Log($"❌ Drop Error: {ex.Message}");
         }
     }
 }
