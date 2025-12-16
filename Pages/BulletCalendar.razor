@@ -94,7 +94,7 @@
         }
         else 
         {
-            <div class="text-center text-gray-500 mt-10">Select Day View to see meetings</div>
+            <div class="text-center text-gray-500 mt-10">Select Day View to see items</div>
         }
     </div>
 </div>
@@ -109,6 +109,7 @@
 
 @code {
     private User? currentUser;
+    private int currentUserId = 0; // Using distinct name to avoid ambiguity
     private DateTime viewDate = DateTime.UtcNow;
     private string currentView = "day";
     private int clientOffset = 0;
@@ -121,11 +122,14 @@
     private int daysInMonth => DateTime.DaysInMonth(viewDate.Year, viewDate.Month);
     private int monthEmptyCells => ((int)new DateTime(viewDate.Year, viewDate.Month, 1).DayOfWeek + 6) % 7; 
 
+    // Helper
     private BulletMeetingService.MeetingDTO ToMeetingDTO(BulletTaskService.TaskDTO t)
     {
         return new BulletMeetingService.MeetingDTO 
         {
-            Id = t.Id, UserId = t.UserId, Type = t.Type, Category = t.Category,
+            Id = t.Id, 
+            UserId = t.UserId, // Use property from item, not global scope to be safe
+            Type = t.Type, Category = t.Category,
             Date = t.Date, Title = t.Title, Description = t.Description,
             ImgUrl = t.ImgUrl, LinkUrl = t.LinkUrl, OriginalStringId = t.OriginalStringId,
             Detail = t.MeetingDetail, Notes = t.Notes
@@ -141,10 +145,10 @@
                 if (!string.IsNullOrEmpty(json)) { 
                     using(var doc = JsonDocument.Parse(json)) {
                         if(doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p)) 
-                            userId = p.GetInt32();
+                            currentUserId = p.GetInt32();
                     }
-                    if(userId > 0) {
-                        try { currentUser = await Db.Users.FindAsync(userId); } catch { }
+                    if(currentUserId > 0) {
+                        try { currentUser = await Db.Users.FindAsync(currentUserId); } catch { }
                         if(currentUser != null) {
                             try { clientOffset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()"); } catch {}
                             viewDate = DateTime.UtcNow.AddMinutes(-clientOffset);
@@ -156,9 +160,6 @@
         }
     }
 
-    // THIS METHOD WAS MISSING IN PREVIOUS VERSION AND CAUSED ERROR
-    private List<BulletTaskService.TaskDTO> GetItemsForDate(DateTime d) => loadedItems.Where(t => t.Date.Date == d.Date).ToList();
-
     private async Task LoadData()
     {
         if (currentUser == null) return;
@@ -167,8 +168,8 @@
         else if (currentView == "month") { start = new DateTime(viewDate.Year, viewDate.Month, 1); end = start.AddMonths(1); }
 
         try {
-            loadedItems = await TaskService.GetTasksForRange(currentUser.Id, start, end);
-            var meetings = await MeetingService.GetMeetingsForRange(currentUser.Id, start, end);
+            loadedItems = await TaskService.GetTasksForRange(currentUserId, start, end);
+            var meetings = await MeetingService.GetMeetingsForRange(currentUserId, start, end);
             foreach (var m in meetings)
             {
                 loadedItems.Add(new BulletTaskService.TaskDTO
@@ -184,6 +185,21 @@
         StateHasChanged();
     }
 
+    private List<BulletTaskService.TaskDTO> GetItemsForDate(DateTime d) => loadedItems.Where(t => t.Date.Date == d.Date).ToList();
+
+    private async Task ToggleComplete(BulletTaskService.TaskDTO t)
+    {
+        if (t.Type == "task") {
+            t.Detail.IsCompleted = !t.Detail.IsCompleted;
+            await TaskService.ToggleComplete(t.Id, t.Detail.IsCompleted);
+        }
+        else if (t.Type == "meeting") {
+            t.MeetingDetail.IsCompleted = !t.MeetingDetail.IsCompleted;
+            await MeetingService.ToggleComplete(t.Id, t.MeetingDetail.IsCompleted);
+        }
+    }
+
+    // ... (Navigation & Edit Logic)
     private void SwitchView(string view) { currentView = view; _ = LoadData(); }
     private void Prev() { 
         if(currentView == "day") viewDate = viewDate.AddDays(-1);
@@ -211,21 +227,9 @@
         return currentView == "week" ? $"Week of {weekStart:MMM d}" : viewDate.ToString("MMMM yyyy");
     }
 
-    private async Task ToggleComplete(BulletTaskService.TaskDTO t)
-    {
-        if (t.Type == "task") {
-            t.Detail.IsCompleted = !t.Detail.IsCompleted;
-            await TaskService.ToggleComplete(t.Id, t.Detail.IsCompleted);
-        }
-        else if (t.Type == "meeting") {
-            t.MeetingDetail.IsCompleted = !t.MeetingDetail.IsCompleted;
-            await MeetingService.ToggleComplete(t.Id, t.MeetingDetail.IsCompleted);
-        }
-    }
-
     private void OpenEditor(string category, string type, DateTime date)
     {
-        editingItem = new BulletTaskService.TaskDTO { UserId = currentUser!.Id, Category = category, Type = type, Date = date };
+        editingItem = new BulletTaskService.TaskDTO { UserId = currentUserId, Category = category, Type = type, Date = date };
     }
 
     private void OpenEdit(BulletTaskService.TaskDTO t)
