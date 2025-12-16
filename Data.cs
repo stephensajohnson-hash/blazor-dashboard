@@ -34,8 +34,7 @@ public class AppDbContext : DbContext
     public DbSet<BulletItemNote> BulletItemNotes { get; set; }
     public DbSet<BulletTaskDetail> BulletTaskDetails { get; set; }
     public DbSet<BulletMeetingDetail> BulletMeetingDetails { get; set; } // NEW
-
-
+    public DbSet<BulletHabitDetail> BulletHabitDetails { get; set; }
 }
 
 // --- UTILITIES ---
@@ -120,3 +119,15 @@ public class BulletMeetingDetail
     public int ActualDurationMinutes { get; set; }
     public bool IsCompleted { get; set; } // NEW
 }
+
+public class BulletHabitDetail
+    {
+        [Key, ForeignKey("BulletItem")]
+        public int BulletItemId { get; set; }
+        
+        // Navigation property back to base
+        public virtual BulletItem BulletItem { get; set; } = null!;
+
+        public int StreakCount { get; set; } = 0;
+        public string Status { get; set; } = "Active"; // e.g., Active, Paused, Archived
+    }

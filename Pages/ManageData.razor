@@ -7,6 +7,7 @@
 @inject BulletBaseService BaseService
 @inject BulletTaskService TaskService
 @inject BulletMeetingService MeetingService
+@inject BulletHabitService HabitService
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
@@ -43,12 +44,15 @@
 
         <div class="bg-gray-800 p-4 rounded mb-6 border border-gray-700">
              <h3 class="font-bold text-green-400 mb-2">2. Import</h3>
-             <div class="flex gap-2">
+             <div class="flex gap-2 flex-wrap">
                  <button @onclick="ImportTasks" class="bg-green-700 text-white px-4 py-2 rounded hover:bg-green-600">
                     📥 Import Tasks
                 </button>
                 <button @onclick="ImportMeetings" class="bg-purple-700 text-white px-4 py-2 rounded hover:bg-purple-600">
                     📥 Import Meetings
+                </button>
+                <button @onclick="ImportHabits" class="bg-cyan-700 text-white px-4 py-2 rounded hover:bg-cyan-600">
+                    📥 Import Habits
                 </button>
              </div>
         </div>
@@ -56,7 +60,7 @@
         <div class="bg-red-900/20 p-4 rounded border border-red-900">
             <h3 class="font-bold text-red-400 mb-2">3. Danger Zone</h3>
             
-            <div class="flex gap-4 items-center">
+            <div class="flex gap-4 items-center flex-wrap">
                 @if(!deleteTasksConfirm) {
                     <button @onclick="() => deleteTasksConfirm = true" class="bg-red-900/30 text-red-300 px-4 py-2 rounded hover:bg-red-900 border border-red-800">
                         🗑️ Delete Tasks
@@ -68,7 +72,7 @@
                     <button @onclick="() => deleteTasksConfirm = false" class="text-xs text-gray-400 underline">Cancel</button>
                 }
 
-                <div class="h-8 w-px bg-red-800 mx-2"></div>
+                <div class="h-8 w-px bg-red-800 mx-2 hidden sm:block"></div>
 
                 @if(!deleteMeetingsConfirm) {
                     <button @onclick="() => deleteMeetingsConfirm = true" class="bg-red-900/30 text-red-300 px-4 py-2 rounded hover:bg-red-900 border border-red-800">
@@ -80,6 +84,19 @@
                     </button>
                     <button @onclick="() => deleteMeetingsConfirm = false" class="text-xs text-gray-400 underline">Cancel</button>
                 }
+
+                <div class="h-8 w-px bg-red-800 mx-2 hidden sm:block"></div>
+
+                @if(!deleteHabitsConfirm) {
+                    <button @onclick="() => deleteHabitsConfirm = true" class="bg-red-900/30 text-red-300 px-4 py-2 rounded hover:bg-red-900 border border-red-800">
+                        🗑️ Delete Habits
+                    </button>
+                } else {
+                    <button @onclick="DeleteHabits" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-500 animate-pulse">
+                        CONFIRM HABIT DELETE
+                    </button>
+                    <button @onclick="() => deleteHabitsConfirm = false" class="text-xs text-gray-400 underline">Cancel</button>
+                }
             </div>
         </div>
 
@@ -89,8 +106,11 @@
 @code {
     private List<string> logs = new();
     private int userId = 1;
+    
+    // Confirmation States
     private bool deleteTasksConfirm = false;
     private bool deleteMeetingsConfirm = false;
+    private bool deleteHabitsConfirm = false;
 
     private void Log(string msg) 
     {
@@ -108,11 +128,12 @@
             try
             {
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
-                if (!string.IsNullOrEmpty(json)) {
-                    using var doc = JsonDocument.Parse(json);
-                    if(doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p)) {
-                        userId = p.GetInt32();
-                        Log($"Session: User {userId}");
+                if (!string.IsNullOrEmpty(json)) { 
+                    using(var doc = JsonDocument.Parse(json)) {
+                        if(doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p)) {
+                            userId = p.GetInt32();
+                            Log($"Session: User {userId}");
+                        }
                     }
                 }
             }
@@ -130,6 +151,8 @@
             Log("Schema Fix Done.");
         } catch (Exception ex) { Log($"Schema Error: {ex.Message}"); }
     }
+
+    // --- IMPORTS ---
 
     private async Task ImportTasks()
     {
@@ -157,6 +180,21 @@
         } catch (Exception ex) { Log($"Import Error: {ex.Message}"); }
     }
 
+    private async Task ImportHabits()
+    {
+        Log("Reading Habit JSON...");
+        try {
+            var path = System.IO.Path.Combine(Env.WebRootPath, "bullet_calendar.json");
+            if (System.IO.File.Exists(path)) {
+                var content = await System.IO.File.ReadAllTextAsync(path);
+                int count = await HabitService.ImportFromOldJson(userId, content);
+                Log($"✅ Imported {count} Habits.");
+            } else { Log("❌ File not found."); }
+        } catch (Exception ex) { Log($"Import Error: {ex.Message}"); }
+    }
+
+    // --- DELETES ---
+
     private async Task DeleteTasks()
     {
         deleteTasksConfirm = false;
@@ -174,6 +212,16 @@
         try {
             int count = await BaseService.ClearDataByType(userId, "meeting");
             Log($"🗑️ Deleted {count} meetings.");
+        } catch (Exception ex) { Log($"Delete Error: {ex.Message}"); }
+    }
+
+    private async Task DeleteHabits()
+    {
+        deleteHabitsConfirm = false;
+        Log($"Deleting habits...");
+        try {
+            int count = await BaseService.ClearDataByType(userId, "habit");
+            Log($"🗑️ Deleted {count} habits.");
         } catch (Exception ex) { Log($"Delete Error: {ex.Message}"); }
     }
 }

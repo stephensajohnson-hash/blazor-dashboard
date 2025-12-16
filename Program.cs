@@ -36,6 +36,7 @@ builder.Services.AddScoped(sp =>
 builder.Services.AddScoped<BulletBaseService>();
 builder.Services.AddScoped<BulletTaskService>();
 builder.Services.AddScoped<BulletMeetingService>();
+builder.Services.AddScoped<BulletHabitService>();
 
 // Database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
