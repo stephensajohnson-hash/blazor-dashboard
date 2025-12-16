@@ -1,6 +1,10 @@
 using Dashboard;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Linq;
+using System;
 
 public class BulletTaskService
 {
@@ -11,23 +15,24 @@ public class BulletTaskService
         _db = db;
     }
 
-    public async Task CreateTable() { /* Handled in BaseService */ }
+    public Task CreateTable() 
+    { 
+        // No-op: handled by BaseService
+        return Task.CompletedTask; 
+    }
 
-    // --- DTO DEFINITION ---
     public class TaskDTO : BulletItem
     {
         public BulletTaskDetail Detail { get; set; } = new();
-        public BulletMeetingDetail MeetingDetail { get; set; } = new(); // Required for meetings
+        public BulletMeetingDetail MeetingDetail { get; set; } = new();
         public List<BulletItemNote> Notes { get; set; } = new();
     }
 
-    // --- READ ---
     public async Task<List<TaskDTO>> GetTasksForRange(int userId, DateTime start, DateTime end)
     {
         var s = DateTime.SpecifyKind(start.Date, DateTimeKind.Utc);
         var e = DateTime.SpecifyKind(end.Date.AddDays(1).AddSeconds(-1), DateTimeKind.Utc);
 
-        // Fetch Tasks
         var tasks = await (from baseItem in _db.BulletItems
                            join detail in _db.BulletTaskDetails on baseItem.Id equals detail.BulletItemId
                            where baseItem.UserId == userId 
@@ -42,7 +47,6 @@ public class BulletTaskService
                                Detail = detail
                            }).ToListAsync();
 
-        // Load Notes
         if (tasks.Any())
         {
             var taskIds = tasks.Select(t => t.Id).ToList();
@@ -53,7 +57,6 @@ public class BulletTaskService
         return tasks;
     }
 
-    // --- WRITE ---
     public async Task SaveTask(TaskDTO dto)
     {
         BulletItem? item = null;
@@ -67,7 +70,7 @@ public class BulletTaskService
 
         item.Title = dto.Title; item.Category = dto.Category; item.Date = dto.Date;
         item.Description = dto.Description; item.ImgUrl = dto.ImgUrl; item.LinkUrl = dto.LinkUrl;
-        item.Type = "task"; // Ensure type is forced to task if using this service
+        item.Type = "task";
 
         await _db.SaveChangesAsync();
 
@@ -82,7 +85,6 @@ public class BulletTaskService
         
         await _db.SaveChangesAsync();
 
-        // Notes
         var oldNotes = await _db.BulletItemNotes.Where(n => n.BulletItemId == item.Id).ToListAsync();
         _db.BulletItemNotes.RemoveRange(oldNotes);
         foreach (var n in dto.Notes) { n.Id = 0; n.BulletItemId = item.Id; await _db.BulletItemNotes.AddAsync(n); }
@@ -95,5 +97,9 @@ public class BulletTaskService
         if (detail != null) { detail.IsCompleted = isComplete; detail.Status = isComplete ? "Done" : "Pending"; await _db.SaveChangesAsync(); }
     }
 
-    public async Task<int> ImportFromOldJson(int userId, string json) { return 0; /* Handled in other services */ }
+    public Task<int> ImportFromOldJson(int userId, string json) 
+    { 
+        // Handled in ManageData now or BaseService import
+        return Task.FromResult(0); 
+    }
 }
