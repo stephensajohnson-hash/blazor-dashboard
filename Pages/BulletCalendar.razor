@@ -78,7 +78,7 @@
                                 var dayTasks = GetTasksForDate(viewDate).Where(t => t.Category.Equals(cat.Item2, StringComparison.OrdinalIgnoreCase)).ToList();
                             }
                             @foreach(var t in dayTasks) { 
-                                <TaskCard Task="t" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteItem" />
+                                <TaskCard Task="t" OnClick="@(x => OpenEdit(x))" OnToggle="@(x => ToggleComplete(x))" OnDelete="@(id => DeleteTask(id))" />
                             }
                             @if(!dayTasks.Any()) { <div class="text-center text-gray-600 text-xs italic mt-4">No tasks</div> }
                         </div>
@@ -99,7 +99,7 @@
                         </div>
                         <div class="flex-1 overflow-y-auto p-1 space-y-1 scrollbar-hide">
                             @foreach(var t in GetTasksForDate(d)) { 
-                                <TaskPill Task="t" OnClick="OpenEdit" ImageWidth="@BulletViewConfig.ImgWidthWeek" />
+                                <TaskPill Task="t" OnClick="@(x => OpenEdit(x))" ImageWidth="@BulletViewConfig.ImgWidthWeek" />
                             }
                             <button @onclick='() => OpenEditor("personal", "task", d)' class="w-full py-2 text-gray-600 hover:text-gray-400 hover:bg-gray-700/50 rounded text-xs transition mt-2">＋</button>
                         </div>
@@ -122,7 +122,7 @@
                             <div class="text-right text-xs font-bold text-gray-500 mb-1">@d</div>
                             <div class="flex-1 overflow-y-auto space-y-1 scrollbar-hide max-h-24">
                                 @foreach(var t in GetTasksForDate(currentDay)) { 
-                                    <TaskPill Task="t" OnClick="OpenEdit" ImageWidth="@BulletViewConfig.ImgWidthMonth" />
+                                    <TaskPill Task="t" OnClick="@(x => OpenEdit(x))" ImageWidth="@BulletViewConfig.ImgWidthMonth" />
                                 }
                             </div>
                         </div>
@@ -133,7 +133,7 @@
     </div>
 </div>
 
-<TaskEditor Task="editingItem" OnSave="SaveItem" OnCancel="() => editingItem = null" OnDelete="DeleteItem" />
+<TaskEditor Task="editingItem" OnSave="SaveItem" OnCancel="() => editingItem = null" OnDelete="DeleteCurrentTask" />
 
 @code {
     private User? currentUser;
@@ -244,13 +244,24 @@
         }
     }
 
-    private async Task DeleteItem(int id)
+    // RENAMED to avoid ambiguity (Argument: int id)
+    private async Task DeleteTask(int id)
     {
         if(await JS.InvokeAsync<bool>("confirm", "Delete this task?")) {
             await BaseService.DeleteItem(id);
-            // If editing from modal, close it
-            editingItem = null;
             await LoadData();
+        }
+    }
+
+    // RENAMED to avoid ambiguity (Argument: none, uses editingItem)
+    private async Task DeleteCurrentTask()
+    {
+        if(editingItem != null && editingItem.Id > 0) {
+            if(await JS.InvokeAsync<bool>("confirm", "Delete this task?")) {
+                await BaseService.DeleteItem(editingItem.Id);
+                editingItem = null;
+                await LoadData();
+            }
         }
     }
     
