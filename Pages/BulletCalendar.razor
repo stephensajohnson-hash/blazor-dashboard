@@ -19,12 +19,10 @@
 <div class="min-h-screen bg-gray-900 text-white overflow-x-hidden pb-40 relative">
     
     <div class="p-6 pb-2 mb-2 border-b border-gray-800 flex items-center justify-between shrink-0 sticky top-0 bg-gray-900 z-40">
-        
         <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
             <a href="/" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Home">🏠</a>
             <a href="/recipes" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Recipes">🍴</a>
             <a href="/bullet-calendar" class="text-2xl hover:scale-125 transition grayscale-0 drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]" title="Bullet Calendar">✅</a>
-            <span class="text-2xl opacity-20 cursor-not-allowed" title="Coming Soon - Budget Tracker">💵</span>
         </div>
 
         <div class="flex flex-col items-center gap-3">
@@ -49,7 +47,6 @@
                 <div class="fixed inset-0 z-40 cursor-default" @onclick="() => showUserMenu = false"></div>
                 <div class="absolute right-0 top-full mt-2 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 z-50" @onclick:stopPropagation="true">
                     <a href="/manage-data" class="block w-full text-left text-xs text-blue-400 hover:bg-gray-700 p-2 rounded mb-1">💾 Manage Data</a>
-                    <div class="h-px bg-gray-700 my-1"></div>
                     <button @onclick="Logout" class="w-full text-left text-xs text-red-400 hover:bg-gray-700 p-2 rounded">Logout</button>
                 </div>
             }
@@ -73,11 +70,14 @@
                         </div>
                         <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide">
                             @{
+                                // --- DEBUG LOGGING INSIDE RENDER LOOP ---
                                 var dayItems = GetItemsForDate(viewDate)
                                     .Where(t => t.Category.Equals(cat.Item2, StringComparison.OrdinalIgnoreCase))
                                     .OrderByDescending(t => t.Type == "meeting")
                                     .ThenBy(t => t.MeetingDetail.StartTime)
                                     .ToList();
+                                
+                                Console.WriteLine($"[RENDER] Column {cat.Item1} ({viewDate:MM/dd}) -> Found {dayItems.Count} items.");
                             }
                             @foreach(var item in dayItems) 
                             { 
@@ -85,7 +85,8 @@
                                     @if (item.Type == "meeting")
                                     {
                                         <Dashboard.Components.Bullet.MeetingCard Item="item" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteTask" />
-                                    }
+                                        
+                                        }
                                     else
                                     {
                                         <Dashboard.Components.Bullet.TaskCard Item="item" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteTask" />
@@ -199,9 +200,14 @@
         if (currentView == "week") { start = weekStart; end = start.AddDays(7); }
         else if (currentView == "month") { start = new DateTime(viewDate.Year, viewDate.Month, 1); end = start.AddMonths(1); }
 
+        Console.WriteLine($"[LOAD] User {userId} Range {start} - {end}");
+
         try {
             loadedItems = await TaskService.GetTasksForRange(userId, start, end);
             var meetings = await MeetingService.GetMeetingsForRange(userId, start, end);
+            
+            Console.WriteLine($"[LOAD] Tasks: {loadedItems.Count}, Meetings: {meetings.Count}");
+
             foreach (var m in meetings)
             {
                 loadedItems.Add(new BulletTaskService.TaskDTO
@@ -217,7 +223,12 @@
         StateHasChanged();
     }
 
-    private List<BulletTaskService.TaskDTO> GetItemsForDate(DateTime d) => loadedItems.Where(t => t.Date.Date == d.Date).ToList();
+    private List<BulletTaskService.TaskDTO> GetItemsForDate(DateTime d) 
+    {
+        // Debug date matching issues
+        var items = loadedItems.Where(t => t.Date.Date == d.Date).ToList();
+        return items;
+    }
 
     private async Task ToggleComplete(BulletTaskService.TaskDTO t)
     {
@@ -231,6 +242,7 @@
         }
     }
 
+    // ... (Keep existing Navigation & Edit methods)
     private void SwitchView(string view) { currentView = view; _ = LoadData(); }
     private void Prev() { 
         if(currentView == "day") viewDate = viewDate.AddDays(-1);
