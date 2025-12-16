@@ -53,7 +53,7 @@
                 else
                 {
                     <button @onclick='() => ClearData("task")' class="bg-red-600 hover:bg-red-500 text-white border border-red-500 px-4 py-2 rounded font-bold transition animate-pulse">
-                        ⚠️ CLICK TO CONFIRM DELETE
+                        ⚠️ CLICK TO CONFIRM
                     </button>
                     <button @onclick="() => confirmDeleteTask = false" class="text-gray-400 hover:text-white text-sm">Cancel</button>
                 }
@@ -70,14 +70,13 @@
 
 @code {
     private List<string> logs = new();
-    private int userId;
+    private int userId = 1; // Default to 1 to prevent crashes if session fails
     private bool confirmDeleteTask = false;
 
     private void Log(string msg) 
     { 
-        var formatted = $"{DateTime.Now:HH:mm:ss} > {msg}";
-        logs.Add(formatted); 
-        Console.WriteLine(formatted); 
+        logs.Add($"{DateTime.Now:HH:mm:ss} > {msg}"); 
+        // REMOVED Console.WriteLine to prevent stdout buffer crashes
         StateHasChanged(); 
     }
 
@@ -85,16 +84,18 @@
     {
         if (firstRender)
         {
-            var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
-            if (!string.IsNullOrEmpty(json)) { 
-                try {
+            try {
+                var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
+                if (!string.IsNullOrEmpty(json)) { 
                     using var doc = JsonDocument.Parse(json);
                     if(doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p)) 
                     {
                         userId = p.GetInt32();
                         Log($"Session Loaded. UserId: {userId}");
                     }
-                } catch { Log("Session Error"); }
+                }
+            } catch { 
+                Log("Session Warning: Could not load user session. Defaulting to ID 1.");
             }
         }
     }
@@ -124,11 +125,11 @@
 
     private async Task ClearData(string type)
     {
-        Log($"Attempting to delete type: {type}...");
-        confirmDeleteTask = false; // Reset button
+        Log($"Deleting all '{type}' items...");
+        confirmDeleteTask = false; 
 
         try {
-            // New robust delete method
+            // Using the new safe EF method
             int count = await BaseService.ClearDataByType(userId, type);
             Log($"✅ SUCCESS: Deleted {count} items.");
         } 

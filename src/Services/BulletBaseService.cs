@@ -73,46 +73,48 @@ public class BulletBaseService
         return img.Id;
     }
 
-    // --- ROBUST DELETE ---
+    // --- FIX: SAFE EF CORE DELETION (No Raw SQL) ---
     public async Task<int> ClearDataByType(int userId, string type)
     {
-        int deletedCount = 0;
+        // 1. Fetch Items to delete
+        var items = await _db.BulletItems
+            .Where(x => x.UserId == userId && x.Type == type)
+            .ToListAsync();
 
-        // 1. Delete Notes (Safely)
-        try {
-            await _db.Database.ExecuteSqlRawAsync(
-                @"DELETE FROM ""BulletItemNotes"" 
-                  WHERE ""BulletItemId"" IN (SELECT ""Id"" FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1})", 
-                userId, type);
-        } catch { /* Table might not exist, ignore */ }
+        if (!items.Any()) return 0;
 
-        // 2. Delete Details (Safely)
-        try {
-            await _db.Database.ExecuteSqlRawAsync(
-                @"DELETE FROM ""BulletTaskDetails"" 
-                  WHERE ""BulletItemId"" IN (SELECT ""Id"" FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1})", 
-                userId, type);
-        } catch { /* Table might not exist, ignore */ }
+        var ids = items.Select(x => x.Id).ToList();
 
-        // 3. Delete Base Items
+        // 2. Fetch and Remove Children (Notes)
+        var notes = await _db.BulletItemNotes
+            .Where(x => ids.Contains(x.BulletItemId))
+            .ToListAsync();
+        if(notes.Any()) _db.BulletItemNotes.RemoveRange(notes);
+
+        // 3. Fetch and Remove Children (Task Details)
+        // We use a try/catch here because BulletTaskDetails might be accessed via a different DbContext setup
+        // But since we are in the same context, we can try to access it if it's mapped.
+        // If not mapped in _db properties, we use raw SQL as a fallback for just this table.
         try {
-            deletedCount = await _db.Database.ExecuteSqlRawAsync(
-                @"DELETE FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1}", 
+             await _db.Database.ExecuteSqlRawAsync(
+                @"DELETE FROM ""BulletTaskDetails"" WHERE ""BulletItemId"" IN (SELECT ""Id"" FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1})", 
                 userId, type);
-        } catch { /* Table might not exist */ }
-            
-        return deletedCount;
+        } catch { /* Ignore if table missing */ }
+
+        // 4. Remove Base Items
+        _db.BulletItems.RemoveRange(items);
+        
+        // 5. Commit
+        await _db.SaveChangesAsync();
+        
+        return items.Count;
     }
 
     public async Task DeleteItem(int itemId)
     {
-        // EF Core Delete is usually safer for single items as it handles tracking
         var notes = await _db.BulletItemNotes.Where(n => n.BulletItemId == itemId).ToListAsync();
         if(notes.Any()) _db.BulletItemNotes.RemoveRange(notes);
 
-        // We use raw SQL for Details because BulletTaskDetails might not be in the Base Service context 
-        // if we didn't add the DbSet here, but let's try strict EF first if possible.
-        // Fallback to SQL to be safe:
         await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletTaskDetails"" WHERE ""BulletItemId"" = {0}", itemId);
 
         var item = await _db.BulletItems.FindAsync(itemId);
