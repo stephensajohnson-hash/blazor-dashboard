@@ -38,7 +38,11 @@ public class BulletMeetingService
                     await _db.SaveChangesAsync(); 
 
                     var detail = new BulletMeetingDetail { BulletItemId = item.Id };
-                    if(el.TryGetProperty("startTime", out val) && DateTime.TryParse(val.ToString(), out var st)) detail.StartTime = DateTime.SpecifyKind(st, DateTimeKind.Utc);
+                    
+                    // Parse Meeting Fields
+                    if(el.TryGetProperty("startTime", out val) && DateTime.TryParse(val.ToString(), out var st)) 
+                        detail.StartTime = DateTime.SpecifyKind(st, DateTimeKind.Utc);
+                    
                     if(el.TryGetProperty("duration", out val) && val.TryGetInt32(out var d)) detail.DurationMinutes = d;
                     
                     await _db.BulletMeetingDetails.AddAsync(detail);
