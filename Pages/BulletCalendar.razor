@@ -11,6 +11,7 @@
 @inject AppDbContext Db
 @inject BulletBaseService BaseService
 @inject BulletTaskService TaskService
+@inject BulletMeetingService MeetingService
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
@@ -34,19 +35,10 @@
             </div>
 
             <div class="flex bg-gray-900/50 rounded-lg p-1 border border-gray-700">
-                <button @onclick="GoToday" class="px-4 py-1.5 text-xs font-bold rounded-md text-gray-300 hover:bg-blue-900/50 hover:text-white transition uppercase mr-2 border-r border-gray-700 flex items-center gap-1">
-                    📅 Today
-                </button>
-                
-                <button @onclick='() => SwitchView("day")' class="px-3 py-1.5 text-xs font-bold rounded-md transition flex items-center gap-1 @(currentView == "day" ? "bg-blue-600 text-white shadow" : "text-gray-400 hover:text-white")">
-                    ☀️ Day
-                </button>
-                <button @onclick='() => SwitchView("week")' class="px-3 py-1.5 text-xs font-bold rounded-md transition flex items-center gap-1 @(currentView == "week" ? "bg-blue-600 text-white shadow" : "text-gray-400 hover:text-white")">
-                    🗓️ Week
-                </button>
-                <button @onclick='() => SwitchView("month")' class="px-3 py-1.5 text-xs font-bold rounded-md transition flex items-center gap-1 @(currentView == "month" ? "bg-blue-600 text-white shadow" : "text-gray-400 hover:text-white")">
-                    📆 Month
-                </button>
+                <button @onclick="GoToday" class="px-4 py-1.5 text-xs font-bold rounded-md text-gray-300 hover:bg-blue-900/50 hover:text-white transition uppercase mr-2 border-r border-gray-700 flex items-center gap-1">📅 Today</button>
+                <button @onclick='() => SwitchView("day")' class="px-3 py-1.5 text-xs font-bold rounded-md transition flex items-center gap-1 @(currentView == "day" ? "bg-blue-600 text-white shadow" : "text-gray-400 hover:text-white")">☀️ Day</button>
+                <button @onclick='() => SwitchView("week")' class="px-3 py-1.5 text-xs font-bold rounded-md transition flex items-center gap-1 @(currentView == "week" ? "bg-blue-600 text-white shadow" : "text-gray-400 hover:text-white")">🗓️ Week</button>
+                <button @onclick='() => SwitchView("month")' class="px-3 py-1.5 text-xs font-bold rounded-md transition flex items-center gap-1 @(currentView == "month" ? "bg-blue-600 text-white shadow" : "text-gray-400 hover:text-white")">📆 Month</button>
             </div>
         </div>
 
@@ -57,7 +49,6 @@
             
             @if (showUserMenu) {
                 <div class="fixed inset-0 z-40 cursor-default" @onclick="() => showUserMenu = false"></div>
-
                 <div class="absolute right-0 top-full mt-2 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 z-50" @onclick:stopPropagation="true">
                     <a href="/manage-data" class="block w-full text-left text-xs text-blue-400 hover:bg-gray-700 p-2 rounded mb-1">💾 Manage Data</a>
                     <div class="h-px bg-gray-700 my-1"></div>
@@ -142,7 +133,13 @@
     </div>
 </div>
 
-<TaskEditor Task="editingItem" OnSave="SaveItem" OnCancel="() => editingItem = null" OnDelete="DeleteCurrentTask" />
+<TaskEditor Item="editingItem" 
+            TaskDetail="editingItem?.Detail ?? new()" 
+            MeetingDetail="editingItem?.MeetingDetail ?? new()" 
+            Notes="editingItem?.Notes ?? new()"
+            OnSave="SaveItem" 
+            OnCancel="() => editingItem = null" 
+            OnDelete="DeleteCurrentTask" />
 
 @code {
     private User? currentUser;
@@ -213,15 +210,12 @@
     private void GoToday() { viewDate = DateTime.UtcNow.AddMinutes(-clientOffset); _ = LoadData(); }
     private void GoToDate(DateTime d) { viewDate = d; SwitchView("day"); }
     
-    // --- DATE FORMATTER ---
     private string GetHeaderDate() 
     {
         if(currentView == "day") {
             var day = viewDate.Day;
             string suffix = "th";
-            if (day % 100 < 11 || day % 100 > 13) {
-                suffix = (day % 10) switch { 1 => "st", 2 => "nd", 3 => "rd", _ => "th" };
-            }
+            if (day % 100 < 11 || day % 100 > 13) suffix = (day % 10) switch { 1 => "st", 2 => "nd", 3 => "rd", _ => "th" };
             return $"{viewDate:dddd, MMMM} {day}{suffix}, {viewDate:yyyy}";
         }
         return currentView == "week" ? $"Week of {weekStart:MMM d}" : viewDate.ToString("MMMM yyyy");
@@ -242,34 +236,53 @@
 
     private void OpenEdit(BulletTaskService.TaskDTO t)
     {
+        // Simple clone via serialize
         var json = JsonSerializer.Serialize(t);
         editingItem = JsonSerializer.Deserialize<BulletTaskService.TaskDTO>(json);
-        if(editingItem != null) editingItem.Date = t.Date; 
+        if(editingItem != null) editingItem.Date = t.Date; // Restore Date Kind
     }
 
     private async Task SaveItem()
     {
         if(editingItem != null) {
-            await TaskService.SaveTask(editingItem);
+            
+            // DISPATCH based on type
+            if (editingItem.Type == "meeting") 
+            {
+                // Map to MeetingDTO
+                var meetingDto = new BulletMeetingService.MeetingDTO 
+                {
+                    Id = editingItem.Id, UserId = editingItem.UserId, Type = "meeting", Category = editingItem.Category,
+                    Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description,
+                    ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId,
+                    Detail = editingItem.MeetingDetail,
+                    Notes = editingItem.Notes
+                };
+                await MeetingService.SaveMeeting(meetingDto);
+            }
+            else 
+            {
+                // Default to Task (TaskDTO is currently being used as the generic editing container)
+                await TaskService.SaveTask(editingItem);
+            }
+
             editingItem = null;
             await LoadData();
         }
     }
 
-    // RENAMED to avoid ambiguity (Argument: int id)
     private async Task DeleteTask(int id)
     {
-        if(await JS.InvokeAsync<bool>("confirm", "Delete this task?")) {
+        if(await JS.InvokeAsync<bool>("confirm", "Delete this item?")) {
             await BaseService.DeleteItem(id);
             await LoadData();
         }
     }
 
-    // RENAMED to avoid ambiguity (Argument: none, uses editingItem)
     private async Task DeleteCurrentTask()
     {
         if(editingItem != null && editingItem.Id > 0) {
-            if(await JS.InvokeAsync<bool>("confirm", "Delete this task?")) {
+            if(await JS.InvokeAsync<bool>("confirm", "Delete this item?")) {
                 await BaseService.DeleteItem(editingItem.Id);
                 editingItem = null;
                 await LoadData();
