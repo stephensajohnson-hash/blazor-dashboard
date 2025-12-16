@@ -66,9 +66,24 @@
         @if (currentView == "day")
         {
             <div class="grid grid-cols-3 gap-6 h-full">
-                @RenderDayColumn("Work", "work", "blue")
-                @RenderDayColumn("Personal", "personal", "green")
-                @RenderDayColumn("Health", "health", "orange")
+                @foreach (var cat in new[] { ("Work", "work", "blue"), ("Personal", "personal", "green"), ("Health", "health", "orange") })
+                {
+                    <div class="bg-gray-800/40 rounded-xl border border-gray-700 flex flex-col h-full overflow-hidden">
+                        <div class="p-3 bg-gray-800/80 border-b border-gray-700 flex justify-between items-center sticky top-0 backdrop-blur z-10">
+                            <span class="font-bold text-@cat.Item3-400 uppercase tracking-wider text-sm">@cat.Item1</span>
+                            <button @onclick='() => OpenEditor(cat.Item2, "task", viewDate)' class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition">＋ Add</button>
+                        </div>
+                        <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide">
+                            @{
+                                var dayTasks = GetTasksForDate(viewDate).Where(t => t.Category.Equals(cat.Item2, StringComparison.OrdinalIgnoreCase)).ToList();
+                            }
+                            @foreach(var t in dayTasks) { 
+                                <TaskCard Task="t" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteItem" />
+                            }
+                            @if(!dayTasks.Any()) { <div class="text-center text-gray-600 text-xs italic mt-4">No tasks</div> }
+                        </div>
+                    </div>
+                }
             </div>
         }
         else if (currentView == "week")
@@ -233,32 +248,10 @@
     {
         if(await JS.InvokeAsync<bool>("confirm", "Delete this task?")) {
             await BaseService.DeleteItem(id);
-            // If editing from modal, close it
             editingItem = null;
             await LoadData();
         }
     }
     
     private async Task Logout() { await JS.InvokeVoidAsync("localStorage.removeItem", "dashboard_session"); Nav.NavigateTo("/login", true); }
-    private string GetCategoryColor(string cat) => cat.ToLower() switch { "work" => "bg-blue-500", "personal" => "bg-green-500", "health" => "bg-orange-500", _ => "bg-gray-500" };
-
-    private async Task SetupTables() { try { await BaseService.CreateBaseTablesIfMissing(); await TaskService.CreateTable(); statusMessage = "DB Ready"; await LoadData(); } catch (Exception ex) { statusMessage = ex.Message; } }
-    private async Task RunTaskImport() { try { var path = Path.Combine(Env.WebRootPath, "bullet_calendar.json"); if(File.Exists(path)) { var c = await File.ReadAllTextAsync(path); await TaskService.ImportFromOldJson(currentUser!.Id, c); statusMessage = "Imported"; await LoadData(); } } catch (Exception ex) { statusMessage = ex.Message; } }
-    private async Task DropLegacy() { if(await JS.InvokeAsync<bool>("confirm", "Delete?")) { await BaseService.DropLegacyTables(); statusMessage = "Dropped"; } }
-
-    private RenderFragment RenderDayColumn(string title, string category, string colorClass) => __builder => {
-        var tasks = GetTasksForDate(viewDate).Where(t => t.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList();
-        <div class="bg-gray-800/40 rounded-xl border border-gray-700 flex flex-col h-full overflow-hidden">
-            <div class="p-3 bg-gray-800/80 border-b border-gray-700 flex justify-between items-center sticky top-0 backdrop-blur z-10">
-                <span class="font-bold text-@colorClass-400 uppercase tracking-wider text-sm">@title</span>
-                <button @onclick='() => OpenEditor(category, "task", viewDate)' class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition">＋ Add</button>
-            </div>
-            <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide">
-                @foreach(var t in tasks) { 
-                    <TaskCard Task="t" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteItem" />
-                }
-                @if(!tasks.Any()) { <div class="text-center text-gray-600 text-xs italic mt-4">No tasks</div> }
-            </div>
-        </div>
-    };
 }
