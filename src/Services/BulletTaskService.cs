@@ -15,10 +15,7 @@ public class BulletTaskService
         _db = db;
     }
 
-    public Task CreateTable() 
-    { 
-        return Task.CompletedTask; 
-    }
+    public Task CreateTable() { return Task.CompletedTask; }
 
     public class TaskDTO : BulletItem
     {
@@ -96,41 +93,58 @@ public class BulletTaskService
         if (detail != null) { detail.IsCompleted = isComplete; detail.Status = isComplete ? "Done" : "Pending"; await _db.SaveChangesAsync(); }
     }
 
-    // --- FIX: Now returns int (Count) ---
     public async Task<int> ImportFromOldJson(int userId, string jsonContent)
     {
         int count = 0;
         using var doc = JsonDocument.Parse(jsonContent);
         var root = doc.RootElement;
         JsonElement items = root;
-        if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("items", out var i)) items = i;
+        
+        if (root.ValueKind == JsonValueKind.Object) {
+            if (root.TryGetProperty("items", out var i)) items = i;
+            else if (root.TryGetProperty("Items", out i)) items = i;
+        }
 
         if(items.ValueKind == JsonValueKind.Array)
         {
             foreach (var el in items.EnumerateArray())
             {
-                string type = "task";
-                if (el.TryGetProperty("type", out var t)) type = t.ToString().ToLower();
+                string GetStr(string key) => (el.TryGetProperty(key, out var v) || el.TryGetProperty(char.ToUpper(key[0]) + key.Substring(1), out v)) ? v.ToString() : "";
 
-                if (type == "task")
+                if (GetStr("type").ToLower() == "task")
                 {
-                    string title = ""; if(el.TryGetProperty("title", out var val)) title = val.ToString();
+                    string title = GetStr("title");
                     var item = new BulletItem { UserId = userId, Type = "task", CreatedAt = DateTime.UtcNow, Title = title };
                     
-                    if(el.TryGetProperty("date", out val) && DateTime.TryParse(val.ToString(), out var dt)) 
-                        item.Date = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+                    if(DateTime.TryParse(GetStr("date"), out var dt)) item.Date = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
                     else item.Date = DateTime.UtcNow;
 
-                    if(el.TryGetProperty("category", out val)) item.Category = val.ToString();
-                    if(el.TryGetProperty("description", out val)) item.Description = val.ToString();
-                    if(el.TryGetProperty("id", out val)) item.OriginalStringId = val.ToString();
+                    item.Category = GetStr("category");
+                    item.Description = GetStr("description");
+                    item.OriginalStringId = GetStr("id");
+                    
+                    // --- MAP IMAGES FOR TASKS ---
+                    item.ImgUrl = GetStr("img");
+                    if(string.IsNullOrEmpty(item.ImgUrl)) item.ImgUrl = GetStr("imgUrl");
+                    
+                    item.LinkUrl = GetStr("linkUrl");
+                    if(string.IsNullOrEmpty(item.LinkUrl)) item.LinkUrl = GetStr("url");
 
                     await _db.BulletItems.AddAsync(item);
                     await _db.SaveChangesAsync();
 
                     var detail = new BulletTaskDetail { BulletItemId = item.Id };
-                    if(el.TryGetProperty("status", out val)) detail.Status = val.ToString();
-                    if(el.TryGetProperty("isCompleted", out val)) detail.IsCompleted = val.GetBoolean();
+                    
+                    // Try parsing status/completed
+                    string status = GetStr("status");
+                    if (!string.IsNullOrEmpty(status)) detail.Status = status;
+                    
+                    string doneStr = GetStr("isCompleted");
+                    if(bool.TryParse(doneStr, out var b)) detail.IsCompleted = b;
+                    
+                    // Map Ticket info if available
+                    detail.TicketNumber = GetStr("ticketNumber");
+                    detail.TicketUrl = GetStr("ticketUrl");
                     
                     await _db.BulletTaskDetails.AddAsync(detail);
                     count++;
