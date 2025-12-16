@@ -19,12 +19,10 @@
 <div class="min-h-screen bg-gray-900 text-white overflow-x-hidden pb-40 relative">
     
     <div class="p-6 pb-2 mb-2 border-b border-gray-800 flex items-center justify-between shrink-0 sticky top-0 bg-gray-900 z-40">
-        
         <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
             <a href="/" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Home">🏠</a>
             <a href="/recipes" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Recipes">🍴</a>
             <a href="/bullet-calendar" class="text-2xl hover:scale-125 transition grayscale-0 drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]" title="Bullet Calendar">✅</a>
-            <span class="text-2xl opacity-20 cursor-not-allowed" title="Coming Soon - Budget Tracker">💵</span>
         </div>
 
         <div class="flex flex-col items-center gap-3">
@@ -73,21 +71,13 @@
                         </div>
                         <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide">
                             @{
-                                // Meetings at Top
-                                var dayItems = GetItemsForDate(viewDate)
-                                    .Where(t => t.Category.Equals(cat.Item2, StringComparison.OrdinalIgnoreCase))
-                                    .OrderByDescending(t => t.Type == "meeting")
-                                    .ThenBy(t => t.MeetingDetail.StartTime)
-                                    .ToList();
+                                var dayItems = GetItemsForDate(viewDate).Where(t => t.Category.Equals(cat.Item2, StringComparison.OrdinalIgnoreCase)).OrderByDescending(t => t.Type == "meeting").ThenBy(t => t.MeetingDetail.StartTime).ToList();
                             }
                             @foreach(var item in dayItems) 
                             { 
-                                @if (item.Type == "meeting")
-                                {
+                                @if (item.Type == "meeting") {
                                     <MeetingCard Item="ToMeetingDTO(item)" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteTask" />
-                                }
-                                else
-                                {
+                                } else {
                                     <TaskCard Item="item" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteTask" />
                                 }
                             }
@@ -97,9 +87,49 @@
                 }
             </div>
         }
-        else 
+        else if (currentView == "week")
         {
-            <div class="text-center text-gray-500 mt-10">Select Day View</div>
+            <div class="grid grid-cols-7 gap-2 h-full">
+                @for(int i=0; i<7; i++) {
+                    var d = weekStart.AddDays(i);
+                    var isToday = d.Date == DateTime.UtcNow.AddMinutes(clientOffset).Date;
+                    <div class="flex flex-col h-full rounded-xl border overflow-hidden bg-gray-800/40 @(isToday ? "border-blue-500" : "border-gray-700")">
+                        <div class="p-2 text-center border-b border-gray-700/50 bg-gray-800/60 cursor-pointer hover:bg-gray-700 transition" @onclick="() => GoToDate(d)">
+                            <div class="text-[10px] uppercase font-bold text-gray-500">@d.ToString("ddd")</div>
+                            <div class="text-lg font-bold @(isToday ? "text-blue-400" : "text-white")">@d.Day</div>
+                        </div>
+                        <div class="flex-1 overflow-y-auto p-1 space-y-1 scrollbar-hide">
+                            @foreach(var item in GetItemsForDate(d)) { 
+                                <TaskPill Task="item" OnClick="OpenEdit" ImageWidth="@BulletViewConfig.ImgWidthWeek" />
+                            }
+                            <button @onclick='() => OpenEditor("personal", "task", d)' class="w-full py-2 text-gray-600 hover:text-gray-400 hover:bg-gray-700/50 rounded text-xs transition mt-2">＋</button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else if (currentView == "month")
+        {
+            <div class="flex flex-col h-full">
+                <div class="grid grid-cols-7 text-center pb-2 border-b border-gray-800 mb-2">
+                    @foreach(var day in new[]{"Mon","Tue","Wed","Thu","Fri","Sat","Sun"}){ <div class="text-xs font-bold text-gray-500 uppercase">@day</div> }
+                </div>
+                <div class="grid grid-cols-7 gap-1 flex-1 auto-rows-fr overflow-hidden">
+                    @for(int i=0; i<monthEmptyCells; i++) { <div class="bg-gray-900/30 rounded-lg"></div> }
+                    @for(int d=1; d<=daysInMonth; d++){
+                        var currentDay = new DateTime(viewDate.Year, viewDate.Month, d);
+                        var isToday = currentDay.Date == DateTime.UtcNow.AddMinutes(clientOffset).Date;
+                        <div class="relative flex flex-col rounded-lg border overflow-hidden p-1 hover:bg-gray-800 transition cursor-pointer @(isToday ? "border-blue-500 bg-gray-800/50" : "border-gray-700 bg-gray-900")" @onclick="() => GoToDate(currentDay)">
+                            <div class="text-right text-xs font-bold text-gray-500 mb-1">@d</div>
+                            <div class="flex-1 overflow-y-auto space-y-1 scrollbar-hide max-h-24">
+                                @foreach(var item in GetItemsForDate(currentDay)) { 
+                                    <TaskPill Task="item" OnClick="OpenEdit" ImageWidth="@BulletViewConfig.ImgWidthMonth" />
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
         }
     </div>
 </div>
@@ -114,7 +144,7 @@
 
 @code {
     private User? currentUser;
-    private int userId = 0; // Unified Variable
+    private int currentUserId = 0;
     private DateTime viewDate = DateTime.UtcNow;
     private string currentView = "day";
     private int clientOffset = 0;
@@ -127,7 +157,6 @@
     private int daysInMonth => DateTime.DaysInMonth(viewDate.Year, viewDate.Month);
     private int monthEmptyCells => ((int)new DateTime(viewDate.Year, viewDate.Month, 1).DayOfWeek + 6) % 7; 
 
-    // Helper to cast
     private BulletMeetingService.MeetingDTO ToMeetingDTO(BulletTaskService.TaskDTO t)
     {
         return new BulletMeetingService.MeetingDTO 
@@ -148,10 +177,10 @@
                 if (!string.IsNullOrEmpty(json)) { 
                     using(var doc = JsonDocument.Parse(json)) {
                         if(doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p)) 
-                            userId = p.GetInt32();
+                            currentUserId = p.GetInt32();
                     }
-                    if(userId > 0) {
-                        try { currentUser = await Db.Users.FindAsync(userId); } catch { }
+                    if(currentUserId > 0) {
+                        try { currentUser = await Db.Users.FindAsync(currentUserId); } catch { }
                         if(currentUser != null) {
                             try { clientOffset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()"); } catch {}
                             viewDate = DateTime.UtcNow.AddMinutes(-clientOffset);
@@ -166,15 +195,24 @@
     private async Task LoadData()
     {
         if (currentUser == null) return;
-        DateTime start = viewDate.Date, end = viewDate.Date.AddDays(1).AddSeconds(-1);
+        
+        DateTime start = viewDate.Date;
+        DateTime end = viewDate.Date.AddDays(1).AddSeconds(-1);
+        
         if (currentView == "week") { start = weekStart; end = start.AddDays(7); }
         else if (currentView == "month") { start = new DateTime(viewDate.Year, viewDate.Month, 1); end = start.AddMonths(1); }
 
+        Console.WriteLine($"[DEBUG] Loading Data for User {currentUserId} | Range: {start} to {end}");
+
         try {
-            loadedItems = await TaskService.GetTasksForRange(userId, start, end);
-            var meetings = await MeetingService.GetMeetingsForRange(userId, start, end);
+            loadedItems = await TaskService.GetTasksForRange(currentUserId, start, end);
+            var meetings = await MeetingService.GetMeetingsForRange(currentUserId, start, end);
+            
+            Console.WriteLine($"[DEBUG] Found {loadedItems.Count} Tasks and {meetings.Count} Meetings.");
+
             foreach (var m in meetings)
             {
+                Console.WriteLine($"[DEBUG] Meeting Found: {m.Title} | Date: {m.Date} | Cat: {m.Category}");
                 loadedItems.Add(new BulletTaskService.TaskDTO
                 {
                     Id = m.Id, UserId = m.UserId, Type = "meeting", Category = m.Category,
@@ -184,7 +222,10 @@
                     Notes = m.Notes
                 });
             }
-        } catch(Exception ex) { statusMessage = "Error: " + ex.Message; }
+        } catch(Exception ex) { 
+            statusMessage = "Error: " + ex.Message; 
+            Console.WriteLine($"[ERROR] {ex.Message}");
+        }
         StateHasChanged();
     }
 
@@ -202,7 +243,7 @@
         }
     }
 
-    // Navigation & Edit Logic
+    // ... (Keep existing methods: SwitchView, Prev, Next, GoToday, GoToDate, GetHeaderDate, OpenEditor, OpenEdit, SaveItem, DeleteTask, DeleteCurrentTask, Logout)
     private void SwitchView(string view) { currentView = view; _ = LoadData(); }
     private void Prev() { 
         if(currentView == "day") viewDate = viewDate.AddDays(-1);
@@ -232,7 +273,7 @@
 
     private void OpenEditor(string category, string type, DateTime date)
     {
-        editingItem = new BulletTaskService.TaskDTO { UserId = userId, Category = category, Type = type, Date = date };
+        editingItem = new BulletTaskService.TaskDTO { UserId = currentUserId, Category = category, Type = type, Date = date };
     }
 
     private void OpenEdit(BulletTaskService.TaskDTO t)
