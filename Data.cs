@@ -1,7 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using System.Collections.Generic;
 using System;
-using System.ComponentModel.DataAnnotations; 
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema; // <--- ADDED THIS
 using System.Security.Cryptography;
 using System.Text;
 
@@ -33,7 +34,7 @@ public class AppDbContext : DbContext
     public DbSet<BulletItem> BulletItems { get; set; }
     public DbSet<BulletItemNote> BulletItemNotes { get; set; }
     public DbSet<BulletTaskDetail> BulletTaskDetails { get; set; }
-    public DbSet<BulletMeetingDetail> BulletMeetingDetails { get; set; } // NEW
+    public DbSet<BulletMeetingDetail> BulletMeetingDetails { get; set; }
     public DbSet<BulletHabitDetail> BulletHabitDetails { get; set; }
 }
 
@@ -87,6 +88,30 @@ public class BulletTaskDetail
     public DateTime? DueDate { get; set; }
 }
 
+// NEW: Meeting Details
+public class BulletMeetingDetail
+{
+    [Key]
+    public int BulletItemId { get; set; }
+    public DateTime? StartTime { get; set; }
+    public int DurationMinutes { get; set; }
+    public int ActualDurationMinutes { get; set; }
+    public bool IsCompleted { get; set; }
+}
+
+// NEW: Habit Details
+public class BulletHabitDetail
+{
+    [Key, ForeignKey("BulletItem")]
+    public int BulletItemId { get; set; }
+    
+    // Navigation property back to base
+    public virtual BulletItem BulletItem { get; set; } = null!;
+
+    public int StreakCount { get; set; } = 0;
+    public string Status { get; set; } = "Active"; 
+}
+
 
 // --- EXISTING MODELS ---
 public class User { public int Id { get; set; } public string Username { get; set; } = ""; public string PasswordHash { get; set; } = ""; public string ZipCode { get; set; } = "75482"; public string AvatarUrl { get; set; } = ""; public int Age { get; set; } = 30; public double HeightInches { get; set; } = 70; public string Gender { get; set; } = "Male"; public string ActivityLevel { get; set; } = "Sedentary"; }
@@ -108,26 +133,3 @@ public static class BulletViewConfig
     public const string ImgWidthWeek = "20%";
     public const string ImgWidthMonth = "15%";
 }
-
-// NEW: Meeting Details
-public class BulletMeetingDetail
-{
-    [System.ComponentModel.DataAnnotations.Key]
-    public int BulletItemId { get; set; }
-    public DateTime? StartTime { get; set; }
-    public int DurationMinutes { get; set; }
-    public int ActualDurationMinutes { get; set; }
-    public bool IsCompleted { get; set; } // NEW
-}
-
-public class BulletHabitDetail
-    {
-        [Key, ForeignKey("BulletItem")]
-        public int BulletItemId { get; set; }
-        
-        // Navigation property back to base
-        public virtual BulletItem BulletItem { get; set; } = null!;
-
-        public int StreakCount { get; set; } = 0;
-        public string Status { get; set; } = "Active"; // e.g., Active, Paused, Archived
-    }
