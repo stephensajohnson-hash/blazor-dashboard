@@ -12,7 +12,7 @@ public class BulletBaseService
 
     public async Task CreateBaseTablesIfMissing()
     {
-        // ... (Keep existing table creation logic) ...
+        // (Keep existing table creation logic...)
         await _db.Database.ExecuteSqlRawAsync(@"
             CREATE TABLE IF NOT EXISTS ""BulletItems"" (
                 ""Id"" serial PRIMARY KEY, 
@@ -46,7 +46,6 @@ public class BulletBaseService
             );
         ");
         
-        // Ensure columns exist (Patch)
         await RunPatch(@"
             DO $$ 
             BEGIN 
@@ -67,7 +66,6 @@ public class BulletBaseService
         try { await _db.Database.ExecuteSqlRawAsync(sql); } catch { /* Ignore */ }
     }
 
-    // --- IMAGES ---
     public async Task<int> SaveImageAsync(byte[] data, string contentType)
     {
         var img = new StoredImage { Data = data, ContentType = contentType, UploadedAt = DateTime.UtcNow };
@@ -76,14 +74,25 @@ public class BulletBaseService
         return img.Id;
     }
 
-    // --- DATA CLEANUP ---
+    // --- FIX: USE RAW SQL FOR DELETION ---
     public async Task ClearDataByType(int userId, string type)
     {
-        var items = await _db.BulletItems.Where(x => x.UserId == userId && x.Type == type).ToListAsync();
-        foreach(var item in items)
-        {
-            await DeleteItem(item.Id);
-        }
+        // 1. Delete Notes linked to these items
+        await _db.Database.ExecuteSqlRawAsync(
+            @"DELETE FROM ""BulletItemNotes"" 
+              WHERE ""BulletItemId"" IN (SELECT ""Id"" FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1})", 
+            userId, type);
+
+        // 2. Delete Task Details linked to these items
+        await _db.Database.ExecuteSqlRawAsync(
+            @"DELETE FROM ""BulletTaskDetails"" 
+              WHERE ""BulletItemId"" IN (SELECT ""Id"" FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1})", 
+            userId, type);
+
+        // 3. Delete the Base Items
+        await _db.Database.ExecuteSqlRawAsync(
+            @"DELETE FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1}", 
+            userId, type);
     }
 
     public async Task DeleteItem(int itemId)
