@@ -23,6 +23,7 @@
             <a href="/" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Home">🏠</a>
             <a href="/recipes" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Recipes">🍴</a>
             <a href="/bullet-calendar" class="text-2xl hover:scale-125 transition grayscale-0 drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]" title="Bullet Calendar">✅</a>
+            <span class="text-2xl opacity-20 cursor-not-allowed" title="Coming Soon - Budget Tracker">💵</span>
         </div>
 
         <div class="flex flex-col items-center gap-3">
@@ -54,10 +55,6 @@
         </div>
     </div>
 
-    @if(!string.IsNullOrEmpty(statusMessage)) {
-        <div class="mx-6 mb-4 p-2 rounded bg-blue-900/20 border border-blue-800 text-xs font-mono text-blue-300">@statusMessage</div>
-    }
-
     <div class="px-6 h-[calc(100vh-140px)] overflow-hidden">
         @if (currentView == "day")
         {
@@ -71,13 +68,20 @@
                         </div>
                         <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide">
                             @{
-                                var dayItems = GetItemsForDate(viewDate).Where(t => t.Category.Equals(cat.Item2, StringComparison.OrdinalIgnoreCase)).OrderByDescending(t => t.Type == "meeting").ThenBy(t => t.MeetingDetail.StartTime).ToList();
+                                var dayItems = GetItemsForDate(viewDate)
+                                    .Where(t => t.Category.Equals(cat.Item2, StringComparison.OrdinalIgnoreCase))
+                                    .OrderByDescending(t => t.Type == "meeting")
+                                    .ThenBy(t => t.MeetingDetail.StartTime)
+                                    .ToList();
                             }
                             @foreach(var item in dayItems) 
                             { 
-                                @if (item.Type == "meeting") {
+                                @if (item.Type == "meeting")
+                                {
                                     <MeetingCard Item="ToMeetingDTO(item)" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteTask" />
-                                } else {
+                                }
+                                else
+                                {
                                     <TaskCard Item="item" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteTask" />
                                 }
                             }
@@ -144,7 +148,7 @@
 
 @code {
     private User? currentUser;
-    private int currentUserId = 0;
+    private int userId = 0;
     private DateTime viewDate = DateTime.UtcNow;
     private string currentView = "day";
     private int clientOffset = 0;
@@ -177,10 +181,10 @@
                 if (!string.IsNullOrEmpty(json)) { 
                     using(var doc = JsonDocument.Parse(json)) {
                         if(doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p)) 
-                            currentUserId = p.GetInt32();
+                            userId = p.GetInt32();
                     }
-                    if(currentUserId > 0) {
-                        try { currentUser = await Db.Users.FindAsync(currentUserId); } catch { }
+                    if(userId > 0) {
+                        try { currentUser = await Db.Users.FindAsync(userId); } catch { }
                         if(currentUser != null) {
                             try { clientOffset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()"); } catch {}
                             viewDate = DateTime.UtcNow.AddMinutes(-clientOffset);
@@ -195,24 +199,15 @@
     private async Task LoadData()
     {
         if (currentUser == null) return;
-        
-        DateTime start = viewDate.Date;
-        DateTime end = viewDate.Date.AddDays(1).AddSeconds(-1);
-        
+        DateTime start = viewDate.Date, end = viewDate.Date.AddDays(1).AddSeconds(-1);
         if (currentView == "week") { start = weekStart; end = start.AddDays(7); }
         else if (currentView == "month") { start = new DateTime(viewDate.Year, viewDate.Month, 1); end = start.AddMonths(1); }
 
-        Console.WriteLine($"[DEBUG] Loading Data for User {currentUserId} | Range: {start} to {end}");
-
         try {
-            loadedItems = await TaskService.GetTasksForRange(currentUserId, start, end);
-            var meetings = await MeetingService.GetMeetingsForRange(currentUserId, start, end);
-            
-            Console.WriteLine($"[DEBUG] Found {loadedItems.Count} Tasks and {meetings.Count} Meetings.");
-
+            loadedItems = await TaskService.GetTasksForRange(userId, start, end);
+            var meetings = await MeetingService.GetMeetingsForRange(userId, start, end);
             foreach (var m in meetings)
             {
-                Console.WriteLine($"[DEBUG] Meeting Found: {m.Title} | Date: {m.Date} | Cat: {m.Category}");
                 loadedItems.Add(new BulletTaskService.TaskDTO
                 {
                     Id = m.Id, UserId = m.UserId, Type = "meeting", Category = m.Category,
@@ -222,10 +217,7 @@
                     Notes = m.Notes
                 });
             }
-        } catch(Exception ex) { 
-            statusMessage = "Error: " + ex.Message; 
-            Console.WriteLine($"[ERROR] {ex.Message}");
-        }
+        } catch(Exception ex) { statusMessage = "Error: " + ex.Message; }
         StateHasChanged();
     }
 
@@ -243,7 +235,6 @@
         }
     }
 
-    // ... (Keep existing methods: SwitchView, Prev, Next, GoToday, GoToDate, GetHeaderDate, OpenEditor, OpenEdit, SaveItem, DeleteTask, DeleteCurrentTask, Logout)
     private void SwitchView(string view) { currentView = view; _ = LoadData(); }
     private void Prev() { 
         if(currentView == "day") viewDate = viewDate.AddDays(-1);
@@ -273,7 +264,7 @@
 
     private void OpenEditor(string category, string type, DateTime date)
     {
-        editingItem = new BulletTaskService.TaskDTO { UserId = currentUserId, Category = category, Type = type, Date = date };
+        editingItem = new BulletTaskService.TaskDTO { UserId = userId, Category = category, Type = type, Date = date };
     }
 
     private void OpenEdit(BulletTaskService.TaskDTO t)

@@ -119,17 +119,22 @@ public class BulletMeetingService
                     string title = GetStr("title");
                     var item = new BulletItem { UserId = userId, Type = "meeting", CreatedAt = DateTime.UtcNow, Title = title };
                     
-                    // FIX: Ensure correct UTC date
                     if(DateTime.TryParse(GetStr("date"), out var dt)) item.Date = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
                     else item.Date = DateTime.UtcNow;
 
-                    // FIX: Normalize Category (Default to "work" so it shows up in UI)
                     string rawCat = GetStr("category").ToLower();
                     if (rawCat == "personal" || rawCat == "health") item.Category = rawCat;
                     else item.Category = "work"; 
 
                     item.Description = GetStr("description");
                     item.OriginalStringId = GetStr("id");
+                    
+                    // --- NEW: Import Images and Links ---
+                    item.ImgUrl = GetStr("img"); 
+                    if(string.IsNullOrEmpty(item.ImgUrl)) item.ImgUrl = GetStr("imgUrl"); // Try both casing/names
+                    
+                    item.LinkUrl = GetStr("linkUrl");
+                    if(string.IsNullOrEmpty(item.LinkUrl)) item.LinkUrl = GetStr("url");
 
                     await _db.BulletItems.AddAsync(item);
                     await _db.SaveChangesAsync(); 
@@ -137,9 +142,14 @@ public class BulletMeetingService
                     var detail = new BulletMeetingDetail { BulletItemId = item.Id };
                     
                     if(DateTime.TryParse(GetStr("startTime"), out var st)) detail.StartTime = DateTime.SpecifyKind(st, DateTimeKind.Utc);
+                    
                     string durStr = GetStr("duration");
                     if(int.TryParse(durStr, out var d)) detail.DurationMinutes = d;
                     
+                    // Import isCompleted if present
+                    string doneStr = GetStr("isCompleted");
+                    if(bool.TryParse(doneStr, out var b)) detail.IsCompleted = b;
+
                     await _db.BulletMeetingDetails.AddAsync(detail);
                     count++;
                 }
