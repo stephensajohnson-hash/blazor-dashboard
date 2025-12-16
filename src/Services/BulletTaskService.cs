@@ -90,7 +90,11 @@ public class BulletTaskService
     public async Task ToggleComplete(int itemId, bool isComplete)
     {
         var detail = await _db.BulletTaskDetails.FindAsync(itemId);
-        if (detail != null) { detail.IsCompleted = isComplete; detail.Status = isComplete ? "Done" : "Pending"; await _db.SaveChangesAsync(); }
+        if (detail != null) { 
+            detail.IsCompleted = isComplete; 
+            detail.Status = isComplete ? "Done" : "Pending"; 
+            await _db.SaveChangesAsync(); 
+        }
     }
 
     public async Task<int> ImportFromOldJson(int userId, string jsonContent)
@@ -122,27 +126,27 @@ public class BulletTaskService
                     item.Category = GetStr("category");
                     item.Description = GetStr("description");
                     item.OriginalStringId = GetStr("id");
-                    
-                    // --- MAP IMAGES FOR TASKS ---
-                    item.ImgUrl = GetStr("img");
-                    if(string.IsNullOrEmpty(item.ImgUrl)) item.ImgUrl = GetStr("imgUrl");
-                    
-                    item.LinkUrl = GetStr("linkUrl");
-                    if(string.IsNullOrEmpty(item.LinkUrl)) item.LinkUrl = GetStr("url");
+                    item.ImgUrl = GetStr("img"); if(string.IsNullOrEmpty(item.ImgUrl)) item.ImgUrl = GetStr("imgUrl");
+                    item.LinkUrl = GetStr("linkUrl"); if(string.IsNullOrEmpty(item.LinkUrl)) item.LinkUrl = GetStr("url");
 
                     await _db.BulletItems.AddAsync(item);
                     await _db.SaveChangesAsync();
 
                     var detail = new BulletTaskDetail { BulletItemId = item.Id };
                     
-                    // Try parsing status/completed
+                    // --- FIX COMPLETED LOGIC ---
                     string status = GetStr("status");
-                    if (!string.IsNullOrEmpty(status)) detail.Status = status;
-                    
                     string doneStr = GetStr("isCompleted");
-                    if(bool.TryParse(doneStr, out var b)) detail.IsCompleted = b;
+                    string completedStr = GetStr("completed"); // Check both naming conventions
+
+                    bool isDone = false;
+                    if (bool.TryParse(doneStr, out var b)) isDone = b;
+                    else if (bool.TryParse(completedStr, out b)) isDone = b;
+                    else if (status.Equals("Done", StringComparison.OrdinalIgnoreCase) || status.Equals("Completed", StringComparison.OrdinalIgnoreCase)) isDone = true;
+
+                    detail.IsCompleted = isDone;
+                    detail.Status = isDone ? "Done" : "Pending";
                     
-                    // Map Ticket info if available
                     detail.TicketNumber = GetStr("ticketNumber");
                     detail.TicketUrl = GetStr("ticketUrl");
                     

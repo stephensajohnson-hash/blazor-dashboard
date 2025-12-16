@@ -53,6 +53,10 @@
         </div>
     </div>
 
+    @if(!string.IsNullOrEmpty(statusMessage)) {
+        <div class="mx-6 mb-4 p-2 rounded bg-blue-900/20 border border-blue-800 text-xs font-mono text-blue-300">@statusMessage</div>
+    }
+
     <div class="px-6 h-[calc(100vh-140px)] overflow-hidden">
         @if (currentView == "day")
         {
@@ -154,7 +158,7 @@
     private string currentView = "day";
     private int clientOffset = 0;
     private bool showUserMenu = false;
-    private bool isLoading = true; // Added loading state
+    private bool isLoading = true;
     private string statusMessage = "";
     
     private List<BulletTaskService.TaskDTO> loadedItems = new();
@@ -191,7 +195,7 @@
     {
         if (currentUser == null) return;
         isLoading = true;
-        StateHasChanged(); // Force "Loading..." to appear
+        StateHasChanged();
 
         DateTime start = viewDate.Date, end = viewDate.Date.AddDays(1).AddSeconds(-1);
         if (currentView == "week") { start = weekStart; end = start.AddDays(7); }
@@ -220,19 +224,27 @@
         }
         
         isLoading = false;
-        StateHasChanged(); // Force re-render with new data
+        StateHasChanged();
     }
 
-    // -- HELPER: Filters Items for Day View Columns --
     private List<BulletTaskService.TaskDTO> GetItemsForColumn(DateTime d, string category)
     {
+        // Debugging Logic: Trim and ignore case
         var items = loadedItems
-            .Where(t => t.Date.Date == d.Date && t.Category.Equals(category, StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(t => t.Type == "meeting") // Meetings first
-            .ThenBy(t => t.MeetingDetail.StartTime)      // Then by time
+            .Where(t => t.Date.Date == d.Date)
+            .Where(t => t.Category.Trim().Equals(category.Trim(), StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(t => t.Type == "meeting")
+            .ThenBy(t => t.MeetingDetail.StartTime)
             .ToList();
             
         Console.WriteLine($"[RENDER] Column {category} ({d:MM/dd}) -> Found {items.Count} items.");
+        
+        // Debug: Log rejections
+        var rejected = loadedItems.Where(t => t.Date.Date == d.Date && !t.Category.Trim().Equals(category.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+        if (rejected.Any()) {
+            Console.WriteLine($"[DEBUG] Skipped {rejected.Count} items for column {category}. E.g. '{rejected.First().Title}' has cat '{rejected.First().Category}'");
+        }
+
         return items;
     }
 
@@ -250,6 +262,7 @@
         }
     }
 
+    // ... (Keep existing Navigation & Edit methods)
     private void SwitchView(string view) { currentView = view; _ = LoadData(); }
     private void Prev() { 
         if(currentView == "day") viewDate = viewDate.AddDays(-1);
