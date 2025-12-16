@@ -15,7 +15,7 @@ public class BulletBaseService
     public async Task CreateBaseTablesIfMissing()
     {
         try {
-            // Existing tables...
+            // Base Tables
             await _db.Database.ExecuteSqlRawAsync(@"
                 CREATE TABLE IF NOT EXISTS ""BulletItems"" (""Id"" serial PRIMARY KEY, ""UserId"" integer, ""Type"" text, ""Category"" text, ""Date"" timestamp with time zone, ""CreatedAt"" timestamp with time zone, ""Title"" text, ""Description"" text, ""ImgUrl"" text, ""LinkUrl"" text, ""OriginalStringId"" text);
                 CREATE TABLE IF NOT EXISTS ""BulletItemNotes"" (""Id"" serial PRIMARY KEY, ""BulletItemId"" integer, ""Content"" text, ""ImgUrl"" text, ""LinkUrl"" text, ""Order"" integer DEFAULT 0);
@@ -23,7 +23,7 @@ public class BulletBaseService
                 CREATE TABLE IF NOT EXISTS ""StoredImages"" (""Id"" serial PRIMARY KEY, ""Data"" bytea, ""ContentType"" text, ""OriginalName"" text, ""UploadedAt"" timestamp with time zone);
             ");
 
-            // NEW: Meeting Table
+            // Meeting Table
             await _db.Database.ExecuteSqlRawAsync(@"
                 CREATE TABLE IF NOT EXISTS ""BulletMeetingDetails"" (
                     ""BulletItemId"" integer PRIMARY KEY, 
@@ -51,20 +51,21 @@ public class BulletBaseService
         return img.Id;
     }
 
+    // Safe Deletion
     public async Task<int> ClearDataByType(int userId, string type)
     {
-        // 1. Delete Notes
+        // 1. Delete Notes (Children)
         try { await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletItemNotes"" WHERE ""BulletItemId"" IN (SELECT ""Id"" FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1})", userId, type); } catch {}
 
-        // 2. Delete Specific Details based on type
-        if (type == "task") {
+        // 2. Delete Details (Children) - Based on type
+        if(type == "task") {
             try { await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletTaskDetails"" WHERE ""BulletItemId"" IN (SELECT ""Id"" FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1})", userId, type); } catch {}
         }
-        else if (type == "meeting") {
+        else if(type == "meeting") {
             try { await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletMeetingDetails"" WHERE ""BulletItemId"" IN (SELECT ""Id"" FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1})", userId, type); } catch {}
         }
 
-        // 3. Delete Parent Items
+        // 3. Delete Parent
         return await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1}", userId, type);
     }
 
@@ -85,6 +86,7 @@ public class BulletBaseService
             DROP TABLE IF EXISTS ""BulletWorkouts""; DROP TABLE IF EXISTS ""BulletHolidays""; 
             DROP TABLE IF EXISTS ""BulletBirthdays""; DROP TABLE IF EXISTS ""BulletAnniversaries""; 
             DROP TABLE IF EXISTS ""BulletVacations""; DROP TABLE IF EXISTS ""BulletGames"";
+            DROP TABLE IF EXISTS ""BulletLeagues""; DROP TABLE IF EXISTS ""BulletSeasons""; DROP TABLE IF EXISTS ""BulletTeams"";
         ");
     }
 }
