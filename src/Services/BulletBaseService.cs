@@ -13,8 +13,30 @@ public class BulletBaseService
     public async Task CreateBaseTablesIfMissing()
     {
         // ... (Keep existing table creation logic) ...
-        // Ensure StoredImages exists
         await _db.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS ""BulletItems"" (
+                ""Id"" serial PRIMARY KEY, 
+                ""UserId"" integer NOT NULL, 
+                ""Type"" text, 
+                ""Category"" text, 
+                ""Date"" timestamp with time zone, 
+                ""CreatedAt"" timestamp with time zone, 
+                ""Title"" text, 
+                ""Description"" text, 
+                ""ImgUrl"" text, 
+                ""LinkUrl"" text, 
+                ""OriginalStringId"" text
+            );
+
+            CREATE TABLE IF NOT EXISTS ""BulletItemNotes"" (
+                ""Id"" serial PRIMARY KEY, 
+                ""BulletItemId"" integer NOT NULL, 
+                ""Content"" text, 
+                ""ImgUrl"" text, 
+                ""LinkUrl"" text, 
+                ""Order"" integer DEFAULT 0
+            );
+
             CREATE TABLE IF NOT EXISTS ""StoredImages"" (
                 ""Id"" serial PRIMARY KEY, 
                 ""Data"" bytea, 
@@ -24,7 +46,7 @@ public class BulletBaseService
             );
         ");
         
-        // ... (Keep existing column patch logic) ...
+        // Ensure columns exist (Patch)
         await RunPatch(@"
             DO $$ 
             BEGIN 

@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Dashboard;
+using Microsoft.EntityFrameworkCore;
+using System.Threading.Tasks;
 
 [Route("api/images")]
 [ApiController]
