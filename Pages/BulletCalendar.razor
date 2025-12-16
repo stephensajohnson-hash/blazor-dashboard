@@ -12,6 +12,7 @@
 @inject BulletBaseService BaseService
 @inject BulletTaskService TaskService
 @inject BulletMeetingService MeetingService
+@inject BulletHabitService HabitService
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
@@ -53,10 +54,6 @@
         </div>
     </div>
 
-    @if(!string.IsNullOrEmpty(statusMessage)) {
-        <div class="mx-6 mb-4 p-2 rounded bg-blue-900/20 border border-blue-800 text-xs font-mono text-blue-300">@statusMessage</div>
-    }
-
     <div class="px-6 h-[calc(100vh-140px)] overflow-hidden">
         @if (currentView == "day")
         {
@@ -69,28 +66,27 @@
                             <button @onclick='() => OpenEditor(cat.Item2, "task", viewDate)' class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition">＋ Add</button>
                         </div>
                         <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide">
-                            @if(isLoading)
-                            {
-                                <div class="text-center text-gray-500 text-xs italic mt-4 animate-pulse">Loading...</div>
-                            }
-                            else
-                            {
+                            @{
                                 var colItems = GetItemsForColumn(viewDate, cat.Item2);
-                                @foreach(var item in colItems) 
-                                { 
-                                    <div @key="item.Id">
-                                        @if (item.Type == "meeting")
-                                        {
-                                            <MeetingCard Item="item" OnClick="OpenEdit" OnToggle="ToggleMeetingComplete" OnDelete="DeleteTask" />
-                                        }
-                                        else
-                                        {
-                                            <TaskCard Item="item" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteTask" />
-                                        }
-                                    </div>
-                                }
-                                @if(!colItems.Any()) { <div class="text-center text-gray-600 text-xs italic mt-4">No items</div> }
                             }
+                            @foreach(var item in colItems) 
+                            { 
+                                <div @key="item.Id">
+                                    @if (item.Type == "meeting")
+                                    {
+                                        <MeetingCard Item="item" OnClick="OpenEdit" OnToggle="ToggleMeetingComplete" OnDelete="DeleteTask" />
+                                    }
+                                    else if (item.Type == "habit")
+                                    {
+                                        <HabitCard Item="@(GetHabit(item.Id))" OnClick="OpenHabitEdit" OnDelete="DeleteTask" OnStreakChange="SaveHabitDirectly" />
+                                    }
+                                    else
+                                    {
+                                        <TaskCard Item="item" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteTask" />
+                                    }
+                                </div>
+                            }
+                            @if(!colItems.Any()) { <div class="text-center text-gray-600 text-xs italic mt-4">No items</div> }
                         </div>
                     </div>
                 }
@@ -109,12 +105,13 @@
                         </div>
                         <div class="flex-1 overflow-y-auto p-1 space-y-1 scrollbar-hide">
                             @foreach(var item in GetItemsForDate(d)) { 
-                                @if(item.Type == "meeting")
-                                {
+                                @if(item.Type == "meeting") {
                                     <MeetingPill Item="item" OnClick="OpenEdit" ImageWidth="@BulletViewConfig.ImgWidthWeek" />
                                 }
-                                else
-                                {
+                                else if (item.Type == "habit") {
+                                    <HabitPill Item="@(GetHabit(item.Id))" OnClick="OpenHabitEdit" ImageWidth="@BulletViewConfig.ImgWidthWeek" />
+                                }
+                                else {
                                     <TaskPill Task="item" OnClick="OpenEdit" ImageWidth="@BulletViewConfig.ImgWidthWeek" />
                                 }
                             }
@@ -139,12 +136,13 @@
                             <div class="text-right text-xs font-bold text-gray-500 mb-1">@d</div>
                             <div class="flex-1 overflow-y-auto space-y-1 scrollbar-hide max-h-24">
                                 @foreach(var item in GetItemsForDate(currentDay)) { 
-                                    @if(item.Type == "meeting")
-                                    {
+                                    @if(item.Type == "meeting") {
                                         <MeetingPill Item="item" OnClick="OpenEdit" ImageWidth="@BulletViewConfig.ImgWidthMonth" />
                                     }
-                                    else
-                                    {
+                                    else if (item.Type == "habit") {
+                                        <HabitPill Item="@(GetHabit(item.Id))" OnClick="OpenHabitEdit" ImageWidth="@BulletViewConfig.ImgWidthMonth" />
+                                    }
+                                    else {
                                         <TaskPill Task="item" OnClick="OpenEdit" ImageWidth="@BulletViewConfig.ImgWidthMonth" />
                                     }
                                 }
@@ -175,7 +173,10 @@
     private bool isLoading = true;
     private string statusMessage = "";
     
+    // Unified list for display logic, but we store specific objects for editing
     private List<BulletTaskService.TaskDTO> loadedItems = new();
+    private List<BulletHabitService.HabitDTO> loadedHabits = new(); // Separate list for Habits to keep detail data
+    
     private BulletTaskService.TaskDTO? editingItem;
     private DateTime weekStart => viewDate.AddDays(-1 * ((7 + (viewDate.DayOfWeek - DayOfWeek.Monday)) % 7)).Date;
     private int daysInMonth => DateTime.DaysInMonth(viewDate.Year, viewDate.Month);
@@ -216,7 +217,10 @@
         else if (currentView == "month") { start = new DateTime(viewDate.Year, viewDate.Month, 1); end = start.AddMonths(1); }
 
         try {
+            // 1. Load Tasks
             loadedItems = await TaskService.GetTasksForRange(userId, start, end);
+            
+            // 2. Load Meetings (Map to TaskDTO for unified list)
             var meetings = await MeetingService.GetMeetingsForRange(userId, start, end);
             foreach (var m in meetings)
             {
@@ -229,6 +233,23 @@
                     Notes = m.Notes
                 });
             }
+
+            // 3. Load Habits (Keep in separate list for Details, but add to loadedItems for sorting)
+            loadedHabits = await HabitService.GetHabits(userId);
+            // Filter habits for the current view range manually since they aren't range-bound by default service
+            var relevantHabits = loadedHabits.Where(h => h.Date.Date >= start.Date && h.Date.Date <= end.Date).ToList();
+            
+            foreach(var h in relevantHabits)
+            {
+                loadedItems.Add(new BulletTaskService.TaskDTO
+                {
+                    Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category,
+                    Date = h.Date, Title = h.Title, Description = h.Description,
+                    ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId
+                    // Notes handled by specialized GetHabit lookup
+                });
+            }
+
         } catch(Exception ex) { 
             statusMessage = "Error: " + ex.Message; 
         }
@@ -241,12 +262,15 @@
     {
         return loadedItems
             .Where(t => t.Date.Date == d.Date && t.Category.Trim().Equals(category.Trim(), StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(t => t.Type == "meeting")
-            .ThenBy(t => t.MeetingDetail?.StartTime)
+            .OrderByDescending(t => t.Type == "meeting") // Meetings first
+            .ThenBy(t => t.MeetingDetail?.StartTime) // Then by time
             .ToList();
     }
 
     private List<BulletTaskService.TaskDTO> GetItemsForDate(DateTime d) => loadedItems.Where(t => t.Date.Date == d.Date).ToList();
+
+    // Helper to retrieve the full Habit object including Streak info
+    private BulletHabitService.HabitDTO GetHabit(int id) => loadedHabits.FirstOrDefault(h => h.Id == id) ?? new();
 
     private async Task ToggleComplete(BulletTaskService.TaskDTO t)
     {
@@ -256,11 +280,16 @@
 
     private async Task ToggleMeetingComplete(BulletTaskService.TaskDTO t)
     {
-        if(t.MeetingDetail != null)
-        {
+        if(t.MeetingDetail != null) {
             t.MeetingDetail.IsCompleted = !t.MeetingDetail.IsCompleted;
             await MeetingService.ToggleComplete(t.Id, t.MeetingDetail.IsCompleted);
         }
+    }
+
+    // Direct save for Streak increments from HabitCard
+    private async Task SaveHabitDirectly(BulletHabitService.HabitDTO h)
+    {
+        await HabitService.SaveHabit(h);
     }
 
     private void SwitchView(string view) { currentView = view; _ = LoadData(); }
@@ -302,6 +331,18 @@
         if(editingItem != null) editingItem.Date = t.Date; 
     }
 
+    private void OpenHabitEdit(BulletHabitService.HabitDTO h)
+    {
+        // Map HabitDTO to TaskDTO for the generic editor
+        editingItem = new BulletTaskService.TaskDTO 
+        {
+            Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category,
+            Date = h.Date, Title = h.Title, Description = h.Description,
+            ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId,
+            Notes = h.Notes
+        };
+    }
+
     private async Task SaveItem()
     {
         if(editingItem != null) {
@@ -312,10 +353,23 @@
                     Id = editingItem.Id, UserId = editingItem.UserId, Type = "meeting", Category = editingItem.Category,
                     Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description,
                     ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId,
-                    Detail = editingItem.MeetingDetail,
-                    Notes = editingItem.Notes
+                    Detail = editingItem.MeetingDetail, Notes = editingItem.Notes
                 };
                 await MeetingService.SaveMeeting(meetingDto);
+            }
+            else if (editingItem.Type == "habit")
+            {
+                // Retrieve original habit details to preserve streak
+                var existingHabit = GetHabit(editingItem.Id);
+                var habitDto = new BulletHabitService.HabitDTO
+                {
+                    Id = editingItem.Id, UserId = editingItem.UserId, Type = "habit", Category = editingItem.Category,
+                    Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description,
+                    ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId,
+                    Detail = existingHabit.Detail, // Preserve existing details
+                    Notes = editingItem.Notes
+                };
+                await HabitService.SaveHabit(habitDto);
             }
             else 
             {
