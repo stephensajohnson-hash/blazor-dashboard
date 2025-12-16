@@ -2,197 +2,145 @@
 @using Dashboard
 @using Microsoft.JSInterop
 @using System.Text.Json
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject BulletBaseService BaseService
 @inject BulletTaskService TaskService
+@inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
 
 <div class="min-h-screen bg-gray-900 text-white p-8 font-mono">
-    <div class="max-w-5xl mx-auto">
+    <div class="max-w-4xl mx-auto">
         
         <div class="flex justify-between items-center mb-6">
-            <h1 class="text-2xl font-bold text-yellow-400">⚠️ Diagnostic Data Manager</h1>
+            <h1 class="text-2xl font-bold text-yellow-400">⚠️ Data Manager (Fix #9)</h1>
             <a href="/bullet-calendar" class="text-gray-400 hover:text-white">Back to Calendar</a>
         </div>
 
         <div class="bg-black border border-green-800 p-4 rounded h-64 overflow-y-auto mb-6 shadow-lg text-xs">
             <div class="text-green-600 mb-2">--- SYSTEM LOG STREAM ---</div>
-            @if(logs.Count == 0) { <div class="text-gray-700">Waiting for events...</div> }
             @foreach(var log in logs)
             {
-                <div class="border-b border-gray-900 pb-1 mb-1 font-mono">
-                    <span class="text-gray-500">@log.Time</span> 
-                    <span class="@log.Color">@log.Msg</span>
+                <div class="border-b border-gray-900 pb-1 mb-1 font-mono text-gray-300">
+                    @log
                 </div>
             }
         </div>
 
-        <div class="mb-6">
-            <button @onclick="Ping" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm font-bold">
-                📡 Test Connection (Ping)
+        <div class="bg-gray-800 p-4 rounded mb-6 border border-gray-700">
+            <h3 class="font-bold text-white mb-2">Diagnostics</h3>
+            <button @onclick="Ping" class="bg-gray-600 text-white px-4 py-2 rounded mr-2 hover:bg-gray-500">
+                1. Test Button Click (Ping)
+            </button>
+            <button @onclick="FixSchema" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-500">
+                2. Run Schema Fixer
             </button>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="bg-red-900/20 p-4 rounded border border-red-900">
+            <h3 class="font-bold text-red-400 mb-2">Danger Zone</h3>
             
-            <div class="bg-gray-800 border border-gray-700 p-4 rounded">
-                <h3 class="font-bold text-blue-400 mb-2">1. Database</h3>
-                <button @onclick="FixSchema" class="w-full bg-blue-900/50 hover:bg-blue-800 text-blue-200 py-3 rounded font-bold border border-blue-800">
-                    Run Schema Fixer
+            <div class="flex gap-4">
+                <button @onclick="DeleteTasks" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-500">
+                    🗑️ Force Delete All Tasks
                 </button>
-            </div>
-
-            <div class="bg-gray-800 border border-gray-700 p-4 rounded">
-                <h3 class="font-bold text-green-400 mb-2">2. Import</h3>
-                <button @onclick="ImportTasks" class="w-full bg-green-900/50 hover:bg-green-800 text-green-200 py-3 rounded font-bold border border-green-800">
-                    Import JSON
-                </button>
-            </div>
-
-            <div class="bg-gray-800 border border-red-900 p-4 rounded">
-                <h3 class="font-bold text-red-400 mb-2">3. Cleanup</h3>
                 
-                @if(!deleteConfirmed) {
-                    <button @onclick="() => deleteConfirmed = true" class="w-full bg-red-900/20 hover:bg-red-900/40 text-red-300 py-3 rounded font-bold border border-red-900">
-                        Delete ALL Tasks
-                    </button>
-                } else {
-                    <button @onclick="DeleteTasks" class="w-full bg-red-600 hover:bg-red-500 text-white py-3 rounded font-bold animate-pulse">
-                        CONFIRM DELETE?
-                    </button>
-                    <button @onclick="() => deleteConfirmed = false" class="w-full mt-2 text-xs text-gray-500 hover:text-white">Cancel</button>
-                }
-
-                <div class="h-px bg-gray-700 my-4"></div>
-
-                <button @onclick="DropLegacy" class="w-full bg-gray-900 text-gray-500 hover:text-red-400 text-xs py-2">
-                    Drop Legacy Tables
+                <button @onclick="DropLegacy" class="bg-gray-700 text-white px-4 py-2 rounded hover:bg-gray-600">
+                    💣 Drop Legacy Tables
                 </button>
             </div>
-
         </div>
+        
+        <div class="mt-6 p-4 bg-gray-800 rounded border border-gray-700">
+             <h3 class="font-bold text-green-400 mb-2">Import</h3>
+             <button @onclick="ImportTasks" class="bg-green-700 text-white px-4 py-2 rounded hover:bg-green-600">
+                📥 Import JSON
+            </button>
+        </div>
+
     </div>
 </div>
 
 @code {
-    // --- LOGGING ---
-    class LogEntry { public string Time { get; set; } = ""; public string Msg { get; set; } = ""; public string Color { get; set; } = ""; }
-    List<LogEntry> logs = new();
-    
-    void Log(string msg, string color = "text-gray-300")
+    private List<string> logs = new();
+    private int userId = 1;
+
+    private void Log(string msg) 
     {
-        logs.Insert(0, new LogEntry { Time = DateTime.Now.ToString("HH:mm:ss.fff"), Msg = msg, Color = color });
-        InvokeAsync(StateHasChanged);
+        var line = $"{DateTime.Now:HH:mm:ss} > {msg}";
+        logs.Insert(0, line);
+        Console.WriteLine(line); // Log to server console too
+        StateHasChanged();
     }
 
-    // --- STATE ---
-    int userId = 1;
-    bool deleteConfirmed = false;
-
-    // --- LIFECYCLE ---
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
+            Log("Page Loaded. Checking Session...");
             try
             {
-                Log("Page Initializing...", "text-blue-300");
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
-                
-                if (string.IsNullOrEmpty(json))
-                {
-                    Log("No session token found. Using Default ID: 1", "text-yellow-500");
-                    return;
-                }
-
-                using var doc = JsonDocument.Parse(json);
-                if (doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p))
-                {
-                    userId = p.GetInt32();
-                    Log($"Session Found. Active User ID: {userId}", "text-green-400");
+                if (!string.IsNullOrEmpty(json)) {
+                    using var doc = JsonDocument.Parse(json);
+                    if(doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p)) {
+                        userId = p.GetInt32();
+                        Log($"User ID Found: {userId}");
+                    }
+                } else {
+                    Log("No Session. Using Default ID: 1");
                 }
             }
-            catch (Exception ex)
-            {
-                Log($"CRITICAL BOOT ERROR: {ex.Message}", "text-red-500 font-bold");
-            }
+            catch (Exception ex) { Log($"Session Error: {ex.Message}"); }
         }
     }
 
-    // --- ACTIONS ---
-
     private void Ping()
     {
-        Log("Pong! Connection is active.", "text-cyan-400");
+        Log("PONG! Button clicks are working.");
     }
 
     private async Task FixSchema()
     {
-        Log("Starting Schema Fix...", "text-blue-300");
-        try
-        {
+        Log("Running Schema Fix...");
+        try {
             await BaseService.CreateBaseTablesIfMissing();
-            Log("Schema Fix Completed Successfully.", "text-green-400");
-        }
-        catch (Exception ex)
-        {
-            Log($"SCHEMA ERROR: {ex.Message}", "text-red-500 font-bold");
-        }
+            Log("Schema Fix Done.");
+        } catch (Exception ex) { Log($"Schema Error: {ex.Message}"); }
     }
 
     private async Task ImportTasks()
     {
-        Log("Starting Import...", "text-blue-300");
-        try
-        {
+        Log("Starting Import...");
+        try {
             var path = System.IO.Path.Combine(Env.WebRootPath, "bullet_calendar.json");
-            if (!System.IO.File.Exists(path))
-            {
-                Log($"File not found: {path}", "text-red-400");
-                return;
-            }
-
-            var content = await System.IO.File.ReadAllTextAsync(path);
-            Log($"File Read. Length: {content.Length}", "text-gray-400");
-
-            await TaskService.ImportFromOldJson(userId, content);
-            Log("Import Completed.", "text-green-400");
-        }
-        catch (Exception ex)
-        {
-            Log($"IMPORT ERROR: {ex.Message}", "text-red-500 font-bold");
-        }
+            if (System.IO.File.Exists(path)) {
+                var content = await System.IO.File.ReadAllTextAsync(path);
+                await TaskService.ImportFromOldJson(userId, content);
+                Log("Import Success.");
+            } else { Log("JSON File not found."); }
+        } catch (Exception ex) { Log($"Import Error: {ex.Message}"); }
     }
 
     private async Task DeleteTasks()
     {
-        deleteConfirmed = false;
-        Log($"Attempting DELETE for User {userId}...", "text-red-300");
-        
-        try
-        {
-            Log("Calling Service.ClearDataByType...", "text-gray-500");
+        Log($"Deleting tasks for User {userId}...");
+        try {
             int count = await BaseService.ClearDataByType(userId, "task");
-            Log($"SUCCESS! Deleted {count} items.", "text-green-400 font-bold");
-        }
-        catch (Exception ex)
-        {
-            Log($"DELETE ERROR: {ex.Message}", "text-red-500 font-bold");
-            Log($"Trace: {ex.StackTrace}", "text-red-900");
+            Log($"Success. Deleted {count} items.");
+        } catch (Exception ex) { 
+            Log($"Delete Error: {ex.Message}"); 
+            if(ex.InnerException != null) Log($"Inner: {ex.InnerException.Message}");
         }
     }
 
     private async Task DropLegacy()
     {
-        Log("Dropping Legacy Tables...", "text-red-300");
-        try
-        {
+        Log("Dropping tables...");
+        try {
             await BaseService.DropLegacyTables();
-            Log("Legacy Tables Dropped.", "text-green-400");
-        }
-        catch (Exception ex)
-        {
-            Log($"DROP ERROR: {ex.Message}", "text-red-500");
-        }
+            Log("Tables Dropped.");
+        } catch (Exception ex) { Log($"Drop Error: {ex.Message}"); }
     }
 }
