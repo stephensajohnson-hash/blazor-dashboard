@@ -53,10 +53,6 @@
         </div>
     </div>
 
-    @if(!string.IsNullOrEmpty(statusMessage)) {
-        <div class="mx-6 mb-4 p-2 rounded bg-blue-900/20 border border-blue-800 text-xs font-mono text-blue-300">@statusMessage</div>
-    }
-
     <div class="px-6 h-[calc(100vh-140px)] overflow-hidden">
         @if (currentView == "day")
         {
@@ -69,31 +65,28 @@
                             <button @onclick='() => OpenEditor(cat.Item2, "task", viewDate)' class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition">＋ Add</button>
                         </div>
                         <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide">
-                            @{
-                                // --- DEBUG LOGGING INSIDE RENDER LOOP ---
-                                var dayItems = GetItemsForDate(viewDate)
-                                    .Where(t => t.Category.Equals(cat.Item2, StringComparison.OrdinalIgnoreCase))
-                                    .OrderByDescending(t => t.Type == "meeting")
-                                    .ThenBy(t => t.MeetingDetail.StartTime)
-                                    .ToList();
-                                
-                                Console.WriteLine($"[RENDER] Column {cat.Item1} ({viewDate:MM/dd}) -> Found {dayItems.Count} items.");
+                            @if(isLoading)
+                            {
+                                <div class="text-center text-gray-500 text-xs italic mt-4 animate-pulse">Loading...</div>
                             }
-                            @foreach(var item in dayItems) 
-                            { 
-                                <div @key="item.Id">
-                                    @if (item.Type == "meeting")
-                                    {
-                                        <Dashboard.Components.Bullet.MeetingCard Item="item" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteTask" />
-                                        
+                            else
+                            {
+                                var colItems = GetItemsForColumn(viewDate, cat.Item2);
+                                @foreach(var item in colItems) 
+                                { 
+                                    <div @key="item.Id">
+                                        @if (item.Type == "meeting")
+                                        {
+                                            <Dashboard.Components.Bullet.MeetingCard Item="item" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteTask" />
                                         }
-                                    else
-                                    {
-                                        <Dashboard.Components.Bullet.TaskCard Item="item" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteTask" />
-                                    }
-                                </div>
+                                        else
+                                        {
+                                            <Dashboard.Components.Bullet.TaskCard Item="item" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteTask" />
+                                        }
+                                    </div>
+                                }
+                                @if(!colItems.Any()) { <div class="text-center text-gray-600 text-xs italic mt-4">No items</div> }
                             }
-                            @if(!dayItems.Any()) { <div class="text-center text-gray-600 text-xs italic mt-4">No items</div> }
                         </div>
                     </div>
                 }
@@ -161,6 +154,7 @@
     private string currentView = "day";
     private int clientOffset = 0;
     private bool showUserMenu = false;
+    private bool isLoading = true; // Added loading state
     private string statusMessage = "";
     
     private List<BulletTaskService.TaskDTO> loadedItems = new();
@@ -196,6 +190,9 @@
     private async Task LoadData()
     {
         if (currentUser == null) return;
+        isLoading = true;
+        StateHasChanged(); // Force "Loading..." to appear
+
         DateTime start = viewDate.Date, end = viewDate.Date.AddDays(1).AddSeconds(-1);
         if (currentView == "week") { start = weekStart; end = start.AddDays(7); }
         else if (currentView == "month") { start = new DateTime(viewDate.Year, viewDate.Month, 1); end = start.AddMonths(1); }
@@ -205,9 +202,6 @@
         try {
             loadedItems = await TaskService.GetTasksForRange(userId, start, end);
             var meetings = await MeetingService.GetMeetingsForRange(userId, start, end);
-            
-            Console.WriteLine($"[LOAD] Tasks: {loadedItems.Count}, Meetings: {meetings.Count}");
-
             foreach (var m in meetings)
             {
                 loadedItems.Add(new BulletTaskService.TaskDTO
@@ -219,16 +213,30 @@
                     Notes = m.Notes
                 });
             }
-        } catch(Exception ex) { statusMessage = "Error: " + ex.Message; }
-        StateHasChanged();
+            Console.WriteLine($"[LOAD] Finished. Items: {loadedItems.Count}");
+        } catch(Exception ex) { 
+            statusMessage = "Error: " + ex.Message; 
+            Console.WriteLine($"[ERROR] {ex.Message}");
+        }
+        
+        isLoading = false;
+        StateHasChanged(); // Force re-render with new data
     }
 
-    private List<BulletTaskService.TaskDTO> GetItemsForDate(DateTime d) 
+    // -- HELPER: Filters Items for Day View Columns --
+    private List<BulletTaskService.TaskDTO> GetItemsForColumn(DateTime d, string category)
     {
-        // Debug date matching issues
-        var items = loadedItems.Where(t => t.Date.Date == d.Date).ToList();
+        var items = loadedItems
+            .Where(t => t.Date.Date == d.Date && t.Category.Equals(category, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(t => t.Type == "meeting") // Meetings first
+            .ThenBy(t => t.MeetingDetail.StartTime)      // Then by time
+            .ToList();
+            
+        Console.WriteLine($"[RENDER] Column {category} ({d:MM/dd}) -> Found {items.Count} items.");
         return items;
     }
+
+    private List<BulletTaskService.TaskDTO> GetItemsForDate(DateTime d) => loadedItems.Where(t => t.Date.Date == d.Date).ToList();
 
     private async Task ToggleComplete(BulletTaskService.TaskDTO t)
     {
@@ -242,7 +250,6 @@
         }
     }
 
-    // ... (Keep existing Navigation & Edit methods)
     private void SwitchView(string view) { currentView = view; _ = LoadData(); }
     private void Prev() { 
         if(currentView == "day") viewDate = viewDate.AddDays(-1);
