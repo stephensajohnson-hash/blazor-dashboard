@@ -73,11 +73,11 @@
                         </div>
                         <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide">
                             @{
-                                // Sort: Meetings (Type=meeting) go to top, sorted by time. Then Tasks.
+                                // Meetings at Top
                                 var dayItems = GetItemsForDate(viewDate)
                                     .Where(t => t.Category.Equals(cat.Item2, StringComparison.OrdinalIgnoreCase))
-                                    .OrderByDescending(t => t.Type == "meeting") // Meetings first (True > False)
-                                    .ThenBy(t => t.MeetingDetail.StartTime)      // Then by time
+                                    .OrderByDescending(t => t.Type == "meeting")
+                                    .ThenBy(t => t.MeetingDetail.StartTime)
                                     .ToList();
                             }
                             @foreach(var item in dayItems) 
@@ -99,7 +99,7 @@
         }
         else 
         {
-            <div class="text-center text-gray-500 mt-10">Select Day View to see items</div>
+            <div class="text-center text-gray-500 mt-10">Select Day View</div>
         }
     </div>
 </div>
@@ -114,7 +114,7 @@
 
 @code {
     private User? currentUser;
-    private int currentUserId = 0;
+    private int userId = 0; // Unified Variable
     private DateTime viewDate = DateTime.UtcNow;
     private string currentView = "day";
     private int clientOffset = 0;
@@ -127,13 +127,12 @@
     private int daysInMonth => DateTime.DaysInMonth(viewDate.Year, viewDate.Month);
     private int monthEmptyCells => ((int)new DateTime(viewDate.Year, viewDate.Month, 1).DayOfWeek + 6) % 7; 
 
+    // Helper to cast
     private BulletMeetingService.MeetingDTO ToMeetingDTO(BulletTaskService.TaskDTO t)
     {
         return new BulletMeetingService.MeetingDTO 
         {
-            Id = t.Id, 
-            UserId = t.UserId,
-            Type = t.Type, Category = t.Category,
+            Id = t.Id, UserId = t.UserId, Type = t.Type, Category = t.Category,
             Date = t.Date, Title = t.Title, Description = t.Description,
             ImgUrl = t.ImgUrl, LinkUrl = t.LinkUrl, OriginalStringId = t.OriginalStringId,
             Detail = t.MeetingDetail, Notes = t.Notes
@@ -149,10 +148,10 @@
                 if (!string.IsNullOrEmpty(json)) { 
                     using(var doc = JsonDocument.Parse(json)) {
                         if(doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p)) 
-                            currentUserId = p.GetInt32();
+                            userId = p.GetInt32();
                     }
-                    if(currentUserId > 0) {
-                        try { currentUser = await Db.Users.FindAsync(currentUserId); } catch { }
+                    if(userId > 0) {
+                        try { currentUser = await Db.Users.FindAsync(userId); } catch { }
                         if(currentUser != null) {
                             try { clientOffset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()"); } catch {}
                             viewDate = DateTime.UtcNow.AddMinutes(-clientOffset);
@@ -172,8 +171,8 @@
         else if (currentView == "month") { start = new DateTime(viewDate.Year, viewDate.Month, 1); end = start.AddMonths(1); }
 
         try {
-            loadedItems = await TaskService.GetTasksForRange(currentUserId, start, end);
-            var meetings = await MeetingService.GetMeetingsForRange(currentUserId, start, end);
+            loadedItems = await TaskService.GetTasksForRange(userId, start, end);
+            var meetings = await MeetingService.GetMeetingsForRange(userId, start, end);
             foreach (var m in meetings)
             {
                 loadedItems.Add(new BulletTaskService.TaskDTO
@@ -203,6 +202,7 @@
         }
     }
 
+    // Navigation & Edit Logic
     private void SwitchView(string view) { currentView = view; _ = LoadData(); }
     private void Prev() { 
         if(currentView == "day") viewDate = viewDate.AddDays(-1);
@@ -232,7 +232,7 @@
 
     private void OpenEditor(string category, string type, DateTime date)
     {
-        editingItem = new BulletTaskService.TaskDTO { UserId = currentUserId, Category = category, Type = type, Date = date };
+        editingItem = new BulletTaskService.TaskDTO { UserId = userId, Category = category, Type = type, Date = date };
     }
 
     private void OpenEdit(BulletTaskService.TaskDTO t)

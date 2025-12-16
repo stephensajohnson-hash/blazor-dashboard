@@ -61,8 +61,12 @@ public class BulletMeetingService
             await _db.BulletItems.AddAsync(item);
         }
 
-        item.Title = dto.Title; item.Category = dto.Category; item.Date = dto.Date;
-        item.Description = dto.Description; item.ImgUrl = dto.ImgUrl; item.LinkUrl = dto.LinkUrl;
+        item.Title = dto.Title;
+        item.Category = dto.Category;
+        item.Date = dto.Date;
+        item.Description = dto.Description;
+        item.ImgUrl = dto.ImgUrl;
+        item.LinkUrl = dto.LinkUrl;
         item.Type = "meeting";
 
         await _db.SaveChangesAsync();
@@ -92,7 +96,6 @@ public class BulletMeetingService
         if (detail != null) { detail.IsCompleted = isComplete; await _db.SaveChangesAsync(); }
     }
 
-    // --- ROBUST IMPORT (Case Insensitive) ---
     public async Task<int> ImportFromOldJson(int userId, string jsonContent)
     {
         int count = 0;
@@ -100,9 +103,7 @@ public class BulletMeetingService
         var root = doc.RootElement;
         JsonElement items = root;
         
-        // Try getting "items" or "Items"
-        if (root.ValueKind == JsonValueKind.Object)
-        {
+        if (root.ValueKind == JsonValueKind.Object) {
             if (root.TryGetProperty("items", out var i)) items = i;
             else if (root.TryGetProperty("Items", out i)) items = i;
         }
@@ -111,21 +112,22 @@ public class BulletMeetingService
         {
             foreach (var el in items.EnumerateArray())
             {
-                // Helper to get property value regardless of casing
-                string GetStr(string key) => 
-                    (el.TryGetProperty(key, out var v) || el.TryGetProperty(char.ToUpper(key[0]) + key.Substring(1), out v)) ? v.ToString() : "";
+                string GetStr(string key) => (el.TryGetProperty(key, out var v) || el.TryGetProperty(char.ToUpper(key[0]) + key.Substring(1), out v)) ? v.ToString() : "";
 
-                string type = GetStr("type").ToLower();
-
-                if (type == "meeting")
+                if (GetStr("type").ToLower() == "meeting")
                 {
                     string title = GetStr("title");
                     var item = new BulletItem { UserId = userId, Type = "meeting", CreatedAt = DateTime.UtcNow, Title = title };
                     
+                    // FIX: Ensure correct UTC date
                     if(DateTime.TryParse(GetStr("date"), out var dt)) item.Date = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
                     else item.Date = DateTime.UtcNow;
 
-                    item.Category = GetStr("category");
+                    // FIX: Normalize Category (Default to "work" so it shows up in UI)
+                    string rawCat = GetStr("category").ToLower();
+                    if (rawCat == "personal" || rawCat == "health") item.Category = rawCat;
+                    else item.Category = "work"; 
+
                     item.Description = GetStr("description");
                     item.OriginalStringId = GetStr("id");
 
@@ -135,8 +137,6 @@ public class BulletMeetingService
                     var detail = new BulletMeetingDetail { BulletItemId = item.Id };
                     
                     if(DateTime.TryParse(GetStr("startTime"), out var st)) detail.StartTime = DateTime.SpecifyKind(st, DateTimeKind.Utc);
-                    
-                    // Duration might be int or string
                     string durStr = GetStr("duration");
                     if(int.TryParse(durStr, out var d)) detail.DurationMinutes = d;
                     
