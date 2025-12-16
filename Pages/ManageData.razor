@@ -6,6 +6,7 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject BulletBaseService BaseService
 @inject BulletTaskService TaskService
+@inject BulletMeetingService MeetingService
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
@@ -14,7 +15,7 @@
     <div class="max-w-4xl mx-auto">
         
         <div class="flex justify-between items-center mb-6">
-            <h1 class="text-2xl font-bold text-yellow-400">⚠️ Data Manager (Fix #9)</h1>
+            <h1 class="text-2xl font-bold text-yellow-400">⚠️ Data Manager</h1>
             <a href="/bullet-calendar" class="text-gray-400 hover:text-white">Back to Calendar</a>
         </div>
 
@@ -29,37 +30,43 @@
         </div>
 
         <div class="bg-gray-800 p-4 rounded mb-6 border border-gray-700">
-            <h3 class="font-bold text-white mb-2">Diagnostics</h3>
-            <button @onclick="Ping" class="bg-gray-600 text-white px-4 py-2 rounded mr-2 hover:bg-gray-500">
-                1. Test Button Click (Ping)
-            </button>
-            <button @onclick="FixSchema" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-500">
-                2. Run Schema Fixer
-            </button>
+            <h3 class="font-bold text-white mb-2">1. Diagnostics</h3>
+            <div class="flex gap-2">
+                <button @onclick="Ping" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-500">
+                    Test Connection
+                </button>
+                <button @onclick="FixSchema" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-500">
+                    Run Schema Fixer
+                </button>
+            </div>
+        </div>
+
+        <div class="bg-gray-800 p-4 rounded mb-6 border border-gray-700">
+             <h3 class="font-bold text-green-400 mb-2">2. Import</h3>
+             <div class="flex gap-2">
+                 <button @onclick="ImportTasks" class="bg-green-700 text-white px-4 py-2 rounded hover:bg-green-600">
+                    📥 Import Tasks
+                </button>
+                <button @onclick="ImportMeetings" class="bg-purple-700 text-white px-4 py-2 rounded hover:bg-purple-600">
+                    📥 Import Meetings
+                </button>
+             </div>
         </div>
 
         <div class="bg-red-900/20 p-4 rounded border border-red-900">
-            <h3 class="font-bold text-red-400 mb-2">Danger Zone</h3>
+            <h3 class="font-bold text-red-400 mb-2">3. Danger Zone</h3>
             
-            <div class="flex gap-4">
+            <div class="flex gap-4 items-center">
                 <button @onclick="DeleteTasks" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-500">
-                    🗑️ Force Delete All Tasks
+                    🗑️ Delete All Tasks
                 </button>
                 
+                <div class="h-8 w-px bg-red-800"></div>
+
                 <button @onclick="DropLegacy" class="bg-gray-700 text-white px-4 py-2 rounded hover:bg-gray-600">
                     💣 Drop Legacy Tables
                 </button>
             </div>
-        </div>
-        
-        <div class="mt-6 p-4 bg-gray-800 rounded border border-gray-700">
-             <h3 class="font-bold text-green-400 mb-2">Import</h3>
-             <button @onclick="ImportTasks" class="bg-green-700 text-white px-4 py-2 rounded hover:bg-green-600">
-                📥 Import Tasks JSON
-            </button>
-            <button @onclick="ImportMeetings" class="bg-purple-700 text-white px-4 py-2 rounded hover:bg-purple-600 mt-2">
-                📥 Import Meetings JSON
-            </button>
         </div>
 
     </div>
@@ -73,7 +80,7 @@
     {
         var line = $"{DateTime.Now:HH:mm:ss} > {msg}";
         logs.Insert(0, line);
-        Console.WriteLine(line); // Log to server console too
+        Console.WriteLine(line);
         StateHasChanged();
     }
 
@@ -99,10 +106,7 @@
         }
     }
 
-    private void Ping()
-    {
-        Log("PONG! Button clicks are working.");
-    }
+    private void Ping() => Log("PONG! Connection active.");
 
     private async Task FixSchema()
     {
@@ -115,30 +119,27 @@
 
     private async Task ImportTasks()
     {
-        Log("Starting Import...");
+        Log("Importing Tasks...");
         try {
             var path = System.IO.Path.Combine(Env.WebRootPath, "bullet_calendar.json");
             if (System.IO.File.Exists(path)) {
                 var content = await System.IO.File.ReadAllTextAsync(path);
                 await TaskService.ImportFromOldJson(userId, content);
-                Log("Import Success.");
+                Log("Task Import Success.");
             } else { Log("JSON File not found."); }
         } catch (Exception ex) { Log($"Import Error: {ex.Message}"); }
     }
 
     private async Task ImportMeetings()
     {
-        Log("Starting Meeting Import...");
+        Log("Importing Meetings...");
         try {
             var path = System.IO.Path.Combine(Env.WebRootPath, "bullet_calendar.json");
             if (System.IO.File.Exists(path)) {
                 var content = await System.IO.File.ReadAllTextAsync(path);
-                // Inject Meeting Service via ScopeFactory logic similar to Tasks
-                using var scope = ScopeFactory.CreateScope();
-                var svc = scope.ServiceProvider.GetRequiredService<BulletMeetingService>();
-                await svc.ImportFromOldJson(userId, content);
+                await MeetingService.ImportFromOldJson(userId, content);
                 Log("Meeting Import Success.");
-            } else { Log("File not found."); }
+            } else { Log("JSON File not found."); }
         } catch (Exception ex) { Log($"Import Error: {ex.Message}"); }
     }
 
@@ -148,10 +149,7 @@
         try {
             int count = await BaseService.ClearDataByType(userId, "task");
             Log($"Success. Deleted {count} items.");
-        } catch (Exception ex) { 
-            Log($"Delete Error: {ex.Message}"); 
-            if(ex.InnerException != null) Log($"Inner: {ex.InnerException.Message}");
-        }
+        } catch (Exception ex) { Log($"Delete Error: {ex.Message}"); }
     }
 
     private async Task DropLegacy()
