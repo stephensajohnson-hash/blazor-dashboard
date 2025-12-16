@@ -1,7 +1,9 @@
 using Dashboard;
 using Microsoft.EntityFrameworkCore;
-using System;
 using System.Threading.Tasks;
+using System.Linq;
+using System.Collections.Generic;
+using System;
 
 public class BulletBaseService
 {
@@ -14,53 +16,92 @@ public class BulletBaseService
 
     public async Task CreateBaseTablesIfMissing()
     {
-        try {
-            await _db.Database.ExecuteSqlRawAsync(@"
-                CREATE TABLE IF NOT EXISTS ""BulletItems"" (""Id"" serial PRIMARY KEY, ""UserId"" integer, ""Type"" text, ""Category"" text, ""Date"" timestamp with time zone, ""CreatedAt"" timestamp with time zone, ""Title"" text, ""Description"" text, ""ImgUrl"" text, ""LinkUrl"" text, ""OriginalStringId"" text);
-                CREATE TABLE IF NOT EXISTS ""BulletItemNotes"" (""Id"" serial PRIMARY KEY, ""BulletItemId"" integer, ""Content"" text, ""ImgUrl"" text, ""LinkUrl"" text, ""Order"" integer DEFAULT 0);
-                CREATE TABLE IF NOT EXISTS ""BulletTaskDetails"" (""BulletItemId"" integer PRIMARY KEY, ""Status"" text, ""IsCompleted"" boolean, ""Priority"" text, ""TicketNumber"" text, ""TicketUrl"" text, ""DueDate"" timestamp with time zone);
-                CREATE TABLE IF NOT EXISTS ""BulletMeetingDetails"" (""BulletItemId"" integer PRIMARY KEY, ""StartTime"" timestamp with time zone, ""DurationMinutes"" integer, ""ActualDurationMinutes"" integer);
-                CREATE TABLE IF NOT EXISTS ""StoredImages"" (""Id"" serial PRIMARY KEY, ""Data"" bytea, ""ContentType"" text, ""OriginalName"" text, ""UploadedAt"" timestamp with time zone);
-            ");
+        // 1. Base Table (Tasks/Meetings/Habits)
+        await _db.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS ""BulletItems"" (
+                ""Id"" SERIAL PRIMARY KEY,
+                ""UserId"" INTEGER NOT NULL,
+                ""Type"" TEXT NOT NULL DEFAULT 'task',
+                ""Category"" TEXT NOT NULL DEFAULT 'personal',
+                ""Date"" TIMESTAMP NOT NULL,
+                ""CreatedAt"" TIMESTAMP NOT NULL DEFAULT NOW(),
+                ""Title"" TEXT NOT NULL DEFAULT '',
+                ""Description"" TEXT NOT NULL DEFAULT '',
+                ""ImgUrl"" TEXT NOT NULL DEFAULT '',
+                ""LinkUrl"" TEXT NOT NULL DEFAULT '',
+                ""OriginalStringId"" TEXT NOT NULL DEFAULT ''
+            );
+        ");
 
-            // PATCH: Add IsCompleted to Meetings
-            await _db.Database.ExecuteSqlRawAsync(@"DO $$ BEGIN 
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='BulletMeetingDetails' AND column_name='IsCompleted') THEN 
-                    ALTER TABLE ""BulletMeetingDetails"" ADD COLUMN ""IsCompleted"" boolean DEFAULT false; 
-                END IF;
-            END $$;");
-            
-        } catch (Exception ex) { Console.WriteLine("Error creating tables: " + ex.Message); }
+        // 2. Common Notes Table
+        await _db.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS ""BulletItemNotes"" (
+                ""Id"" SERIAL PRIMARY KEY,
+                ""BulletItemId"" INTEGER NOT NULL,
+                ""Content"" TEXT NOT NULL DEFAULT '',
+                ""ImgUrl"" TEXT NOT NULL DEFAULT '',
+                ""LinkUrl"" TEXT NOT NULL DEFAULT '',
+                ""Order"" INTEGER NOT NULL DEFAULT 0,
+                CONSTRAINT ""FK_BulletItemNotes_BulletItems"" 
+                    FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
+            );
+        ");
+
+        // 3. Task Details
+        await _db.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS ""BulletTaskDetails"" (
+                ""BulletItemId"" INTEGER NOT NULL PRIMARY KEY,
+                ""Status"" TEXT NOT NULL DEFAULT 'Pending',
+                ""IsCompleted"" BOOLEAN NOT NULL DEFAULT FALSE,
+                ""Priority"" TEXT NOT NULL DEFAULT 'Normal',
+                ""TicketNumber"" TEXT NOT NULL DEFAULT '',
+                ""TicketUrl"" TEXT NOT NULL DEFAULT '',
+                ""DueDate"" TIMESTAMP NULL,
+                CONSTRAINT ""FK_BulletTaskDetails_BulletItems"" 
+                    FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
+            );
+        ");
+
+        // 4. Meeting Details
+        await _db.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS ""BulletMeetingDetails"" (
+                ""BulletItemId"" INTEGER NOT NULL PRIMARY KEY,
+                ""StartTime"" TIMESTAMP NULL,
+                ""DurationMinutes"" INTEGER NOT NULL DEFAULT 0,
+                ""ActualDurationMinutes"" INTEGER NOT NULL DEFAULT 0,
+                ""IsCompleted"" BOOLEAN NOT NULL DEFAULT FALSE,
+                CONSTRAINT ""FK_BulletMeetingDetails_BulletItems"" 
+                    FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
+            );
+        ");
+
+        // 5. NEW: Habit Details (This was missing!)
+        await _db.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS ""BulletHabitDetails"" (
+                ""BulletItemId"" INTEGER NOT NULL PRIMARY KEY,
+                ""StreakCount"" INTEGER NOT NULL DEFAULT 0,
+                ""Status"" TEXT NOT NULL DEFAULT 'Active',
+                CONSTRAINT ""FK_BulletHabitDetails_BulletItems"" 
+                    FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
+            );
+        ");
     }
 
-    public async Task<int> SaveImageAsync(byte[] data, string contentType)
+    public async Task DeleteItem(int id)
     {
-        var img = new StoredImage { Data = data, ContentType = contentType, UploadedAt = DateTime.UtcNow };
-        _db.StoredImages.Add(img);
-        await _db.SaveChangesAsync();
-        return img.Id;
+        var item = await _db.BulletItems.FindAsync(id);
+        if (item != null)
+        {
+            _db.BulletItems.Remove(item);
+            await _db.SaveChangesAsync();
+        }
     }
 
     public async Task<int> ClearDataByType(int userId, string type)
     {
-        try { await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletItemNotes"" WHERE ""BulletItemId"" IN (SELECT ""Id"" FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1})", userId, type); } catch {}
-        
-        if (type == "task") { try { await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletTaskDetails"" WHERE ""BulletItemId"" IN (SELECT ""Id"" FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1})", userId, type); } catch {} }
-        else if (type == "meeting") { try { await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletMeetingDetails"" WHERE ""BulletItemId"" IN (SELECT ""Id"" FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1})", userId, type); } catch {} }
-
-        return await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1}", userId, type);
-    }
-
-    public async Task DeleteItem(int itemId)
-    {
-        try { await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletItemNotes"" WHERE ""BulletItemId"" = {0}", itemId); } catch {}
-        try { await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletTaskDetails"" WHERE ""BulletItemId"" = {0}", itemId); } catch {}
-        try { await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletMeetingDetails"" WHERE ""BulletItemId"" = {0}", itemId); } catch {}
-        await _db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""BulletItems"" WHERE ""Id"" = {0}", itemId);
-    }
-
-    public async Task DropLegacyTables()
-    {
-        // (Legacy Drop logic preserved if needed)
+        var items = await _db.BulletItems.Where(x => x.UserId == userId && x.Type == type).ToListAsync();
+        _db.BulletItems.RemoveRange(items);
+        await _db.SaveChangesAsync();
+        return items.Count;
     }
 }
