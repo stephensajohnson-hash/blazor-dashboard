@@ -1,6 +1,7 @@
 @page "/manage-data"
 @using Dashboard
 @using Microsoft.JSInterop
+@using System.Text.Json
 @inject BulletBaseService BaseService
 @inject BulletTaskService TaskService
 @inject NavigationManager Nav
@@ -14,13 +15,19 @@
             <a href="/bullet-calendar" class="text-gray-400 hover:text-white">← Back to Calendar</a>
         </div>
 
+        <div class="bg-black font-mono text-xs text-green-400 p-4 rounded-lg border border-gray-700 mb-6 h-40 overflow-y-auto">
+            @if(logs.Count == 0) { <span class="text-gray-600">// Console logs will appear here...</span> }
+            @foreach(var log in logs)
+            {
+                <div>> @log</div>
+            }
+        </div>
+
         <div class="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-6">
             <h2 class="text-xl font-bold text-blue-400 mb-4">1. Database Schema</h2>
-            <p class="text-gray-400 text-sm mb-4">Run this if you see SQL errors or missing columns.</p>
             <button @onclick="FixSchema" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-bold transition">
                 🛠️ Fix Tables & Columns
             </button>
-            <div class="mt-2 font-mono text-xs text-green-400">@schemaMsg</div>
         </div>
 
         <div class="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-6">
@@ -31,7 +38,6 @@
                 </button>
                 <span class="text-xs text-gray-500">Reads from 'wwwroot/bullet_calendar.json'</span>
             </div>
-            <div class="mt-2 font-mono text-xs text-green-400">@importMsg</div>
         </div>
 
         <div class="bg-gray-800 border border-red-900/50 rounded-xl p-6">
@@ -46,16 +52,15 @@
                     💣 Drop Legacy Tables
                 </button>
             </div>
-            <div class="mt-2 font-mono text-xs text-red-300">@deleteMsg</div>
         </div>
     </div>
 </div>
 
 @code {
-    private string schemaMsg = "";
-    private string importMsg = "";
-    private string deleteMsg = "";
+    private List<string> logs = new();
     private int userId;
+
+    private void Log(string msg) { logs.Add($"{DateTime.Now:HH:mm:ss} {msg}"); StateHasChanged(); }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -63,45 +68,64 @@
         {
             var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
             if (!string.IsNullOrEmpty(json)) { 
-                using var doc = System.Text.Json.JsonDocument.Parse(json);
-                if(doc.RootElement.TryGetProperty("UserId", out var p)) userId = p.GetInt32();
+                try {
+                    using var doc = JsonDocument.Parse(json);
+                    // Check both casing variations
+                    if(doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p)) 
+                    {
+                        userId = p.GetInt32();
+                        Log($"Session Loaded. UserId: {userId}");
+                    }
+                    else 
+                    {
+                        Log("Error: UserId property not found in session JSON.");
+                    }
+                } catch (Exception ex) {
+                    Log("Session Parse Error: " + ex.Message);
+                }
+            } else {
+                Log("No session found.");
             }
         }
     }
 
     private async Task FixSchema()
     {
-        schemaMsg = "Running...";
+        Log("Running Schema Fix...");
         try {
             await BaseService.CreateBaseTablesIfMissing();
             await TaskService.CreateTable();
-            schemaMsg = "✅ Database Schema Updated.";
-        } catch(Exception ex) { schemaMsg = "❌ Error: " + ex.Message; }
+            Log("✅ Schema Update Complete.");
+        } catch(Exception ex) { Log("❌ Schema Error: " + ex.Message); }
     }
 
     private async Task ImportTasks()
     {
-        importMsg = "Reading...";
+        Log("Starting Import...");
+        if(userId == 0) { Log("❌ Cannot Import: UserId is 0"); return; }
+
         try {
             var path = System.IO.Path.Combine(Env.WebRootPath, "bullet_calendar.json");
             if(System.IO.File.Exists(path)) {
                 var content = await System.IO.File.ReadAllTextAsync(path);
                 await TaskService.ImportFromOldJson(userId, content);
-                importMsg = "✅ Tasks Imported.";
-            } else { importMsg = "❌ File not found."; }
-        } catch(Exception ex) { importMsg = "❌ Error: " + ex.Message; }
+                Log("✅ Import Finished.");
+            } else { Log($"❌ File not found at: {path}"); }
+        } catch(Exception ex) { Log("❌ Import Error: " + ex.Message); }
     }
 
     private async Task ClearData(string type)
     {
+        if(userId == 0) { Log("❌ Cannot Delete: UserId is 0"); return; }
+
         if(await JS.InvokeAsync<bool>("confirm", $"Delete ALL {type}s? This cannot be undone.")) {
-            deleteMsg = "Deleting...";
-            // ADDED TRY/CATCH
+            Log($"Deleting all items of type '{type}' for User {userId}...");
             try {
-                await BaseService.ClearDataByType(userId, type);
-                deleteMsg = $"✅ All {type}s deleted.";
+                // Now getting the count back
+                int count = await BaseService.ClearDataByType(userId, type);
+                Log($"✅ Success. Deleted {count} items.");
             } catch (Exception ex) {
-                deleteMsg = $"❌ Error: {ex.Message}";
+                Log($"❌ Delete Error: {ex.Message}");
             }
         }
     }
@@ -109,12 +133,12 @@
     private async Task DropLegacy()
     {
         if(await JS.InvokeAsync<bool>("confirm", "Delete old unused tables?")) {
-            deleteMsg = "Dropping...";
+            Log("Dropping legacy tables...");
             try {
                 await BaseService.DropLegacyTables();
-                deleteMsg = "✅ Legacy tables dropped.";
+                Log("✅ Legacy tables dropped.");
             } catch (Exception ex) {
-                deleteMsg = $"❌ Error: {ex.Message}";
+                Log($"❌ Drop Error: {ex.Message}");
             }
         }
     }

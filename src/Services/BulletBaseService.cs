@@ -12,7 +12,6 @@ public class BulletBaseService
 
     public async Task CreateBaseTablesIfMissing()
     {
-        // (Keep existing table creation logic...)
         await _db.Database.ExecuteSqlRawAsync(@"
             CREATE TABLE IF NOT EXISTS ""BulletItems"" (
                 ""Id"" serial PRIMARY KEY, 
@@ -74,25 +73,27 @@ public class BulletBaseService
         return img.Id;
     }
 
-    // --- FIX: USE RAW SQL FOR DELETION ---
-    public async Task ClearDataByType(int userId, string type)
+    // --- UPDATED: RETURNS COUNT OF DELETED ITEMS ---
+    public async Task<int> ClearDataByType(int userId, string type)
     {
-        // 1. Delete Notes linked to these items
+        // 1. Delete Notes
         await _db.Database.ExecuteSqlRawAsync(
             @"DELETE FROM ""BulletItemNotes"" 
               WHERE ""BulletItemId"" IN (SELECT ""Id"" FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1})", 
             userId, type);
 
-        // 2. Delete Task Details linked to these items
+        // 2. Delete Details
         await _db.Database.ExecuteSqlRawAsync(
             @"DELETE FROM ""BulletTaskDetails"" 
               WHERE ""BulletItemId"" IN (SELECT ""Id"" FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1})", 
             userId, type);
 
-        // 3. Delete the Base Items
-        await _db.Database.ExecuteSqlRawAsync(
+        // 3. Delete Base Items (Return this count)
+        int count = await _db.Database.ExecuteSqlRawAsync(
             @"DELETE FROM ""BulletItems"" WHERE ""UserId"" = {0} AND ""Type"" = {1}", 
             userId, type);
+            
+        return count;
     }
 
     public async Task DeleteItem(int itemId)
