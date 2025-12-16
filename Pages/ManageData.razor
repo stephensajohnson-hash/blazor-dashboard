@@ -1,136 +1,232 @@
 @page "/manage-data"
 @using Dashboard
 @using Microsoft.JSInterop
-@using Microsoft.Extensions.DependencyInjection
-@using Microsoft.EntityFrameworkCore
 @using System.Text.Json
-@inject BulletBaseService BaseService
-@inject BulletTaskService TaskService
+@using Microsoft.Extensions.DependencyInjection
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject IServiceScopeFactory ScopeFactory
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
 
-<div class="min-h-screen bg-gray-900 text-white p-8">
-    <div class="max-w-4xl mx-auto">
-        <div class="flex items-center justify-between mb-8">
-            <h1 class="text-3xl font-bold">💾 Data Management</h1>
-            <a href="/bullet-calendar" class="text-gray-400 hover:text-white">← Back to Calendar</a>
+<div class="min-h-screen bg-gray-900 text-white p-8 font-sans">
+    <div class="max-w-5xl mx-auto">
+        
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h1 class="text-3xl font-bold text-white">💾 Data Manager</h1>
+                <p class="text-gray-400 text-sm">System Tools & Diagnostics</p>
+            </div>
+            <a href="/bullet-calendar" class="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded transition">
+                ← Back to Calendar
+            </a>
         </div>
 
-        <div class="bg-black font-mono text-xs text-green-400 p-4 rounded-lg border border-gray-700 mb-6 h-48 overflow-y-auto">
-            @if(logs.Count == 0) { <span class="text-gray-600">// Ready. Logs will appear here.</span> }
-            @foreach(var log in logs) { <div class="border-b border-gray-800 pb-1 mb-1">@log</div> }
+        <div class="bg-black border border-gray-700 rounded-lg p-4 mb-8 font-mono text-xs h-64 overflow-y-auto shadow-inner">
+            <div class="text-gray-500 mb-2">--- SYSTEM LOGS ---</div>
+            @if (LogEntries.Count == 0)
+            {
+                <div class="text-gray-600 italic">Waiting for activity...</div>
+            }
+            @foreach (var entry in LogEntries)
+            {
+                <div class="@entry.ColorClass border-b border-gray-900 pb-0.5 mb-0.5">
+                    <span class="opacity-50 mr-2">[@entry.Time]</span>
+                    @entry.Message
+                </div>
+            }
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <div class="bg-gray-800 border border-gray-700 p-6 rounded-xl">
-                <h2 class="text-xl font-bold text-blue-400 mb-4">1. Repair Database</h2>
-                <button @onclick="FixSchema" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded font-bold transition">
-                    🛠️ Create Tables & Columns
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            
+            <div class="bg-gray-800 border border-gray-700 p-5 rounded-xl flex flex-col">
+                <div class="mb-4">
+                    <h2 class="text-lg font-bold text-blue-400">1. Database Repair</h2>
+                    <p class="text-xs text-gray-400 mt-1">Run this if you see SQL errors or missing columns.</p>
+                </div>
+                <button @onclick="RunSchemaFix" class="mt-auto w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded transition flex justify-center items-center gap-2">
+                    <span>🛠️</span> Run Fixer
                 </button>
             </div>
 
-            <div class="bg-gray-800 border border-gray-700 p-6 rounded-xl">
-                <h2 class="text-xl font-bold text-green-400 mb-4">2. Import Data</h2>
-                <button @onclick="ImportTasks" class="w-full bg-gray-700 hover:bg-gray-600 text-white py-3 rounded font-bold border border-gray-600 transition">
-                    📥 Import JSON File
+            <div class="bg-gray-800 border border-gray-700 p-5 rounded-xl flex flex-col">
+                <div class="mb-4">
+                    <h2 class="text-lg font-bold text-green-400">2. Import Data</h2>
+                    <p class="text-xs text-gray-400 mt-1">Loads 'bullet_calendar.json' from wwwroot.</p>
+                </div>
+                <button @onclick="RunImport" class="mt-auto w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded border border-gray-600 transition flex justify-center items-center gap-2">
+                    <span>📥</span> Import JSON
                 </button>
             </div>
-        </div>
 
-        <div class="bg-gray-800 border border-red-900/50 p-6 rounded-xl">
-            <h2 class="text-xl font-bold text-red-400 mb-4">3. Danger Zone</h2>
-            <div class="flex gap-4 items-center">
-                @if(!confirmDelete)
+            <div class="bg-gray-800 border border-red-900/50 p-5 rounded-xl flex flex-col">
+                <div class="mb-4">
+                    <h2 class="text-lg font-bold text-red-400">3. Nuclear Option</h2>
+                    <p class="text-xs text-gray-400 mt-1">Permanently delete data.</p>
+                </div>
+                
+                @if (!isDeleteConfirming)
                 {
-                    <button @onclick="() => confirmDelete = true" class="bg-red-900/30 hover:bg-red-900/50 text-red-300 border border-red-800 px-6 py-3 rounded font-bold transition">
-                        🗑️ Delete ALL Tasks
+                    <button @onclick="() => isDeleteConfirming = true" class="mt-auto w-full bg-red-900/20 hover:bg-red-900/40 text-red-300 font-bold py-3 rounded border border-red-900/50 transition">
+                        🗑️ Delete All Tasks
                     </button>
                 }
                 else
                 {
-                    <button @onclick="DeleteAllTasks" class="bg-red-600 hover:bg-red-500 text-white border border-red-500 px-6 py-3 rounded font-bold transition animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.5)]">
-                        ⚠️ CLICK TO CONFIRM
-                    </button>
-                    <button @onclick="() => confirmDelete = false" class="text-gray-400 hover:text-white underline">Cancel</button>
+                    <div class="mt-auto flex gap-2">
+                        <button @onclick="RunDeleteTasks" class="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded animate-pulse shadow-[0_0_15px_rgba(220,38,38,0.5)]">
+                            CONFIRM!
+                        </button>
+                        <button @onclick="() => isDeleteConfirming = false" class="px-3 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded">
+                            ✕
+                        </button>
+                    </div>
                 }
                 
-                <div class="w-px h-10 bg-gray-700 mx-4"></div>
-
-                <button @onclick="DropLegacy" class="text-xs text-gray-500 hover:text-red-300 transition">
+                <button @onclick="RunDropLegacy" class="mt-2 text-xs text-gray-500 hover:text-gray-300 underline text-center">
                     Drop Legacy Tables
                 </button>
             </div>
+
         </div>
     </div>
 </div>
 
 @code {
-    private List<string> logs = new();
-    private int userId = 1;
-    private bool confirmDelete = false;
+    // --- LOGGING SYSTEM ---
+    private class LogEntry { public string Time { get; set; } = ""; public string Message { get; set; } = ""; public string ColorClass { get; set; } = "text-gray-300"; }
+    private List<LogEntry> LogEntries = new();
+    
+    private void Log(string msg, string type = "info")
+    {
+        var color = type switch { "error" => "text-red-400 font-bold", "success" => "text-green-400", "warn" => "text-yellow-400", _ => "text-gray-300" };
+        LogEntries.Add(new LogEntry { Time = DateTime.Now.ToString("HH:mm:ss.fff"), Message = msg, ColorClass = color });
+        InvokeAsync(StateHasChanged);
+    }
 
-    private void Log(string msg) { logs.Add($"{DateTime.Now:HH:mm:ss} > {msg}"); StateHasChanged(); }
+    // --- STATE ---
+    private int currentUserId = 0;
+    private bool isDeleteConfirming = false;
 
+    // --- INITIALIZATION ---
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            try {
+            Log("Page Initializing...", "warn");
+            try
+            {
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
-                if (!string.IsNullOrEmpty(json)) { 
-                    using var doc = JsonDocument.Parse(json);
-                    if(doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p)) 
-                        userId = p.GetInt32();
+                if (string.IsNullOrWhiteSpace(json))
+                {
+                    Log("No Session Token Found in LocalStorage.", "error");
+                    return;
                 }
-                Log($"Session Active. User ID: {userId}");
-            } catch { Log("Session Warning: Defaulting to User 1"); }
+
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p))
+                {
+                    currentUserId = p.GetInt32();
+                    Log($"Session Validated. UserID: {currentUserId}", "success");
+                }
+                else
+                {
+                    Log("Session JSON invalid (missing UserId).", "error");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"Session Read Error: {ex.Message}", "error");
+            }
         }
     }
 
-    private async Task FixSchema()
+    // --- ACTION 1: FIX SCHEMA ---
+    private async Task RunSchemaFix()
     {
-        Log("Checking Schema...");
-        try { await BaseService.CreateBaseTablesIfMissing(); Log("✅ Schema Verified."); } 
-        catch(Exception ex) { Log($"❌ Error: {ex.Message}"); }
-    }
-
-    private async Task ImportTasks()
-    {
-        Log("Starting Import...");
-        try {
-            // Use FRESH scope to avoid conflicts
+        Log("Starting Schema Fix...");
+        try
+        {
             using var scope = ScopeFactory.CreateScope();
-            var svc = scope.ServiceProvider.GetRequiredService<BulletTaskService>();
-            
-            var path = System.IO.Path.Combine(Env.WebRootPath, "bullet_calendar.json");
-            if(System.IO.File.Exists(path)) {
-                var content = await System.IO.File.ReadAllTextAsync(path);
-                await svc.ImportFromOldJson(userId, content);
-                Log("✅ Import Successful.");
-            } else { Log("❌ 'bullet_calendar.json' not found in wwwroot."); }
-        } catch(Exception ex) { Log($"❌ Import Failed: {ex.Message}"); }
+            var svc = scope.ServiceProvider.GetRequiredService<BulletBaseService>();
+            await svc.CreateBaseTablesIfMissing();
+            Log("Schema Update Completed Successfully.", "success");
+        }
+        catch (Exception ex)
+        {
+            Log($"Schema Error: {ex.Message}", "error");
+        }
     }
 
-    private async Task DeleteAllTasks()
+    // --- ACTION 2: IMPORT TASKS ---
+    private async Task RunImport()
     {
-        Log("Deleting tasks...");
-        confirmDelete = false;
-        try {
-            // Use FRESH scope to ensure connection is alive
+        if (currentUserId == 0) { Log("Cannot Import: No User ID", "error"); return; }
+        
+        Log("Starting Import...");
+        try
+        {
+            var path = System.IO.Path.Combine(Env.WebRootPath, "bullet_calendar.json");
+            if (!System.IO.File.Exists(path))
+            {
+                Log($"File not found: {path}", "error");
+                return;
+            }
+
+            var content = await System.IO.File.ReadAllTextAsync(path);
+            Log($"File read ({content.Length} bytes). Parsing...", "info");
+
+            using var scope = ScopeFactory.CreateScope();
+            var taskSvc = scope.ServiceProvider.GetRequiredService<BulletTaskService>();
+            
+            await taskSvc.ImportFromOldJson(currentUserId, content);
+            Log("Import Finished Successfully.", "success");
+        }
+        catch (Exception ex)
+        {
+            Log($"Import Failed: {ex.Message}", "error");
+        }
+    }
+
+    // --- ACTION 3: DELETE TASKS ---
+    private async Task RunDeleteTasks()
+    {
+        isDeleteConfirming = false; // Reset UI
+        if (currentUserId == 0) { Log("Cannot Delete: No User ID", "error"); return; }
+
+        Log($"Attempting DELETE ALL 'task' items for User {currentUserId}...", "warn");
+
+        try
+        {
+            // Use a fresh scope to ensure clean connection
             using var scope = ScopeFactory.CreateScope();
             var baseSvc = scope.ServiceProvider.GetRequiredService<BulletBaseService>();
+
+            // Call the service
+            int count = await baseSvc.ClearDataByType(currentUserId, "task");
             
-            int count = await baseSvc.ClearDataByType(userId, "task");
-            Log($"✅ Deleted {count} tasks.");
-        } catch(Exception ex) { Log($"❌ Delete Failed: {ex.Message}"); }
+            Log($"DELETE COMPLETE. Removed {count} items.", "success");
+        }
+        catch (Exception ex)
+        {
+            Log($"CRITICAL DELETE ERROR: {ex.Message}", "error");
+            Log($"Stack Trace: {ex.StackTrace}", "error");
+        }
     }
 
-    private async Task DropLegacy()
+    // --- ACTION 4: DROP LEGACY ---
+    private async Task RunDropLegacy()
     {
-        Log("Dropping legacy...");
-        try { await BaseService.DropLegacyTables(); Log("Done."); } 
-        catch(Exception ex) { Log($"Error: {ex.Message}"); }
+        Log("Dropping Legacy Tables...", "warn");
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<BulletBaseService>();
+            await svc.DropLegacyTables();
+            Log("Legacy Tables Dropped.", "success");
+        }
+        catch (Exception ex)
+        {
+            Log($"Drop Error: {ex.Message}", "error");
+        }
     }
 }
