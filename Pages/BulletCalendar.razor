@@ -342,76 +342,38 @@
     
     private void OpenHabitEdit(BulletHabitService.HabitDTO h) { editingItem = new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, Description = h.Description, ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId, Notes = h.Notes, HabitDetail = h.Detail, SortOrder = h.SortOrder }; }
 
-private async Task SaveItem() { 
+    private async Task SaveItem() { 
         if(editingItem != null) {
-            
-            // Standard saves...
             if (editingItem.Type == "meeting") { var m = new BulletMeetingService.MeetingDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "meeting", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.MeetingDetail, Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; await MeetingService.SaveMeeting(m); }
             else if (editingItem.Type == "habit") { var h = new BulletHabitService.HabitDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "habit", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.HabitDetail, Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; await HabitService.SaveHabit(h); }
             else if (editingItem.Type == "media") { var m = new BulletMediaService.MediaDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "media", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.MediaDetail, Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; await MediaService.SaveMedia(m); }
             else if (editingItem.Type == "holiday") { var h = new BulletHolidayService.HolidayDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "holiday", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.HolidayDetail, Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; await HolidayService.SaveHoliday(h); }
             else if (editingItem.Type == "birthday") { var b = new BulletBirthdayService.BirthdayDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "birthday", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.BirthdayDetail, Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; await BirthdayService.SaveBirthday(b); }
             else if (editingItem.Type == "anniversary") { var a = new BulletAnniversaryService.AnniversaryDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "anniversary", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.AnniversaryDetail, Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; await AnniversaryService.SaveAnniversary(a); }
-            
-            // VACATION LOGIC (Group Handling)
             else if (editingItem.Type == "vacation") 
             { 
-                // 1. If Editing existing item with group, delete the whole group first to avoid duplicates/ghosts
-                if (editingItem.Id > 0 && !string.IsNullOrEmpty(editingItem.VacationDetail.VacationGroupId))
-                {
-                    await VacationService.DeleteVacationGroup(editingItem.UserId, editingItem.VacationDetail.VacationGroupId);
-                }
-
-                // 2. Calculate Range
+                if (editingItem.Id > 0 && !string.IsNullOrEmpty(editingItem.VacationDetail.VacationGroupId)) { await VacationService.DeleteVacationGroup(editingItem.UserId, editingItem.VacationDetail.VacationGroupId); }
                 var start = editingItem.Date.Date;
                 var end = (editingItem.EndDate ?? start).Date;
                 if(end < start) end = start;
-
-                // 3. Create items for every day
                 for (var dt = start; dt <= end; dt = dt.AddDays(1))
                 {
-                    // Always create new ID (0) because we deleted the old group or are creating new
-                    var v = new BulletVacationService.VacationDTO { 
-                        Id = 0, // Reset ID to force insert
-                        UserId = editingItem.UserId, 
-                        Type = "vacation", 
-                        Category = editingItem.Category, 
-                        Date = dt, 
-                        Title = editingItem.Title, 
-                        Description = editingItem.Description, 
-                        ImgUrl = editingItem.ImgUrl, 
-                        LinkUrl = editingItem.LinkUrl, 
-                        OriginalStringId = editingItem.OriginalStringId, 
-                        Detail = editingItem.VacationDetail, 
-                        Notes = editingItem.Notes, 
-                        SortOrder = editingItem.SortOrder 
-                    }; 
+                    var v = new BulletVacationService.VacationDTO { Id = 0, UserId = editingItem.UserId, Type = "vacation", Category = editingItem.Category, Date = dt, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.VacationDetail, Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; 
                     await VacationService.SaveVacation(v);
                 }
             }
             else { await TaskService.SaveTask(editingItem); }
-            
             editingItem = null; await LoadData();
         }
     }
+    
     private async Task DeleteTask(int id) { if(await JS.InvokeAsync<bool>("confirm", "Delete this item?")) { await BaseService.DeleteItem(id); await LoadData(); } }
     
-    // UPDATED DELETE LOGIC FOR GROUPS
     private async Task DeleteCurrentTask() { 
         if(editingItem != null && editingItem.Id > 0 && await JS.InvokeAsync<bool>("confirm", "Delete?")) { 
-            
-            if (editingItem.Type == "vacation" && !string.IsNullOrEmpty(editingItem.VacationDetail.VacationGroupId))
-            {
-                await VacationService.DeleteVacationGroup(editingItem.UserId, editingItem.VacationDetail.VacationGroupId);
-            }
-            else 
-            {
-                await BaseService.DeleteItem(editingItem.Id); 
-            }
-            
+            if (editingItem.Type == "vacation" && !string.IsNullOrEmpty(editingItem.VacationDetail.VacationGroupId)) { await VacationService.DeleteVacationGroup(editingItem.UserId, editingItem.VacationDetail.VacationGroupId); }
+            else { await BaseService.DeleteItem(editingItem.Id); }
             editingItem = null; await LoadData(); 
         } 
     }
-    private async Task DeleteCurrentTask() { if(editingItem != null && editingItem.Id > 0 && await JS.InvokeAsync<bool>("confirm", "Delete?")) { await BaseService.DeleteItem(editingItem.Id); editingItem = null; await LoadData(); } }
-    private async Task Logout() { await JS.InvokeVoidAsync("localStorage.removeItem", "dashboard_session"); Nav.NavigateTo("/login", true); }
 }
