@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
 using System;
+using System.ComponentModel.DataAnnotations.Schema; // Needed for [NotMapped]
 
 public class BulletTaskService
 {
@@ -24,9 +25,13 @@ public class BulletTaskService
         public BulletHolidayDetail HolidayDetail { get; set; } = new(); 
         public BulletBirthdayDetail BirthdayDetail { get; set; } = new(); 
         public BulletAnniversaryDetail AnniversaryDetail { get; set; } = new();
-        public BulletVacationDetail VacationDetail { get; set; } = new(); // NEW
+        public BulletVacationDetail VacationDetail { get; set; } = new();
         
         public List<BulletItemNote> Notes { get; set; } = new();
+
+        // UI ONLY: Used for creating vacation ranges
+        [NotMapped]
+        public DateTime? EndDate { get; set; }
     }
 
     public async Task<List<TaskDTO>> GetTasksForRange(int userId, DateTime start, DateTime end)
