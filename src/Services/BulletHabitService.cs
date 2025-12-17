@@ -116,11 +116,21 @@ public class BulletHabitService
 
                 if (GetStr("type").ToLower() == "habit")
                 {
-                    // A. Create Base Item
+                    // 1. Parse Date (NEW LOGIC)
+                    DateTime itemDate = DateTime.UtcNow;
+                    string dateStr = GetStr("date");
+                    if (DateTime.TryParse(dateStr, out var parsedDate))
+                    {
+                        itemDate = DateTime.SpecifyKind(parsedDate, DateTimeKind.Utc);
+                    }
+
+                    // 2. Create Base Item
+
                     var item = new BulletItem { 
                         UserId = userId, 
                         Type = "habit", 
                         CreatedAt = DateTime.UtcNow, 
+                        Date = itemDate, // <--- ASSIGN DATE HERE
                         Title = GetStr("title"),
                         Description = GetStr("description"),
                         OriginalStringId = GetStr("id"),
