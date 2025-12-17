@@ -76,6 +76,28 @@ public class BulletVacationService
         await _db.SaveChangesAsync();
     }
 
+    // NEW: Delete all items in a group
+    public async Task DeleteVacationGroup(int userId, string groupId)
+    {
+        if (string.IsNullOrEmpty(groupId)) return;
+
+        // Find IDs of items in this group
+        var itemIds = await _db.BulletVacationDetails
+            .Where(v => v.VacationGroupId == groupId)
+            .Select(v => v.BulletItemId)
+            .ToListAsync();
+
+        if (itemIds.Any())
+        {
+            var itemsToDelete = await _db.BulletItems
+                .Where(b => itemIds.Contains(b.Id) && b.UserId == userId)
+                .ToListAsync();
+
+            _db.BulletItems.RemoveRange(itemsToDelete);
+            await _db.SaveChangesAsync();
+        }
+    }
+
     public async Task<int> ImportFromOldJson(int userId, string jsonContent)
     {
         int count = 0;
