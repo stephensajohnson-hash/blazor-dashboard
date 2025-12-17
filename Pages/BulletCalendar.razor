@@ -19,6 +19,21 @@
 
 <div class="min-h-screen bg-gray-900 text-white overflow-x-hidden pb-40 relative">
     
+    <div class="bg-black border-b border-yellow-500 p-2 text-xs font-mono text-yellow-400 overflow-x-auto">
+        <strong>DEBUG LOG:</strong> Loaded Items: @loadedItems.Count | 
+        Tasks: @loadedItems.Count(x => x.Type == "task") | 
+        Meetings: @loadedItems.Count(x => x.Type == "meeting") | 
+        Habits: @loadedItems.Count(x => x.Type == "habit")
+        <br/>
+        <strong>Sample Habits:</strong>
+        @foreach(var h in loadedItems.Where(x => x.Type == "habit").Take(3))
+        {
+            <span class="mr-3 border border-yellow-800 px-1">
+                [@h.Date.ToString("MM/dd")] @h.Title (Streak: @(h.HabitDetail?.StreakCount ?? -1))
+            </span>
+        }
+    </div>
+
     <div class="p-6 pb-2 mb-2 border-b border-gray-800 flex items-center justify-between shrink-0 sticky top-0 bg-gray-900 z-40">
         <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
             <a href="/" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Home">🏠</a>
@@ -223,8 +238,11 @@
         else if (currentView == "month") { start = new DateTime(viewDate.Year, viewDate.Month, 1); end = start.AddMonths(1); }
 
         try {
+            loadedItems.Clear(); // Clear previous data
+
             // 1. Load Tasks
-            loadedItems = await TaskService.GetTasksForRange(userId, start, end);
+            var tasks = await TaskService.GetTasksForRange(userId, start, end);
+            loadedItems.AddRange(tasks);
             
             // 2. Load Meetings
             var meetings = await MeetingService.GetMeetingsForRange(userId, start, end);
@@ -240,7 +258,7 @@
                 });
             }
 
-            // 3. Load Habits
+            // 3. Load Habits (Get ALL relevant for this user, then filter by date)
             loadedHabits = await HabitService.GetHabits(userId);
             var relevantHabits = loadedHabits.Where(h => h.Date.Date >= start.Date && h.Date.Date <= end.Date).ToList();
             
@@ -251,7 +269,7 @@
                     Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category,
                     Date = h.Date, Title = h.Title, Description = h.Description,
                     ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId,
-                    HabitDetail = h.Detail // <--- CRITICAL: POPULATE THIS!
+                    HabitDetail = h.Detail // <--- THIS IS THE CRITICAL LINE
                 });
             }
 
@@ -267,7 +285,7 @@
     {
         return loadedItems
             .Where(t => t.Date.Date == d.Date && t.Category.Trim().Equals(category.Trim(), StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(t => t.Type == "habit") // Habits first (preference)
+            .OrderByDescending(t => t.Type == "habit") 
             .ThenByDescending(t => t.Type == "meeting") 
             .ThenBy(t => t.MeetingDetail?.StartTime)
             .ToList();
@@ -275,7 +293,7 @@
 
     private List<BulletTaskService.TaskDTO> GetItemsForDate(DateTime d) => loadedItems.Where(t => t.Date.Date == d.Date).ToList();
 
-    // LOOKUP HELPER: Uses ID to find the rich HabitDTO from the loadedHabits list
+    // LOOKUP HELPER
     private BulletHabitService.HabitDTO GetHabit(int id) => loadedHabits.FirstOrDefault(h => h.Id == id) ?? new();
 
     private async Task ToggleComplete(BulletTaskService.TaskDTO t)
@@ -370,7 +388,7 @@
                     Id = editingItem.Id, UserId = editingItem.UserId, Type = "habit", Category = editingItem.Category,
                     Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description,
                     ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId,
-                    Detail = editingItem.HabitDetail, // Used passed detail
+                    Detail = editingItem.HabitDetail,
                     Notes = editingItem.Notes
                 };
                 await HabitService.SaveHabit(habitDto);
