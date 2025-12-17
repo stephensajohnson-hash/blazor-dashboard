@@ -153,7 +153,7 @@ public class BulletBaseService
         await _db.StoredImages.AddAsync(img);
         await _db.SaveChangesAsync();
         
-        // Return the NEW route
+        // This must match the MapGet route in Program.cs
         return $"/db-images/{img.Id}";
     }
 }

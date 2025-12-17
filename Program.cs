@@ -77,13 +77,14 @@ app.UseAntiforgery();
 // 3. API ROUTES (Image Uploads)
 // =========================================================
 
-// Endpoint to Serve Images: /api/images/{id}
-app.MapGet("/api/images/{id}", async (int id, AppDbContext db) =>
+// --- IMAGE ENDPOINT (DIRECTLY MAPPED) ---
+app.MapGet("/db-images/{id}", async (int id, AppDbContext db) =>
 {
     var img = await db.StoredImages.FindAsync(id);
     if (img == null) return Results.NotFound();
     return Results.File(img.Data, img.ContentType);
 });
+// ----------------------------------------
 
 // Endpoint to Upload Images: /api/images/upload
 app.MapPost("/api/images/upload", async (HttpRequest request, AppDbContext db) =>
