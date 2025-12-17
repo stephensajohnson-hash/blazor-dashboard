@@ -33,7 +33,7 @@ public class BulletMeetingService
                                   Id = baseItem.Id, UserId = baseItem.UserId, Type = baseItem.Type, Category = baseItem.Category,
                                   Date = baseItem.Date, Title = baseItem.Title, Description = baseItem.Description, 
                                   ImgUrl = baseItem.ImgUrl, LinkUrl = baseItem.LinkUrl, OriginalStringId = baseItem.OriginalStringId,
-                                  SortOrder = baseItem.Order, // Map
+                                  SortOrder = baseItem.SortOrder,
                                   Detail = detail
                               }).ToListAsync();
 
@@ -59,7 +59,7 @@ public class BulletMeetingService
 
         item.Title = dto.Title; item.Category = dto.Category; item.Description = dto.Description; 
         item.ImgUrl = dto.ImgUrl; item.LinkUrl = dto.LinkUrl; item.Date = dto.Date;
-        item.Order = dto.SortOrder; // Map back
+        item.SortOrder = dto.SortOrder;
         
         await _db.SaveChangesAsync();
 

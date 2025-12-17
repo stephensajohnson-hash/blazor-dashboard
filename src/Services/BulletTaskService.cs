@@ -35,7 +35,7 @@ public class BulletTaskService
                                Id = baseItem.Id, UserId = baseItem.UserId, Type = baseItem.Type, Category = baseItem.Category,
                                Date = baseItem.Date, Title = baseItem.Title, Description = baseItem.Description, 
                                ImgUrl = baseItem.ImgUrl, LinkUrl = baseItem.LinkUrl, OriginalStringId = baseItem.OriginalStringId,
-                               SortOrder = baseItem.SortOrder, // UPDATED
+                               SortOrder = baseItem.SortOrder,
                                Detail = detail
                            }).ToListAsync();
 
@@ -62,7 +62,7 @@ public class BulletTaskService
 
         item.Title = dto.Title; item.Category = dto.Category; item.Description = dto.Description; 
         item.ImgUrl = dto.ImgUrl; item.LinkUrl = dto.LinkUrl; item.Date = dto.Date;
-        item.Order = dto.SortOrder; // MAP BACK (Using Column("Order") allows SortOrder access)
+        item.SortOrder = dto.SortOrder;
         
         await _db.SaveChangesAsync();
 

@@ -56,8 +56,8 @@ public class BulletItem
     public string LinkUrl { get; set; } = "";
     public string OriginalStringId { get; set; } = "";
     
-    // RENAMED TO AVOID LINQ CONFLICT
-    [Column("Order")] // Maps to DB column "Order"
+    // RENAMED TO FIX BUILD ERROR
+    [Column("Order")] 
     public int SortOrder { get; set; } = 0; 
 }
 
