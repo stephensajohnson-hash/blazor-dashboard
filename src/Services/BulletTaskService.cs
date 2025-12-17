@@ -23,7 +23,8 @@ public class BulletTaskService
         public BulletMediaDetail MediaDetail { get; set; } = new(); 
         public BulletHolidayDetail HolidayDetail { get; set; } = new(); 
         public BulletBirthdayDetail BirthdayDetail { get; set; } = new(); 
-        public BulletAnniversaryDetail AnniversaryDetail { get; set; } = new(); // NEW
+        public BulletAnniversaryDetail AnniversaryDetail { get; set; } = new();
+        public BulletVacationDetail VacationDetail { get; set; } = new(); // NEW
         
         public List<BulletItemNote> Notes { get; set; } = new();
     }
