@@ -12,7 +12,7 @@ public class AppDbContext : DbContext
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
-    // ... (Keep existing DbSets: Users, LinkGroups, Recipes, etc.) ...
+    // ... (Keep existing DbSets) ...
     public DbSet<User> Users { get; set; }
     public DbSet<LinkGroup> LinkGroups { get; set; }
     public DbSet<Link> Links { get; set; }
@@ -32,9 +32,10 @@ public class AppDbContext : DbContext
     public DbSet<BulletMeetingDetail> BulletMeetingDetails { get; set; }
     public DbSet<BulletHabitDetail> BulletHabitDetails { get; set; }
     public DbSet<BulletMediaDetail> BulletMediaDetails { get; set; }
-    
-    // NEW: Holiday
     public DbSet<BulletHolidayDetail> BulletHolidayDetails { get; set; }
+    
+    // NEW: Birthday
+    public DbSet<BulletBirthdayDetail> BulletBirthdayDetails { get; set; }
 }
 
 // ... (Keep PasswordHelper, BulletItem, BulletItemNote, etc.) ...
@@ -119,13 +120,21 @@ public class BulletMediaDetail
     public string Tags { get; set; } = ""; 
 }
 
-// NEW: Holiday Details
 public class BulletHolidayDetail
 {
     [Key, ForeignKey("BulletItem")]
     public int BulletItemId { get; set; }
     public virtual BulletItem BulletItem { get; set; } = null!;
     public bool IsWorkHoliday { get; set; } = false;
+}
+
+// NEW: Birthday Details
+public class BulletBirthdayDetail
+{
+    [Key, ForeignKey("BulletItem")]
+    public int BulletItemId { get; set; }
+    public virtual BulletItem BulletItem { get; set; } = null!;
+    public int? DOB_Year { get; set; } // Nullable, as user might not know the year
 }
 
 // ... (Keep User, StoredImage, Recipe classes, LinkGroup, Link, Countdown, Stock, Feed, ViewConfig) ...

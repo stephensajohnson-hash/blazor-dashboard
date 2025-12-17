@@ -98,12 +98,21 @@ public class BulletBaseService
             );
         ");
 
-        // 7. NEW: Holiday Details
+        // 7. Holiday Details
         await _db.Database.ExecuteSqlRawAsync(@"
             CREATE TABLE IF NOT EXISTS ""BulletHolidayDetails"" (
                 ""BulletItemId"" INTEGER NOT NULL PRIMARY KEY,
                 ""IsWorkHoliday"" BOOLEAN NOT NULL DEFAULT FALSE,
                 CONSTRAINT ""FK_BulletHolidayDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
+            );
+        ");
+
+        // 8. NEW: Birthday Details
+        await _db.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS ""BulletBirthdayDetails"" (
+                ""BulletItemId"" INTEGER NOT NULL PRIMARY KEY,
+                ""DOB_Year"" INTEGER NULL,
+                CONSTRAINT ""FK_BulletBirthdayDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
             );
         ");
     }

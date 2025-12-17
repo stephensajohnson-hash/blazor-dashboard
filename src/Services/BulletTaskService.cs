@@ -21,7 +21,8 @@ public class BulletTaskService
         public BulletMeetingDetail MeetingDetail { get; set; } = new();
         public BulletHabitDetail HabitDetail { get; set; } = new(); 
         public BulletMediaDetail MediaDetail { get; set; } = new(); 
-        public BulletHolidayDetail HolidayDetail { get; set; } = new(); // NEW
+        public BulletHolidayDetail HolidayDetail { get; set; } = new(); 
+        public BulletBirthdayDetail BirthdayDetail { get; set; } = new(); // NEW
         
         public List<BulletItemNote> Notes { get; set; } = new();
     }
