@@ -81,10 +81,18 @@ public class BulletBaseService
                 ""BulletItemId"" INTEGER NOT NULL PRIMARY KEY,
                 ""StreakCount"" INTEGER NOT NULL DEFAULT 0,
                 ""Status"" TEXT NOT NULL DEFAULT 'Active',
+                ""IsCompleted"" BOOLEAN NOT NULL DEFAULT FALSE, -- Ensure column exists in new tables
                 CONSTRAINT ""FK_BulletHabitDetails_BulletItems"" 
                     FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
             );
         ");
+
+        // --- PATCH: Add IsCompleted column if it doesn't exist (Run this safely) ---
+        try {
+            await _db.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE ""BulletHabitDetails"" ADD COLUMN IF NOT EXISTS ""IsCompleted"" BOOLEAN NOT NULL DEFAULT FALSE;
+            ");
+        } catch { /* Ignore if column exists */ }
     }
 
     public async Task DeleteItem(int id)

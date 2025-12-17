@@ -110,6 +110,7 @@ public class BulletHabitDetail
 
     public int StreakCount { get; set; } = 0;
     public string Status { get; set; } = "Active"; 
+    public bool IsCompleted { get; set; }
 }
 
 
