@@ -233,9 +233,23 @@
         isLoading = true;
         StateHasChanged();
 
-        DateTime start = viewDate.Date, end = viewDate.Date.AddDays(1).AddSeconds(-1);
-        if (currentView == "week") { start = weekStart; end = start.AddDays(7); }
-        else if (currentView == "month") { start = new DateTime(viewDate.Year, viewDate.Month, 1); end = start.AddMonths(1); }
+        DateTime start = viewDate.Date;
+        // Default end is end of today
+        DateTime end = viewDate.Date.AddDays(1).AddSeconds(-1); 
+
+        if (currentView == "week") 
+        { 
+            start = weekStart; 
+            // FIX: Add 7 days, but subtract 1 second to stay within the current week (ends Sunday 23:59:59)
+            end = start.AddDays(7).AddSeconds(-1); 
+        }
+        else if (currentView == "month") 
+        { 
+            start = new DateTime(viewDate.Year, viewDate.Month, 1); 
+            // Month logic is already safe because AddMonths(1) takes you to the 1st of next month, 
+            // but we likely want to subtract 1 second here too just to be safe.
+            end = start.AddMonths(1).AddSeconds(-1); 
+        }
 
         try {
             loadedItems.Clear(); // Clear previous data
@@ -262,6 +276,7 @@
             loadedHabits = await HabitService.GetHabits(userId);
             var relevantHabits = loadedHabits.Where(h => h.Date.Date >= start.Date && h.Date.Date <= end.Date).ToList();
             
+            // Inside LoadData() ...
             foreach(var h in relevantHabits)
             {
                 loadedItems.Add(new BulletTaskService.TaskDTO
@@ -269,7 +284,9 @@
                     Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category,
                     Date = h.Date, Title = h.Title, Description = h.Description,
                     ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId,
-                    HabitDetail = h.Detail // <--- THIS IS THE CRITICAL LINE
+                    
+                    // --- THIS IS CRITICAL ---
+                    HabitDetail = h.Detail 
                 });
             }
 

@@ -15,18 +15,17 @@ public class BulletTaskService
         _db = db;
     }
 
-    // --- THE CRITICAL UPDATE ---
     public class TaskDTO : BulletItem
     {
         public BulletTaskDetail Detail { get; set; } = new();
         public BulletMeetingDetail MeetingDetail { get; set; } = new();
         
-        // This was likely missing, causing the pills to fail!
+        // --- THIS MUST BE HERE ---
         public BulletHabitDetail HabitDetail { get; set; } = new(); 
-        
+        // -------------------------
+
         public List<BulletItemNote> Notes { get; set; } = new();
     }
-    // ---------------------------
 
     public async Task<List<TaskDTO>> GetTasksForRange(int userId, DateTime start, DateTime end)
     {
