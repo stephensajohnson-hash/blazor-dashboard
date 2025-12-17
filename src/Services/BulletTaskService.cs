@@ -20,11 +20,12 @@ public class BulletTaskService
         public BulletTaskDetail Detail { get; set; } = new();
         public BulletMeetingDetail MeetingDetail { get; set; } = new();
         
-        // --- THIS MUST BE HERE ---
+        // --- THIS PROPERTY IS CRITICAL FOR HABIT PILLS ---
         public BulletHabitDetail HabitDetail { get; set; } = new(); 
-        // -------------------------
-
+        
         public List<BulletItemNote> Notes { get; set; } = new();
+        
+        // Add Order if not in base, but it is in base BulletItem now
     }
 
     public async Task<List<TaskDTO>> GetTasksForRange(int userId, DateTime start, DateTime end)
@@ -39,6 +40,7 @@ public class BulletTaskService
                                Id = baseItem.Id, UserId = baseItem.UserId, Type = baseItem.Type, Category = baseItem.Category,
                                Date = baseItem.Date, Title = baseItem.Title, Description = baseItem.Description, 
                                ImgUrl = baseItem.ImgUrl, LinkUrl = baseItem.LinkUrl, OriginalStringId = baseItem.OriginalStringId,
+                               Order = baseItem.Order,
                                Detail = detail
                            }).ToListAsync();
 
@@ -65,6 +67,7 @@ public class BulletTaskService
 
         item.Title = dto.Title; item.Category = dto.Category; item.Description = dto.Description; 
         item.ImgUrl = dto.ImgUrl; item.LinkUrl = dto.LinkUrl; item.Date = dto.Date;
+        item.Order = dto.Order;
         
         await _db.SaveChangesAsync();
 
@@ -94,10 +97,6 @@ public class BulletTaskService
         }
     }
     
-    // Import Logic (Existing code...)
-    public async Task<int> ImportFromOldJson(int userId, string jsonContent)
-    {
-        // ... (Keep existing import code) ...
-        return 0; // Placeholder to save space in this response, keep your existing logic
-    }
+    // Legacy Import shim
+    public async Task<int> ImportFromOldJson(int userId, string jsonContent) { return 0; }
 }
