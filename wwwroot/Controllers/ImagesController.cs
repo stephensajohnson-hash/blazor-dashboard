@@ -1,25 +1,28 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using System.Threading.Tasks;
 using Dashboard;
 
-[ApiController]
-[Route("images")]
-public class ImagesController : ControllerBase
+namespace Dashboard.Controllers
 {
-    private readonly AppDbContext _db;
-
-    public ImagesController(AppDbContext db)
+    [ApiController]
+    [Route("images")]
+    public class ImagesController : ControllerBase
     {
-        _db = db;
-    }
+        private readonly AppDbContext _db;
 
-    [HttpGet("db/{id}")]
-    public async Task<IActionResult> GetImage(int id)
-    {
-        var img = await _db.StoredImages.FindAsync(id);
-        if (img == null) return NotFound();
-        
-        return File(img.Data, img.ContentType);
+        public ImagesController(AppDbContext db)
+        {
+            _db = db;
+        }
+
+        [HttpGet("db/{id}")]
+        public async Task<IActionResult> GetImage(int id)
+        {
+            var img = await _db.StoredImages.FindAsync(id);
+            if (img == null) return NotFound();
+            
+            // Serve the byte array as an image file
+            return File(img.Data, img.ContentType);
+        }
     }
 }
