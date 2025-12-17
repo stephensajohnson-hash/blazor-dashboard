@@ -2,6 +2,7 @@
 @using Dashboard
 @using Microsoft.AspNetCore.Components.Forms
 @inject BulletBaseService BaseService
+@inject BulletMediaService MediaService
 
 @if (Item != null)
 {
@@ -31,18 +32,39 @@
 
                 @if(Item.Type == "media")
                 {
-                    <div class="grid grid-cols-3 gap-4 bg-pink-900/10 p-3 rounded border border-pink-900/30">
-                        <div>
-                            <label class="block text-xs font-bold text-pink-500 mb-1">RATING (1-10)</label>
-                            <input type="number" @bind="MediaDetail.Rating" min="0" max="10" class="w-full bg-black border border-pink-800 rounded p-2 text-pink-300 focus:border-pink-500 outline-none" />
+                    <div class="bg-pink-900/10 p-3 rounded border border-pink-900/30 space-y-3">
+                        <div class="flex gap-4">
+                            <div class="flex-1">
+                                <label class="block text-xs font-bold text-pink-500 mb-1">RATING (1-10)</label>
+                                <div class="flex gap-1">
+                                    @for(int i = 1; i <= 10; i++)
+                                    {
+                                        int star = i; 
+                                        <button @onclick="() => MediaDetail.Rating = star" class="text-lg focus:outline-none transition hover:scale-125 @(MediaDetail.Rating >= star ? "text-yellow-400" : "text-gray-700")">★</button>
+                                    }
+                                    <span class="ml-2 text-sm text-gray-400 font-bold">@MediaDetail.Rating</span>
+                                </div>
+                            </div>
+                            <div class="w-24">
+                                <label class="block text-xs font-bold text-pink-500 mb-1">YEAR</label>
+                                <input type="number" value="@(MediaDetail.ReleaseYear == 0 ? "" : MediaDetail.ReleaseYear)" 
+                                       @onchange="@(e => { if(int.TryParse(e.Value?.ToString(), out int y)) MediaDetail.ReleaseYear = y; else MediaDetail.ReleaseYear = 0; })"
+                                       class="w-full bg-black border border-pink-800 rounded p-2 text-pink-300 focus:border-pink-500 outline-none" placeholder="YYYY" />
+                            </div>
                         </div>
-                        <div>
-                            <label class="block text-xs font-bold text-pink-500 mb-1">YEAR</label>
-                            <input type="number" @bind="MediaDetail.ReleaseYear" class="w-full bg-black border border-pink-800 rounded p-2 text-pink-300 focus:border-pink-500 outline-none" />
-                        </div>
+
                         <div>
                             <label class="block text-xs font-bold text-pink-500 mb-1">TAGS</label>
-                            <input @bind="MediaDetail.Tags" class="w-full bg-black border border-pink-800 rounded p-2 text-pink-300 focus:border-pink-500 outline-none" placeholder="Action, Sci-Fi..." />
+                            <input @bind="MediaDetail.Tags" class="w-full bg-black border border-pink-800 rounded p-2 text-pink-300 focus:border-pink-500 outline-none mb-2" placeholder="Action, Sci-Fi..." />
+                            
+                            <div class="flex flex-wrap gap-1">
+                                @foreach(var tag in suggestedTags)
+                                {
+                                    <button @onclick="() => ToggleTag(tag)" class="text-[10px] px-2 py-1 rounded border border-gray-700 hover:border-pink-500 hover:text-white transition @(IsTagSelected(tag) ? "bg-pink-900 text-white" : "bg-black text-gray-400")">
+                                        @tag
+                                    </button>
+                                }
+                            </div>
                         </div>
                     </div>
                 }
@@ -123,10 +145,18 @@
                     <textarea @bind="Item.Description" rows="3" class="w-full bg-black border border-gray-700 rounded p-2 text-white focus:border-blue-500 outline-none"></textarea>
                 </div>
 
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                        <label class="block text-xs font-bold text-gray-500 mb-1">IMAGE URL</label>
-                        <input @bind="Item.ImgUrl" class="w-full bg-black border border-gray-700 rounded p-2 text-white focus:border-blue-500 outline-none" placeholder="https://..." />
+                        <label class="block text-xs font-bold text-gray-500 mb-1">IMAGE URL / UPLOAD</label>
+                        <div class="flex gap-2 mb-2">
+                            <input @bind="Item.ImgUrl" class="w-full bg-black border border-gray-700 rounded p-2 text-white focus:border-blue-500 outline-none text-xs" placeholder="https://..." />
+                            <label class="cursor-pointer bg-gray-700 hover:bg-gray-600 text-white px-2 py-2 rounded flex items-center justify-center">
+                                📂 <InputFile OnChange="@(e => UploadImage(e, url => Item.ImgUrl = url))" class="hidden" />
+                            </label>
+                        </div>
+                        @if(!string.IsNullOrEmpty(Item.ImgUrl)) {
+                            <img src="@Item.ImgUrl" class="w-[100px] h-[100px] object-cover border border-gray-600 rounded bg-black" />
+                        }
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-gray-500 mb-1">LINK URL</label>
@@ -139,10 +169,21 @@
                     
                     @foreach(var note in Notes)
                     {
-                        <div class="flex gap-2 mb-2">
-                            <input @bind="note.Content" class="flex-1 bg-black border border-gray-700 rounded p-1 text-sm text-white" placeholder="Note text..." />
-                            <input @bind="note.LinkUrl" class="w-1/3 bg-black border border-gray-700 rounded p-1 text-sm text-gray-400" placeholder="Link..." />
-                            <button @onclick="() => Notes.Remove(note)" class="text-red-500 hover:text-red-400 font-bold px-2">×</button>
+                        <div class="bg-gray-800/30 p-2 rounded mb-2 border border-gray-700">
+                            <div class="flex gap-2 mb-2">
+                                <input @bind="note.Content" class="flex-1 bg-black border border-gray-700 rounded p-1 text-sm text-white" placeholder="Note text..." />
+                                <input @bind="note.LinkUrl" class="w-1/4 bg-black border border-gray-700 rounded p-1 text-sm text-gray-400" placeholder="Link..." />
+                                <button @onclick="() => Notes.Remove(note)" class="text-red-500 hover:text-red-400 font-bold px-2">×</button>
+                            </div>
+                            <div class="flex gap-2 items-center">
+                                <input @bind="note.ImgUrl" class="flex-1 bg-black border border-gray-700 rounded p-1 text-xs text-gray-500" placeholder="Image URL..." />
+                                <label class="cursor-pointer bg-gray-700 hover:bg-gray-600 text-white px-2 py-1 rounded text-xs">
+                                    Upload <InputFile OnChange="@(e => UploadImage(e, url => note.ImgUrl = url))" class="hidden" />
+                                </label>
+                                @if(!string.IsNullOrEmpty(note.ImgUrl)) {
+                                    <img src="@note.ImgUrl" class="w-8 h-8 object-cover border border-gray-600 rounded" />
+                                }
+                            </div>
                         </div>
                     }
                     <button @onclick="() => Notes.Add(new BulletItemNote())" class="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-white">+ Add Note</button>
@@ -169,12 +210,69 @@
     [Parameter] public BulletTaskDetail TaskDetail { get; set; } = new();
     [Parameter] public BulletMeetingDetail MeetingDetail { get; set; } = new();
     [Parameter] public BulletHabitDetail HabitDetail { get; set; } = new();
-    [Parameter] public BulletMediaDetail MediaDetail { get; set; } = new(); // NEW
+    [Parameter] public BulletMediaDetail MediaDetail { get; set; } = new(); 
     [Parameter] public List<BulletItemNote> Notes { get; set; } = new();
     
     [Parameter] public EventCallback OnSave { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
     [Parameter] public EventCallback OnDelete { get; set; }
+
+    private List<string> suggestedTags = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Item?.Type == "media")
+        {
+            // Default Rating to 6 if new
+            if (Item.Id == 0 && MediaDetail.Rating == 0) MediaDetail.Rating = 6;
+            
+            // Load tags
+            suggestedTags = await MediaService.GetTopTags(Item.UserId);
+        }
+    }
+
+    private bool IsTagSelected(string tag)
+    {
+        if (string.IsNullOrEmpty(MediaDetail.Tags)) return false;
+        var tags = MediaDetail.Tags.Split(',').Select(t => t.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return tags.Contains(tag);
+    }
+
+    private void ToggleTag(string tag)
+    {
+        var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrEmpty(MediaDetail.Tags))
+        {
+            foreach (var t in MediaDetail.Tags.Split(','))
+            {
+                var clean = t.Trim();
+                if (!string.IsNullOrEmpty(clean)) tags.Add(clean);
+            }
+        }
+
+        if (tags.Contains(tag)) tags.Remove(tag);
+        else tags.Add(tag);
+
+        MediaDetail.Tags = string.Join(", ", tags);
+    }
+
+    private async Task UploadImage(InputFileChangeEventArgs e, Action<string> onSuccess)
+    {
+        try 
+        {
+            var file = e.File;
+            // Max 5MB
+            using var stream = file.OpenReadStream(5 * 1024 * 1024); 
+            using var ms = new System.IO.MemoryStream();
+            await stream.CopyToAsync(ms);
+            var url = await BaseService.SaveImageAsync(ms.ToArray(), file.ContentType);
+            onSuccess(url);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Upload Error: {ex.Message}");
+        }
+    }
 
     private async Task Save() => await OnSave.InvokeAsync();
     private async Task Cancel() => await OnCancel.InvokeAsync();

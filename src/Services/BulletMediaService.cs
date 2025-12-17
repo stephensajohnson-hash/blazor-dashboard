@@ -44,6 +44,32 @@ public class BulletMediaService
         return items;
     }
 
+    // NEW: Get tags sorted by frequency
+    public async Task<List<string>> GetTopTags(int userId)
+    {
+        var allTagStrings = await _db.BulletMediaDetails
+            .Where(m => m.BulletItem.UserId == userId && !string.IsNullOrEmpty(m.Tags))
+            .Select(m => m.Tags)
+            .ToListAsync();
+
+        var tagCounts = new Dictionary<string, int>();
+
+        foreach (var tagStr in allTagStrings)
+        {
+            var split = tagStr.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var t in split)
+            {
+                var clean = t.Trim();
+                if (string.IsNullOrEmpty(clean)) continue;
+                
+                if (!tagCounts.ContainsKey(clean)) tagCounts[clean] = 0;
+                tagCounts[clean]++;
+            }
+        }
+
+        return tagCounts.OrderByDescending(x => x.Value).Select(x => x.Key).ToList();
+    }
+
     public async Task SaveMedia(MediaDTO dto)
     {
         BulletItem? item = null;
@@ -116,7 +142,6 @@ public class BulletMediaService
                     if (int.TryParse(GetStr("rating"), out int r)) detail.Rating = r;
                     if (int.TryParse(GetAny("year", "releaseYear"), out int y)) detail.ReleaseYear = y;
                     
-                    // Parse Tags array
                     if(el.TryGetProperty("tags", out var tagsEl) && tagsEl.ValueKind == JsonValueKind.Array)
                     {
                         var tList = new List<string>();
@@ -130,7 +155,6 @@ public class BulletMediaService
 
                     await _db.BulletMediaDetails.AddAsync(detail);
 
-                    // Notes
                     if (el.TryGetProperty("notes", out var notesElement) && notesElement.ValueKind == JsonValueKind.Array)
                     {
                         int order = 0;
