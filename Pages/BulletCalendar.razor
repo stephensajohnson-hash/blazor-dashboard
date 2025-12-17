@@ -87,7 +87,7 @@
                                         }
                                         else if (item.Type == "media")
                                         {
-                                            <MediaCard Item="item" OnClick="OpenEdit" OnDelete="DeleteTask" />
+                                            <MediaCard Item="item" OnClick="OpenMediaEdit" OnDelete="DeleteTask" />
                                         }
                                         else
                                         {
@@ -313,27 +313,26 @@
 
     private List<BulletTaskService.TaskDTO> GetItemsForColumn(DateTime d, string category)
     {
-        // 1. Get all items for this specific date
         var dayItems = loadedItems.Where(t => t.Date.Date == d.Date);
-
-        // 2. LOGIC FIX: Make "Personal" the Default/Catch-All Column
         if (category.Equals("personal", StringComparison.OrdinalIgnoreCase))
         {
-            // Return items that are explicitly "Personal" OR items that do NOT fit in the other two columns
             return dayItems.Where(t => 
                 !t.Category.Trim().Equals("work", StringComparison.OrdinalIgnoreCase) && 
                 !t.Category.Trim().Equals("health", StringComparison.OrdinalIgnoreCase)
             ).ToList();
         }
-
-        // 3. For "Work" and "Health", keep strict matching
         return dayItems.Where(t => t.Category.Trim().Equals(category.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
     }
 
     private List<BulletTaskService.TaskDTO> GetItemsForDate(DateTime d) => loadedItems.Where(t => t.Date.Date == d.Date).ToList();
 
     private BulletHabitService.HabitDTO GetHabit(int id) => loadedHabits.FirstOrDefault(h => h.Id == id) ?? new();
-    private BulletMediaService.MediaDTO GetMedia(int id) => loadedMedia.FirstOrDefault(m => m.Id == id) ?? new();
+    
+    // UPDATED: Now accepts generic TaskDTO to satisfy the callback
+    private void OpenMediaEdit(BulletTaskService.TaskDTO m) 
+    { 
+        editingItem = m; // Since 'm' is already a TaskDTO with MediaDetails populated from LoadData, we just assign it.
+    }
 
     private async Task ToggleComplete(BulletTaskService.TaskDTO t) { t.Detail.IsCompleted = !t.Detail.IsCompleted; await TaskService.ToggleComplete(t.Id, t.Detail.IsCompleted); }
     private async Task ToggleMeetingComplete(BulletTaskService.TaskDTO t) { if(t.MeetingDetail != null) { t.MeetingDetail.IsCompleted = !t.MeetingDetail.IsCompleted; await MeetingService.ToggleComplete(t.Id, t.MeetingDetail.IsCompleted); } }
@@ -386,7 +385,6 @@
     private void OpenEdit(BulletTaskService.TaskDTO t) { var json = JsonSerializer.Serialize(t); editingItem = JsonSerializer.Deserialize<BulletTaskService.TaskDTO>(json); if(editingItem != null) editingItem.Date = t.Date; }
     
     private void OpenHabitEdit(BulletHabitService.HabitDTO h) { editingItem = new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, Description = h.Description, ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId, Notes = h.Notes, HabitDetail = h.Detail, SortOrder = h.SortOrder }; }
-    private void OpenMediaEdit(BulletMediaService.MediaDTO m) { editingItem = new BulletTaskService.TaskDTO { Id = m.Id, UserId = m.UserId, Type = "media", Category = m.Category, Date = m.Date, Title = m.Title, Description = m.Description, ImgUrl = m.ImgUrl, LinkUrl = m.LinkUrl, OriginalStringId = m.OriginalStringId, Notes = m.Notes, MediaDetail = m.Detail, SortOrder = m.SortOrder }; }
 
     private async Task SaveItem() { 
         if(editingItem != null) {
