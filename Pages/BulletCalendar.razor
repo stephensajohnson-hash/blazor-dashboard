@@ -181,7 +181,6 @@
     
     private List<BulletTaskService.TaskDTO> loadedItems = new();
     private List<BulletHabitService.HabitDTO> loadedHabits = new(); 
-    
     private BulletTaskService.TaskDTO? editingItem;
     private DateTime weekStart => viewDate.AddDays(-1 * ((7 + (viewDate.DayOfWeek - DayOfWeek.Monday)) % 7)).Date;
     private int daysInMonth => DateTime.DaysInMonth(viewDate.Year, viewDate.Month);
@@ -217,7 +216,6 @@
         isLoading = true;
         StateHasChanged();
 
-        // Safe UTC dates for PostgreSQL
         DateTime start = DateTime.SpecifyKind(viewDate.Date, DateTimeKind.Utc);
         DateTime end = start.AddDays(1).AddSeconds(-1); 
 
@@ -259,8 +257,7 @@
                     Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category,
                     Date = h.Date, Title = h.Title, Description = h.Description,
                     ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId,
-                    HabitDetail = h.Detail, // POPULATE DETAIL
-                    Order = h.Order
+                    HabitDetail = h.Detail, Order = h.Order
                 });
             }
 
@@ -273,8 +270,8 @@
     private List<BulletTaskService.TaskDTO> GetSortedItems(List<BulletTaskService.TaskDTO> items)
     {
         return items
-            .OrderBy(t => t.Order) // Primary: Manual Order
-            .ThenBy(t => GetTypePriority(t.Type)) // Secondary: Habit > Meeting > Task
+            .OrderBy(t => t.Order) 
+            .ThenBy(t => GetTypePriority(t.Type)) 
             .ThenBy(t => t.MeetingDetail?.StartTime) 
             .ThenBy(t => t.Id) 
             .ToList();
@@ -299,7 +296,6 @@
     private async Task ToggleMeetingComplete(BulletTaskService.TaskDTO t) { if(t.MeetingDetail != null) { t.MeetingDetail.IsCompleted = !t.MeetingDetail.IsCompleted; await MeetingService.ToggleComplete(t.Id, t.MeetingDetail.IsCompleted); } }
     private async Task SaveHabitDirectly(BulletHabitService.HabitDTO h) { await HabitService.SaveHabit(h); }
 
-    // --- REORDERING ---
     private async Task MoveItemUp(int id) => await ReorderItem(id, -1);
     private async Task MoveItemDown(int id) => await ReorderItem(id, 1);
 
@@ -345,17 +341,15 @@
     private string GetHeaderDate() { if(currentView == "day") return $"{viewDate:dddd, MMMM} {viewDate.Day}, {viewDate:yyyy}"; return currentView == "week" ? $"Week of {weekStart:MMM d}" : viewDate.ToString("MMMM yyyy"); }
     private void OpenEditor(string category, string type, DateTime date) { editingItem = new BulletTaskService.TaskDTO { UserId = userId, Category = category, Type = type, Date = date }; }
     private void OpenEdit(BulletTaskService.TaskDTO t) { var json = JsonSerializer.Serialize(t); editingItem = JsonSerializer.Deserialize<BulletTaskService.TaskDTO>(json); if(editingItem != null) editingItem.Date = t.Date; }
-    private void OpenHabitEdit(BulletHabitService.HabitDTO h) { editingItem = new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, Description = h.Description, ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId, Notes = h.Notes, HabitDetail = h.Detail }; }
-    
+    private void OpenHabitEdit(BulletHabitService.HabitDTO h) { editingItem = new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, Description = h.Description, ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId, Notes = h.Notes, HabitDetail = h.Detail, Order = h.Order }; }
     private async Task SaveItem() { 
         if(editingItem != null) {
-            if (editingItem.Type == "meeting") { var m = new BulletMeetingService.MeetingDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "meeting", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.MeetingDetail, Notes = editingItem.Notes }; await MeetingService.SaveMeeting(m); }
-            else if (editingItem.Type == "habit") { var h = new BulletHabitService.HabitDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "habit", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.HabitDetail, Notes = editingItem.Notes }; await HabitService.SaveHabit(h); }
+            if (editingItem.Type == "meeting") { var m = new BulletMeetingService.MeetingDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "meeting", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.MeetingDetail, Notes = editingItem.Notes, Order = editingItem.Order }; await MeetingService.SaveMeeting(m); }
+            else if (editingItem.Type == "habit") { var h = new BulletHabitService.HabitDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "habit", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.HabitDetail, Notes = editingItem.Notes, Order = editingItem.Order }; await HabitService.SaveHabit(h); }
             else { await TaskService.SaveTask(editingItem); }
             editingItem = null; await LoadData();
         }
     }
-    
     private async Task DeleteTask(int id) { if(await JS.InvokeAsync<bool>("confirm", "Delete this item?")) { await BaseService.DeleteItem(id); await LoadData(); } }
     private async Task DeleteCurrentTask() { if(editingItem != null && editingItem.Id > 0 && await JS.InvokeAsync<bool>("confirm", "Delete?")) { await BaseService.DeleteItem(editingItem.Id); editingItem = null; await LoadData(); } }
     private async Task Logout() { await JS.InvokeVoidAsync("localStorage.removeItem", "dashboard_session"); Nav.NavigateTo("/login", true); }

@@ -29,11 +29,16 @@ public class BulletBaseService
                 ""Description"" TEXT NOT NULL DEFAULT '',
                 ""ImgUrl"" TEXT NOT NULL DEFAULT '',
                 ""LinkUrl"" TEXT NOT NULL DEFAULT '',
-                ""OriginalStringId"" TEXT NOT NULL DEFAULT ''
+                ""OriginalStringId"" TEXT NOT NULL DEFAULT '',
+                ""Order"" INTEGER NOT NULL DEFAULT 0
             );
         ");
 
-        // 2. Common Notes Table
+        try {
+            await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""BulletItems"" ADD COLUMN IF NOT EXISTS ""Order"" INTEGER NOT NULL DEFAULT 0;");
+        } catch { }
+
+        // 2. Notes
         await _db.Database.ExecuteSqlRawAsync(@"
             CREATE TABLE IF NOT EXISTS ""BulletItemNotes"" (
                 ""Id"" SERIAL PRIMARY KEY,
@@ -42,8 +47,7 @@ public class BulletBaseService
                 ""ImgUrl"" TEXT NOT NULL DEFAULT '',
                 ""LinkUrl"" TEXT NOT NULL DEFAULT '',
                 ""Order"" INTEGER NOT NULL DEFAULT 0,
-                CONSTRAINT ""FK_BulletItemNotes_BulletItems"" 
-                    FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
+                CONSTRAINT ""FK_BulletItemNotes_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
             );
         ");
 
@@ -57,8 +61,7 @@ public class BulletBaseService
                 ""TicketNumber"" TEXT NOT NULL DEFAULT '',
                 ""TicketUrl"" TEXT NOT NULL DEFAULT '',
                 ""DueDate"" TIMESTAMP NULL,
-                CONSTRAINT ""FK_BulletTaskDetails_BulletItems"" 
-                    FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
+                CONSTRAINT ""FK_BulletTaskDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
             );
         ");
 
@@ -70,31 +73,24 @@ public class BulletBaseService
                 ""DurationMinutes"" INTEGER NOT NULL DEFAULT 0,
                 ""ActualDurationMinutes"" INTEGER NOT NULL DEFAULT 0,
                 ""IsCompleted"" BOOLEAN NOT NULL DEFAULT FALSE,
-                CONSTRAINT ""FK_BulletMeetingDetails_BulletItems"" 
-                    FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
+                CONSTRAINT ""FK_BulletMeetingDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
             );
         ");
 
-        // 5. Habit Details (Ensure Table Exists)
+        // 5. Habit Details
         await _db.Database.ExecuteSqlRawAsync(@"
             CREATE TABLE IF NOT EXISTS ""BulletHabitDetails"" (
                 ""BulletItemId"" INTEGER NOT NULL PRIMARY KEY,
                 ""StreakCount"" INTEGER NOT NULL DEFAULT 0,
                 ""Status"" TEXT NOT NULL DEFAULT 'Active',
                 ""IsCompleted"" BOOLEAN NOT NULL DEFAULT FALSE,
-                CONSTRAINT ""FK_BulletHabitDetails_BulletItems"" 
-                    FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
+                CONSTRAINT ""FK_BulletHabitDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
             );
         ");
 
-        // PATCH: Add Order column if missing
         try {
-            await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""BulletItems"" ADD COLUMN IF NOT EXISTS ""Order"" INTEGER NOT NULL DEFAULT 0;");
+            await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""BulletHabitDetails"" ADD COLUMN IF NOT EXISTS ""IsCompleted"" BOOLEAN NOT NULL DEFAULT FALSE;");
         } catch { }
-        catch 
-        { 
-            // Ignore errors if column exists or DB doesn't support 'IF NOT EXISTS'
-        }
     }
 
     public async Task DeleteItem(int id)
@@ -106,8 +102,7 @@ public class BulletBaseService
             await _db.SaveChangesAsync();
         }
     }
-
-    // NEW: Batch Update Order
+    
     public async Task UpdateItemOrders(Dictionary<int, int> updates)
     {
         if (!updates.Any()) return;

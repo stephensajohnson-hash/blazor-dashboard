@@ -19,13 +19,11 @@ public class BulletTaskService
     {
         public BulletTaskDetail Detail { get; set; } = new();
         public BulletMeetingDetail MeetingDetail { get; set; } = new();
-        
-        // --- THIS PROPERTY IS CRITICAL FOR HABIT PILLS ---
         public BulletHabitDetail HabitDetail { get; set; } = new(); 
-        
         public List<BulletItemNote> Notes { get; set; } = new();
         
-        // Add Order if not in base, but it is in base BulletItem now
+        // Explicitly shadowing Order to ensure accessibility and avoid "method group" confusion
+        public new int Order { get; set; } 
     }
 
     public async Task<List<TaskDTO>> GetTasksForRange(int userId, DateTime start, DateTime end)
@@ -40,7 +38,7 @@ public class BulletTaskService
                                Id = baseItem.Id, UserId = baseItem.UserId, Type = baseItem.Type, Category = baseItem.Category,
                                Date = baseItem.Date, Title = baseItem.Title, Description = baseItem.Description, 
                                ImgUrl = baseItem.ImgUrl, LinkUrl = baseItem.LinkUrl, OriginalStringId = baseItem.OriginalStringId,
-                               Order = baseItem.Order,
+                               Order = baseItem.Order, // Explicit mapping
                                Detail = detail
                            }).ToListAsync();
 
@@ -97,6 +95,5 @@ public class BulletTaskService
         }
     }
     
-    // Legacy Import shim
     public async Task<int> ImportFromOldJson(int userId, string jsonContent) { return 0; }
 }
