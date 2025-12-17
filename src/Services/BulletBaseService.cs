@@ -115,6 +115,16 @@ public class BulletBaseService
                 CONSTRAINT ""FK_BulletBirthdayDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
             );
         ");
+
+        // 9. NEW: Anniversary Details
+        await _db.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS ""BulletAnniversaryDetails"" (
+                ""BulletItemId"" INTEGER NOT NULL PRIMARY KEY,
+                ""AnniversaryType"" TEXT NOT NULL DEFAULT 'Other',
+                ""FirstYear"" INTEGER NULL,
+                CONSTRAINT ""FK_BulletAnniversaryDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
+            );
+        ");
     }
 
     public async Task DeleteItem(int id)
@@ -152,8 +162,6 @@ public class BulletBaseService
         };
         await _db.StoredImages.AddAsync(img);
         await _db.SaveChangesAsync();
-        
-        // This must match the MapGet route in Program.cs
         return $"/db-images/{img.Id}";
     }
 }

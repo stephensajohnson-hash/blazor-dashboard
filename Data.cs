@@ -12,7 +12,6 @@ public class AppDbContext : DbContext
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
-    // ... (Keep existing DbSets) ...
     public DbSet<User> Users { get; set; }
     public DbSet<LinkGroup> LinkGroups { get; set; }
     public DbSet<Link> Links { get; set; }
@@ -33,9 +32,10 @@ public class AppDbContext : DbContext
     public DbSet<BulletHabitDetail> BulletHabitDetails { get; set; }
     public DbSet<BulletMediaDetail> BulletMediaDetails { get; set; }
     public DbSet<BulletHolidayDetail> BulletHolidayDetails { get; set; }
-    
-    // NEW: Birthday
     public DbSet<BulletBirthdayDetail> BulletBirthdayDetails { get; set; }
+    
+    // NEW: Anniversary
+    public DbSet<BulletAnniversaryDetail> BulletAnniversaryDetails { get; set; }
 }
 
 // ... (Keep PasswordHelper, BulletItem, BulletItemNote, etc.) ...
@@ -128,13 +128,22 @@ public class BulletHolidayDetail
     public bool IsWorkHoliday { get; set; } = false;
 }
 
-// NEW: Birthday Details
 public class BulletBirthdayDetail
 {
     [Key, ForeignKey("BulletItem")]
     public int BulletItemId { get; set; }
     public virtual BulletItem BulletItem { get; set; } = null!;
-    public int? DOB_Year { get; set; } // Nullable, as user might not know the year
+    public int? DOB_Year { get; set; }
+}
+
+// NEW: Anniversary Details
+public class BulletAnniversaryDetail
+{
+    [Key, ForeignKey("BulletItem")]
+    public int BulletItemId { get; set; }
+    public virtual BulletItem BulletItem { get; set; } = null!;
+    public string AnniversaryType { get; set; } = "Other"; // Wedding, Death, Other
+    public int? FirstYear { get; set; }
 }
 
 // ... (Keep User, StoredImage, Recipe classes, LinkGroup, Link, Countdown, Stock, Feed, ViewConfig) ...

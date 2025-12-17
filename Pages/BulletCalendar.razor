@@ -16,6 +16,7 @@
 @inject BulletMediaService MediaService
 @inject BulletHolidayService HolidayService
 @inject BulletBirthdayService BirthdayService
+@inject BulletAnniversaryService AnniversaryService
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
@@ -84,6 +85,7 @@
                                         else if (item.Type == "media") { <MediaCard Item="item" OnClick="OpenMediaEdit" OnDelete="DeleteTask" /> }
                                         else if (item.Type == "holiday") { <HolidayCard Item="item" OnClick="OpenHolidayEdit" OnDelete="DeleteTask" /> }
                                         else if (item.Type == "birthday") { <BirthdayCard Item="item" OnClick="OpenBirthdayEdit" OnDelete="DeleteTask" /> }
+                                        else if (item.Type == "anniversary") { <AnniversaryCard Item="item" OnClick="OpenAnniversaryEdit" OnDelete="DeleteTask" /> }
                                         else { <TaskCard Item="item" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteTask" /> }
                                     </div>
                                 }
@@ -111,6 +113,7 @@
                                 else if (item.Type == "media") { <MediaPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" /> }
                                 else if (item.Type == "holiday") { <HolidayPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" /> }
                                 else if (item.Type == "birthday") { <BirthdayPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" /> }
+                                else if (item.Type == "anniversary") { <AnniversaryPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" /> }
                                 else { <TaskPill Task="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" /> }
                             }
                             <button @onclick='() => OpenEditor("personal", "task", d)' class="w-full py-2 text-gray-600 hover:text-gray-400 hover:bg-gray-700/50 rounded text-xs transition mt-2">＋</button>
@@ -138,6 +141,7 @@
                                     else if (item.Type == "media") { <MediaPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
                                     else if (item.Type == "holiday") { <HolidayPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
                                     else if (item.Type == "birthday") { <BirthdayPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
+                                    else if (item.Type == "anniversary") { <AnniversaryPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
                                     else { <TaskPill Task="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
                                 }
                             </div>
@@ -156,6 +160,7 @@
             MediaDetail="editingItem?.MediaDetail ?? new()" 
             HolidayDetail="editingItem?.HolidayDetail ?? new()"
             BirthdayDetail="editingItem?.BirthdayDetail ?? new()"
+            AnniversaryDetail="editingItem?.AnniversaryDetail ?? new()"
             Notes="editingItem?.Notes ?? new()"
             OnSave="SaveItem" 
             OnCancel="() => editingItem = null" 
@@ -176,6 +181,7 @@
     private List<BulletMediaService.MediaDTO> loadedMedia = new(); 
     private List<BulletHolidayService.HolidayDTO> loadedHolidays = new(); 
     private List<BulletBirthdayService.BirthdayDTO> loadedBirthdays = new();
+    private List<BulletAnniversaryService.AnniversaryDTO> loadedAnniversaries = new();
     
     private BulletTaskService.TaskDTO? editingItem;
     private DateTime weekStart => viewDate.AddDays(-1 * ((7 + (viewDate.DayOfWeek - DayOfWeek.Monday)) % 7)).Date;
@@ -232,22 +238,17 @@
 
             loadedMedia = await MediaService.GetMedia(userId);
             var relevantMedia = loadedMedia.Where(m => m.Date.Date >= start.Date && m.Date.Date <= end.Date).ToList();
-            foreach(var m in relevantMedia) { loadedItems.Add(new BulletTaskService.TaskDTO { Id = m.Id, UserId = m.UserId, Type = "media", Category = m.Category, Date = m.Date, Title = m.Title, Description = m.Description, ImgUrl = m.ImgUrl, LinkUrl = m.LinkUrl, OriginalStringId = m.OriginalStringId, MediaDetail = m.Detail, SortOrder = m.SortOrder, Notes = m.Notes }); } // Fixed Media Note Mapping
+            foreach(var m in relevantMedia) { loadedItems.Add(new BulletTaskService.TaskDTO { Id = m.Id, UserId = m.UserId, Type = "media", Category = m.Category, Date = m.Date, Title = m.Title, Description = m.Description, ImgUrl = m.ImgUrl, LinkUrl = m.LinkUrl, OriginalStringId = m.OriginalStringId, MediaDetail = m.Detail, SortOrder = m.SortOrder, Notes = m.Notes }); }
 
             loadedHolidays = await HolidayService.GetHolidaysForRange(userId, start, end);
             foreach(var h in loadedHolidays) { loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "holiday", Category = h.Category, Date = h.Date, Title = h.Title, Description = h.Description, ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId, HolidayDetail = h.Detail, Notes = h.Notes, SortOrder = h.SortOrder }); }
 
-            // BIRTHDAYS - Added Note Mapping Here
             loadedBirthdays = await BirthdayService.GetBirthdaysForRange(userId, start, end);
-            foreach(var b in loadedBirthdays) { 
-                loadedItems.Add(new BulletTaskService.TaskDTO { 
-                    Id = b.Id, UserId = b.UserId, Type = "birthday", Category = b.Category, Date = b.Date, Title = b.Title, Description = b.Description, 
-                    ImgUrl = b.ImgUrl, LinkUrl = b.LinkUrl, OriginalStringId = b.OriginalStringId, 
-                    BirthdayDetail = b.Detail, 
-                    Notes = b.Notes, // <--- THIS WAS MISSING
-                    SortOrder = b.SortOrder 
-                }); 
-            }
+            foreach(var b in loadedBirthdays) { loadedItems.Add(new BulletTaskService.TaskDTO { Id = b.Id, UserId = b.UserId, Type = "birthday", Category = b.Category, Date = b.Date, Title = b.Title, Description = b.Description, ImgUrl = b.ImgUrl, LinkUrl = b.LinkUrl, OriginalStringId = b.OriginalStringId, BirthdayDetail = b.Detail, Notes = b.Notes, SortOrder = b.SortOrder }); }
+
+            // ANNIVERSARIES
+            loadedAnniversaries = await AnniversaryService.GetAnniversariesForRange(userId, start, end);
+            foreach(var a in loadedAnniversaries) { loadedItems.Add(new BulletTaskService.TaskDTO { Id = a.Id, UserId = a.UserId, Type = "anniversary", Category = a.Category, Date = a.Date, Title = a.Title, Description = a.Description, ImgUrl = a.ImgUrl, LinkUrl = a.LinkUrl, OriginalStringId = a.OriginalStringId, AnniversaryDetail = a.Detail, Notes = a.Notes, SortOrder = a.SortOrder }); }
 
         } catch(Exception ex) { statusMessage = "Error: " + ex.Message; }
         
@@ -275,7 +276,7 @@
             .ToList();
     }
 
-    private int GetTypePriority(string type) => type switch { "birthday" => -1, "holiday" => 0, "habit" => 1, "meeting" => 2, "media" => 3, _ => 4 };
+    private int GetTypePriority(string type) => type switch { "birthday" => -1, "anniversary" => -1, "holiday" => 0, "habit" => 1, "meeting" => 2, "media" => 3, _ => 4 };
 
     private List<BulletTaskService.TaskDTO> GetItemsForColumn(DateTime d, string category)
     {
@@ -294,6 +295,7 @@
     private void OpenMediaEdit(BulletTaskService.TaskDTO m) { editingItem = m; }
     private void OpenHolidayEdit(BulletTaskService.TaskDTO h) { editingItem = h; }
     private void OpenBirthdayEdit(BulletTaskService.TaskDTO b) { editingItem = b; }
+    private void OpenAnniversaryEdit(BulletTaskService.TaskDTO a) { editingItem = a; }
 
     private async Task ToggleComplete(BulletTaskService.TaskDTO t) { t.Detail.IsCompleted = !t.Detail.IsCompleted; await TaskService.ToggleComplete(t.Id, t.Detail.IsCompleted); }
     private async Task ToggleMeetingComplete(BulletTaskService.TaskDTO t) { if(t.MeetingDetail != null) { t.MeetingDetail.IsCompleted = !t.MeetingDetail.IsCompleted; await MeetingService.ToggleComplete(t.Id, t.MeetingDetail.IsCompleted); } }
@@ -338,6 +340,7 @@
             else if (editingItem.Type == "media") { var m = new BulletMediaService.MediaDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "media", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.MediaDetail, Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; await MediaService.SaveMedia(m); }
             else if (editingItem.Type == "holiday") { var h = new BulletHolidayService.HolidayDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "holiday", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.HolidayDetail, Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; await HolidayService.SaveHoliday(h); }
             else if (editingItem.Type == "birthday") { var b = new BulletBirthdayService.BirthdayDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "birthday", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.BirthdayDetail, Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; await BirthdayService.SaveBirthday(b); }
+            else if (editingItem.Type == "anniversary") { var a = new BulletAnniversaryService.AnniversaryDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "anniversary", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.AnniversaryDetail, Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; await AnniversaryService.SaveAnniversary(a); }
             else { await TaskService.SaveTask(editingItem); }
             editingItem = null; await LoadData();
         }

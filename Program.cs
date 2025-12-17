@@ -40,6 +40,7 @@ builder.Services.AddScoped<BulletHabitService>();
 builder.Services.AddScoped<BulletMediaService>();
 builder.Services.AddScoped<BulletHolidayService>();
 builder.Services.AddScoped<BulletBirthdayService>();
+builder.Services.AddScoped<BulletAnniversaryService>();
 
 // Database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
