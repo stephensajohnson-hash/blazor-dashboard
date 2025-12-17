@@ -17,12 +17,13 @@ public class BulletTaskService
 
     public Task CreateTable() { return Task.CompletedTask; }
 
-    public class TaskDTO : BulletItem
-    {
-        public BulletTaskDetail Detail { get; set; } = new();
-        public BulletMeetingDetail MeetingDetail { get; set; } = new();
-        public List<BulletItemNote> Notes { get; set; } = new();
-    }
+public class TaskDTO : BulletItem
+{
+    public BulletTaskDetail Detail { get; set; } = new();
+    public BulletMeetingDetail MeetingDetail { get; set; } = new();
+    public BulletHabitDetail HabitDetail { get; set; } = new(); // <--- ADD THIS
+    public List<BulletItemNote> Notes { get; set; } = new();
+}
 
     public async Task<List<TaskDTO>> GetTasksForRange(int userId, DateTime start, DateTime end)
     {

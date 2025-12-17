@@ -4,18 +4,17 @@
 <div class="bg-gray-900 border border-gray-700 border-l-4 border-l-cyan-500 rounded-r-lg mb-3 relative group shadow-sm flex flex-col transition hover:border-cyan-400">
     
     <div class="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition z-30">
-        <button @onclick="HandleClick" class="p-1 rounded bg-gray-700 hover:bg-blue-600 text-gray-300 hover:text-white border border-gray-600 shadow-md">✏️</button>
-        <button @onclick="HandleDelete" class="p-1 rounded bg-gray-700 hover:bg-red-600 text-red-400 hover:text-white border border-gray-600 shadow-md">✕</button>
+        <button @onclick="HandleClick" @onclick:stopPropagation="true" class="p-1 rounded bg-gray-700 hover:bg-blue-600 text-gray-300 hover:text-white border border-gray-600 shadow-md">✏️</button>
+        <button @onclick="HandleDelete" @onclick:stopPropagation="true" class="p-1 rounded bg-gray-700 hover:bg-red-600 text-red-400 hover:text-white border border-gray-600 shadow-md">✕</button>
     </div>
 
     <div class="flex w-full">
-        
         @if(!string.IsNullOrEmpty(Item.ImgUrl))
         {
             <div class="relative bg-black shrink-0 border-r border-gray-700/50" style="width: @BulletViewConfig.ImgWidthDay;">
                 @if(!string.IsNullOrEmpty(Item.LinkUrl))
                 {
-                    <a href="@Item.LinkUrl" target="_blank" class="block w-full h-full hover:opacity-80 transition">
+                    <a href="@Item.LinkUrl" target="_blank" class="block w-full h-full hover:opacity-80 transition" @onclick:stopPropagation>
                         <img src="@Item.ImgUrl" class="w-full h-full object-cover opacity-90" />
                     </a>
                 }
@@ -28,15 +27,18 @@
 
         <div class="flex-1 flex items-start p-3 gap-3 min-w-0">
             
-            <div class="shrink-0 mt-0.5">
-                <input type="checkbox" checked="@Item.Detail.IsCompleted" @onchange="HandleToggle" class="w-4 h-4 rounded bg-gray-800 border-gray-600 cursor-pointer accent-cyan-500" />
+            <div class="shrink-0 flex flex-col items-center gap-1 mt-0.5" @onclick:stopPropagation="true">
+                <button @onclick="IncrementStreak" class="w-8 h-8 rounded-full bg-cyan-900/30 text-cyan-400 border border-cyan-700 flex items-center justify-center hover:bg-cyan-500 hover:text-white transition font-bold text-lg" title="Increment Streak">
+                    +
+                </button>
+                <div class="text-[10px] text-cyan-500 font-mono">Streak</div>
             </div>
 
             <div class="flex-1 min-w-0">
                 <h4 class="text-sm font-bold leading-tight text-white mb-1 @(Item.Detail.IsCompleted ? "line-through text-gray-500" : "")">
                     @if(!string.IsNullOrEmpty(Item.LinkUrl))
                     {
-                        <a href="@Item.LinkUrl" target="_blank" class="hover:text-cyan-400 hover:underline transition">@Item.Title</a>
+                        <a href="@Item.LinkUrl" target="_blank" class="hover:text-cyan-400 hover:underline transition" @onclick:stopPropagation>@Item.Title</a>
                     }
                     else
                     {
@@ -50,16 +52,18 @@
 
                 <div class="flex flex-wrap gap-2 items-center">
                     
-                    <div class="flex items-center bg-cyan-900/20 border border-cyan-800 rounded px-1">
-                        <span class="text-[10px] mr-1">🔥</span>
-                        <input type="number" value="@Item.Detail.StreakCount" 
-                               @onchange="UpdateStreak" 
-                               class="bg-transparent text-[10px] text-cyan-300 w-8 text-center focus:outline-none focus:bg-cyan-900/50" />
-                    </div>
+                    <span class="text-[10px] bg-cyan-900/20 text-cyan-300 border border-cyan-800 px-2 py-0.5 rounded font-mono inline-flex items-center">
+                        <span class="mr-1">🔥</span> @Item.Detail.StreakCount
+                    </span>
 
                     <span class="text-[10px] bg-gray-800 text-gray-400 border border-gray-700 px-2 py-0.5 rounded uppercase font-bold">
                         @Item.Detail.Status
                     </span>
+
+                    <div class="flex items-center gap-1 ml-auto cursor-pointer" @onclick:stopPropagation="true">
+                        <span class="text-[10px] text-gray-500 uppercase">Done</span>
+                        <input type="checkbox" checked="@Item.Detail.IsCompleted" @onchange="HandleToggle" class="w-4 h-4 rounded bg-gray-800 border-gray-600 cursor-pointer accent-cyan-500" />
+                    </div>
                 </div>
             </div>
         </div>
@@ -74,7 +78,7 @@
                         <img src="@note.ImgUrl" class="float-left w-8 h-8 object-cover rounded mr-2 border border-gray-700" /> 
                     }
                     @if(!string.IsNullOrEmpty(note.LinkUrl)) {
-                        <a href="@note.LinkUrl" target="_blank" class="text-blue-400 hover:underline">@note.Content</a>
+                        <a href="@note.LinkUrl" target="_blank" class="text-blue-400 hover:underline" @onclick:stopPropagation>@note.Content</a>
                     } else {
                         @note.Content
                     }
@@ -86,24 +90,20 @@
 
 @code {
     [Parameter] public BulletHabitService.HabitDTO Item { get; set; } = new();
-    
     [Parameter] public EventCallback<BulletHabitService.HabitDTO> OnClick { get; set; }
     [Parameter] public EventCallback<int> OnDelete { get; set; }
-    [Parameter] public EventCallback<BulletHabitService.HabitDTO> OnChange { get; set; } // Generic change callback
+    [Parameter] public EventCallback<BulletHabitService.HabitDTO> OnChange { get; set; } 
 
     private async Task HandleClick() => await OnClick.InvokeAsync(Item);
     private async Task HandleDelete() => await OnDelete.InvokeAsync(Item.Id);
 
     private async Task HandleToggle(ChangeEventArgs e) {
         Item.Detail.IsCompleted = (bool)(e.Value ?? false);
-        // Auto-increment streak logic could go here, but for now we let user manual control
         await OnChange.InvokeAsync(Item);
     }
 
-    private async Task UpdateStreak(ChangeEventArgs e) {
-        if(int.TryParse(e.Value?.ToString(), out int val)) {
-            Item.Detail.StreakCount = val;
-            await OnChange.InvokeAsync(Item);
-        }
+    private async Task IncrementStreak() {
+        Item.Detail.StreakCount++;
+        await OnChange.InvokeAsync(Item);
     }
 }
