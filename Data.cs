@@ -12,6 +12,7 @@ public class AppDbContext : DbContext
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
+    // ... (Keep Users, LinkGroups, Recipes, etc.) ...
     public DbSet<User> Users { get; set; }
     public DbSet<LinkGroup> LinkGroups { get; set; }
     public DbSet<Link> Links { get; set; }
@@ -24,13 +25,18 @@ public class AppDbContext : DbContext
     public DbSet<RecipeInstruction> RecipeInstructions { get; set; }
     public DbSet<RecipeCategory> RecipeCategories { get; set; }
     
+    // Bullet Calendar
     public DbSet<BulletItem> BulletItems { get; set; }
     public DbSet<BulletItemNote> BulletItemNotes { get; set; }
     public DbSet<BulletTaskDetail> BulletTaskDetails { get; set; }
     public DbSet<BulletMeetingDetail> BulletMeetingDetails { get; set; }
     public DbSet<BulletHabitDetail> BulletHabitDetails { get; set; }
+    
+    // NEW: Media
+    public DbSet<BulletMediaDetail> BulletMediaDetails { get; set; }
 }
 
+// ... (Keep PasswordHelper) ...
 public static class PasswordHelper 
 { 
     public static string HashPassword(string password) 
@@ -42,6 +48,7 @@ public static class PasswordHelper
     public static bool VerifyPassword(string password, string storedHash) => HashPassword(password) == storedHash; 
 }
 
+// ... (Keep BulletItem, BulletItemNote, BulletTaskDetail, BulletMeetingDetail, BulletHabitDetail) ...
 public class BulletItem
 {
     public int Id { get; set; }
@@ -56,7 +63,6 @@ public class BulletItem
     public string LinkUrl { get; set; } = "";
     public string OriginalStringId { get; set; } = "";
     
-    // RENAMED TO FIX BUILD ERROR
     [Column("Order")] 
     public int SortOrder { get; set; } = 0; 
 }
@@ -103,6 +109,19 @@ public class BulletHabitDetail
     public bool IsCompleted { get; set; } = false;
 }
 
+// NEW: Media Details
+public class BulletMediaDetail
+{
+    [Key, ForeignKey("BulletItem")]
+    public int BulletItemId { get; set; }
+    public virtual BulletItem BulletItem { get; set; } = null!;
+    
+    public int Rating { get; set; } = 0; // 1-10
+    public int ReleaseYear { get; set; } = 0;
+    public string Tags { get; set; } = ""; // Comma separated
+}
+
+// ... (Keep User, StoredImage, Recipe classes, LinkGroup, Link, Countdown, Stock, Feed, ViewConfig) ...
 public class User { public int Id { get; set; } public string Username { get; set; } = ""; public string PasswordHash { get; set; } = ""; public string ZipCode { get; set; } = "75482"; public string AvatarUrl { get; set; } = ""; public int Age { get; set; } = 30; public double HeightInches { get; set; } = 70; public string Gender { get; set; } = "Male"; public string ActivityLevel { get; set; } = "Sedentary"; }
 public class StoredImage { public int Id { get; set; } public byte[] Data { get; set; } = Array.Empty<byte>(); public string ContentType { get; set; } = "image/jpeg"; public string OriginalName { get; set; } = ""; public DateTime UploadedAt { get; set; } = DateTime.UtcNow; }
 public class Recipe { public int Id { get; set; } public int UserId { get; set; } public string Title { get; set; } = ""; public string Description { get; set; } = ""; public string Category { get; set; } = ""; public int Servings { get; set; } public string? ServingSize { get; set; } public string PrepTime { get; set; } = ""; public string CookTime { get; set; } = ""; public string? ImageUrl { get; set; } public int? ImageId { get; set; } public string SourceName { get; set; } = ""; public string SourceUrl { get; set; } = ""; public string TagsJson { get; set; } = "[]"; public List<RecipeIngredient> Ingredients { get; set; } = new(); public List<RecipeInstruction> Instructions { get; set; } = new(); }

@@ -20,6 +20,8 @@ public class BulletTaskService
         public BulletTaskDetail Detail { get; set; } = new();
         public BulletMeetingDetail MeetingDetail { get; set; } = new();
         public BulletHabitDetail HabitDetail { get; set; } = new(); 
+        public BulletMediaDetail MediaDetail { get; set; } = new(); // NEW
+        
         public List<BulletItemNote> Notes { get; set; } = new();
     }
 

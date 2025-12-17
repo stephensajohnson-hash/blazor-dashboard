@@ -13,6 +13,7 @@
 @inject BulletTaskService TaskService
 @inject BulletMeetingService MeetingService
 @inject BulletHabitService HabitService
+@inject BulletMediaService MediaService
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
@@ -84,6 +85,10 @@
                                         {
                                             <HabitCard Item="@(GetHabit(item.Id))" OnClick="OpenHabitEdit" OnDelete="DeleteTask" OnChange="SaveHabitDirectly" />
                                         }
+                                        else if (item.Type == "media")
+                                        {
+                                            <MediaCard Item="@(GetMedia(item.Id))" OnClick="OpenMediaEdit" OnDelete="DeleteTask" />
+                                        }
                                         else
                                         {
                                             <TaskCard Item="item" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteTask" />
@@ -116,6 +121,9 @@
                                 else if (item.Type == "habit") {
                                     <HabitPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" />
                                 }
+                                else if (item.Type == "media") {
+                                    <MediaPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" />
+                                }
                                 else {
                                     <TaskPill Task="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" />
                                 }
@@ -147,6 +155,9 @@
                                     else if (item.Type == "habit") {
                                         <HabitPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" />
                                     }
+                                    else if (item.Type == "media") {
+                                        <MediaPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" />
+                                    }
                                     else {
                                         <TaskPill Task="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" />
                                     }
@@ -164,6 +175,7 @@
             TaskDetail="editingItem?.Detail ?? new()" 
             MeetingDetail="editingItem?.MeetingDetail ?? new()" 
             HabitDetail="editingItem?.HabitDetail ?? new()" 
+            MediaDetail="editingItem?.MediaDetail ?? new()" 
             Notes="editingItem?.Notes ?? new()"
             OnSave="SaveItem" 
             OnCancel="() => editingItem = null" 
@@ -181,6 +193,8 @@
     
     private List<BulletTaskService.TaskDTO> loadedItems = new();
     private List<BulletHabitService.HabitDTO> loadedHabits = new(); 
+    private List<BulletMediaService.MediaDTO> loadedMedia = new(); 
+    
     private BulletTaskService.TaskDTO? editingItem;
     private DateTime weekStart => viewDate.AddDays(-1 * ((7 + (viewDate.DayOfWeek - DayOfWeek.Monday)) % 7)).Date;
     private int daysInMonth => DateTime.DaysInMonth(viewDate.Year, viewDate.Month);
@@ -249,7 +263,6 @@
 
             loadedHabits = await HabitService.GetHabits(userId);
             var relevantHabits = loadedHabits.Where(h => h.Date.Date >= start.Date && h.Date.Date <= end.Date).ToList();
-            
             foreach(var h in relevantHabits)
             {
                 loadedItems.Add(new BulletTaskService.TaskDTO
@@ -258,6 +271,20 @@
                     Date = h.Date, Title = h.Title, Description = h.Description,
                     ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId,
                     HabitDetail = h.Detail, SortOrder = h.SortOrder
+                });
+            }
+
+            // MEDIA
+            loadedMedia = await MediaService.GetMedia(userId);
+            var relevantMedia = loadedMedia.Where(m => m.Date.Date >= start.Date && m.Date.Date <= end.Date).ToList();
+            foreach(var m in relevantMedia)
+            {
+                loadedItems.Add(new BulletTaskService.TaskDTO
+                {
+                    Id = m.Id, UserId = m.UserId, Type = "media", Category = m.Category,
+                    Date = m.Date, Title = m.Title, Description = m.Description,
+                    ImgUrl = m.ImgUrl, LinkUrl = m.LinkUrl, OriginalStringId = m.OriginalStringId,
+                    MediaDetail = m.Detail, SortOrder = m.SortOrder
                 });
             }
 
@@ -280,17 +307,15 @@
     private int GetTypePriority(string type) => type switch {
         "habit" => 1,
         "meeting" => 2,
-        _ => 3
+        "media" => 3,
+        _ => 4
     };
 
-    private List<BulletTaskService.TaskDTO> GetItemsForColumn(DateTime d, string category)
-    {
-        return loadedItems.Where(t => t.Date.Date == d.Date && t.Category.Trim().Equals(category.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
-    }
-
+    private List<BulletTaskService.TaskDTO> GetItemsForColumn(DateTime d, string category) => loadedItems.Where(t => t.Date.Date == d.Date && t.Category.Trim().Equals(category.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
     private List<BulletTaskService.TaskDTO> GetItemsForDate(DateTime d) => loadedItems.Where(t => t.Date.Date == d.Date).ToList();
 
     private BulletHabitService.HabitDTO GetHabit(int id) => loadedHabits.FirstOrDefault(h => h.Id == id) ?? new();
+    private BulletMediaService.MediaDTO GetMedia(int id) => loadedMedia.FirstOrDefault(m => m.Id == id) ?? new();
 
     private async Task ToggleComplete(BulletTaskService.TaskDTO t) { t.Detail.IsCompleted = !t.Detail.IsCompleted; await TaskService.ToggleComplete(t.Id, t.Detail.IsCompleted); }
     private async Task ToggleMeetingComplete(BulletTaskService.TaskDTO t) { if(t.MeetingDetail != null) { t.MeetingDetail.IsCompleted = !t.MeetingDetail.IsCompleted; await MeetingService.ToggleComplete(t.Id, t.MeetingDetail.IsCompleted); } }
@@ -341,11 +366,15 @@
     private string GetHeaderDate() { if(currentView == "day") return $"{viewDate:dddd, MMMM} {viewDate.Day}, {viewDate:yyyy}"; return currentView == "week" ? $"Week of {weekStart:MMM d}" : viewDate.ToString("MMMM yyyy"); }
     private void OpenEditor(string category, string type, DateTime date) { editingItem = new BulletTaskService.TaskDTO { UserId = userId, Category = category, Type = type, Date = date }; }
     private void OpenEdit(BulletTaskService.TaskDTO t) { var json = JsonSerializer.Serialize(t); editingItem = JsonSerializer.Deserialize<BulletTaskService.TaskDTO>(json); if(editingItem != null) editingItem.Date = t.Date; }
+    
     private void OpenHabitEdit(BulletHabitService.HabitDTO h) { editingItem = new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, Description = h.Description, ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId, Notes = h.Notes, HabitDetail = h.Detail, SortOrder = h.SortOrder }; }
+    private void OpenMediaEdit(BulletMediaService.MediaDTO m) { editingItem = new BulletTaskService.TaskDTO { Id = m.Id, UserId = m.UserId, Type = "media", Category = m.Category, Date = m.Date, Title = m.Title, Description = m.Description, ImgUrl = m.ImgUrl, LinkUrl = m.LinkUrl, OriginalStringId = m.OriginalStringId, Notes = m.Notes, MediaDetail = m.Detail, SortOrder = m.SortOrder }; }
+
     private async Task SaveItem() { 
         if(editingItem != null) {
             if (editingItem.Type == "meeting") { var m = new BulletMeetingService.MeetingDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "meeting", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.MeetingDetail, Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; await MeetingService.SaveMeeting(m); }
             else if (editingItem.Type == "habit") { var h = new BulletHabitService.HabitDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "habit", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.HabitDetail, Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; await HabitService.SaveHabit(h); }
+            else if (editingItem.Type == "media") { var m = new BulletMediaService.MediaDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "media", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.MediaDetail, Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; await MediaService.SaveMedia(m); }
             else { await TaskService.SaveTask(editingItem); }
             editingItem = null; await LoadData();
         }

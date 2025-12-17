@@ -34,9 +34,7 @@ public class BulletBaseService
             );
         ");
 
-        try {
-            await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""BulletItems"" ADD COLUMN IF NOT EXISTS ""Order"" INTEGER NOT NULL DEFAULT 0;");
-        } catch { }
+        try { await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""BulletItems"" ADD COLUMN IF NOT EXISTS ""Order"" INTEGER NOT NULL DEFAULT 0;"); } catch { }
 
         // 2. Notes
         await _db.Database.ExecuteSqlRawAsync(@"
@@ -87,10 +85,18 @@ public class BulletBaseService
                 CONSTRAINT ""FK_BulletHabitDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
             );
         ");
+        try { await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""BulletHabitDetails"" ADD COLUMN IF NOT EXISTS ""IsCompleted"" BOOLEAN NOT NULL DEFAULT FALSE;"); } catch { }
 
-        try {
-            await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""BulletHabitDetails"" ADD COLUMN IF NOT EXISTS ""IsCompleted"" BOOLEAN NOT NULL DEFAULT FALSE;");
-        } catch { }
+        // 6. NEW: Media Details
+        await _db.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS ""BulletMediaDetails"" (
+                ""BulletItemId"" INTEGER NOT NULL PRIMARY KEY,
+                ""Rating"" INTEGER NOT NULL DEFAULT 0,
+                ""ReleaseYear"" INTEGER NOT NULL DEFAULT 0,
+                ""Tags"" TEXT NOT NULL DEFAULT '',
+                CONSTRAINT ""FK_BulletMediaDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
+            );
+        ");
     }
 
     public async Task DeleteItem(int id)
@@ -106,17 +112,9 @@ public class BulletBaseService
     public async Task UpdateItemOrders(Dictionary<int, int> updates)
     {
         if (!updates.Any()) return;
-        
         var ids = updates.Keys.ToList();
         var items = await _db.BulletItems.Where(x => ids.Contains(x.Id)).ToListAsync();
-        
-        foreach(var item in items)
-        {
-            if(updates.TryGetValue(item.Id, out int newOrder))
-            {
-                item.SortOrder = newOrder;
-            }
-        }
+        foreach(var item in items) { if(updates.TryGetValue(item.Id, out int newOrder)) item.SortOrder = newOrder; }
         await _db.SaveChangesAsync();
     }
 
@@ -132,15 +130,10 @@ public class BulletBaseService
     {
         var img = new StoredImage
         {
-            Data = data,
-            ContentType = contentType,
-            UploadedAt = DateTime.UtcNow,
-            OriginalName = "upload.jpg"
+            Data = data, ContentType = contentType, UploadedAt = DateTime.UtcNow, OriginalName = "upload.jpg"
         };
-
         await _db.StoredImages.AddAsync(img);
         await _db.SaveChangesAsync();
-
         return $"/images/db/{img.Id}";
     }
 }
