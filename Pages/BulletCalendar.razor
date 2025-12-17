@@ -19,21 +19,6 @@
 
 <div class="min-h-screen bg-gray-900 text-white overflow-x-hidden pb-40 relative">
     
-    <div class="bg-black border-b border-yellow-500 p-2 text-xs font-mono text-yellow-400 overflow-x-auto">
-        <strong>DEBUG LOG:</strong> Loaded Items: @loadedItems.Count | 
-        Tasks: @loadedItems.Count(x => x.Type == "task") | 
-        Meetings: @loadedItems.Count(x => x.Type == "meeting") | 
-        Habits: @loadedItems.Count(x => x.Type == "habit")
-        <br/>
-        <strong>Sample Habits:</strong>
-        @foreach(var h in loadedItems.Where(x => x.Type == "habit").Take(3))
-        {
-            <span class="mr-3 border border-yellow-800 px-1">
-                [@h.Date.ToString("MM/dd")] @h.Title (Streak: @(h.HabitDetail?.StreakCount ?? -1))
-            </span>
-        }
-    </div>
-
     <div class="p-6 pb-2 mb-2 border-b border-gray-800 flex items-center justify-between shrink-0 sticky top-0 bg-gray-900 z-40">
         <div class="flex items-center gap-6 bg-gray-800/50 px-6 py-2 rounded-full border border-gray-700/50 backdrop-blur-md">
             <a href="/" class="text-2xl hover:scale-125 transition grayscale hover:grayscale-0" title="Home">🏠</a>
@@ -87,7 +72,7 @@
                             }
                             else
                             {
-                                var colItems = GetItemsForColumn(viewDate, cat.Item2);
+                                var colItems = GetSortedItems(GetItemsForColumn(viewDate, cat.Item2));
                                 @foreach(var item in colItems) 
                                 { 
                                     <div @key="item.Id">
@@ -124,15 +109,15 @@
                             <div class="text-lg font-bold @(isToday ? "text-blue-400" : "text-white")">@d.Day</div>
                         </div>
                         <div class="flex-1 overflow-y-auto p-1 space-y-1 scrollbar-hide">
-                            @foreach(var item in GetItemsForDate(d)) { 
+                            @foreach(var item in GetSortedItems(GetItemsForDate(d))) { 
                                 @if(item.Type == "meeting") {
-                                    <MeetingPill Item="item" OnClick="OpenEdit" ImageWidth="@BulletViewConfig.ImgWidthWeek" />
+                                    <MeetingPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" />
                                 }
                                 else if (item.Type == "habit") {
-                                    <HabitPill Item="item" OnClick="OpenEdit" ImageWidth="@BulletViewConfig.ImgWidthWeek" />
+                                    <HabitPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" />
                                 }
                                 else {
-                                    <TaskPill Task="item" OnClick="OpenEdit" ImageWidth="@BulletViewConfig.ImgWidthWeek" />
+                                    <TaskPill Task="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" />
                                 }
                             }
                             <button @onclick='() => OpenEditor("personal", "task", d)' class="w-full py-2 text-gray-600 hover:text-gray-400 hover:bg-gray-700/50 rounded text-xs transition mt-2">＋</button>
@@ -155,15 +140,15 @@
                         <div class="relative flex flex-col rounded-lg border overflow-hidden p-1 hover:bg-gray-800 transition cursor-pointer @(isToday ? "border-blue-500 bg-gray-800/50" : "border-gray-700 bg-gray-900")" @onclick="() => GoToDate(currentDay)">
                             <div class="text-right text-xs font-bold text-gray-500 mb-1">@d</div>
                             <div class="flex-1 overflow-y-auto space-y-1 scrollbar-hide max-h-24">
-                                @foreach(var item in GetItemsForDate(currentDay)) { 
+                                @foreach(var item in GetSortedItems(GetItemsForDate(currentDay))) { 
                                     @if(item.Type == "meeting") {
-                                        <MeetingPill Item="item" OnClick="OpenEdit" ImageWidth="@BulletViewConfig.ImgWidthMonth" />
+                                        <MeetingPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" />
                                     }
                                     else if (item.Type == "habit") {
-                                        <HabitPill Item="item" OnClick="OpenEdit" ImageWidth="@BulletViewConfig.ImgWidthMonth" />
+                                        <HabitPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" />
                                     }
                                     else {
-                                        <TaskPill Task="item" OnClick="OpenEdit" ImageWidth="@BulletViewConfig.ImgWidthMonth" />
+                                        <TaskPill Task="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" />
                                     }
                                 }
                             </div>
@@ -185,6 +170,7 @@
             OnDelete="DeleteCurrentTask" />
 
 @code {
+    // ... (Keep existing fields: currentUser, userId, viewDate, etc.)
     private User? currentUser;
     private int userId = 0;
     private DateTime viewDate = DateTime.UtcNow;
@@ -193,11 +179,8 @@
     private bool showUserMenu = false;
     private bool isLoading = true;
     private string statusMessage = "";
-    
-    // Unified list for display logic
     private List<BulletTaskService.TaskDTO> loadedItems = new();
     private List<BulletHabitService.HabitDTO> loadedHabits = new(); 
-    
     private BulletTaskService.TaskDTO? editingItem;
     private DateTime weekStart => viewDate.AddDays(-1 * ((7 + (viewDate.DayOfWeek - DayOfWeek.Monday)) % 7)).Date;
     private int daysInMonth => DateTime.DaysInMonth(viewDate.Year, viewDate.Month);
@@ -233,7 +216,6 @@
         isLoading = true;
         StateHasChanged();
 
-        // --- FIXED: FORCE UTC KIND ---
         DateTime start = DateTime.SpecifyKind(viewDate.Date, DateTimeKind.Utc);
         DateTime end = start.AddDays(1).AddSeconds(-1); 
 
@@ -247,15 +229,12 @@
             start = DateTime.SpecifyKind(new DateTime(viewDate.Year, viewDate.Month, 1), DateTimeKind.Utc);
             end = start.AddMonths(1).AddSeconds(-1); 
         }
-        // -----------------------------
 
         try {
-            // 1. Load Tasks (Now using safe UTC dates)
-            loadedItems.Clear();
+            loadedItems.Clear(); 
             var tasks = await TaskService.GetTasksForRange(userId, start, end);
             loadedItems.AddRange(tasks);
             
-            // 2. Load Meetings
             var meetings = await MeetingService.GetMeetingsForRange(userId, start, end);
             foreach (var m in meetings)
             {
@@ -264,16 +243,13 @@
                     Id = m.Id, UserId = m.UserId, Type = "meeting", Category = m.Category,
                     Date = m.Date, Title = m.Title, Description = m.Description,
                     ImgUrl = m.ImgUrl, LinkUrl = m.LinkUrl, OriginalStringId = m.OriginalStringId,
-                    MeetingDetail = m.Detail, 
-                    Notes = m.Notes
+                    MeetingDetail = m.Detail, Notes = m.Notes, Order = m.Order // Includes Order
                 });
             }
 
-            // 3. Load Habits (Get ALL relevant for this user, then filter by date)
             loadedHabits = await HabitService.GetHabits(userId);
             var relevantHabits = loadedHabits.Where(h => h.Date.Date >= start.Date && h.Date.Date <= end.Date).ToList();
             
-            // Inside LoadData() ...
             foreach(var h in relevantHabits)
             {
                 loadedItems.Add(new BulletTaskService.TaskDTO
@@ -281,159 +257,112 @@
                     Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category,
                     Date = h.Date, Title = h.Title, Description = h.Description,
                     ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId,
-                    
-                    // --- THIS IS CRITICAL ---
-                    HabitDetail = h.Detail 
+                    HabitDetail = h.Detail, Order = h.Order // Includes Order
                 });
             }
 
-        } catch(Exception ex) { 
-            statusMessage = "Error: " + ex.Message; 
-        }
+        } catch(Exception ex) { statusMessage = "Error: " + ex.Message; }
         
         isLoading = false;
         StateHasChanged();
     }
 
+    // --- SORTING LOGIC ---
+    private List<BulletTaskService.TaskDTO> GetSortedItems(List<BulletTaskService.TaskDTO> items)
+    {
+        return items
+            .OrderBy(t => t.Order) // Primary: Manual Order
+            .ThenBy(t => GetTypePriority(t.Type)) // Secondary: Habit > Meeting > Task
+            .ThenBy(t => t.MeetingDetail?.StartTime) // Tertiary: Time
+            .ThenBy(t => t.Id) // Quaternary: ID stability
+            .ToList();
+    }
+
+    private int GetTypePriority(string type) => type switch {
+        "habit" => 1,
+        "meeting" => 2,
+        _ => 3
+    };
+
     private List<BulletTaskService.TaskDTO> GetItemsForColumn(DateTime d, string category)
     {
-        return loadedItems
-            .Where(t => t.Date.Date == d.Date && t.Category.Trim().Equals(category.Trim(), StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(t => t.Type == "habit") 
-            .ThenByDescending(t => t.Type == "meeting") 
-            .ThenBy(t => t.MeetingDetail?.StartTime)
-            .ToList();
+        return loadedItems.Where(t => t.Date.Date == d.Date && t.Category.Trim().Equals(category.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
     }
 
     private List<BulletTaskService.TaskDTO> GetItemsForDate(DateTime d) => loadedItems.Where(t => t.Date.Date == d.Date).ToList();
 
-    // LOOKUP HELPER
-    private BulletHabitService.HabitDTO GetHabit(int id) => loadedHabits.FirstOrDefault(h => h.Id == id) ?? new();
+    // --- REORDERING LOGIC ---
+    private async Task MoveItemUp(int id) => await ReorderItem(id, -1);
+    private async Task MoveItemDown(int id) => await ReorderItem(id, 1);
 
-    private async Task ToggleComplete(BulletTaskService.TaskDTO t)
+    private async Task ReorderItem(int id, int direction)
     {
-        t.Detail.IsCompleted = !t.Detail.IsCompleted;
-        await TaskService.ToggleComplete(t.Id, t.Detail.IsCompleted);
-    }
+        var item = loadedItems.FirstOrDefault(x => x.Id == id);
+        if (item == null) return;
 
-    private async Task ToggleMeetingComplete(BulletTaskService.TaskDTO t)
-    {
-        if(t.MeetingDetail != null) {
-            t.MeetingDetail.IsCompleted = !t.MeetingDetail.IsCompleted;
-            await MeetingService.ToggleComplete(t.Id, t.MeetingDetail.IsCompleted);
+        // 1. Get all items for this specific day
+        var dayItems = GetSortedItems(GetItemsForDate(item.Date));
+
+        // 2. Find index
+        int index = dayItems.FindIndex(x => x.Id == id);
+        if (index == -1) return;
+        
+        // 3. Check bounds
+        int newIndex = index + direction;
+        if (newIndex < 0 || newIndex >= dayItems.Count) return;
+
+        // 4. Materialize & Swap
+        // Assign explicit orders 1, 2, 3... to everyone
+        var updates = new Dictionary<int, int>();
+        for (int i = 0; i < dayItems.Count; i++)
+        {
+            dayItems[i].Order = i + 1;
+            updates[dayItems[i].Id] = i + 1;
         }
+
+        // Swap the target values in our local updates map (and local objects for instant UI update)
+        int idA = dayItems[index].Id;
+        int idB = dayItems[newIndex].Id;
+        
+        // Swap values
+        int orderA = updates[idA];
+        int orderB = updates[idB];
+
+        updates[idA] = orderB;
+        updates[idB] = orderA;
+
+        // Apply locally so UI updates instantly
+        dayItems[index].Order = orderB;
+        dayItems[newIndex].Order = orderA;
+
+        // 5. Save to DB
+        await BaseService.UpdateItemOrders(updates);
+        StateHasChanged(); // Instant re-render
     }
 
-    private async Task SaveHabitDirectly(BulletHabitService.HabitDTO h)
-    {
-        await HabitService.SaveHabit(h);
-    }
-
-    // ... (Keep view switching and edit logic)
+    // ... (Keep existing helpers: GetHabit, ToggleComplete, SaveItem, etc.) ...
+    private BulletHabitService.HabitDTO GetHabit(int id) => loadedHabits.FirstOrDefault(h => h.Id == id) ?? new();
+    private async Task ToggleComplete(BulletTaskService.TaskDTO t) { t.Detail.IsCompleted = !t.Detail.IsCompleted; await TaskService.ToggleComplete(t.Id, t.Detail.IsCompleted); }
+    private async Task ToggleMeetingComplete(BulletTaskService.TaskDTO t) { if(t.MeetingDetail != null) { t.MeetingDetail.IsCompleted = !t.MeetingDetail.IsCompleted; await MeetingService.ToggleComplete(t.Id, t.MeetingDetail.IsCompleted); } }
+    private async Task SaveHabitDirectly(BulletHabitService.HabitDTO h) { await HabitService.SaveHabit(h); }
     private void SwitchView(string view) { currentView = view; _ = LoadData(); }
-    private void Prev() { 
-        if(currentView == "day") viewDate = viewDate.AddDays(-1);
-        else if(currentView == "week") viewDate = viewDate.AddDays(-7);
-        else viewDate = viewDate.AddMonths(-1);
-        _ = LoadData(); 
-    }
-    private void Next() { 
-        if(currentView == "day") viewDate = viewDate.AddDays(1);
-        else if(currentView == "week") viewDate = viewDate.AddDays(7);
-        else viewDate = viewDate.AddMonths(1);
-        _ = LoadData(); 
-    }
+    private void Prev() { if(currentView == "day") viewDate = viewDate.AddDays(-1); else if(currentView == "week") viewDate = viewDate.AddDays(-7); else viewDate = viewDate.AddMonths(-1); _ = LoadData(); }
+    private void Next() { if(currentView == "day") viewDate = viewDate.AddDays(1); else if(currentView == "week") viewDate = viewDate.AddDays(7); else viewDate = viewDate.AddMonths(1); _ = LoadData(); }
     private void GoToday() { viewDate = DateTime.UtcNow.AddMinutes(-clientOffset); _ = LoadData(); }
     private void GoToDate(DateTime d) { viewDate = d; SwitchView("day"); }
-    
-    private string GetHeaderDate() 
-    {
-        if(currentView == "day") {
-            var day = viewDate.Day;
-            string suffix = "th";
-            if (day % 100 < 11 || day % 100 > 13) suffix = (day % 10) switch { 1 => "st", 2 => "nd", 3 => "rd", _ => "th" };
-            return $"{viewDate:dddd, MMMM} {day}{suffix}, {viewDate:yyyy}";
-        }
-        return currentView == "week" ? $"Week of {weekStart:MMM d}" : viewDate.ToString("MMMM yyyy");
-    }
-
-    private void OpenEditor(string category, string type, DateTime date)
-    {
-        editingItem = new BulletTaskService.TaskDTO { UserId = userId, Category = category, Type = type, Date = date };
-    }
-
-    private void OpenEdit(BulletTaskService.TaskDTO t)
-    {
-        var json = JsonSerializer.Serialize(t);
-        editingItem = JsonSerializer.Deserialize<BulletTaskService.TaskDTO>(json);
-        if(editingItem != null) editingItem.Date = t.Date; 
-    }
-
-    private void OpenHabitEdit(BulletHabitService.HabitDTO h)
-    {
-        editingItem = new BulletTaskService.TaskDTO 
-        {
-            Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category,
-            Date = h.Date, Title = h.Title, Description = h.Description,
-            ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId,
-            Notes = h.Notes,
-            HabitDetail = h.Detail
-        };
-    }
-
-    private async Task SaveItem()
-    {
+    private string GetHeaderDate() { if(currentView == "day") return $"{viewDate:dddd, MMMM} {viewDate.Day}, {viewDate:yyyy}"; return currentView == "week" ? $"Week of {weekStart:MMM d}" : viewDate.ToString("MMMM yyyy"); }
+    private void OpenEditor(string category, string type, DateTime date) { editingItem = new BulletTaskService.TaskDTO { UserId = userId, Category = category, Type = type, Date = date }; }
+    private void OpenEdit(BulletTaskService.TaskDTO t) { var json = JsonSerializer.Serialize(t); editingItem = JsonSerializer.Deserialize<BulletTaskService.TaskDTO>(json); if(editingItem != null) editingItem.Date = t.Date; }
+    private void OpenHabitEdit(BulletHabitService.HabitDTO h) { editingItem = new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, Description = h.Description, ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId, Notes = h.Notes, HabitDetail = h.Detail }; }
+    private async Task SaveItem() { 
         if(editingItem != null) {
-            if (editingItem.Type == "meeting") 
-            {
-                var meetingDto = new BulletMeetingService.MeetingDTO 
-                {
-                    Id = editingItem.Id, UserId = editingItem.UserId, Type = "meeting", Category = editingItem.Category,
-                    Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description,
-                    ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId,
-                    Detail = editingItem.MeetingDetail, Notes = editingItem.Notes
-                };
-                await MeetingService.SaveMeeting(meetingDto);
-            }
-            else if (editingItem.Type == "habit")
-            {
-                var habitDto = new BulletHabitService.HabitDTO
-                {
-                    Id = editingItem.Id, UserId = editingItem.UserId, Type = "habit", Category = editingItem.Category,
-                    Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description,
-                    ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId,
-                    Detail = editingItem.HabitDetail,
-                    Notes = editingItem.Notes
-                };
-                await HabitService.SaveHabit(habitDto);
-            }
-            else 
-            {
-                await TaskService.SaveTask(editingItem);
-            }
-            editingItem = null;
-            await LoadData();
+            if (editingItem.Type == "meeting") { var m = new BulletMeetingService.MeetingDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "meeting", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.MeetingDetail, Notes = editingItem.Notes }; await MeetingService.SaveMeeting(m); }
+            else if (editingItem.Type == "habit") { var h = new BulletHabitService.HabitDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "habit", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.HabitDetail, Notes = editingItem.Notes }; await HabitService.SaveHabit(h); }
+            else { await TaskService.SaveTask(editingItem); }
+            editingItem = null; await LoadData();
         }
     }
-
-    private async Task DeleteTask(int id)
-    {
-        if(await JS.InvokeAsync<bool>("confirm", "Delete this item?")) {
-            await BaseService.DeleteItem(id);
-            await LoadData();
-        }
-    }
-
-    private async Task DeleteCurrentTask()
-    {
-        if(editingItem != null && editingItem.Id > 0) {
-            if(await JS.InvokeAsync<bool>("confirm", "Delete this item?")) {
-                await BaseService.DeleteItem(editingItem.Id);
-                editingItem = null;
-                await LoadData();
-            }
-        }
-    }
-    
+    private async Task DeleteTask(int id) { if(await JS.InvokeAsync<bool>("confirm", "Delete this item?")) { await BaseService.DeleteItem(id); await LoadData(); } }
+    private async Task DeleteCurrentTask() { if(editingItem != null && editingItem.Id > 0 && await JS.InvokeAsync<bool>("confirm", "Delete?")) { await BaseService.DeleteItem(editingItem.Id); editingItem = null; await LoadData(); } }
     private async Task Logout() { await JS.InvokeVoidAsync("localStorage.removeItem", "dashboard_session"); Nav.NavigateTo("/login", true); }
 }

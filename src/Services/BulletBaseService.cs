@@ -87,13 +87,10 @@ public class BulletBaseService
             );
         ");
 
-        // --- FIX: FORCE ADD COLUMN IF IT WAS CREATED BEFORE THE UPDATE ---
-        try 
-        {
-            await _db.Database.ExecuteSqlRawAsync(@"
-                ALTER TABLE ""BulletHabitDetails"" ADD COLUMN IF NOT EXISTS ""IsCompleted"" BOOLEAN NOT NULL DEFAULT FALSE;
-            ");
-        } 
+        // PATCH: Add Order column if missing
+        try {
+            await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""BulletItems"" ADD COLUMN IF NOT EXISTS ""Order"" INTEGER NOT NULL DEFAULT 0;");
+        } catch { }
         catch 
         { 
             // Ignore errors if column exists or DB doesn't support 'IF NOT EXISTS'
@@ -108,6 +105,24 @@ public class BulletBaseService
             _db.BulletItems.Remove(item);
             await _db.SaveChangesAsync();
         }
+    }
+
+    // NEW: Batch Update Order
+    public async Task UpdateItemOrders(Dictionary<int, int> updates)
+    {
+        if (!updates.Any()) return;
+        
+        var ids = updates.Keys.ToList();
+        var items = await _db.BulletItems.Where(x => ids.Contains(x.Id)).ToListAsync();
+        
+        foreach(var item in items)
+        {
+            if(updates.TryGetValue(item.Id, out int newOrder))
+            {
+                item.Order = newOrder;
+            }
+        }
+        await _db.SaveChangesAsync();
     }
 
     public async Task<int> ClearDataByType(int userId, string type)
