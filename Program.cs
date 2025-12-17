@@ -38,6 +38,7 @@ builder.Services.AddScoped<BulletTaskService>();
 builder.Services.AddScoped<BulletMeetingService>();
 builder.Services.AddScoped<BulletHabitService>();
 builder.Services.AddScoped<BulletMediaService>();
+builder.Services.AddScoped<BulletHolidayService>();
 
 // Database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");

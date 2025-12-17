@@ -14,6 +14,7 @@
 @inject BulletMeetingService MeetingService
 @inject BulletHabitService HabitService
 @inject BulletMediaService MediaService
+@inject BulletHolidayService HolidayService
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
@@ -77,22 +78,11 @@
                                 @foreach(var item in colItems) 
                                 { 
                                     <div @key="item.Id">
-                                        @if (item.Type == "meeting")
-                                        {
-                                            <MeetingCard Item="item" OnClick="OpenEdit" OnToggle="ToggleMeetingComplete" OnDelete="DeleteTask" />
-                                        }
-                                        else if (item.Type == "habit")
-                                        {
-                                            <HabitCard Item="@(GetHabit(item.Id))" OnClick="OpenHabitEdit" OnDelete="DeleteTask" OnChange="SaveHabitDirectly" />
-                                        }
-                                        else if (item.Type == "media")
-                                        {
-                                            <MediaCard Item="item" OnClick="OpenMediaEdit" OnDelete="DeleteTask" />
-                                        }
-                                        else
-                                        {
-                                            <TaskCard Item="item" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteTask" />
-                                        }
+                                        @if (item.Type == "meeting") { <MeetingCard Item="item" OnClick="OpenEdit" OnToggle="ToggleMeetingComplete" OnDelete="DeleteTask" /> }
+                                        else if (item.Type == "habit") { <HabitCard Item="@(GetHabit(item.Id))" OnClick="OpenHabitEdit" OnDelete="DeleteTask" OnChange="SaveHabitDirectly" /> }
+                                        else if (item.Type == "media") { <MediaCard Item="item" OnClick="OpenMediaEdit" OnDelete="DeleteTask" /> }
+                                        else if (item.Type == "holiday") { <HolidayCard Item="item" OnClick="OpenHolidayEdit" OnDelete="DeleteTask" /> }
+                                        else { <TaskCard Item="item" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteTask" /> }
                                     </div>
                                 }
                                 @if(!colItems.Any()) { <div class="text-center text-gray-600 text-xs italic mt-4">No items</div> }
@@ -107,26 +97,18 @@
             <div class="grid grid-cols-7 gap-2 h-full">
                 @for(int i=0; i<7; i++) {
                     var d = weekStart.AddDays(i);
-                    var isToday = d.Date == DateTime.UtcNow.AddMinutes(clientOffset).Date;
-                    <div class="flex flex-col h-full rounded-xl border overflow-hidden bg-gray-800/40 @(isToday ? "border-blue-500" : "border-gray-700")">
+                    <div class="flex flex-col h-full rounded-xl border overflow-hidden bg-gray-800/40 @GetDayBorderClass(d)">
                         <div class="p-2 text-center border-b border-gray-700/50 bg-gray-800/60 cursor-pointer hover:bg-gray-700 transition" @onclick="() => GoToDate(d)">
                             <div class="text-[10px] uppercase font-bold text-gray-500">@d.ToString("ddd")</div>
-                            <div class="text-lg font-bold @(isToday ? "text-blue-400" : "text-white")">@d.Day</div>
+                            <div class="text-lg font-bold text-white">@d.Day</div>
                         </div>
                         <div class="flex-1 overflow-y-auto p-1 space-y-1 scrollbar-hide">
                             @foreach(var item in GetSortedItems(GetItemsForDate(d))) { 
-                                @if(item.Type == "meeting") {
-                                    <MeetingPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" />
-                                }
-                                else if (item.Type == "habit") {
-                                    <HabitPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" />
-                                }
-                                else if (item.Type == "media") {
-                                    <MediaPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" />
-                                }
-                                else {
-                                    <TaskPill Task="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" />
-                                }
+                                @if(item.Type == "meeting") { <MeetingPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" /> }
+                                else if (item.Type == "habit") { <HabitPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" /> }
+                                else if (item.Type == "media") { <MediaPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" /> }
+                                else if (item.Type == "holiday") { <HolidayPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" /> }
+                                else { <TaskPill Task="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" /> }
                             }
                             <button @onclick='() => OpenEditor("personal", "task", d)' class="w-full py-2 text-gray-600 hover:text-gray-400 hover:bg-gray-700/50 rounded text-xs transition mt-2">＋</button>
                         </div>
@@ -144,23 +126,15 @@
                     @for(int i=0; i<monthEmptyCells; i++) { <div class="bg-gray-900/30 rounded-lg"></div> }
                     @for(int d=1; d<=daysInMonth; d++){
                         var currentDay = new DateTime(viewDate.Year, viewDate.Month, d);
-                        var isToday = currentDay.Date == DateTime.UtcNow.AddMinutes(clientOffset).Date;
-                        <div class="relative flex flex-col rounded-lg border overflow-hidden p-1 hover:bg-gray-800 transition cursor-pointer @(isToday ? "border-blue-500 bg-gray-800/50" : "border-gray-700 bg-gray-900")" @onclick="() => GoToDate(currentDay)">
+                        <div class="relative flex flex-col rounded-lg border overflow-hidden p-1 hover:bg-gray-800 transition cursor-pointer @GetDayBorderClass(currentDay) bg-gray-900" @onclick="() => GoToDate(currentDay)">
                             <div class="text-right text-xs font-bold text-gray-500 mb-1">@d</div>
                             <div class="flex-1 overflow-y-auto space-y-1 scrollbar-hide max-h-24">
                                 @foreach(var item in GetSortedItems(GetItemsForDate(currentDay))) { 
-                                    @if(item.Type == "meeting") {
-                                        <MeetingPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" />
-                                    }
-                                    else if (item.Type == "habit") {
-                                        <HabitPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" />
-                                    }
-                                    else if (item.Type == "media") {
-                                        <MediaPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" />
-                                    }
-                                    else {
-                                        <TaskPill Task="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" />
-                                    }
+                                    @if(item.Type == "meeting") { <MeetingPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
+                                    else if (item.Type == "habit") { <HabitPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
+                                    else if (item.Type == "media") { <MediaPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
+                                    else if (item.Type == "holiday") { <HolidayPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
+                                    else { <TaskPill Task="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
                                 }
                             </div>
                         </div>
@@ -176,6 +150,7 @@
             MeetingDetail="editingItem?.MeetingDetail ?? new()" 
             HabitDetail="editingItem?.HabitDetail ?? new()" 
             MediaDetail="editingItem?.MediaDetail ?? new()" 
+            HolidayDetail="editingItem?.HolidayDetail ?? new()"
             Notes="editingItem?.Notes ?? new()"
             OnSave="SaveItem" 
             OnCancel="() => editingItem = null" 
@@ -194,6 +169,7 @@
     private List<BulletTaskService.TaskDTO> loadedItems = new();
     private List<BulletHabitService.HabitDTO> loadedHabits = new(); 
     private List<BulletMediaService.MediaDTO> loadedMedia = new(); 
+    private List<BulletHolidayService.HolidayDTO> loadedHolidays = new(); // NEW
     
     private BulletTaskService.TaskDTO? editingItem;
     private DateTime weekStart => viewDate.AddDays(-1 * ((7 + (viewDate.DayOfWeek - DayOfWeek.Monday)) % 7)).Date;
@@ -233,16 +209,8 @@
         DateTime start = DateTime.SpecifyKind(viewDate.Date, DateTimeKind.Utc);
         DateTime end = start.AddDays(1).AddSeconds(-1); 
 
-        if (currentView == "week") 
-        { 
-            start = DateTime.SpecifyKind(weekStart, DateTimeKind.Utc);
-            end = start.AddDays(7).AddSeconds(-1); 
-        }
-        else if (currentView == "month") 
-        { 
-            start = DateTime.SpecifyKind(new DateTime(viewDate.Year, viewDate.Month, 1), DateTimeKind.Utc);
-            end = start.AddMonths(1).AddSeconds(-1); 
-        }
+        if (currentView == "week") { start = DateTime.SpecifyKind(weekStart, DateTimeKind.Utc); end = start.AddDays(7).AddSeconds(-1); }
+        else if (currentView == "month") { start = DateTime.SpecifyKind(new DateTime(viewDate.Year, viewDate.Month, 1), DateTimeKind.Utc); end = start.AddMonths(1).AddSeconds(-1); }
 
         try {
             loadedItems.Clear(); 
@@ -250,48 +218,42 @@
             loadedItems.AddRange(tasks);
             
             var meetings = await MeetingService.GetMeetingsForRange(userId, start, end);
-            foreach (var m in meetings)
-            {
-                loadedItems.Add(new BulletTaskService.TaskDTO
-                {
-                    Id = m.Id, UserId = m.UserId, Type = "meeting", Category = m.Category,
-                    Date = m.Date, Title = m.Title, Description = m.Description,
-                    ImgUrl = m.ImgUrl, LinkUrl = m.LinkUrl, OriginalStringId = m.OriginalStringId,
-                    MeetingDetail = m.Detail, Notes = m.Notes, SortOrder = m.SortOrder
-                });
-            }
+            foreach (var m in meetings) { loadedItems.Add(new BulletTaskService.TaskDTO { Id = m.Id, UserId = m.UserId, Type = "meeting", Category = m.Category, Date = m.Date, Title = m.Title, Description = m.Description, ImgUrl = m.ImgUrl, LinkUrl = m.LinkUrl, OriginalStringId = m.OriginalStringId, MeetingDetail = m.Detail, Notes = m.Notes, SortOrder = m.SortOrder }); }
 
             loadedHabits = await HabitService.GetHabits(userId);
             var relevantHabits = loadedHabits.Where(h => h.Date.Date >= start.Date && h.Date.Date <= end.Date).ToList();
-            foreach(var h in relevantHabits)
-            {
-                loadedItems.Add(new BulletTaskService.TaskDTO
-                {
-                    Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category,
-                    Date = h.Date, Title = h.Title, Description = h.Description,
-                    ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId,
-                    HabitDetail = h.Detail, SortOrder = h.SortOrder
-                });
-            }
+            foreach(var h in relevantHabits) { loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, Description = h.Description, ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId, HabitDetail = h.Detail, SortOrder = h.SortOrder }); }
 
-            // MEDIA
             loadedMedia = await MediaService.GetMedia(userId);
             var relevantMedia = loadedMedia.Where(m => m.Date.Date >= start.Date && m.Date.Date <= end.Date).ToList();
-            foreach(var m in relevantMedia)
-            {
-                loadedItems.Add(new BulletTaskService.TaskDTO
-                {
-                    Id = m.Id, UserId = m.UserId, Type = "media", Category = m.Category,
-                    Date = m.Date, Title = m.Title, Description = m.Description,
-                    ImgUrl = m.ImgUrl, LinkUrl = m.LinkUrl, OriginalStringId = m.OriginalStringId,
-                    MediaDetail = m.Detail, SortOrder = m.SortOrder
-                });
-            }
+            foreach(var m in relevantMedia) { loadedItems.Add(new BulletTaskService.TaskDTO { Id = m.Id, UserId = m.UserId, Type = "media", Category = m.Category, Date = m.Date, Title = m.Title, Description = m.Description, ImgUrl = m.ImgUrl, LinkUrl = m.LinkUrl, OriginalStringId = m.OriginalStringId, MediaDetail = m.Detail, SortOrder = m.SortOrder }); }
+
+            // HOLIDAYS
+            loadedHolidays = await HolidayService.GetHolidaysForRange(userId, start, end);
+            foreach(var h in loadedHolidays) { loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "holiday", Category = h.Category, Date = h.Date, Title = h.Title, Description = h.Description, ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId, HolidayDetail = h.Detail, SortOrder = h.SortOrder }); }
 
         } catch(Exception ex) { statusMessage = "Error: " + ex.Message; }
         
         isLoading = false;
         StateHasChanged();
+    }
+
+    // --- BORDER LOGIC ---
+    private string GetDayBorderClass(DateTime date)
+    {
+        // 1. TODAY (Yellow)
+        var today = DateTime.UtcNow.AddMinutes(-clientOffset).Date;
+        if (date.Date == today) return "border-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.3)]";
+
+        // 2. HOLIDAY (Light Blue) - If ANY holiday on this day is a work holiday
+        var holidaysOnDay = loadedItems.Where(i => i.Type == "holiday" && i.Date.Date == date.Date);
+        if (holidaysOnDay.Any(h => h.HolidayDetail?.IsWorkHoliday == true)) return "border-blue-400 bg-blue-900/10";
+
+        // 3. WEEKEND (Gray)
+        if (date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday) return "border-gray-600 bg-black/40";
+
+        // 4. DEFAULT
+        return "border-gray-700";
     }
 
     private List<BulletTaskService.TaskDTO> GetSortedItems(List<BulletTaskService.TaskDTO> items)
@@ -304,22 +266,14 @@
             .ToList();
     }
 
-    private int GetTypePriority(string type) => type switch {
-        "habit" => 1,
-        "meeting" => 2,
-        "media" => 3,
-        _ => 4
-    };
+    private int GetTypePriority(string type) => type switch { "holiday" => 0, "habit" => 1, "meeting" => 2, "media" => 3, _ => 4 };
 
     private List<BulletTaskService.TaskDTO> GetItemsForColumn(DateTime d, string category)
     {
         var dayItems = loadedItems.Where(t => t.Date.Date == d.Date);
         if (category.Equals("personal", StringComparison.OrdinalIgnoreCase))
         {
-            return dayItems.Where(t => 
-                !t.Category.Trim().Equals("work", StringComparison.OrdinalIgnoreCase) && 
-                !t.Category.Trim().Equals("health", StringComparison.OrdinalIgnoreCase)
-            ).ToList();
+            return dayItems.Where(t => !t.Category.Trim().Equals("work", StringComparison.OrdinalIgnoreCase) && !t.Category.Trim().Equals("health", StringComparison.OrdinalIgnoreCase)).ToList();
         }
         return dayItems.Where(t => t.Category.Trim().Equals(category.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
     }
@@ -328,11 +282,8 @@
 
     private BulletHabitService.HabitDTO GetHabit(int id) => loadedHabits.FirstOrDefault(h => h.Id == id) ?? new();
     
-    // UPDATED: Now accepts generic TaskDTO to satisfy the callback
-    private void OpenMediaEdit(BulletTaskService.TaskDTO m) 
-    { 
-        editingItem = m; // Since 'm' is already a TaskDTO with MediaDetails populated from LoadData, we just assign it.
-    }
+    private void OpenMediaEdit(BulletTaskService.TaskDTO m) { editingItem = m; }
+    private void OpenHolidayEdit(BulletTaskService.TaskDTO h) { editingItem = h; }
 
     private async Task ToggleComplete(BulletTaskService.TaskDTO t) { t.Detail.IsCompleted = !t.Detail.IsCompleted; await TaskService.ToggleComplete(t.Id, t.Detail.IsCompleted); }
     private async Task ToggleMeetingComplete(BulletTaskService.TaskDTO t) { if(t.MeetingDetail != null) { t.MeetingDetail.IsCompleted = !t.MeetingDetail.IsCompleted; await MeetingService.ToggleComplete(t.Id, t.MeetingDetail.IsCompleted); } }
@@ -345,32 +296,16 @@
     {
         var item = loadedItems.FirstOrDefault(x => x.Id == id);
         if (item == null) return;
-
         var dayItems = GetSortedItems(GetItemsForDate(item.Date));
         int index = dayItems.FindIndex(x => x.Id == id);
         if (index == -1) return;
-        
         int newIndex = index + direction;
         if (newIndex < 0 || newIndex >= dayItems.Count) return;
-
         var updates = new Dictionary<int, int>();
-        for (int i = 0; i < dayItems.Count; i++)
-        {
-            dayItems[i].SortOrder = i + 1;
-            updates[dayItems[i].Id] = i + 1;
-        }
-
-        int idA = dayItems[index].Id;
-        int idB = dayItems[newIndex].Id;
-        int orderA = updates[idA];
-        int orderB = updates[idB];
-
-        updates[idA] = orderB;
-        updates[idB] = orderA;
-
-        dayItems[index].SortOrder = orderB;
-        dayItems[newIndex].SortOrder = orderA;
-
+        for (int i = 0; i < dayItems.Count; i++) { dayItems[i].SortOrder = i + 1; updates[dayItems[i].Id] = i + 1; }
+        int idA = dayItems[index].Id; int idB = dayItems[newIndex].Id; int orderA = updates[idA]; int orderB = updates[idB];
+        updates[idA] = orderB; updates[idB] = orderA;
+        dayItems[index].SortOrder = orderB; dayItems[newIndex].SortOrder = orderA;
         await BaseService.UpdateItemOrders(updates);
         StateHasChanged();
     }
@@ -391,6 +326,7 @@
             if (editingItem.Type == "meeting") { var m = new BulletMeetingService.MeetingDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "meeting", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.MeetingDetail, Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; await MeetingService.SaveMeeting(m); }
             else if (editingItem.Type == "habit") { var h = new BulletHabitService.HabitDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "habit", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.HabitDetail, Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; await HabitService.SaveHabit(h); }
             else if (editingItem.Type == "media") { var m = new BulletMediaService.MediaDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "media", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.MediaDetail, Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; await MediaService.SaveMedia(m); }
+            else if (editingItem.Type == "holiday") { var h = new BulletHolidayService.HolidayDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "holiday", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.HolidayDetail, Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; await HolidayService.SaveHoliday(h); }
             else { await TaskService.SaveTask(editingItem); }
             editingItem = null; await LoadData();
         }

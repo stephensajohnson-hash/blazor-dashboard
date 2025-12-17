@@ -87,7 +87,7 @@ public class BulletBaseService
         ");
         try { await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""BulletHabitDetails"" ADD COLUMN IF NOT EXISTS ""IsCompleted"" BOOLEAN NOT NULL DEFAULT FALSE;"); } catch { }
 
-        // 6. NEW: Media Details
+        // 6. Media Details
         await _db.Database.ExecuteSqlRawAsync(@"
             CREATE TABLE IF NOT EXISTS ""BulletMediaDetails"" (
                 ""BulletItemId"" INTEGER NOT NULL PRIMARY KEY,
@@ -95,6 +95,15 @@ public class BulletBaseService
                 ""ReleaseYear"" INTEGER NOT NULL DEFAULT 0,
                 ""Tags"" TEXT NOT NULL DEFAULT '',
                 CONSTRAINT ""FK_BulletMediaDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
+            );
+        ");
+
+        // 7. NEW: Holiday Details
+        await _db.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS ""BulletHolidayDetails"" (
+                ""BulletItemId"" INTEGER NOT NULL PRIMARY KEY,
+                ""IsWorkHoliday"" BOOLEAN NOT NULL DEFAULT FALSE,
+                CONSTRAINT ""FK_BulletHolidayDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
             );
         ");
     }

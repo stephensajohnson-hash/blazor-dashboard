@@ -12,7 +12,7 @@ public class AppDbContext : DbContext
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
-    // ... (Keep Users, LinkGroups, Recipes, etc.) ...
+    // ... (Keep existing DbSets: Users, LinkGroups, Recipes, etc.) ...
     public DbSet<User> Users { get; set; }
     public DbSet<LinkGroup> LinkGroups { get; set; }
     public DbSet<Link> Links { get; set; }
@@ -31,12 +31,13 @@ public class AppDbContext : DbContext
     public DbSet<BulletTaskDetail> BulletTaskDetails { get; set; }
     public DbSet<BulletMeetingDetail> BulletMeetingDetails { get; set; }
     public DbSet<BulletHabitDetail> BulletHabitDetails { get; set; }
-    
-    // NEW: Media
     public DbSet<BulletMediaDetail> BulletMediaDetails { get; set; }
+    
+    // NEW: Holiday
+    public DbSet<BulletHolidayDetail> BulletHolidayDetails { get; set; }
 }
 
-// ... (Keep PasswordHelper) ...
+// ... (Keep PasswordHelper, BulletItem, BulletItemNote, etc.) ...
 public static class PasswordHelper 
 { 
     public static string HashPassword(string password) 
@@ -48,7 +49,6 @@ public static class PasswordHelper
     public static bool VerifyPassword(string password, string storedHash) => HashPassword(password) == storedHash; 
 }
 
-// ... (Keep BulletItem, BulletItemNote, BulletTaskDetail, BulletMeetingDetail, BulletHabitDetail) ...
 public class BulletItem
 {
     public int Id { get; set; }
@@ -109,16 +109,23 @@ public class BulletHabitDetail
     public bool IsCompleted { get; set; } = false;
 }
 
-// NEW: Media Details
 public class BulletMediaDetail
 {
     [Key, ForeignKey("BulletItem")]
     public int BulletItemId { get; set; }
     public virtual BulletItem BulletItem { get; set; } = null!;
-    
-    public int Rating { get; set; } = 0; // 1-10
+    public int Rating { get; set; } = 0; 
     public int ReleaseYear { get; set; } = 0;
-    public string Tags { get; set; } = ""; // Comma separated
+    public string Tags { get; set; } = ""; 
+}
+
+// NEW: Holiday Details
+public class BulletHolidayDetail
+{
+    [Key, ForeignKey("BulletItem")]
+    public int BulletItemId { get; set; }
+    public virtual BulletItem BulletItem { get; set; } = null!;
+    public bool IsWorkHoliday { get; set; } = false;
 }
 
 // ... (Keep User, StoredImage, Recipe classes, LinkGroup, Link, Countdown, Stock, Feed, ViewConfig) ...
