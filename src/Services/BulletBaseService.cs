@@ -75,24 +75,29 @@ public class BulletBaseService
             );
         ");
 
-        // 5. Habit Details
+        // 5. Habit Details (Ensure Table Exists)
         await _db.Database.ExecuteSqlRawAsync(@"
             CREATE TABLE IF NOT EXISTS ""BulletHabitDetails"" (
                 ""BulletItemId"" INTEGER NOT NULL PRIMARY KEY,
                 ""StreakCount"" INTEGER NOT NULL DEFAULT 0,
                 ""Status"" TEXT NOT NULL DEFAULT 'Active',
-                ""IsCompleted"" BOOLEAN NOT NULL DEFAULT FALSE, -- Ensure column exists in new tables
+                ""IsCompleted"" BOOLEAN NOT NULL DEFAULT FALSE,
                 CONSTRAINT ""FK_BulletHabitDetails_BulletItems"" 
                     FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
             );
         ");
 
-        // --- PATCH: Add IsCompleted column if it doesn't exist (Run this safely) ---
-        try {
+        // --- FIX: FORCE ADD COLUMN IF IT WAS CREATED BEFORE THE UPDATE ---
+        try 
+        {
             await _db.Database.ExecuteSqlRawAsync(@"
                 ALTER TABLE ""BulletHabitDetails"" ADD COLUMN IF NOT EXISTS ""IsCompleted"" BOOLEAN NOT NULL DEFAULT FALSE;
             ");
-        } catch { /* Ignore if column exists */ }
+        } 
+        catch 
+        { 
+            // Ignore errors if column exists or DB doesn't support 'IF NOT EXISTS'
+        }
     }
 
     public async Task DeleteItem(int id)
@@ -113,7 +118,6 @@ public class BulletBaseService
         return items.Count;
     }
 
-    // --- IMAGE HANDLING ---
     public async Task<string> SaveImageAsync(byte[] data, string contentType)
     {
         var img = new StoredImage
