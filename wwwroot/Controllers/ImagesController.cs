@@ -1,10 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
-using Dashboard;
 using Microsoft.EntityFrameworkCore;
 using System.Threading.Tasks;
+using Dashboard;
 
-[Route("api/images")]
 [ApiController]
+[Route("images")]
 public class ImagesController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -14,11 +14,12 @@ public class ImagesController : ControllerBase
         _db = db;
     }
 
-    [HttpGet("{id}")]
+    [HttpGet("db/{id}")]
     public async Task<IActionResult> GetImage(int id)
     {
         var img = await _db.StoredImages.FindAsync(id);
         if (img == null) return NotFound();
+        
         return File(img.Data, img.ContentType);
     }
 }
