@@ -19,7 +19,6 @@ public class BulletMeetingService
     {
         public BulletMeetingDetail Detail { get; set; } = new();
         public List<BulletItemNote> Notes { get; set; } = new();
-        public int SortOrder { get; set; } // Added this
     }
 
     public async Task<List<MeetingDTO>> GetMeetingsForRange(int userId, DateTime start, DateTime end)

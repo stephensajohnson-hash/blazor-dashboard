@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Collections.Generic;
 using System;
 using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema; // <--- ADDED THIS
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -13,24 +13,17 @@ public class AppDbContext : DbContext
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
     public DbSet<User> Users { get; set; }
-    
-    // --- DASHBOARD
     public DbSet<LinkGroup> LinkGroups { get; set; }
     public DbSet<Link> Links { get; set; }
     public DbSet<Countdown> Countdowns { get; set; }
     public DbSet<Stock> Stocks { get; set; }
     public DbSet<Feed> Feeds { get; set; }
-    
-    // Images
     public DbSet<StoredImage> StoredImages { get; set; }
-
-    // Recipes
     public DbSet<Recipe> Recipes { get; set; }
     public DbSet<RecipeIngredient> RecipeIngredients { get; set; }
     public DbSet<RecipeInstruction> RecipeInstructions { get; set; }
     public DbSet<RecipeCategory> RecipeCategories { get; set; }
-
-    // Bullet Calendar
+    
     public DbSet<BulletItem> BulletItems { get; set; }
     public DbSet<BulletItemNote> BulletItemNotes { get; set; }
     public DbSet<BulletTaskDetail> BulletTaskDetails { get; set; }
@@ -38,7 +31,6 @@ public class AppDbContext : DbContext
     public DbSet<BulletHabitDetail> BulletHabitDetails { get; set; }
 }
 
-// --- UTILITIES ---
 public static class PasswordHelper 
 { 
     public static string HashPassword(string password) 
@@ -50,7 +42,6 @@ public static class PasswordHelper
     public static bool VerifyPassword(string password, string storedHash) => HashPassword(password) == storedHash; 
 }
 
-// --- NEW CORE MODELS ---
 public class BulletItem
 {
     public int Id { get; set; }
@@ -64,6 +55,10 @@ public class BulletItem
     public string ImgUrl { get; set; } = "";
     public string LinkUrl { get; set; } = "";
     public string OriginalStringId { get; set; } = "";
+    
+    // RENAMED TO AVOID LINQ CONFLICT
+    [Column("Order")] // Maps to DB column "Order"
+    public int SortOrder { get; set; } = 0; 
 }
 
 public class BulletItemNote
@@ -73,7 +68,7 @@ public class BulletItemNote
     public string Content { get; set; } = "";
     public string ImgUrl { get; set; } = "";
     public string LinkUrl { get; set; } = "";
-    public int Order { get; set; } = 0;
+    public int Order { get; set; } = 0; 
 }
 
 public class BulletTaskDetail
@@ -88,7 +83,6 @@ public class BulletTaskDetail
     public DateTime? DueDate { get; set; }
 }
 
-// NEW: Meeting Details
 public class BulletMeetingDetail
 {
     [Key]
@@ -99,22 +93,16 @@ public class BulletMeetingDetail
     public bool IsCompleted { get; set; }
 }
 
-// NEW: Habit Details
 public class BulletHabitDetail
 {
     [Key, ForeignKey("BulletItem")]
     public int BulletItemId { get; set; }
-    
-    // Navigation property back to base
     public virtual BulletItem BulletItem { get; set; } = null!;
-
     public int StreakCount { get; set; } = 0;
     public string Status { get; set; } = "Active"; 
-    public bool IsCompleted { get; set; }
+    public bool IsCompleted { get; set; } = false;
 }
 
-
-// --- EXISTING MODELS ---
 public class User { public int Id { get; set; } public string Username { get; set; } = ""; public string PasswordHash { get; set; } = ""; public string ZipCode { get; set; } = "75482"; public string AvatarUrl { get; set; } = ""; public int Age { get; set; } = 30; public double HeightInches { get; set; } = 70; public string Gender { get; set; } = "Male"; public string ActivityLevel { get; set; } = "Sedentary"; }
 public class StoredImage { public int Id { get; set; } public byte[] Data { get; set; } = Array.Empty<byte>(); public string ContentType { get; set; } = "image/jpeg"; public string OriginalName { get; set; } = ""; public DateTime UploadedAt { get; set; } = DateTime.UtcNow; }
 public class Recipe { public int Id { get; set; } public int UserId { get; set; } public string Title { get; set; } = ""; public string Description { get; set; } = ""; public string Category { get; set; } = ""; public int Servings { get; set; } public string? ServingSize { get; set; } public string PrepTime { get; set; } = ""; public string CookTime { get; set; } = ""; public string? ImageUrl { get; set; } public int? ImageId { get; set; } public string SourceName { get; set; } = ""; public string SourceUrl { get; set; } = ""; public string TagsJson { get; set; } = "[]"; public List<RecipeIngredient> Ingredients { get; set; } = new(); public List<RecipeInstruction> Instructions { get; set; } = new(); }
@@ -129,7 +117,6 @@ public class Feed { public int Id { get; set; } public int UserId { get; set; } 
 
 public static class BulletViewConfig
 {
-    // Common Image Widths for all card types
     public const string ImgWidthDay = "25%";
     public const string ImgWidthWeek = "20%";
     public const string ImgWidthMonth = "15%";

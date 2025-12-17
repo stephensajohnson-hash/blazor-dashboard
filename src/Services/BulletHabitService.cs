@@ -19,7 +19,6 @@ public class BulletHabitService
     {
         public BulletHabitDetail Detail { get; set; } = new();
         public List<BulletItemNote> Notes { get; set; } = new();
-        public int SortOrder { get; set; } // Added this
     }
 
     public async Task<List<HabitDTO>> GetHabits(int userId)

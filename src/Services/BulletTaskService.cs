@@ -21,9 +21,6 @@ public class BulletTaskService
         public BulletMeetingDetail MeetingDetail { get; set; } = new();
         public BulletHabitDetail HabitDetail { get; set; } = new(); 
         public List<BulletItemNote> Notes { get; set; } = new();
-        
-        // RENAMED TO AVOID LINQ CONFLICT
-        public int SortOrder { get; set; } 
     }
 
     public async Task<List<TaskDTO>> GetTasksForRange(int userId, DateTime start, DateTime end)
@@ -38,7 +35,7 @@ public class BulletTaskService
                                Id = baseItem.Id, UserId = baseItem.UserId, Type = baseItem.Type, Category = baseItem.Category,
                                Date = baseItem.Date, Title = baseItem.Title, Description = baseItem.Description, 
                                ImgUrl = baseItem.ImgUrl, LinkUrl = baseItem.LinkUrl, OriginalStringId = baseItem.OriginalStringId,
-                               SortOrder = baseItem.Order, // MAP DB 'Order' to DTO 'SortOrder'
+                               SortOrder = baseItem.SortOrder, // UPDATED
                                Detail = detail
                            }).ToListAsync();
 
@@ -65,7 +62,7 @@ public class BulletTaskService
 
         item.Title = dto.Title; item.Category = dto.Category; item.Description = dto.Description; 
         item.ImgUrl = dto.ImgUrl; item.LinkUrl = dto.LinkUrl; item.Date = dto.Date;
-        item.Order = dto.SortOrder; // MAP BACK
+        item.Order = dto.SortOrder; // MAP BACK (Using Column("Order") allows SortOrder access)
         
         await _db.SaveChangesAsync();
 

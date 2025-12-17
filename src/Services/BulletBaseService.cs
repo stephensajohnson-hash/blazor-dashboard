@@ -114,7 +114,7 @@ public class BulletBaseService
         {
             if(updates.TryGetValue(item.Id, out int newOrder))
             {
-                item.Order = newOrder;
+                item.SortOrder = newOrder; // CHANGED
             }
         }
         await _db.SaveChangesAsync();
