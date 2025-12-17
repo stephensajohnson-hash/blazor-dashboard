@@ -5,7 +5,6 @@ using Dashboard;
 namespace Dashboard.Controllers
 {
     [ApiController]
-    [Route("images")]
     public class ImagesController : ControllerBase
     {
         private readonly AppDbContext _db;
@@ -15,13 +14,14 @@ namespace Dashboard.Controllers
             _db = db;
         }
 
-        [HttpGet("db/{id}")]
+        // Support both new and old paths to be safe
+        [HttpGet("db-images/{id}")]
+        [HttpGet("images/db/{id}")] 
         public async Task<IActionResult> GetImage(int id)
         {
             var img = await _db.StoredImages.FindAsync(id);
             if (img == null) return NotFound();
             
-            // Serve the byte array as an image file
             return File(img.Data, img.ContentType);
         }
     }

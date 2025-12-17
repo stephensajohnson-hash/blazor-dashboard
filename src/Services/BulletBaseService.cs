@@ -107,7 +107,7 @@ public class BulletBaseService
             );
         ");
 
-        // 8. NEW: Birthday Details
+        // 8. Birthday Details
         await _db.Database.ExecuteSqlRawAsync(@"
             CREATE TABLE IF NOT EXISTS ""BulletBirthdayDetails"" (
                 ""BulletItemId"" INTEGER NOT NULL PRIMARY KEY,
@@ -152,6 +152,8 @@ public class BulletBaseService
         };
         await _db.StoredImages.AddAsync(img);
         await _db.SaveChangesAsync();
-        return $"/images/db/{img.Id}";
+        
+        // Return the NEW route
+        return $"/db-images/{img.Id}";
     }
 }
