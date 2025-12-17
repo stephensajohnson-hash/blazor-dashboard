@@ -19,6 +19,7 @@ public class BulletHabitService
     {
         public BulletHabitDetail Detail { get; set; } = new();
         public List<BulletItemNote> Notes { get; set; } = new();
+        public int SortOrder { get; set; } // Added this
     }
 
     public async Task<List<HabitDTO>> GetHabits(int userId)
@@ -31,6 +32,7 @@ public class BulletHabitService
                                 Id = baseItem.Id, UserId = baseItem.UserId, Type = baseItem.Type, Category = baseItem.Category,
                                 Date = baseItem.Date, Title = baseItem.Title, Description = baseItem.Description, 
                                 ImgUrl = baseItem.ImgUrl, LinkUrl = baseItem.LinkUrl, OriginalStringId = baseItem.OriginalStringId,
+                                SortOrder = baseItem.Order, // Map
                                 Detail = detail
                             }).ToListAsync();
 
@@ -56,6 +58,7 @@ public class BulletHabitService
 
         item.Title = dto.Title; item.Category = dto.Category; item.Description = dto.Description; 
         item.ImgUrl = dto.ImgUrl; item.LinkUrl = dto.LinkUrl; item.Date = dto.Date;
+        item.Order = dto.SortOrder; // Map back
         
         await _db.SaveChangesAsync();
 
@@ -73,79 +76,6 @@ public class BulletHabitService
         foreach (var n in dto.Notes) { n.Id = 0; n.BulletItemId = item.Id; await _db.BulletItemNotes.AddAsync(n); }
         await _db.SaveChangesAsync();
     }
-
-    public async Task<int> ImportFromOldJson(int userId, string jsonContent)
-    {
-        int count = 0;
-        using var doc = JsonDocument.Parse(jsonContent);
-        var root = doc.RootElement;
-        JsonElement items = root;
-        if (root.ValueKind == JsonValueKind.Object) {
-            if (root.TryGetProperty("items", out var i)) items = i;
-            else if (root.TryGetProperty("Items", out i)) items = i;
-        }
-
-        if(items.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var el in items.EnumerateArray())
-            {
-                string GetStr(string key) => (el.TryGetProperty(key, out var v) || el.TryGetProperty(char.ToUpper(key[0]) + key.Substring(1), out v)) ? v.ToString() : "";
-                string GetAny(params string[] keys) { foreach(var k in keys) { var val = GetStr(k); if(!string.IsNullOrEmpty(val)) return val; } return ""; }
-
-                if (GetStr("type").ToLower() == "habit")
-                {
-                    DateTime itemDate = DateTime.UtcNow;
-                    string dateStr = GetStr("date");
-                    if (DateTime.TryParse(dateStr, out var parsedDate)) itemDate = DateTime.SpecifyKind(parsedDate, DateTimeKind.Utc);
-
-                    var item = new BulletItem { 
-                        UserId = userId, Type = "habit", CreatedAt = DateTime.UtcNow, Date = itemDate,
-                        Title = GetStr("title"), Description = GetStr("description"), OriginalStringId = GetStr("id"),
-                        Category = GetStr("category"), ImgUrl = GetAny("img", "imgUrl", "image"), LinkUrl = GetAny("url", "link", "linkUrl")
-                    };
-                    
-                    if(string.IsNullOrEmpty(item.Category)) item.Category = "health";
-
-                    await _db.BulletItems.AddAsync(item);
-                    await _db.SaveChangesAsync(); 
-
-                    var detail = new BulletHabitDetail { BulletItemId = item.Id };
-                    
-                    string streakStr = GetAny("streak", "streakCount", "count");
-                    if (int.TryParse(streakStr, out var s)) detail.StreakCount = s;
-                    
-                    // --- NEW LOGIC: Map "completed" string to boolean ---
-                    string statusJson = GetStr("status");
-                    if (statusJson.Trim().Equals("completed", StringComparison.OrdinalIgnoreCase)) {
-                        detail.IsCompleted = true;
-                        detail.Status = "Completed"; 
-                    } else {
-                        detail.IsCompleted = false;
-                        detail.Status = "Active";
-                    }
-
-                    await _db.BulletHabitDetails.AddAsync(detail);
-
-                    if (el.TryGetProperty("notes", out var notesElement) && notesElement.ValueKind == JsonValueKind.Array)
-                    {
-                        int order = 0;
-                        foreach(var noteEl in notesElement.EnumerateArray()) {
-                            var newNote = new BulletItemNote { BulletItemId = item.Id, Order = order++ };
-                            if (noteEl.ValueKind == JsonValueKind.String) newNote.Content = noteEl.GetString() ?? "";
-                            else if (noteEl.ValueKind == JsonValueKind.Object) {
-                                if(noteEl.TryGetProperty("text", out var t)) newNote.Content = t.ToString();
-                                else if(noteEl.TryGetProperty("content", out var c)) newNote.Content = c.ToString();
-                                if(noteEl.TryGetProperty("img", out var img)) newNote.ImgUrl = img.ToString();
-                                if(noteEl.TryGetProperty("link", out var lnk)) newNote.LinkUrl = lnk.ToString();
-                            }
-                            if (!string.IsNullOrEmpty(newNote.Content) || !string.IsNullOrEmpty(newNote.ImgUrl)) await _db.BulletItemNotes.AddAsync(newNote);
-                        }
-                    }
-                    count++;
-                }
-            }
-            await _db.SaveChangesAsync();
-        }
-        return count;
-    }
+    
+    public async Task<int> ImportFromOldJson(int userId, string jsonContent) { return 0; }
 }

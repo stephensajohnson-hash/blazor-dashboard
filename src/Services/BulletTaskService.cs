@@ -22,8 +22,8 @@ public class BulletTaskService
         public BulletHabitDetail HabitDetail { get; set; } = new(); 
         public List<BulletItemNote> Notes { get; set; } = new();
         
-        // Explicitly shadowing Order to ensure accessibility and avoid "method group" confusion
-        public new int Order { get; set; } 
+        // RENAMED TO AVOID LINQ CONFLICT
+        public int SortOrder { get; set; } 
     }
 
     public async Task<List<TaskDTO>> GetTasksForRange(int userId, DateTime start, DateTime end)
@@ -38,7 +38,7 @@ public class BulletTaskService
                                Id = baseItem.Id, UserId = baseItem.UserId, Type = baseItem.Type, Category = baseItem.Category,
                                Date = baseItem.Date, Title = baseItem.Title, Description = baseItem.Description, 
                                ImgUrl = baseItem.ImgUrl, LinkUrl = baseItem.LinkUrl, OriginalStringId = baseItem.OriginalStringId,
-                               Order = baseItem.Order, // Explicit mapping
+                               SortOrder = baseItem.Order, // MAP DB 'Order' to DTO 'SortOrder'
                                Detail = detail
                            }).ToListAsync();
 
@@ -65,7 +65,7 @@ public class BulletTaskService
 
         item.Title = dto.Title; item.Category = dto.Category; item.Description = dto.Description; 
         item.ImgUrl = dto.ImgUrl; item.LinkUrl = dto.LinkUrl; item.Date = dto.Date;
-        item.Order = dto.Order;
+        item.Order = dto.SortOrder; // MAP BACK
         
         await _db.SaveChangesAsync();
 
