@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using System;
 using System.Net.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Components; // FIXED: Required for NavigationManager
+using Microsoft.AspNetCore.Components; 
 using System.IO;
 using System.Linq;
 
@@ -24,7 +24,7 @@ builder.Services.AddRazorComponents()
 builder.Services.AddControllers(); 
 builder.Services.AddHttpClient();
 
-// Self-Referencing HttpClient (Now compiles correctly)
+// Self-Referencing HttpClient
 builder.Services.AddScoped(sp => 
 {
     var navMan = sp.GetRequiredService<NavigationManager>();
@@ -33,6 +33,7 @@ builder.Services.AddScoped(sp =>
     };
 });
 
+// Domain Services
 builder.Services.AddScoped<BulletBaseService>();
 builder.Services.AddScoped<BulletTaskService>();
 builder.Services.AddScoped<BulletMeetingService>();
@@ -44,16 +45,22 @@ builder.Services.AddScoped<BulletAnniversaryService>();
 builder.Services.AddScoped<BulletVacationService>();
 builder.Services.AddScoped<BulletHealthService>();
 
-// Database
+// --- DATABASE REGISTRATION (UPDATED) ---
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+
 if (!string.IsNullOrEmpty(connectionString))
 {
-    builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
+    // Changed from AddDbContext to AddDbContextFactory
+    builder.Services.AddDbContextFactory<AppDbContext>(options => 
+        options.UseNpgsql(connectionString));
 }
 else
 {
-    builder.Services.AddDbContext<AppDbContext>(options => options.UseInMemoryDatabase("TempDb"));
+    // Changed from AddDbContext to AddDbContextFactory
+    builder.Services.AddDbContextFactory<AppDbContext>(options => 
+        options.UseInMemoryDatabase("TempDb"));
 }
+// ----------------------------------------
 
 var app = builder.Build();
 
@@ -132,7 +139,10 @@ using (var scope = app.Services.CreateScope())
     var logger = services.GetRequiredService<ILogger<Program>>();
     try
     {
-        var context = services.GetRequiredService<AppDbContext>();
+        // Resolving the Factory to create a context for initialization
+        var factory = services.GetRequiredService<IDbContextFactory<AppDbContext>>();
+        using var context = factory.CreateDbContext();
+        
         context.Database.EnsureCreated();
         DbInitializer.Initialize(context, logger);
     }

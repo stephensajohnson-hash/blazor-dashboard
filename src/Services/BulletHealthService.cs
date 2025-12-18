@@ -8,11 +8,12 @@ using System;
 
 public class BulletHealthService
 {
-    private readonly AppDbContext _db;
+    // Inject Factory instead of single Context
+    private readonly IDbContextFactory<AppDbContext> _factory;
 
-    public BulletHealthService(AppDbContext db)
+    public BulletHealthService(IDbContextFactory<AppDbContext> factory)
     {
-        _db = db;
+        _factory = factory;
     }
 
     public class HealthDTO : BulletItem
@@ -25,8 +26,10 @@ public class BulletHealthService
 
     public async Task<List<HealthDTO>> GetHealthItemsForRange(int userId, DateTime start, DateTime end)
     {
-        var items = await (from baseItem in _db.BulletItems
-                           join detail in _db.BulletHealthDetails on baseItem.Id equals detail.BulletItemId
+        using var db = _factory.CreateDbContext(); // Create isolated context
+
+        var items = await (from baseItem in db.BulletItems
+                           join detail in db.BulletHealthDetails on baseItem.Id equals detail.BulletItemId
                            where baseItem.UserId == userId 
                                  && baseItem.Date >= start && baseItem.Date <= end
                                  && baseItem.Type == "health"
@@ -42,9 +45,9 @@ public class BulletHealthService
         if (items.Any())
         {
             var ids = items.Select(i => i.Id).ToList();
-            var meals = await _db.BulletHealthMeals.Where(m => ids.Contains(m.BulletItemId)).ToListAsync();
-            var workouts = await _db.BulletHealthWorkouts.Where(w => ids.Contains(w.BulletItemId)).ToListAsync();
-            var notes = await _db.BulletItemNotes.Where(n => ids.Contains(n.BulletItemId)).OrderBy(n => n.Order).ToListAsync();
+            var meals = await db.BulletHealthMeals.Where(m => ids.Contains(m.BulletItemId)).ToListAsync();
+            var workouts = await db.BulletHealthWorkouts.Where(w => ids.Contains(w.BulletItemId)).ToListAsync();
+            var notes = await db.BulletItemNotes.Where(n => ids.Contains(n.BulletItemId)).OrderBy(n => n.Order).ToListAsync();
 
             foreach (var i in items)
             {
@@ -56,26 +59,25 @@ public class BulletHealthService
         return items;
     }
 
-    // NEW: Calculate cumulative deficit for the week (Mon -> Date)
     public async Task<double> GetWeeklyDeficit(int userId, DateTime date, User user)
     {
-        // Calculate start of week (Monday)
+        // 1. Calculate Date Range
         int diff = (7 + (date.DayOfWeek - DayOfWeek.Monday)) % 7;
         DateTime monday = date.Date.AddDays(-1 * diff);
         DateTime end = date.Date.AddDays(1).AddSeconds(-1);
 
-        // Fetch all health items for this week up to now
+        // 2. Fetch Data (Internal call re-uses logic but needs its own context if not careful, 
+        //    but GetHealthItemsForRange creates its own 'using' scope, so we are safe calling it here)
         var weekItems = await GetHealthItemsForRange(userId, monday, end);
 
         double totalDeficit = 0;
 
         foreach (var item in weekItems)
         {
-            // 1. Calculate TDEE (Using stored or calculating fallback)
+            // TDEE Calculation
             double tdee = item.Detail.CalculatedTDEE;
             if (tdee == 0 && item.Detail.WeightLbs > 0)
             {
-                // Fallback Calculation (Mifflin-St Jeor)
                 double weightKg = item.Detail.WeightLbs * 0.453592;
                 double heightCm = user.HeightInches * 2.54;
                 double bmr = (10 * weightKg) + (6.25 * heightCm) - (5 * user.Age) + (user.Gender == "Male" ? 5 : -161);
@@ -84,14 +86,10 @@ public class BulletHealthService
             }
             if (tdee == 0) tdee = 2000;
 
-            // 2. Net Calories
             double consumed = item.Meals.Sum(m => m.Calories);
             double burned = item.Workouts.Sum(w => w.CaloriesBurned);
             double net = consumed - burned;
 
-            // 3. Deficit (TDEE - Net)
-            // Positive result means we are UNDER maintenance (good for weight loss)
-            // Negative result means we are OVER maintenance (surplus)
             totalDeficit += (tdee - net);
         }
 
@@ -100,46 +98,52 @@ public class BulletHealthService
 
     public async Task SaveHealth(HealthDTO dto)
     {
+        using var db = _factory.CreateDbContext(); // Create isolated context
+
         BulletItem? item = null;
         if (dto.Date.Kind == DateTimeKind.Unspecified) dto.Date = DateTime.SpecifyKind(dto.Date, DateTimeKind.Utc);
 
-        if (dto.Id > 0) item = await _db.BulletItems.FindAsync(dto.Id);
+        if (dto.Id > 0) item = await db.BulletItems.FindAsync(dto.Id);
         else {
             item = new BulletItem { UserId = dto.UserId, Type = "health", CreatedAt = DateTime.UtcNow };
-            await _db.BulletItems.AddAsync(item);
+            await db.BulletItems.AddAsync(item);
         }
 
         item.Title = dto.Title; item.Category = dto.Category; item.Description = dto.Description; 
         item.ImgUrl = dto.ImgUrl; item.LinkUrl = dto.LinkUrl; item.Date = dto.Date;
         item.SortOrder = dto.SortOrder;
         
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
 
-        var detail = await _db.BulletHealthDetails.FindAsync(item.Id);
-        if (detail == null) { detail = new BulletHealthDetail { BulletItemId = item.Id }; await _db.BulletHealthDetails.AddAsync(detail); }
+        var detail = await db.BulletHealthDetails.FindAsync(item.Id);
+        if (detail == null) { detail = new BulletHealthDetail { BulletItemId = item.Id }; await db.BulletHealthDetails.AddAsync(detail); }
 
         detail.WeightLbs = dto.Detail.WeightLbs;
         detail.CalculatedTDEE = dto.Detail.CalculatedTDEE;
 
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
 
-        var oldMeals = await _db.BulletHealthMeals.Where(m => m.BulletItemId == item.Id).ToListAsync();
-        _db.BulletHealthMeals.RemoveRange(oldMeals);
-        foreach (var m in dto.Meals) { m.Id = 0; m.BulletItemId = item.Id; await _db.BulletHealthMeals.AddAsync(m); }
+        // Meals
+        var oldMeals = await db.BulletHealthMeals.Where(m => m.BulletItemId == item.Id).ToListAsync();
+        db.BulletHealthMeals.RemoveRange(oldMeals);
+        foreach (var m in dto.Meals) { m.Id = 0; m.BulletItemId = item.Id; await db.BulletHealthMeals.AddAsync(m); }
 
-        var oldWorkouts = await _db.BulletHealthWorkouts.Where(w => w.BulletItemId == item.Id).ToListAsync();
-        _db.BulletHealthWorkouts.RemoveRange(oldWorkouts);
-        foreach (var w in dto.Workouts) { w.Id = 0; w.BulletItemId = item.Id; await _db.BulletHealthWorkouts.AddAsync(w); }
+        // Workouts
+        var oldWorkouts = await db.BulletHealthWorkouts.Where(w => w.BulletItemId == item.Id).ToListAsync();
+        db.BulletHealthWorkouts.RemoveRange(oldWorkouts);
+        foreach (var w in dto.Workouts) { w.Id = 0; w.BulletItemId = item.Id; await db.BulletHealthWorkouts.AddAsync(w); }
 
-        var oldNotes = await _db.BulletItemNotes.Where(n => n.BulletItemId == item.Id).ToListAsync();
-        _db.BulletItemNotes.RemoveRange(oldNotes);
-        foreach (var n in dto.Notes) { n.Id = 0; n.BulletItemId = item.Id; await _db.BulletItemNotes.AddAsync(n); }
+        // Notes
+        var oldNotes = await db.BulletItemNotes.Where(n => n.BulletItemId == item.Id).ToListAsync();
+        db.BulletItemNotes.RemoveRange(oldNotes);
+        foreach (var n in dto.Notes) { n.Id = 0; n.BulletItemId = item.Id; await db.BulletItemNotes.AddAsync(n); }
         
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
     }
 
     public async Task<int> ImportFromOldJson(int userId, string jsonContent)
     {
+        using var db = _factory.CreateDbContext(); // Create isolated context
         int count = 0;
         using var doc = JsonDocument.Parse(jsonContent);
         var root = doc.RootElement;
@@ -151,7 +155,7 @@ public class BulletHealthService
 
         if(items.ValueKind == JsonValueKind.Array)
         {
-            User? user = await _db.Users.FindAsync(userId);
+            User? user = await db.Users.FindAsync(userId);
             
             foreach (var el in items.EnumerateArray())
             {
@@ -169,11 +173,12 @@ public class BulletHealthService
                         Category = "health" 
                     };
 
-                    await _db.BulletItems.AddAsync(item);
-                    await _db.SaveChangesAsync(); 
+                    await db.BulletItems.AddAsync(item);
+                    await db.SaveChangesAsync(); 
 
                     var detail = new BulletHealthDetail { BulletItemId = item.Id };
                     if (el.TryGetProperty("weightLbs", out var weightVal)) detail.WeightLbs = weightVal.GetDouble();
+                    
                     if (el.TryGetProperty("goals", out var goals))
                     {
                         if(goals.TryGetProperty("tdee", out var tdee)) detail.CalculatedTDEE = tdee.GetInt32();
@@ -184,7 +189,7 @@ public class BulletHealthService
                             if(goals.TryGetProperty("netCarbs", out var nc)) user.DailyCarbGoal = nc.GetInt32();
                         }
                     }
-                    await _db.BulletHealthDetails.AddAsync(detail);
+                    await db.BulletHealthDetails.AddAsync(detail);
 
                     if (el.TryGetProperty("meals", out var mealsArr) && mealsArr.ValueKind == JsonValueKind.Array)
                     {
@@ -198,7 +203,7 @@ public class BulletHealthService
                             if(m.TryGetProperty("carbs", out var mcb)) meal.Carbs = mcb.GetDouble();
                             if(m.TryGetProperty("fat", out var mf)) meal.Fat = mf.GetDouble();
                             if(m.TryGetProperty("fiber", out var mfi)) meal.Fiber = mfi.GetDouble();
-                            await _db.BulletHealthMeals.AddAsync(meal);
+                            await db.BulletHealthMeals.AddAsync(meal);
                         }
                     }
 
@@ -210,14 +215,14 @@ public class BulletHealthService
                             if(workoutItem.TryGetProperty("description", out var desc)) workout.Name = desc.ToString();
                             if(workoutItem.TryGetProperty("calories", out var wc)) workout.CaloriesBurned = wc.GetDouble();
                             if(workoutItem.TryGetProperty("timeSpent", out var wt)) workout.TimeSpentMinutes = wt.GetInt32();
-                            await _db.BulletHealthWorkouts.AddAsync(workout);
+                            await db.BulletHealthWorkouts.AddAsync(workout);
                         }
                     }
                     count++;
                 }
             }
-            if(user != null) _db.Users.Update(user);
-            await _db.SaveChangesAsync();
+            if(user != null) db.Users.Update(user);
+            await db.SaveChangesAsync();
         }
         return count;
     }
