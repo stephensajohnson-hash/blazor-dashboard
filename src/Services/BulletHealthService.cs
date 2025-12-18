@@ -56,6 +56,48 @@ public class BulletHealthService
         return items;
     }
 
+    // NEW: Calculate cumulative deficit for the week (Mon -> Date)
+    public async Task<double> GetWeeklyDeficit(int userId, DateTime date, User user)
+    {
+        // Calculate start of week (Monday)
+        int diff = (7 + (date.DayOfWeek - DayOfWeek.Monday)) % 7;
+        DateTime monday = date.Date.AddDays(-1 * diff);
+        DateTime end = date.Date.AddDays(1).AddSeconds(-1);
+
+        // Fetch all health items for this week up to now
+        var weekItems = await GetHealthItemsForRange(userId, monday, end);
+
+        double totalDeficit = 0;
+
+        foreach (var item in weekItems)
+        {
+            // 1. Calculate TDEE (Using stored or calculating fallback)
+            double tdee = item.Detail.CalculatedTDEE;
+            if (tdee == 0 && item.Detail.WeightLbs > 0)
+            {
+                // Fallback Calculation (Mifflin-St Jeor)
+                double weightKg = item.Detail.WeightLbs * 0.453592;
+                double heightCm = user.HeightInches * 2.54;
+                double bmr = (10 * weightKg) + (6.25 * heightCm) - (5 * user.Age) + (user.Gender == "Male" ? 5 : -161);
+                double multiplier = user.ActivityLevel switch { "Sedentary" => 1.2, "Light" => 1.375, "Moderate" => 1.55, "Active" => 1.725, "Extra" => 1.9, _ => 1.2 };
+                tdee = bmr * multiplier;
+            }
+            if (tdee == 0) tdee = 2000;
+
+            // 2. Net Calories
+            double consumed = item.Meals.Sum(m => m.Calories);
+            double burned = item.Workouts.Sum(w => w.CaloriesBurned);
+            double net = consumed - burned;
+
+            // 3. Deficit (TDEE - Net)
+            // Positive result means we are UNDER maintenance (good for weight loss)
+            // Negative result means we are OVER maintenance (surplus)
+            totalDeficit += (tdee - net);
+        }
+
+        return totalDeficit;
+    }
+
     public async Task SaveHealth(HealthDTO dto)
     {
         BulletItem? item = null;
@@ -81,17 +123,14 @@ public class BulletHealthService
 
         await _db.SaveChangesAsync();
 
-        // Meals
         var oldMeals = await _db.BulletHealthMeals.Where(m => m.BulletItemId == item.Id).ToListAsync();
         _db.BulletHealthMeals.RemoveRange(oldMeals);
         foreach (var m in dto.Meals) { m.Id = 0; m.BulletItemId = item.Id; await _db.BulletHealthMeals.AddAsync(m); }
 
-        // Workouts
         var oldWorkouts = await _db.BulletHealthWorkouts.Where(w => w.BulletItemId == item.Id).ToListAsync();
         _db.BulletHealthWorkouts.RemoveRange(oldWorkouts);
         foreach (var w in dto.Workouts) { w.Id = 0; w.BulletItemId = item.Id; await _db.BulletHealthWorkouts.AddAsync(w); }
 
-        // Notes
         var oldNotes = await _db.BulletItemNotes.Where(n => n.BulletItemId == item.Id).ToListAsync();
         _db.BulletItemNotes.RemoveRange(oldNotes);
         foreach (var n in dto.Notes) { n.Id = 0; n.BulletItemId = item.Id; await _db.BulletItemNotes.AddAsync(n); }
@@ -112,7 +151,6 @@ public class BulletHealthService
 
         if(items.ValueKind == JsonValueKind.Array)
         {
-            // 1. Find User Goals from the latest health entry to update User table
             User? user = await _db.Users.FindAsync(userId);
             
             foreach (var el in items.EnumerateArray())
@@ -135,15 +173,10 @@ public class BulletHealthService
                     await _db.SaveChangesAsync(); 
 
                     var detail = new BulletHealthDetail { BulletItemId = item.Id };
-                    
-                    // Renamed variable to 'weightVal' to avoid conflict
                     if (el.TryGetProperty("weightLbs", out var weightVal)) detail.WeightLbs = weightVal.GetDouble();
-                    
-                    // Parse Goals Object
                     if (el.TryGetProperty("goals", out var goals))
                     {
                         if(goals.TryGetProperty("tdee", out var tdee)) detail.CalculatedTDEE = tdee.GetInt32();
-                        
                         if(user != null)
                         {
                             if(goals.TryGetProperty("protein", out var p)) user.DailyProteinGoal = p.GetInt32();
@@ -151,10 +184,8 @@ public class BulletHealthService
                             if(goals.TryGetProperty("netCarbs", out var nc)) user.DailyCarbGoal = nc.GetInt32();
                         }
                     }
-                    
                     await _db.BulletHealthDetails.AddAsync(detail);
 
-                    // Parse Meals
                     if (el.TryGetProperty("meals", out var mealsArr) && mealsArr.ValueKind == JsonValueKind.Array)
                     {
                         foreach(var m in mealsArr.EnumerateArray())
@@ -171,10 +202,8 @@ public class BulletHealthService
                         }
                     }
 
-                    // Parse Workouts
                     if (el.TryGetProperty("workouts", out var workArr) && workArr.ValueKind == JsonValueKind.Array)
                     {
-                        // Renamed loop variable to 'workoutItem' to avoid conflict with earlier 'w'
                         foreach(var workoutItem in workArr.EnumerateArray())
                         {
                             var workout = new BulletHealthWorkout { BulletItemId = item.Id };
@@ -184,11 +213,9 @@ public class BulletHealthService
                             await _db.BulletHealthWorkouts.AddAsync(workout);
                         }
                     }
-
                     count++;
                 }
             }
-            
             if(user != null) _db.Users.Update(user);
             await _db.SaveChangesAsync();
         }
