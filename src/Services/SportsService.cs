@@ -33,7 +33,13 @@ public class SportsService
     }
 
     public async Task DeleteLeague(int id) { var l = await _db.Leagues.FindAsync(id); if (l != null) { _db.Leagues.Remove(l); await _db.SaveChangesAsync(); } }
-    public async Task ClearLeagues(int userId) { var items = await _db.Leagues.Where(x => x.UserId == userId).ToListAsync(); _db.Leagues.RemoveRange(items); await _db.SaveChangesAsync(); }
+    
+    public async Task ClearLeagues(int userId) 
+    { 
+        var items = await _db.Leagues.Where(x => x.UserId == userId).ToListAsync(); 
+        _db.Leagues.RemoveRange(items); 
+        await _db.SaveChangesAsync(); 
+    }
 
     // --- SEASONS ---
     public async Task<List<Season>> GetSeasons(int userId) => await _db.Seasons.Where(s => s.UserId == userId).OrderByDescending(s => s.Name).ToListAsync();
@@ -53,7 +59,13 @@ public class SportsService
     }
 
     public async Task DeleteSeason(int id) { var s = await _db.Seasons.FindAsync(id); if (s != null) { _db.Seasons.Remove(s); await _db.SaveChangesAsync(); } }
-    public async Task ClearSeasons(int userId) { var items = await _db.Seasons.Where(x => x.UserId == userId).ToListAsync(); _db.Seasons.RemoveRange(items); await _db.SaveChangesAsync(); }
+    
+    public async Task ClearSeasons(int userId) 
+    { 
+        var items = await _db.Seasons.Where(x => x.UserId == userId).ToListAsync(); 
+        _db.Seasons.RemoveRange(items); 
+        await _db.SaveChangesAsync(); 
+    }
 
     // --- TEAMS ---
     public async Task<List<Team>> GetTeams(int userId) => await _db.Teams.Where(t => t.UserId == userId).OrderBy(t => t.Name).ToListAsync();
@@ -75,7 +87,13 @@ public class SportsService
     }
 
     public async Task DeleteTeam(int id) { var t = await _db.Teams.FindAsync(id); if (t != null) { _db.Teams.Remove(t); await _db.SaveChangesAsync(); } }
-    public async Task ClearTeams(int userId) { var items = await _db.Teams.Where(x => x.UserId == userId).ToListAsync(); _db.Teams.RemoveRange(items); await _db.SaveChangesAsync(); }
+    
+    public async Task ClearTeams(int userId) 
+    { 
+        var items = await _db.Teams.Where(x => x.UserId == userId).ToListAsync(); 
+        _db.Teams.RemoveRange(items); 
+        await _db.SaveChangesAsync(); 
+    }
 
     // --- IMPORT ---
     public async Task<int> ImportSportsData(int userId, string jsonContent)
@@ -84,7 +102,7 @@ public class SportsService
         using var doc = JsonDocument.Parse(jsonContent);
         var root = doc.RootElement;
 
-        // 1. LEAGUES
+        // 1. IMPORT LEAGUES FIRST (Crucial so IDs exist)
         if (root.TryGetProperty("leagues", out var leaguesArr) && leaguesArr.ValueKind == JsonValueKind.Array)
         {
             foreach (var l in leaguesArr.EnumerateArray())
@@ -99,29 +117,38 @@ public class SportsService
                     }
                 }
             }
-            await _db.SaveChangesAsync();
+            await _db.SaveChangesAsync(); // Save immediately to generate IDs
         }
 
-        // 2. TEAMS
+        // 2. IMPORT TEAMS
         if (root.TryGetProperty("teams", out var teamsArr) && teamsArr.ValueKind == JsonValueKind.Array)
         {
-            var userLeagues = await GetLeagues(userId); 
+            // Refresh local league cache to get the new IDs
+            var userLeagues = await _db.Leagues.Where(l => l.UserId == userId).ToListAsync();
+
             foreach (var t in teamsArr.EnumerateArray())
             {
                 string name = t.TryGetProperty("name", out var n) ? n.ToString() : "";
                 string abbr = t.TryGetProperty("abbr", out var a) ? a.ToString() : "";
                 string leagueName = t.TryGetProperty("league", out var l) ? l.ToString() : "";
-                // FIX: Map 'logo' field from JSON
-                string logo = t.TryGetProperty("logo", out var lg) ? lg.ToString() : ""; 
+                
+                // MAPPING LOGO: Check "logo", "logoUrl", or "img"
+                string logo = "";
+                if(t.TryGetProperty("logo", out var lg)) logo = lg.ToString();
+                else if(t.TryGetProperty("logoUrl", out lg)) logo = lg.ToString();
+                else if(t.TryGetProperty("img", out lg)) logo = lg.ToString();
+
                 bool isFav = t.TryGetProperty("isFavorite", out var f) && f.GetBoolean();
 
                 if (!string.IsNullOrWhiteSpace(name))
                 {
+                    // Find League ID
                     var league = userLeagues.FirstOrDefault(x => x.Name.Equals(leagueName, StringComparison.OrdinalIgnoreCase));
                     int leagueId = league?.Id ?? 0;
 
-                    var existing = await _db.Teams.FirstOrDefaultAsync(x => x.UserId == userId && x.Name == name);
-                    if (existing == null)
+                    var existingTeam = await _db.Teams.FirstOrDefaultAsync(x => x.UserId == userId && x.Name == name);
+                    
+                    if (existingTeam == null)
                     {
                         await _db.Teams.AddAsync(new Team 
                         { 
@@ -129,18 +156,19 @@ public class SportsService
                             Name = name, 
                             Abbreviation = abbr, 
                             LeagueId = leagueId, 
-                            LogoUrl = logo, // Using mapped logo
+                            LogoUrl = logo, 
                             IsFavorite = isFav 
                         });
                         count++;
                     }
                     else
                     {
-                        // Update existing logo if missing
-                        if(string.IsNullOrEmpty(existing.LogoUrl) && !string.IsNullOrEmpty(logo))
-                        {
-                            existing.LogoUrl = logo;
-                        }
+                        // Update existing team if missing data
+                        bool changed = false;
+                        if(existingTeam.LeagueId == 0 && leagueId != 0) { existingTeam.LeagueId = leagueId; changed = true; }
+                        if(string.IsNullOrEmpty(existingTeam.LogoUrl) && !string.IsNullOrEmpty(logo)) { existingTeam.LogoUrl = logo; changed = true; }
+                        if(string.IsNullOrEmpty(existingTeam.Abbreviation) && !string.IsNullOrEmpty(abbr)) { existingTeam.Abbreviation = abbr; changed = true; }
+                        if(changed) _db.Teams.Update(existingTeam);
                     }
                 }
             }
