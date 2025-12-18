@@ -8,11 +8,11 @@ using System;
 
 public class BulletMeetingService
 {
-    private readonly AppDbContext _db;
+    private readonly IDbContextFactory<AppDbContext> _factory;
 
-    public BulletMeetingService(AppDbContext db)
+    public BulletMeetingService(IDbContextFactory<AppDbContext> factory)
     {
-        _db = db;
+        _factory = factory;
     }
 
     public class MeetingDTO : BulletItem
@@ -23,67 +23,121 @@ public class BulletMeetingService
 
     public async Task<List<MeetingDTO>> GetMeetingsForRange(int userId, DateTime start, DateTime end)
     {
-        var meetings = await (from baseItem in _db.BulletItems
-                              join detail in _db.BulletMeetingDetails on baseItem.Id equals detail.BulletItemId
-                              where baseItem.UserId == userId 
-                                    && baseItem.Date >= start && baseItem.Date <= end
-                                    && baseItem.Type == "meeting"
-                              select new MeetingDTO 
-                              { 
-                                  Id = baseItem.Id, UserId = baseItem.UserId, Type = baseItem.Type, Category = baseItem.Category,
-                                  Date = baseItem.Date, Title = baseItem.Title, Description = baseItem.Description, 
-                                  ImgUrl = baseItem.ImgUrl, LinkUrl = baseItem.LinkUrl, OriginalStringId = baseItem.OriginalStringId,
-                                  SortOrder = baseItem.SortOrder,
-                                  Detail = detail
-                              }).ToListAsync();
+        using var db = _factory.CreateDbContext();
+        var items = await (from baseItem in db.BulletItems
+                           join detail in db.BulletMeetingDetails on baseItem.Id equals detail.BulletItemId
+                           where baseItem.UserId == userId 
+                                 && baseItem.Date >= start && baseItem.Date <= end
+                                 && baseItem.Type == "meeting"
+                           select new MeetingDTO 
+                           { 
+                               Id = baseItem.Id, UserId = baseItem.UserId, Type = baseItem.Type, Category = baseItem.Category,
+                               Date = baseItem.Date, Title = baseItem.Title, Description = baseItem.Description, 
+                               ImgUrl = baseItem.ImgUrl, LinkUrl = baseItem.LinkUrl, OriginalStringId = baseItem.OriginalStringId,
+                               SortOrder = baseItem.SortOrder,
+                               Detail = detail
+                           }).ToListAsync();
 
-        if (meetings.Any())
+        if (items.Any())
         {
-            var ids = meetings.Select(m => m.Id).ToList();
-            var notes = await _db.BulletItemNotes.Where(n => ids.Contains(n.BulletItemId)).OrderBy(n => n.Order).ToListAsync();
-            foreach (var m in meetings) m.Notes = notes.Where(n => n.BulletItemId == m.Id).ToList();
+            var ids = items.Select(i => i.Id).ToList();
+            var notes = await db.BulletItemNotes.Where(n => ids.Contains(n.BulletItemId)).OrderBy(n => n.Order).ToListAsync();
+            foreach (var i in items) i.Notes = notes.Where(n => n.BulletItemId == i.Id).ToList();
         }
-        return meetings;
+        return items;
     }
 
     public async Task SaveMeeting(MeetingDTO dto)
     {
-        BulletItem? item = null;
+        using var db = _factory.CreateDbContext();
+        
+        // --- 1. UTC FIX ---
         if (dto.Date.Kind == DateTimeKind.Unspecified) dto.Date = DateTime.SpecifyKind(dto.Date, DateTimeKind.Utc);
+        else if (dto.Date.Kind == DateTimeKind.Local) dto.Date = dto.Date.ToUniversalTime();
 
-        if (dto.Id > 0) item = await _db.BulletItems.FindAsync(dto.Id);
+        if (dto.Detail.StartTime.HasValue)
+        {
+            if (dto.Detail.StartTime.Value.Kind == DateTimeKind.Unspecified) 
+                dto.Detail.StartTime = DateTime.SpecifyKind(dto.Detail.StartTime.Value, DateTimeKind.Utc);
+            else if (dto.Detail.StartTime.Value.Kind == DateTimeKind.Local) 
+                dto.Detail.StartTime = dto.Detail.StartTime.Value.ToUniversalTime();
+        }
+        // ------------------
+
+        BulletItem? item = null;
+        if (dto.Id > 0) item = await db.BulletItems.FindAsync(dto.Id);
         else {
             item = new BulletItem { UserId = dto.UserId, Type = "meeting", CreatedAt = DateTime.UtcNow };
-            await _db.BulletItems.AddAsync(item);
+            await db.BulletItems.AddAsync(item);
         }
 
         item.Title = dto.Title; item.Category = dto.Category; item.Description = dto.Description; 
         item.ImgUrl = dto.ImgUrl; item.LinkUrl = dto.LinkUrl; item.Date = dto.Date;
         item.SortOrder = dto.SortOrder;
         
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
 
-        var detail = await _db.BulletMeetingDetails.FindAsync(item.Id);
-        if (detail == null) { detail = new BulletMeetingDetail { BulletItemId = item.Id }; await _db.BulletMeetingDetails.AddAsync(detail); }
+        var detail = await db.BulletMeetingDetails.FindAsync(item.Id);
+        if (detail == null) { detail = new BulletMeetingDetail { BulletItemId = item.Id }; await db.BulletMeetingDetails.AddAsync(detail); }
 
+        // --- 2. FIELD MAPPING FIX ---
         detail.StartTime = dto.Detail.StartTime;
         detail.DurationMinutes = dto.Detail.DurationMinutes;
         detail.ActualDurationMinutes = dto.Detail.ActualDurationMinutes;
         detail.IsCompleted = dto.Detail.IsCompleted;
+        // ----------------------------
 
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
 
-        var oldNotes = await _db.BulletItemNotes.Where(n => n.BulletItemId == item.Id).ToListAsync();
-        _db.BulletItemNotes.RemoveRange(oldNotes);
-        foreach (var n in dto.Notes) { n.Id = 0; n.BulletItemId = item.Id; await _db.BulletItemNotes.AddAsync(n); }
-        await _db.SaveChangesAsync();
+        // Save Notes
+        var oldNotes = await db.BulletItemNotes.Where(n => n.BulletItemId == item.Id).ToListAsync();
+        db.BulletItemNotes.RemoveRange(oldNotes);
+        foreach (var n in dto.Notes) { n.Id = 0; n.BulletItemId = item.Id; await db.BulletItemNotes.AddAsync(n); }
+        
+        await db.SaveChangesAsync();
     }
 
-    public async Task ToggleComplete(int id, bool isCompleted)
+    public async Task ToggleComplete(int id, bool isComplete)
     {
-        var detail = await _db.BulletMeetingDetails.FindAsync(id);
-        if (detail != null) { detail.IsCompleted = isCompleted; await _db.SaveChangesAsync(); }
+        using var db = _factory.CreateDbContext();
+        var detail = await db.BulletMeetingDetails.FindAsync(id);
+        if (detail != null) { detail.IsCompleted = isComplete; await db.SaveChangesAsync(); }
     }
-    
-    public async Task<int> ImportFromOldJson(int userId, string jsonContent) { return 0; }
+
+    public async Task<int> ImportFromOldJson(int userId, string jsonContent)
+    {
+        using var db = _factory.CreateDbContext();
+        int count = 0;
+        using var doc = JsonDocument.Parse(jsonContent);
+        var root = doc.RootElement;
+        JsonElement items = root;
+        if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("items", out var i)) items = i;
+
+        if(items.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var el in items.EnumerateArray())
+            {
+                string type = (el.TryGetProperty("type", out var t) ? t.ToString() : "").ToLower();
+                if (type == "meeting")
+                {
+                    DateTime date = DateTime.UtcNow;
+                    if (el.TryGetProperty("date", out var d) && DateTime.TryParse(d.ToString(), out var pd)) date = DateTime.SpecifyKind(pd, DateTimeKind.Utc);
+
+                    var item = new BulletItem { UserId = userId, Type = "meeting", CreatedAt = DateTime.UtcNow, Date = date, Title = (el.TryGetProperty("title", out var tit) ? tit.ToString() : ""), OriginalStringId = (el.TryGetProperty("id", out var oid) ? oid.ToString() : "") };
+                    await db.BulletItems.AddAsync(item);
+                    await db.SaveChangesAsync();
+
+                    var detail = new BulletMeetingDetail { BulletItemId = item.Id };
+                    if(el.TryGetProperty("duration", out var dur)) detail.DurationMinutes = dur.GetInt32();
+                    if(el.TryGetProperty("time", out var tm)) { 
+                        if(TimeSpan.TryParse(tm.ToString(), out var ts)) detail.StartTime = date.Date + ts;
+                    }
+                    await db.BulletMeetingDetails.AddAsync(detail);
+                    count++;
+                }
+            }
+            await db.SaveChangesAsync();
+        }
+        return count;
+    }
 }

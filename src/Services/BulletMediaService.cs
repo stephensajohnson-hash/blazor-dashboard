@@ -8,11 +8,11 @@ using System;
 
 public class BulletMediaService
 {
-    private readonly AppDbContext _db;
+    private readonly IDbContextFactory<AppDbContext> _factory;
 
-    public BulletMediaService(AppDbContext db)
+    public BulletMediaService(IDbContextFactory<AppDbContext> factory)
     {
-        _db = db;
+        _factory = factory;
     }
 
     public class MediaDTO : BulletItem
@@ -23,9 +23,10 @@ public class BulletMediaService
 
     public async Task<List<MediaDTO>> GetMedia(int userId)
     {
-        var items = await (from baseItem in _db.BulletItems
-                           join detail in _db.BulletMediaDetails on baseItem.Id equals detail.BulletItemId
-                           where baseItem.UserId == userId 
+        using var db = _factory.CreateDbContext();
+        var items = await (from baseItem in db.BulletItems
+                           join detail in db.BulletMediaDetails on baseItem.Id equals detail.BulletItemId
+                           where baseItem.UserId == userId && baseItem.Type == "media"
                            select new MediaDTO 
                            { 
                                Id = baseItem.Id, UserId = baseItem.UserId, Type = baseItem.Type, Category = baseItem.Category,
@@ -38,142 +39,83 @@ public class BulletMediaService
         if (items.Any())
         {
             var ids = items.Select(i => i.Id).ToList();
-            var notes = await _db.BulletItemNotes.Where(n => ids.Contains(n.BulletItemId)).OrderBy(n => n.Order).ToListAsync();
+            var notes = await db.BulletItemNotes.Where(n => ids.Contains(n.BulletItemId)).ToListAsync();
             foreach (var i in items) i.Notes = notes.Where(n => n.BulletItemId == i.Id).ToList();
         }
         return items;
     }
 
-    // NEW: Get tags sorted by frequency
-    public async Task<List<string>> GetTopTags(int userId)
-    {
-        var allTagStrings = await _db.BulletMediaDetails
-            .Where(m => m.BulletItem.UserId == userId && !string.IsNullOrEmpty(m.Tags))
-            .Select(m => m.Tags)
-            .ToListAsync();
-
-        var tagCounts = new Dictionary<string, int>();
-
-        foreach (var tagStr in allTagStrings)
-        {
-            var split = tagStr.Split(',', StringSplitOptions.RemoveEmptyEntries);
-            foreach (var t in split)
-            {
-                var clean = t.Trim();
-                if (string.IsNullOrEmpty(clean)) continue;
-                
-                if (!tagCounts.ContainsKey(clean)) tagCounts[clean] = 0;
-                tagCounts[clean]++;
-            }
-        }
-
-        return tagCounts.OrderByDescending(x => x.Value).Select(x => x.Key).ToList();
-    }
-
     public async Task SaveMedia(MediaDTO dto)
     {
-        BulletItem? item = null;
-        if (dto.Date.Kind == DateTimeKind.Unspecified) dto.Date = DateTime.SpecifyKind(dto.Date, DateTimeKind.Utc);
+        using var db = _factory.CreateDbContext();
 
-        if (dto.Id > 0) item = await _db.BulletItems.FindAsync(dto.Id);
+        // --- UTC FIX ---
+        if (dto.Date.Kind == DateTimeKind.Unspecified) dto.Date = DateTime.SpecifyKind(dto.Date, DateTimeKind.Utc);
+        else if (dto.Date.Kind == DateTimeKind.Local) dto.Date = dto.Date.ToUniversalTime();
+        // ---------------
+
+        BulletItem? item = null;
+        if (dto.Id > 0) item = await db.BulletItems.FindAsync(dto.Id);
         else {
             item = new BulletItem { UserId = dto.UserId, Type = "media", CreatedAt = DateTime.UtcNow };
-            await _db.BulletItems.AddAsync(item);
+            await db.BulletItems.AddAsync(item);
         }
 
         item.Title = dto.Title; item.Category = dto.Category; item.Description = dto.Description; 
         item.ImgUrl = dto.ImgUrl; item.LinkUrl = dto.LinkUrl; item.Date = dto.Date;
         item.SortOrder = dto.SortOrder;
         
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
 
-        var detail = await _db.BulletMediaDetails.FindAsync(item.Id);
-        if (detail == null) { detail = new BulletMediaDetail { BulletItemId = item.Id }; await _db.BulletMediaDetails.AddAsync(detail); }
+        var detail = await db.BulletMediaDetails.FindAsync(item.Id);
+        if (detail == null) { detail = new BulletMediaDetail { BulletItemId = item.Id }; await db.BulletMediaDetails.AddAsync(detail); }
 
+        // --- MAPPING FIX ---
         detail.Rating = dto.Detail.Rating;
         detail.ReleaseYear = dto.Detail.ReleaseYear;
         detail.Tags = dto.Detail.Tags;
+        // -------------------
 
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
 
-        var oldNotes = await _db.BulletItemNotes.Where(n => n.BulletItemId == item.Id).ToListAsync();
-        _db.BulletItemNotes.RemoveRange(oldNotes);
-        foreach (var n in dto.Notes) { n.Id = 0; n.BulletItemId = item.Id; await _db.BulletItemNotes.AddAsync(n); }
-        await _db.SaveChangesAsync();
+        var oldNotes = await db.BulletItemNotes.Where(n => n.BulletItemId == item.Id).ToListAsync();
+        db.BulletItemNotes.RemoveRange(oldNotes);
+        foreach (var n in dto.Notes) { n.Id = 0; n.BulletItemId = item.Id; await db.BulletItemNotes.AddAsync(n); }
+        
+        await db.SaveChangesAsync();
     }
 
     public async Task<int> ImportFromOldJson(int userId, string jsonContent)
     {
+        using var db = _factory.CreateDbContext();
         int count = 0;
         using var doc = JsonDocument.Parse(jsonContent);
         var root = doc.RootElement;
         JsonElement items = root;
-        if (root.ValueKind == JsonValueKind.Object) {
-            if (root.TryGetProperty("items", out var i)) items = i;
-            else if (root.TryGetProperty("Items", out i)) items = i;
-        }
+        if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("items", out var i)) items = i;
 
         if(items.ValueKind == JsonValueKind.Array)
         {
             foreach (var el in items.EnumerateArray())
             {
-                string GetStr(string key) => (el.TryGetProperty(key, out var v) || el.TryGetProperty(char.ToUpper(key[0]) + key.Substring(1), out v)) ? v.ToString() : "";
-                string GetAny(params string[] keys) { foreach(var k in keys) { var val = GetStr(k); if(!string.IsNullOrEmpty(val)) return val; } return ""; }
-
-                if (GetStr("type").ToLower() == "media")
+                string type = (el.TryGetProperty("type", out var t) ? t.ToString() : "").ToLower();
+                if (type == "media")
                 {
-                    DateTime itemDate = DateTime.UtcNow;
-                    string dateStr = GetStr("date");
-                    if (DateTime.TryParse(dateStr, out var parsedDate)) itemDate = DateTime.SpecifyKind(parsedDate, DateTimeKind.Utc);
+                    DateTime date = DateTime.UtcNow;
+                    if (el.TryGetProperty("date", out var d) && DateTime.TryParse(d.ToString(), out var pd)) date = DateTime.SpecifyKind(pd, DateTimeKind.Utc);
 
-                    var item = new BulletItem { 
-                        UserId = userId, Type = "media", CreatedAt = DateTime.UtcNow, Date = itemDate,
-                        Title = GetStr("title"), Description = GetStr("description"), OriginalStringId = GetStr("id"),
-                        Category = GetStr("category"), ImgUrl = GetAny("img", "imgUrl", "image"), LinkUrl = GetAny("url", "link", "linkUrl")
-                    };
-                    
-                    if(string.IsNullOrEmpty(item.Category)) item.Category = "personal";
-
-                    await _db.BulletItems.AddAsync(item);
-                    await _db.SaveChangesAsync(); 
+                    var item = new BulletItem { UserId = userId, Type = "media", CreatedAt = DateTime.UtcNow, Date = date, Title = (el.TryGetProperty("title", out var tit) ? tit.ToString() : ""), OriginalStringId = (el.TryGetProperty("id", out var oid) ? oid.ToString() : "") };
+                    await db.BulletItems.AddAsync(item);
+                    await db.SaveChangesAsync();
 
                     var detail = new BulletMediaDetail { BulletItemId = item.Id };
-                    
-                    if (int.TryParse(GetStr("rating"), out int r)) detail.Rating = r;
-                    if (int.TryParse(GetAny("year", "releaseYear"), out int y)) detail.ReleaseYear = y;
-                    
-                    if(el.TryGetProperty("tags", out var tagsEl) && tagsEl.ValueKind == JsonValueKind.Array)
-                    {
-                        var tList = new List<string>();
-                        foreach(var t in tagsEl.EnumerateArray()) tList.Add(t.GetString() ?? "");
-                        detail.Tags = string.Join(", ", tList.Where(x => !string.IsNullOrEmpty(x)));
-                    }
-                    else 
-                    {
-                        detail.Tags = GetStr("tags");
-                    }
-
-                    await _db.BulletMediaDetails.AddAsync(detail);
-
-                    if (el.TryGetProperty("notes", out var notesElement) && notesElement.ValueKind == JsonValueKind.Array)
-                    {
-                        int order = 0;
-                        foreach(var noteEl in notesElement.EnumerateArray()) {
-                            var newNote = new BulletItemNote { BulletItemId = item.Id, Order = order++ };
-                            if (noteEl.ValueKind == JsonValueKind.String) newNote.Content = noteEl.GetString() ?? "";
-                            else if (noteEl.ValueKind == JsonValueKind.Object) {
-                                if(noteEl.TryGetProperty("text", out var t)) newNote.Content = t.ToString();
-                                else if(noteEl.TryGetProperty("content", out var c)) newNote.Content = c.ToString();
-                                if(noteEl.TryGetProperty("img", out var img)) newNote.ImgUrl = img.ToString();
-                                if(noteEl.TryGetProperty("link", out var lnk)) newNote.LinkUrl = lnk.ToString();
-                            }
-                            if (!string.IsNullOrEmpty(newNote.Content) || !string.IsNullOrEmpty(newNote.ImgUrl)) await _db.BulletItemNotes.AddAsync(newNote);
-                        }
-                    }
+                    if(el.TryGetProperty("rating", out var rat)) detail.Rating = rat.GetInt32();
+                    if(el.TryGetProperty("year", out var yr)) detail.ReleaseYear = yr.GetInt32();
+                    await db.BulletMediaDetails.AddAsync(detail);
                     count++;
                 }
             }
-            await _db.SaveChangesAsync();
+            await db.SaveChangesAsync();
         }
         return count;
     }
