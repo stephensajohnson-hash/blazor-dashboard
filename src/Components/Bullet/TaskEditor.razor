@@ -1,193 +1,106 @@
 @namespace Dashboard.Components.Bullet
 @using Dashboard
-@using Microsoft.AspNetCore.Components.Forms
-@inject BulletBaseService BaseService
-@inject BulletMediaService MediaService
-
-<style>
-    /* Hide number input spinners */
-    input[type=number]::-webkit-inner-spin-button, 
-    input[type=number]::-webkit-outer-spin-button { 
-        -webkit-appearance: none; 
-        margin: 0; 
-    }
-    input[type=number] {
-        -moz-appearance: textfield;
-    }
-</style>
+@inject IJSRuntime JS
+@inject BulletSportsService SportsService
 
 @if (Item != null)
 {
-    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" @onclick="Cancel">
-        <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]" @onclick:stopPropagation="true">
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div class="bg-gray-800 border border-gray-700 w-full max-w-lg rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             
-            <div class="p-4 border-b border-gray-800 flex flex-col gap-3 bg-gray-800/50 rounded-t-xl">
-                <div class="flex justify-between items-center">
-                    <span class="text-xl font-bold text-white">@(Item.Id == 0 ? "New Item" : "Edit Item")</span>
-                    <button @onclick="Cancel" class="text-gray-400 hover:text-white text-xl font-bold px-2">✕</button>
+            <div class="px-4 py-3 border-b border-gray-700 flex justify-between items-center bg-gray-900/50">
+                <div class="flex items-center gap-2">
+                    <span class="text-xl">
+                        @if(Item.Type == "meeting") { <span>📅 Meeting</span> }
+                        else if(Item.Type == "habit") { <span>🔥 Habit</span> }
+                        else if(Item.Type == "sports") { <span>🏆 Game</span> }
+                        else { <span>📝 Task</span> }
+                    </span>
                 </div>
-
-                <div class="flex gap-2 flex-wrap">
-                    <button @onclick='() => Item.Type = "task"' class="px-3 py-1.5 rounded text-xs font-bold flex items-center gap-2 transition border @GetButtonClass("task", "gray")"><span>📝</span> Task</button>
-                    <button @onclick='() => Item.Type = "meeting"' class="px-3 py-1.5 rounded text-xs font-bold flex items-center gap-2 transition border @GetButtonClass("meeting", "purple")"><span>🤝</span> Meeting</button>
-                    <button @onclick='() => Item.Type = "habit"' class="px-3 py-1.5 rounded text-xs font-bold flex items-center gap-2 transition border @GetButtonClass("habit", "cyan")"><span>🔥</span> Habit</button>
-                    <button @onclick='() => Item.Type = "media"' class="px-3 py-1.5 rounded text-xs font-bold flex items-center gap-2 transition border @GetButtonClass("media", "pink")"><span>🎬</span> Media</button>
-                    <button @onclick='() => Item.Type = "holiday"' class="px-3 py-1.5 rounded text-xs font-bold flex items-center gap-2 transition border @GetButtonClass("holiday", "blue")"><span>🎉</span> Holiday</button>
-                    <button @onclick='() => Item.Type = "birthday"' class="px-3 py-1.5 rounded text-xs font-bold flex items-center gap-2 transition border @GetButtonClass("birthday", "yellow")"><span>🎂</span> Birthday</button>
-                    <button @onclick='() => Item.Type = "anniversary"' class="px-3 py-1.5 rounded text-xs font-bold flex items-center gap-2 transition border @GetButtonClass("anniversary", "indigo")"><span>📅</span> Anniversary</button>
-                    <button @onclick='() => Item.Type = "vacation"' class="px-3 py-1.5 rounded text-xs font-bold flex items-center gap-2 transition border @GetButtonClass("vacation", "red")"><span>✈️</span> Vacation</button>
-                    <button @onclick='() => Item.Type = "health"' class="px-3 py-1.5 rounded text-xs font-bold flex items-center gap-2 transition border @GetButtonClass("health", "emerald")"><span>🍏</span> Health</button>
-                </div>
+                <button @onclick="HandleDelete" class="text-red-400 hover:text-red-300 text-sm font-bold uppercase tracking-wider transition">Delete</button>
             </div>
 
-            <div class="p-6 overflow-y-auto flex-1 space-y-4">
+            <div class="p-6 overflow-y-auto space-y-5">
                 
-                @if(!string.IsNullOrEmpty(errorMessage))
-                {
-                    <div class="bg-red-900/50 border border-red-500 text-red-200 p-2 rounded text-xs font-bold">⚠️ @errorMessage</div>
-                }
-
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div class="md:col-span-2">
-                        <label class="block text-xs font-bold text-gray-500 mb-1">TITLE</label>
-                        <input @bind="Item.Title" class="w-full bg-black border border-gray-700 rounded p-2 text-white focus:border-blue-500 outline-none" placeholder="Title..." />
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-gray-500 mb-1">CATEGORY</label>
-                        <select @bind="Item.Category" class="w-full bg-black border border-gray-700 rounded p-2 text-white focus:border-blue-500 outline-none capitalize">
-                            <option value="personal">Personal</option>
-                            <option value="work">Work</option>
-                            <option value="health">Health</option>
-                        </select>
-                    </div>
-                    @if(Item.Type != "vacation")
-                    {
-                        <div><label class="block text-xs font-bold text-gray-500 mb-1">DATE</label><input type="date" value="@Item.Date.ToString("yyyy-MM-dd")" @onchange="@(e => Item.Date = DateTime.Parse(e.Value?.ToString() ?? DateTime.Now.ToString()))" class="w-full bg-black border border-gray-700 rounded p-2 text-white focus:border-blue-500 outline-none" /></div>
-                    }
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Title</label>
+                    <input @bind="Item.Title" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none transition" placeholder="What's happening?" />
                 </div>
 
-                @if(Item.Type == "health")
+                @if(Item.Type == "sports")
                 {
-                    <div class="space-y-4">
-                        <div class="bg-emerald-900/10 p-3 rounded border border-emerald-800/30 grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div><label class="block text-xs font-bold text-emerald-400 mb-1">WEIGHT (LBS)</label><input type="number" step="0.1" @bind="Item.HealthDetail.WeightLbs" class="w-full bg-black border border-emerald-800 rounded p-2 text-emerald-200 focus:border-emerald-500 outline-none" /></div>
-                            <div><label class="block text-xs font-bold text-emerald-400 mb-1">TDEE (Calc)</label><input type="number" @bind="Item.HealthDetail.CalculatedTDEE" class="w-full bg-black border border-emerald-800 rounded p-2 text-emerald-200 focus:border-emerald-500 outline-none" /></div>
-                            <div class="md:col-span-2 flex items-end pb-2 text-xs text-gray-400 italic">Enter weight to calc TDEE automatically.</div>
+                    <div class="grid grid-cols-2 gap-4 bg-black/20 p-4 rounded-lg border border-gray-700/50">
+                        <div>
+                            <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Away Team</label>
+                            <select @bind="SportsDetail.AwayTeamId" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm text-white">
+                                <option value="0">-- Select --</option>
+                                @foreach(var t in teams) { <option value="@t.Id">@t.Name</option> }
+                            </select>
+                            <input type="number" @bind="SportsDetail.AwayScore" class="w-full mt-1 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-white font-mono font-bold text-center" placeholder="Score" />
                         </div>
 
-                        <div class="border border-gray-700 rounded overflow-hidden">
-                            <div class="bg-gray-800 p-2 text-xs font-bold text-gray-300 flex justify-between">
-                                <span>MEALS</span>
-                                <button @onclick="() => Item.Meals.Add(new BulletHealthMeal())" class="text-emerald-400 hover:text-white">+ Add Meal</button>
-                            </div>
-                            <div class="p-2 space-y-2 bg-black/20">
-                                <div class="grid grid-cols-12 gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1 px-1">
-                                    <div class="col-span-3">Food</div>
-                                    <div class="col-span-2">Type</div>
-                                    <div class="col-span-1">Cal</div>
-                                    <div class="col-span-1 text-blue-400">Prot</div>
-                                    <div class="col-span-1 text-green-400">Carb</div>
-                                    <div class="col-span-1 text-yellow-400">Fat</div>
-                                    <div class="col-span-1">Fib</div>
-                                    <div class="col-span-2"></div>
-                                </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Home Team</label>
+                            <select @bind="SportsDetail.HomeTeamId" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm text-white">
+                                <option value="0">-- Select --</option>
+                                @foreach(var t in teams) { <option value="@t.Id">@t.Name</option> }
+                            </select>
+                            <input type="number" @bind="SportsDetail.HomeScore" class="w-full mt-1 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-white font-mono font-bold text-center" placeholder="Score" />
+                        </div>
+                    </div>
 
-                                @foreach(var meal in Item.Meals)
-                                {
-                                    <div class="grid grid-cols-12 gap-2 items-center bg-gray-900 p-2 rounded border border-gray-800">
-                                        <div class="col-span-3"><input @bind="meal.Name" class="w-full bg-black border border-gray-700 rounded p-1 text-xs text-white" placeholder="Food Name" /></div>
-                                        <div class="col-span-2"><select @bind="meal.MealType" class="w-full bg-black border border-gray-700 rounded p-1 text-xs text-gray-300"><option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snack</option></select></div>
-                                        <div class="col-span-1"><input type="number" @bind="meal.Calories" class="w-full bg-black border border-gray-700 rounded p-1 text-xs text-white text-center" /></div>
-                                        <div class="col-span-1"><input type="number" @bind="meal.Protein" class="w-full bg-black border border-gray-700 rounded p-1 text-xs text-blue-300 text-center" /></div>
-                                        <div class="col-span-1"><input type="number" @bind="meal.Carbs" class="w-full bg-black border border-gray-700 rounded p-1 text-xs text-green-300 text-center" /></div>
-                                        <div class="col-span-1"><input type="number" @bind="meal.Fat" class="w-full bg-black border border-gray-700 rounded p-1 text-xs text-yellow-300 text-center" /></div>
-                                        <div class="col-span-1"><input type="number" @bind="meal.Fiber" class="w-full bg-black border border-gray-700 rounded p-1 text-xs text-gray-400 text-center" /></div>
-                                        <div class="col-span-2 text-right"><button @onclick="() => Item.Meals.Remove(meal)" class="text-red-500 text-xs px-2 hover:text-white">✕</button></div>
-                                    </div>
-                                }
-                                @if(!Item.Meals.Any()) { <div class="text-center text-xs text-gray-600 py-2">No meals logged.</div> }
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Status</label>
+                            <div class="flex items-center gap-2 bg-gray-900 border border-gray-700 rounded px-3 py-2">
+                                <input type="checkbox" @bind="SportsDetail.IsComplete" id="chkComplete" class="w-4 h-4 rounded bg-gray-700 border-gray-600 text-green-500 focus:ring-0" />
+                                <label for="chkComplete" class="text-sm text-white cursor-pointer select-none">Game Final</label>
                             </div>
                         </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">TV Channel</label>
+                            <input @bind="SportsDetail.TvChannel" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="e.g. ESPN, CBS" />
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Start Time</label>
+                        <input type="time" @bind="SportsDetail.StartTime" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" />
+                    </div>
+                }
 
-                        <div class="border border-gray-700 rounded overflow-hidden">
-                            <div class="bg-gray-800 p-2 text-xs font-bold text-gray-300 flex justify-between">
-                                <span>WORKOUTS</span>
-                                <button @onclick="() => Item.Workouts.Add(new BulletHealthWorkout())" class="text-orange-400 hover:text-white">+ Add Workout</button>
-                            </div>
-                            <div class="p-2 space-y-2 bg-black/20">
-                                <div class="grid grid-cols-12 gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1 px-1">
-                                    <div class="col-span-6">Description</div>
-                                    <div class="col-span-2">Burned</div>
-                                    <div class="col-span-2">Mins</div>
-                                    <div class="col-span-2"></div>
-                                </div>
-
-                                @foreach(var w in Item.Workouts)
-                                {
-                                    <div class="grid grid-cols-12 gap-2 items-center bg-gray-900 p-2 rounded border border-gray-800">
-                                        <div class="col-span-6"><input @bind="w.Name" class="w-full bg-black border border-gray-700 rounded p-1 text-xs text-white" placeholder="Workout Description" /></div>
-                                        <div class="col-span-2"><input type="number" @bind="w.CaloriesBurned" class="w-full bg-black border border-gray-700 rounded p-1 text-xs text-orange-300 text-center" /></div>
-                                        <div class="col-span-2"><input type="number" @bind="w.TimeSpentMinutes" class="w-full bg-black border border-gray-700 rounded p-1 text-xs text-gray-300 text-center" /></div>
-                                        <div class="col-span-2 text-right"><button @onclick="() => Item.Workouts.Remove(w)" class="text-red-500 text-xs px-2 hover:text-white">✕</button></div>
-                                    </div>
-                                }
-                                @if(!Item.Workouts.Any()) { <div class="text-center text-xs text-gray-600 py-2">No workouts logged.</div> }
-                            </div>
+                @if(Item.Type == "meeting")
+                {
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Start Time</label>
+                            <input type="time" @bind="MeetingDetail.StartTime" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" />
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Duration (Min)</label>
+                            <input type="number" @bind="MeetingDetail.DurationMinutes" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" />
                         </div>
                     </div>
                 }
 
-                @if(Item.Type == "vacation") { <div class="bg-red-900/10 p-3 rounded border border-red-800/30"><div class="grid grid-cols-2 gap-4 mb-3"><div><label class="block text-xs font-bold text-red-400 mb-1">START DATE</label><input type="date" value="@Item.Date.ToString("yyyy-MM-dd")" @onchange="@(e => Item.Date = DateTime.Parse(e.Value?.ToString() ?? DateTime.Now.ToString()))" class="w-full bg-black border border-red-800 rounded p-2 text-red-200 focus:border-red-500 outline-none" /></div><div><label class="block text-xs font-bold text-red-400 mb-1">END DATE</label><input type="date" value="@(Item.EndDate?.ToString("yyyy-MM-dd") ?? Item.Date.ToString("yyyy-MM-dd"))" @onchange="@(e => Item.EndDate = DateTime.Parse(e.Value?.ToString() ?? Item.Date.ToString()))" class="w-full bg-black border border-red-800 rounded p-2 text-red-200 focus:border-red-500 outline-none" /></div></div><div><label class="block text-xs font-bold text-red-400 mb-1">GROUP ID (Required for ranges)</label><input @bind="VacationDetail.VacationGroupId" class="w-full bg-black border border-red-800 rounded p-2 text-red-200 focus:border-red-500 outline-none" placeholder="e.g. SummerTrip2026" /></div></div> }
-
-                @if(Item.Type == "anniversary") { <div class="bg-indigo-900/10 p-3 rounded border border-indigo-700/30 grid grid-cols-2 gap-4"><div><label class="block text-xs font-bold text-indigo-400 mb-1">TYPE</label><select @bind="AnniversaryDetail.AnniversaryType" class="w-full bg-black border border-indigo-700 rounded p-2 text-indigo-300 focus:border-indigo-500 outline-none"><option value="Wedding">Wedding</option><option value="Death">Death</option><option value="Other">Other</option></select></div><div><label class="block text-xs font-bold text-indigo-400 mb-1">FIRST YEAR</label><input type="number" value="@(AnniversaryDetail.FirstYear == 0 ? "" : AnniversaryDetail.FirstYear)" @onchange="@(e => { if(int.TryParse(e.Value?.ToString(), out int y)) AnniversaryDetail.FirstYear = y; else AnniversaryDetail.FirstYear = 0; })" class="w-full bg-black border border-indigo-700 rounded p-2 text-indigo-300 focus:border-indigo-500 outline-none" /></div></div> }
-                @if(Item.Type == "media"){ <div class="bg-pink-900/10 p-3 rounded border border-pink-900/30 space-y-3"><div class="flex gap-4"><div class="flex-1"><label class="block text-xs font-bold text-pink-500 mb-1">RATING (1-10)</label><div class="flex gap-1">@for(int i = 1; i <= 10; i++){ int star = i; <button @onclick="() => MediaDetail.Rating = star" class="text-lg focus:outline-none transition hover:scale-125 @(MediaDetail.Rating >= star ? "text-yellow-400" : "text-gray-700")">★</button> }<span class="ml-2 text-sm text-gray-400 font-bold">@MediaDetail.Rating</span></div></div><div class="w-24"><label class="block text-xs font-bold text-pink-500 mb-1">YEAR</label><input type="number" value="@(MediaDetail.ReleaseYear == 0 ? "" : MediaDetail.ReleaseYear)" @onchange="@(e => { if(int.TryParse(e.Value?.ToString(), out int y)) MediaDetail.ReleaseYear = y; else MediaDetail.ReleaseYear = 0; })" class="w-full bg-black border border-pink-800 rounded p-2 text-pink-300 focus:border-pink-500 outline-none" placeholder="YYYY" /></div></div><div><label class="block text-xs font-bold text-pink-500 mb-1">TAGS</label><input @bind="MediaDetail.Tags" class="w-full bg-black border border-pink-800 rounded p-2 text-pink-300 focus:border-pink-500 outline-none mb-2" placeholder="Action, Sci-Fi..." /><div class="flex flex-wrap gap-1">@foreach(var tag in suggestedTags){ <button @onclick="() => ToggleTag(tag)" class="text-[10px] px-2 py-1 rounded border border-gray-700 hover:border-pink-500 hover:text-white transition @(IsTagSelected(tag) ? "bg-pink-900 text-white" : "bg-black text-gray-400")">@tag</button> }</div></div></div> }
-                @if(Item.Type == "habit"){ <div class="grid grid-cols-2 gap-4 bg-cyan-900/10 p-3 rounded border border-cyan-900/30"><div><label class="block text-xs font-bold text-cyan-500 mb-1">STREAK</label><input type="number" @bind="HabitDetail.StreakCount" class="w-full bg-black border border-cyan-800 rounded p-2 text-cyan-300 focus:border-cyan-500 outline-none" /></div><div><label class="block text-xs font-bold text-cyan-500 mb-1">STATUS</label><select @bind="HabitDetail.Status" class="w-full bg-black border border-cyan-800 rounded p-2 text-cyan-300 focus:border-cyan-500 outline-none"><option value="Active">Active</option><option value="Paused">Paused</option><option value="Archived">Archived</option></select></div></div> }
-                @if(Item.Type == "task"){ <div class="grid grid-cols-2 gap-4"><div><label class="block text-xs font-bold text-gray-500 mb-1">STATUS</label><select @bind="TaskDetail.Status" class="w-full bg-black border border-gray-700 rounded p-2 text-white focus:border-blue-500 outline-none"><option>Pending</option><option>In Progress</option><option>Completed</option></select></div><div><label class="block text-xs font-bold text-gray-500 mb-1">PRIORITY</label><select @bind="TaskDetail.Priority" class="w-full bg-black border border-gray-700 rounded p-2 text-white focus:border-blue-500 outline-none"><option>Low</option><option>Normal</option><option>High</option></select></div></div><div class="grid grid-cols-2 gap-4"><div><label class="block text-xs font-bold text-gray-500 mb-1">TICKET #</label><input @bind="TaskDetail.TicketNumber" class="w-full bg-black border border-gray-700 rounded p-2 text-white focus:border-blue-500 outline-none" /></div><div><label class="block text-xs font-bold text-gray-500 mb-1">TICKET URL</label><input @bind="TaskDetail.TicketUrl" class="w-full bg-black border border-gray-700 rounded p-2 text-white focus:border-blue-500 outline-none" /></div></div> }
-                @if(Item.Type == "meeting"){ <div class="grid grid-cols-3 gap-4"><div><label class="block text-xs font-bold text-purple-400 mb-1">START</label><input type="time" value="@(MeetingDetail.StartTime?.ToString("HH:mm") ?? "")" @onchange="@(e => { if(TimeSpan.TryParse(e.Value?.ToString(), out var ts)) MeetingDetail.StartTime = Item.Date.Date + ts; })" class="w-full bg-black border border-gray-700 rounded p-2 text-white focus:border-purple-500 outline-none" /></div><div><label class="block text-xs font-bold text-purple-400 mb-1">MINUTES</label><input type="number" @bind="MeetingDetail.DurationMinutes" class="w-full bg-black border border-gray-700 rounded p-2 text-white focus:border-purple-500 outline-none" /></div><div><label class="block text-xs font-bold text-purple-400 mb-1">ACTUAL</label><input type="number" @bind="MeetingDetail.ActualDurationMinutes" class="w-full bg-black border border-gray-700 rounded p-2 text-white focus:border-purple-500 outline-none" /></div></div> }
-                @if(Item.Type == "holiday"){ <div class="bg-blue-900/10 p-3 rounded border border-blue-900/30"><div class="flex items-center gap-2"><input type="checkbox" @bind="HolidayDetail.IsWorkHoliday" class="w-5 h-5 rounded bg-black border border-blue-600 accent-blue-500 cursor-pointer" /><label class="font-bold text-blue-400">Is Work Holiday?</label></div></div> }
-                @if(Item.Type == "birthday"){ <div class="bg-yellow-900/10 p-3 rounded border border-yellow-700/30"><label class="block text-xs font-bold text-yellow-500 mb-1">BIRTH YEAR (YYYY)</label><input type="number" value="@(BirthdayDetail.DOB_Year == 0 ? "" : BirthdayDetail.DOB_Year)" @onchange="@(e => { if(int.TryParse(e.Value?.ToString(), out int y)) BirthdayDetail.DOB_Year = y; else BirthdayDetail.DOB_Year = 0; })" class="w-full bg-black border border-yellow-700 rounded p-2 text-yellow-200 focus:border-yellow-500 outline-none" /></div> }
-
-                <div><label class="block text-xs font-bold text-gray-500 mb-1">DESCRIPTION</label><textarea @bind="Item.Description" rows="3" class="w-full bg-black border border-gray-700 rounded p-2 text-white focus:border-blue-500 outline-none"></textarea></div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                @if(Item.Type == "habit")
+                {
                     <div>
-                        <label class="block text-xs font-bold text-gray-500 mb-1">IMAGE URL / UPLOAD</label>
-                        <div class="flex gap-2 mb-2">
-                            <input @bind="Item.ImgUrl" class="w-full bg-black border border-gray-700 rounded p-2 text-white focus:border-blue-500 outline-none text-xs" placeholder="https://..." />
-                            <label class="cursor-pointer bg-gray-700 hover:bg-gray-600 text-white px-2 py-2 rounded flex items-center justify-center">📂 <InputFile OnChange="@(e => UploadImage(e, url => Item.ImgUrl = url))" class="hidden" /></label>
-                        </div>
-                        @if(!string.IsNullOrEmpty(Item.ImgUrl)) { <img src="@Item.ImgUrl" class="w-[100px] h-[100px] object-cover border border-gray-600 rounded bg-black" /> }
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Current Streak</label>
+                        <input type="number" @bind="HabitDetail.StreakCount" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" />
                     </div>
-                    <div><label class="block text-xs font-bold text-gray-500 mb-1">LINK URL</label><input @bind="Item.LinkUrl" class="w-full bg-black border border-gray-700 rounded p-2 text-white focus:border-blue-500 outline-none" /></div>
+                }
+
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Description</label>
+                    <textarea @bind="Item.Description" rows="3" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm resize-none focus:ring-2 focus:ring-blue-500 outline-none transition"></textarea>
                 </div>
 
-                <div class="border-t border-gray-800 pt-4">
-                    <label class="block text-xs font-bold text-gray-500 mb-2">NOTES</label>
-                    @foreach(var note in Notes)
-                    {
-                        <div class="bg-gray-800/30 p-2 rounded mb-2 border border-gray-700">
-                            <div class="flex gap-2 mb-2">
-                                <input @bind="note.Content" class="flex-1 bg-black border border-gray-700 rounded p-1 text-sm text-white" placeholder="Note text..." />
-                                <input @bind="note.LinkUrl" class="w-1/4 bg-black border border-gray-700 rounded p-1 text-sm text-gray-400" placeholder="Link..." />
-                                <button @onclick="() => Notes.Remove(note)" class="text-red-500 hover:text-red-400 font-bold px-2">×</button>
-                            </div>
-                            <div class="flex gap-2 items-center">
-                                <input @bind="note.ImgUrl" class="flex-1 bg-black border border-gray-700 rounded p-1 text-xs text-gray-500" placeholder="Image URL..." />
-                                <label class="cursor-pointer bg-gray-700 hover:bg-gray-600 text-white px-2 py-1 rounded text-xs">Upload <InputFile OnChange="@(e => UploadImage(e, url => note.ImgUrl = url))" class="hidden" /></label>
-                                @if(!string.IsNullOrEmpty(note.ImgUrl)) { <img src="@note.ImgUrl" class="w-8 h-8 object-cover border border-gray-600 rounded" /> }
-                            </div>
-                        </div>
-                    }
-                    <button @onclick="() => Notes.Add(new BulletItemNote())" class="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-white">+ Add Note</button>
-                </div>
             </div>
 
-            <div class="p-4 border-t border-gray-800 bg-gray-800/50 rounded-b-xl flex justify-between">
-                @if(Item.Id > 0) { <button @onclick="Delete" class="text-red-400 hover:text-red-300 text-sm font-bold">Delete Item</button> } else { <div></div> }
-                <div class="flex gap-2">
-                    <button @onclick="Cancel" class="px-4 py-2 rounded text-gray-300 hover:text-white hover:bg-gray-700">Cancel</button>
-                    <button @onclick="HandleSave" class="px-6 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white font-bold shadow-lg">Save</button>
-                </div>
+            <div class="px-6 py-4 bg-gray-900/50 border-t border-gray-700 flex justify-end gap-3">
+                <button @onclick="HandleCancel" class="px-4 py-2 rounded-lg text-sm font-bold text-gray-400 hover:text-white hover:bg-gray-800 transition">Cancel</button>
+                <button @onclick="HandleSave" class="px-6 py-2 rounded-lg text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg transition transform hover:scale-105">Save Changes</button>
             </div>
         </div>
     </div>
@@ -195,108 +108,37 @@
 
 @code {
     [Parameter] public BulletTaskService.TaskDTO? Item { get; set; }
+    
+    // Details
     [Parameter] public BulletTaskDetail TaskDetail { get; set; } = new();
     [Parameter] public BulletMeetingDetail MeetingDetail { get; set; } = new();
     [Parameter] public BulletHabitDetail HabitDetail { get; set; } = new();
-    [Parameter] public BulletMediaDetail MediaDetail { get; set; } = new(); 
+    [Parameter] public BulletMediaDetail MediaDetail { get; set; } = new();
     [Parameter] public BulletHolidayDetail HolidayDetail { get; set; } = new();
     [Parameter] public BulletBirthdayDetail BirthdayDetail { get; set; } = new();
     [Parameter] public BulletAnniversaryDetail AnniversaryDetail { get; set; } = new();
-    [Parameter] public BulletVacationDetail VacationDetail { get; set; } = new(); 
-    [Parameter] public BulletHealthDetail HealthDetail { get; set; } = new(); 
+    [Parameter] public BulletVacationDetail VacationDetail { get; set; } = new();
+    [Parameter] public BulletHealthDetail HealthDetail { get; set; } = new();
+    [Parameter] public BulletGameDetail SportsDetail { get; set; } = new(); // NEW
+
     [Parameter] public List<BulletItemNote> Notes { get; set; } = new();
-    
+
     [Parameter] public EventCallback OnSave { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
     [Parameter] public EventCallback OnDelete { get; set; }
 
-    private List<string> suggestedTags = new();
-    private string errorMessage = "";
+    // Dropdown Data
+    private List<Team> teams = new();
 
     protected override async Task OnParametersSetAsync()
     {
-        errorMessage = "";
-        if (Item?.Type == "media")
+        if (Item?.Type == "sports" && Item.UserId > 0)
         {
-            if (Item.Id == 0 && MediaDetail.Rating == 0) MediaDetail.Rating = 6;
-            suggestedTags = await MediaService.GetTopTags(Item.UserId);
-        }
-        
-        if (Item?.Type == "health")
-        {
-            if (Item.Meals == null) Item.Meals = new();
-            if (Item.Workouts == null) Item.Workouts = new();
-            HealthDetail = Item.HealthDetail ?? new();
-        }
-
-        if(Item != null && Item.EndDate == null)
-        {
-            Item.EndDate = Item.Date;
+            teams = await SportsService.GetTeams(Item.UserId);
         }
     }
 
-    private bool IsTagSelected(string tag)
-    {
-        if (string.IsNullOrEmpty(MediaDetail.Tags)) return false;
-        var tags = MediaDetail.Tags.Split(',').Select(t => t.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return tags.Contains(tag);
-    }
-
-    private void ToggleTag(string tag)
-    {
-        var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (!string.IsNullOrEmpty(MediaDetail.Tags)) { foreach (var t in MediaDetail.Tags.Split(',')) { var clean = t.Trim(); if (!string.IsNullOrEmpty(clean)) tags.Add(clean); } }
-        if (tags.Contains(tag)) tags.Remove(tag); else tags.Add(tag);
-        MediaDetail.Tags = string.Join(", ", tags);
-    }
-
-    private async Task UploadImage(InputFileChangeEventArgs e, Action<string> onSuccess)
-    {
-        try {
-            var file = e.File; using var stream = file.OpenReadStream(5 * 1024 * 1024); using var ms = new System.IO.MemoryStream();
-            await stream.CopyToAsync(ms);
-            var url = await BaseService.SaveImageAsync(ms.ToArray(), file.ContentType);
-            onSuccess(url);
-        } catch (Exception ex) { Console.WriteLine($"Upload Error: {ex.Message}"); }
-    }
-
-    private string GetButtonClass(string type, string color)
-    {
-        bool isActive = Item?.Type == type;
-        if (isActive) {
-            return color switch {
-                "purple" => "bg-purple-600 text-white border-purple-500",
-                "cyan" => "bg-cyan-600 text-white border-cyan-500",
-                "pink" => "bg-pink-600 text-white border-pink-500",
-                "blue" => "bg-blue-600 text-white border-blue-500",
-                "yellow" => "bg-yellow-600 text-white border-yellow-500",
-                "indigo" => "bg-indigo-600 text-white border-indigo-500",
-                "red" => "bg-red-600 text-white border-red-500",
-                "emerald" => "bg-emerald-600 text-white border-emerald-500",
-                _ => "bg-gray-600 text-white border-gray-500"
-            };
-        }
-        return "bg-gray-900 text-gray-400 border-gray-700 hover:bg-gray-800";
-    }
-
-    private async Task HandleSave()
-    {
-        errorMessage = "";
-        
-        if (Item.Type == "vacation")
-        {
-            var start = Item.Date.Date;
-            var end = (Item.EndDate ?? start).Date;
-            if (end > start && string.IsNullOrWhiteSpace(VacationDetail.VacationGroupId))
-            {
-                errorMessage = "Group ID is required when creating a multi-day vacation.";
-                return;
-            }
-        }
-
-        await OnSave.InvokeAsync();
-    }
-
-    private async Task Cancel() => await OnCancel.InvokeAsync();
-    private async Task Delete() => await OnDelete.InvokeAsync();
+    private async Task HandleSave() => await OnSave.InvokeAsync();
+    private async Task HandleCancel() => await OnCancel.InvokeAsync();
+    private async Task HandleDelete() => await OnDelete.InvokeAsync();
 }

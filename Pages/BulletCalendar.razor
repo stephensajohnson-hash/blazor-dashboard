@@ -177,6 +177,7 @@
             AnniversaryDetail="editingItem?.AnniversaryDetail ?? new()"
             VacationDetail="editingItem?.VacationDetail ?? new()"
             HealthDetail="editingItem?.HealthDetail ?? new()"
+            SportsDetail="editingItem?.SportsDetail ?? new()"
             Notes="editingItem?.Notes ?? new()"
             OnSave="SaveItem" 
             OnCancel="() => editingItem = null" 
@@ -275,7 +276,7 @@
             foreach(var h in loadedHealth) { loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "health", Category = h.Category, Date = h.Date, Title = h.Title, Description = h.Description, ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId, HealthDetail = h.Detail, Meals = h.Meals, Workouts = h.Workouts, Notes = h.Notes, SortOrder = h.SortOrder }); }
 
             loadedGames = await SportsService.GetGamesForRange(userId, start, end);
-            foreach(var g in loadedGames) { loadedItems.Add(new BulletTaskService.TaskDTO { Id = g.Id, UserId = g.UserId, Type = "sports", Category = g.Category, Date = g.Date, Title = g.Title, Description = g.Description, ImgUrl = g.ImgUrl, LinkUrl = g.LinkUrl, OriginalStringId = g.OriginalStringId, SortOrder = g.SortOrder }); }
+            foreach(var g in loadedGames) { loadedItems.Add(new BulletTaskService.TaskDTO { Id = g.Id, UserId = g.UserId, Type = "sports", Category = g.Category, Date = g.Date, Title = g.Title, Description = g.Description, ImgUrl = g.ImgUrl, LinkUrl = g.LinkUrl, OriginalStringId = g.OriginalStringId, SportsDetail = g.Detail, SortOrder = g.SortOrder }); }
 
         } catch(Exception ex) { statusMessage = "Error: " + ex.Message; }
         
@@ -318,7 +319,6 @@
     private List<BulletTaskService.TaskDTO> GetItemsForDate(DateTime d) => loadedItems.Where(t => t.Date.Date == d.Date).ToList();
 
     private BulletHabitService.HabitDTO GetHabit(int id) => loadedHabits.FirstOrDefault(h => h.Id == id) ?? new();
-    
     private BulletSportsService.GameDTO GetGame(int id) => loadedGames.FirstOrDefault(g => g.Id == id) ?? new();
 
     private void OpenMediaEdit(BulletTaskService.TaskDTO m) { var json = JsonSerializer.Serialize(m); editingItem = JsonSerializer.Deserialize<BulletTaskService.TaskDTO>(json); }
@@ -326,7 +326,7 @@
     private void OpenBirthdayEdit(BulletTaskService.TaskDTO b) { var json = JsonSerializer.Serialize(b); editingItem = JsonSerializer.Deserialize<BulletTaskService.TaskDTO>(json); }
     private void OpenAnniversaryEdit(BulletTaskService.TaskDTO a) { var json = JsonSerializer.Serialize(a); editingItem = JsonSerializer.Deserialize<BulletTaskService.TaskDTO>(json); }
     private void OpenHealthEdit(BulletTaskService.TaskDTO h) { var json = JsonSerializer.Serialize(h); editingItem = JsonSerializer.Deserialize<BulletTaskService.TaskDTO>(json); }
-    private void OpenSportsEdit(BulletTaskService.TaskDTO t) { OpenEdit(t); } // Currently just generic edit, but hooked up
+    private void OpenSportsEdit(BulletTaskService.TaskDTO t) { var json = JsonSerializer.Serialize(t); editingItem = JsonSerializer.Deserialize<BulletTaskService.TaskDTO>(json); } 
 
     private async Task OpenVacationEdit(BulletTaskService.TaskDTO v) 
     { 
@@ -403,8 +403,15 @@
                 await HealthService.SaveHealth(h); 
             }
             else if (editingItem.Type == "sports") { 
-                // Currently reusing basic task save because full sports editor isn't built yet, but basic fields work
-                await TaskService.SaveTask(editingItem); 
+                var g = new BulletSportsService.GameDTO { 
+                    Id = editingItem.Id, UserId = editingItem.UserId, Type = "sports", 
+                    Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, 
+                    Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, 
+                    OriginalStringId = editingItem.OriginalStringId, 
+                    Detail = editingItem.SportsDetail ?? new(), 
+                    SortOrder = editingItem.SortOrder 
+                }; 
+                await SportsService.SaveGame(g); 
             }
             else { await TaskService.SaveTask(editingItem); }
             editingItem = null; await LoadData();

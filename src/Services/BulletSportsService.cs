@@ -21,7 +21,7 @@ public class BulletSportsService
         public int Losses { get; set; }
         public int Ties { get; set; }
         public int TotalGames => Wins + Losses + Ties;
-        public double WinPercentage => TotalGames == 0 ? 0 : (Wins + (0.5 * Ties)) / TotalGames;
+        public double WinPercentage => TotalGames == 0 ? 0 : (double)(Wins + (0.5 * Ties)) / TotalGames;
         public string Display => $"{Wins}-{Losses}-{Ties}";
         public string PctDisplay => TotalGames > 0 ? $".{(int)(WinPercentage * 1000):D3}" : ".000";
     }
@@ -33,7 +33,7 @@ public class BulletSportsService
         public Season? Season { get; set; }
         public Team? HomeTeam { get; set; }
         public Team? AwayTeam { get; set; }
-        public TeamRecord? FavoriteRecord { get; set; } // Stats for the favorite team entering this game
+        public TeamRecord? FavoriteRecord { get; set; } 
     }
 
     public async Task<List<GameDTO>> GetGamesForRange(int userId, DateTime start, DateTime end)
@@ -69,7 +69,7 @@ public class BulletSportsService
                 g.HomeTeam = teams.FirstOrDefault(t => t.Id == g.Detail.HomeTeamId);
                 g.AwayTeam = teams.FirstOrDefault(t => t.Id == g.Detail.AwayTeamId);
 
-                // Calculate Record for Favorite Team
+                // Calculate Record (Including this game if complete)
                 if (g.Detail.SeasonId > 0)
                 {
                     int favTeamId = 0;
@@ -78,7 +78,8 @@ public class BulletSportsService
 
                     if (favTeamId > 0)
                     {
-                        g.FavoriteRecord = await GetTeamRecord(favTeamId, g.Detail.SeasonId, g.Date);
+                        // UPDATED LOGIC: Pass the Date AND the Game ID to include it
+                        g.FavoriteRecord = await GetTeamRecord(favTeamId, g.Detail.SeasonId, g.Date, g.Id);
                     }
                 }
             }
@@ -86,17 +87,18 @@ public class BulletSportsService
         return games;
     }
 
-    // Calculates W-L-T record for a team in a season UP TO (but not including) a specific date
-    private async Task<TeamRecord> GetTeamRecord(int teamId, int seasonId, DateTime beforeDate)
+    // Calculates W-L-T record including all games up to (and including) the specific game
+    private async Task<TeamRecord> GetTeamRecord(int teamId, int seasonId, DateTime gameDate, int currentGameId)
     {
         var record = new TeamRecord();
 
-        // Get all COMPLETED games for this team in this season before this date
+        // Get all COMPLETED games for this team in this season <= current date
+        // We include the current game ID specifically to ensure it's counted if complete
         var pastGames = await (from d in _db.BulletGameDetails
                                join b in _db.BulletItems on d.BulletItemId equals b.Id
                                where d.SeasonId == seasonId 
                                      && d.IsComplete 
-                                     && b.Date < beforeDate
+                                     && (b.Date < gameDate || b.Id == currentGameId) // Include past OR this specific game
                                      && (d.HomeTeamId == teamId || d.AwayTeamId == teamId)
                                select d).ToListAsync();
 
@@ -114,9 +116,9 @@ public class BulletSportsService
         return record;
     }
 
+    // ... (Keep existing SaveGame/ImportGames logic exactly as is) ...
     public async Task SaveGame(GameDTO dto)
     {
-        // ... (Keep existing SaveGame logic same as before) ...
         BulletItem? item = null;
         if (dto.Date.Kind == DateTimeKind.Unspecified) dto.Date = DateTime.SpecifyKind(dto.Date, DateTimeKind.Utc);
 
@@ -158,16 +160,12 @@ public class BulletSportsService
         }
     }
 
-    // ... (Keep ImportGames method same as previous step) ...
     public async Task<int> ImportGames(int userId, string jsonContent)
     {
-        // (Copy the ImportGames logic from the previous correct response here)
-        // For brevity, I am omitting the full body of ImportGames in this snippet, 
-        // but assume it is the same robust version provided in the previous turn.
-         int count = 0;
+        // (Use same robust import logic from previous turn)
+        int count = 0;
         using var doc = JsonDocument.Parse(jsonContent);
         var root = doc.RootElement;
-        
         JsonElement items = root;
         if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("items", out var i)) items = i;
 

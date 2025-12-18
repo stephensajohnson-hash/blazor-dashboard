@@ -26,6 +26,7 @@ public class BulletTaskService
         public BulletBirthdayDetail BirthdayDetail { get; set; } = new(); 
         public BulletAnniversaryDetail AnniversaryDetail { get; set; } = new();
         public BulletVacationDetail VacationDetail { get; set; } = new();
+        public BulletGameDetail? SportsDetail { get; set; } 
         
         // NEW: Health
         public BulletHealthDetail HealthDetail { get; set; } = new();
