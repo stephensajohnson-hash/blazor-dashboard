@@ -36,43 +36,29 @@ public class AppDbContext : DbContext
     public DbSet<BulletAnniversaryDetail> BulletAnniversaryDetails { get; set; }
     public DbSet<BulletVacationDetail> BulletVacationDetails { get; set; }
     
-    // NEW: Health
+    // Health
     public DbSet<BulletHealthDetail> BulletHealthDetails { get; set; }
     public DbSet<BulletHealthMeal> BulletHealthMeals { get; set; }
     public DbSet<BulletHealthWorkout> BulletHealthWorkouts { get; set; }
+
+    // NEW: Sports
+    public DbSet<League> Leagues { get; set; }
 }
 
-public static class PasswordHelper 
-{ 
-    public static string HashPassword(string password) 
-    { 
-        using var sha256 = SHA256.Create(); 
-        var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password)); 
-        return Convert.ToBase64String(bytes); 
-    } 
-    public static bool VerifyPassword(string password, string storedHash) => HashPassword(password) == storedHash; 
+// ... (Keep PasswordHelper, User, and all Bullet classes) ...
+
+// NEW: League Model
+public class League
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    public string ImgUrl { get; set; } = ""; // Logo
+    public string LinkUrl { get; set; } = ""; // Website
 }
 
-public class User 
-{ 
-    public int Id { get; set; } 
-    public string Username { get; set; } = ""; 
-    public string PasswordHash { get; set; } = ""; 
-    public string ZipCode { get; set; } = "75482"; 
-    public string AvatarUrl { get; set; } = ""; 
-    public int Age { get; set; } = 30; 
-    public double HeightInches { get; set; } = 70; 
-    public string Gender { get; set; } = "Male"; 
-    public string ActivityLevel { get; set; } = "Sedentary";
-    
-    // NEW: Health Goals
-    public int WeeklyCalorieDeficitGoal { get; set; } = 3500; // 1lb fat
-    public int DailyProteinGoal { get; set; } = 150;
-    public int DailyFatGoal { get; set; } = 70;
-    public int DailyCarbGoal { get; set; } = 200;
-}
-
-// ... (Keep existing BulletItem, Note, Detail classes: Task, Meeting, Habit, Media, Holiday, Birthday, Anniversary, Vacation) ...
+// ... (Keep existing classes below: StoredImage, Recipe, etc.) ...
+public static class PasswordHelper { public static string HashPassword(string password) { using var sha256 = SHA256.Create(); var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password)); return Convert.ToBase64String(bytes); } public static bool VerifyPassword(string password, string storedHash) => HashPassword(password) == storedHash; }
+public class User { public int Id { get; set; } public string Username { get; set; } = ""; public string PasswordHash { get; set; } = ""; public string ZipCode { get; set; } = "75482"; public string AvatarUrl { get; set; } = ""; public int Age { get; set; } = 30; public double HeightInches { get; set; } = 70; public string Gender { get; set; } = "Male"; public string ActivityLevel { get; set; } = "Sedentary"; public int WeeklyCalorieDeficitGoal { get; set; } = 3500; public int DailyProteinGoal { get; set; } = 150; public int DailyFatGoal { get; set; } = 70; public int DailyCarbGoal { get; set; } = 200; }
 public class BulletItem { public int Id { get; set; } public int UserId { get; set; } public string Type { get; set; } = "task"; public string Category { get; set; } = "personal"; public DateTime Date { get; set; } public DateTime CreatedAt { get; set; } = DateTime.UtcNow; public string Title { get; set; } = ""; public string Description { get; set; } = ""; public string ImgUrl { get; set; } = ""; public string LinkUrl { get; set; } = ""; public string OriginalStringId { get; set; } = ""; [Column("Order")] public int SortOrder { get; set; } = 0; }
 public class BulletItemNote { public int Id { get; set; } public int BulletItemId { get; set; } public string Content { get; set; } = ""; public string ImgUrl { get; set; } = ""; public string LinkUrl { get; set; } = ""; public int Order { get; set; } = 0; }
 public class BulletTaskDetail { [Key] public int BulletItemId { get; set; } public string Status { get; set; } = "Pending"; public bool IsCompleted { get; set; } = false; public string Priority { get; set; } = "Normal"; public string TicketNumber { get; set; } = ""; public string TicketUrl { get; set; } = ""; public DateTime? DueDate { get; set; } }
@@ -83,42 +69,9 @@ public class BulletHolidayDetail { [Key, ForeignKey("BulletItem")] public int Bu
 public class BulletBirthdayDetail { [Key, ForeignKey("BulletItem")] public int BulletItemId { get; set; } public virtual BulletItem BulletItem { get; set; } = null!; public int? DOB_Year { get; set; } }
 public class BulletAnniversaryDetail { [Key, ForeignKey("BulletItem")] public int BulletItemId { get; set; } public virtual BulletItem BulletItem { get; set; } = null!; public string AnniversaryType { get; set; } = "Other"; public int? FirstYear { get; set; } }
 public class BulletVacationDetail { [Key, ForeignKey("BulletItem")] public int BulletItemId { get; set; } public virtual BulletItem BulletItem { get; set; } = null!; public string VacationGroupId { get; set; } = ""; }
-
-// NEW: Health Detail (One per day)
-public class BulletHealthDetail
-{
-    [Key, ForeignKey("BulletItem")]
-    public int BulletItemId { get; set; }
-    public virtual BulletItem BulletItem { get; set; } = null!;
-    public double WeightLbs { get; set; }
-    public int CalculatedTDEE { get; set; } // Saved at the time of entry
-}
-
-// NEW: Meals
-public class BulletHealthMeal
-{
-    public int Id { get; set; }
-    public int BulletItemId { get; set; } // FK to Health Item
-    public string MealType { get; set; } = "Breakfast"; // Breakfast, Lunch, Dinner, Snack
-    public string Name { get; set; } = "";
-    public double Calories { get; set; }
-    public double Protein { get; set; }
-    public double Carbs { get; set; }
-    public double Fat { get; set; }
-    public double Fiber { get; set; }
-}
-
-// NEW: Workouts
-public class BulletHealthWorkout
-{
-    public int Id { get; set; }
-    public int BulletItemId { get; set; } // FK to Health Item
-    public string Name { get; set; } = "";
-    public double CaloriesBurned { get; set; }
-    public int TimeSpentMinutes { get; set; }
-}
-
-// ... (Keep StoredImage, Recipe, LinkGroup, Link, Countdown, Stock, Feed, ViewConfig) ...
+public class BulletHealthDetail { [Key, ForeignKey("BulletItem")] public int BulletItemId { get; set; } public virtual BulletItem BulletItem { get; set; } = null!; public double WeightLbs { get; set; } public int CalculatedTDEE { get; set; } }
+public class BulletHealthMeal { public int Id { get; set; } public int BulletItemId { get; set; } public string MealType { get; set; } = "Breakfast"; public string Name { get; set; } = ""; public double Calories { get; set; } public double Protein { get; set; } public double Carbs { get; set; } public double Fat { get; set; } public double Fiber { get; set; } }
+public class BulletHealthWorkout { public int Id { get; set; } public int BulletItemId { get; set; } public string Name { get; set; } = ""; public double CaloriesBurned { get; set; } public int TimeSpentMinutes { get; set; } }
 public class StoredImage { public int Id { get; set; } public byte[] Data { get; set; } = Array.Empty<byte>(); public string ContentType { get; set; } = "image/jpeg"; public string OriginalName { get; set; } = ""; public DateTime UploadedAt { get; set; } = DateTime.UtcNow; }
 public class Recipe { public int Id { get; set; } public int UserId { get; set; } public string Title { get; set; } = ""; public string Description { get; set; } = ""; public string Category { get; set; } = ""; public int Servings { get; set; } public string? ServingSize { get; set; } public string PrepTime { get; set; } = ""; public string CookTime { get; set; } = ""; public string? ImageUrl { get; set; } public int? ImageId { get; set; } public string SourceName { get; set; } = ""; public string SourceUrl { get; set; } = ""; public string TagsJson { get; set; } = "[]"; public List<RecipeIngredient> Ingredients { get; set; } = new(); public List<RecipeInstruction> Instructions { get; set; } = new(); }
 public class RecipeCategory { public int Id { get; set; } public int UserId { get; set; } public string Name { get; set; } = ""; public string? ImageUrl { get; set; } public int? ImageId { get; set; } }
@@ -129,10 +82,4 @@ public class Link { public int Id { get; set; } public int UserId { get; set; } 
 public class Countdown { public int Id { get; set; } public int UserId { get; set; } public string Name { get; set; } = ""; public DateTime TargetDate { get; set; } public string LinkUrl { get; set; } = ""; public string Img { get; set; } = ""; public int Order { get; set; } }
 public class Stock { public int Id { get; set; } public int UserId { get; set; } public string Symbol { get; set; } = ""; public string ImgUrl { get; set; } = ""; public string LinkUrl { get; set; } = ""; public double Shares { get; set; } public int Order { get; set; } }
 public class Feed { public int Id { get; set; } public int UserId { get; set; } public string Name { get; set; } = ""; public string Url { get; set; } = ""; public string Category { get; set; } = "General"; public bool IsEnabled { get; set; } = false; }
-
-public static class BulletViewConfig
-{
-    public const string ImgWidthDay = "25%";
-    public const string ImgWidthWeek = "20%";
-    public const string ImgWidthMonth = "15%";
-}
+public static class BulletViewConfig { public const string ImgWidthDay = "25%"; public const string ImgWidthWeek = "20%"; public const string ImgWidthMonth = "15%"; }

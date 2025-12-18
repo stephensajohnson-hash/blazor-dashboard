@@ -1,0 +1,189 @@
+@page "/manage-sports"
+@using Dashboard
+@using Microsoft.AspNetCore.Components.Forms
+@using System.IO
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject SportsService SportsService
+@inject BulletBaseService BaseService
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
+
+<div class="min-h-screen bg-gray-900 text-white p-8 font-mono">
+    <div class="max-w-4xl mx-auto">
+        
+        <div class="flex justify-between items-center mb-10 border-b border-gray-800 pb-4">
+            <h1 class="text-3xl font-bold flex items-center gap-2"><span>🏆</span> Manage Sports</h1>
+            <a href="/bullet-calendar" class="text-gray-400 hover:text-white flex items-center gap-2 transition">
+                <span>←</span> Back to Calendar
+            </a>
+        </div>
+
+        <div class="flex gap-4 mb-6 border-b border-gray-800">
+            <button class="px-4 py-2 border-b-2 border-blue-500 text-white font-bold">Leagues</button>
+            <button class="px-4 py-2 text-gray-500 hover:text-gray-300">Seasons (Soon)</button>
+            <button class="px-4 py-2 text-gray-500 hover:text-gray-300">Teams (Soon)</button>
+        </div>
+
+        <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-xl">
+            <div class="flex justify-between items-center mb-6">
+                <div>
+                    <h2 class="text-xl font-bold text-gray-200">Leagues</h2>
+                    <div class="text-xs text-gray-500">Manage supported sports leagues</div>
+                </div>
+                <div class="flex gap-2">
+                    <button @onclick="ImportLeagues" class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded text-xs border border-gray-600">📥 Import JSON</button>
+                    <button @onclick="OpenAdd" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-xs font-bold uppercase shadow-lg">+ Add League</button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                @foreach(var league in Leagues)
+                {
+                    <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700 flex items-center gap-4 group hover:border-gray-500 transition">
+                        <div class="w-12 h-12 bg-black rounded-full border border-gray-700 flex items-center justify-center overflow-hidden shrink-0">
+                            @if(!string.IsNullOrEmpty(league.ImgUrl)) { <img src="@league.ImgUrl" class="w-full h-full object-cover" /> }
+                            else { <span class="text-2xl">🏆</span> }
+                        </div>
+                        
+                        <div class="flex-1 min-w-0">
+                            <h3 class="font-bold text-white truncate">@league.Name</h3>
+                            @if(!string.IsNullOrEmpty(league.LinkUrl)) { <a href="@league.LinkUrl" target="_blank" class="text-xs text-blue-400 hover:underline truncate block">@league.LinkUrl</a> }
+                        </div>
+
+                        <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition">
+                            <button @onclick="() => OpenEdit(league)" class="text-gray-400 hover:text-white p-1">✏️</button>
+                            <button @onclick="() => Delete(league)" class="text-gray-400 hover:text-red-500 p-1">🗑️</button>
+                        </div>
+                    </div>
+                }
+                @if(!Leagues.Any())
+                {
+                    <div class="col-span-2 text-center text-gray-500 py-8 italic">No leagues found.</div>
+                }
+            </div>
+        </div>
+
+    </div>
+</div>
+
+@if(editingLeague != null)
+{
+    <div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 border border-gray-600 p-6 rounded-xl shadow-2xl w-full max-w-md">
+            <h3 class="text-lg font-bold text-white mb-6">@(editingLeague.Id == 0 ? "Add League" : "Edit League")</h3>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Name</label>
+                    <input @bind="editingLeague.Name" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" placeholder="e.g. NFL" />
+                </div>
+                
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Logo / Image</label>
+                    <div class="flex gap-2 mb-2">
+                        <input @bind="editingLeague.ImgUrl" class="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" placeholder="https://..." />
+                        <label class="cursor-pointer bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded text-sm flex items-center justify-center border border-gray-600">
+                            📂 <InputFile OnChange="@UploadImage" class="hidden" />
+                        </label>
+                    </div>
+                    @if(!string.IsNullOrEmpty(editingLeague.ImgUrl))
+                    {
+                        <div class="w-full h-32 bg-black rounded border border-gray-700 flex items-center justify-center overflow-hidden">
+                            <img src="@editingLeague.ImgUrl" class="h-full object-contain" />
+                        </div>
+                    }
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Website URL</label>
+                    <input @bind="editingLeague.LinkUrl" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" placeholder="https://..." />
+                </div>
+            </div>
+
+            <div class="mt-8 flex justify-end gap-3">
+                <button @onclick="() => editingLeague = null" class="px-4 py-2 text-gray-400 hover:text-white text-xs font-bold uppercase">Cancel</button>
+                <button @onclick="Save" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold uppercase shadow-lg">Save</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<League> Leagues = new();
+    private League? editingLeague = null;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await LoadData();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        Leagues = await SportsService.GetLeagues();
+        StateHasChanged();
+    }
+
+    private void OpenAdd() { editingLeague = new League(); }
+    
+    private void OpenEdit(League l) 
+    { 
+        // Clone to avoid editing list directly
+        editingLeague = new League { Id = l.Id, Name = l.Name, ImgUrl = l.ImgUrl, LinkUrl = l.LinkUrl }; 
+    }
+
+    private async Task Save()
+    {
+        if(editingLeague != null && !string.IsNullOrWhiteSpace(editingLeague.Name))
+        {
+            await SportsService.SaveLeague(editingLeague);
+            editingLeague = null;
+            await LoadData();
+        }
+    }
+
+    private async Task Delete(League l)
+    {
+        if(await JS.InvokeAsync<bool>("confirm", $"Delete {l.Name}?"))
+        {
+            await SportsService.DeleteLeague(l.Id);
+            await LoadData();
+        }
+    }
+
+    private async Task UploadImage(InputFileChangeEventArgs e)
+    {
+        if(editingLeague == null) return;
+        try {
+            var file = e.File;
+            using var stream = file.OpenReadStream(5 * 1024 * 1024);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            var url = await BaseService.SaveImageAsync(ms.ToArray(), file.ContentType);
+            editingLeague.ImgUrl = url;
+        } catch(Exception ex) { Console.WriteLine(ex.Message); }
+    }
+
+    private async Task ImportLeagues()
+    {
+        try {
+            var path = System.IO.Path.Combine(Env.WebRootPath, "bullet_calendar.json");
+            if (System.IO.File.Exists(path))
+            {
+                var content = await System.IO.File.ReadAllTextAsync(path);
+                int count = await SportsService.ImportLeaguesFromJson(content);
+                await JS.InvokeVoidAsync("alert", $"Imported {count} new leagues.");
+                await LoadData();
+            }
+            else
+            {
+                await JS.InvokeVoidAsync("alert", "bullet_calendar.json not found.");
+            }
+        } catch(Exception ex) {
+            await JS.InvokeVoidAsync("alert", "Error: " + ex.Message);
+        }
+    }
+}
