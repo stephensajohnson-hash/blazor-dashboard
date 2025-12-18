@@ -8,65 +8,116 @@
         <button @onclick="HandleDelete" class="p-1 rounded bg-gray-700 hover:bg-red-600 text-red-400 hover:text-white border border-gray-600 shadow-md">✕</button>
     </div>
 
-    <div class="p-2 border-b border-emerald-800/50 bg-emerald-950/30 flex justify-between items-center">
-        <div class="text-xs font-bold text-emerald-200">
-            ⚖️ @(Item.HealthDetail.WeightLbs > 0 ? $"{Item.HealthDetail.WeightLbs} lbs" : "No Weight")
+    <div class="p-3 pb-2 border-b border-emerald-800/30 flex justify-between items-end">
+        <div>
+            <div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Health Log</div>
+            <div class="text-xl font-bold text-white flex items-end gap-2">
+                @(Item.HealthDetail.WeightLbs > 0 ? $"{Item.HealthDetail.WeightLbs}" : "--") <span class="text-xs text-gray-500 font-normal mb-1">lbs</span>
+            </div>
         </div>
-        
-        @{
-            var totalCals = Item.Meals.Sum(m => m.Calories);
-            var burnedCals = Item.Workouts.Sum(w => w.CaloriesBurned);
-            var tdee = Item.HealthDetail.CalculatedTDEE > 0 ? Item.HealthDetail.CalculatedTDEE : 2000;
-            var net = totalCals - burnedCals;
-            var deficit = tdee - net;
-            string defColor = deficit > 0 ? "text-emerald-400" : "text-red-400";
-        }
-        <div class="text-[10px] font-mono @defColor">
-            @(deficit > 0 ? "-" : "+")@Math.Abs(Math.Round(deficit)) kcal
+        <div class="text-right">
+            @{
+                var totalCals = Item.Meals.Sum(m => m.Calories);
+                var burnedCals = Item.Workouts.Sum(w => w.CaloriesBurned);
+                
+                // TDEE CALCULATION (Mifflin-St Jeor)
+                double tdee = Item.HealthDetail.CalculatedTDEE;
+                if(tdee == 0 && User != null && Item.HealthDetail.WeightLbs > 0)
+                {
+                    // Men: (10 × weight in kg) + (6.25 × height in cm) - (5 × age in years) + 5
+                    // Women: (10 × weight in kg) + (6.25 × height in cm) - (5 × age in years) - 161
+                    double weightKg = Item.HealthDetail.WeightLbs * 0.453592;
+                    double heightCm = User.HeightInches * 2.54;
+                    double bmr = (10 * weightKg) + (6.25 * heightCm) - (5 * User.Age) + (User.Gender == "Male" ? 5 : -161);
+                    
+                    double multiplier = User.ActivityLevel switch {
+                        "Sedentary" => 1.2, "Light" => 1.375, "Moderate" => 1.55, "Active" => 1.725, "Extra" => 1.9, _ => 1.2
+                    };
+                    tdee = bmr * multiplier;
+                }
+                if(tdee == 0) tdee = 2000; // Fallback
+
+                // Target Calculation
+                double dailyDeficit = (User?.WeeklyCalorieDeficitGoal ?? 3500) / 7.0;
+                double dailyTarget = tdee - dailyDeficit;
+                
+                double net = totalCals - burnedCals;
+                double remaining = dailyTarget - net;
+                
+                string remColor = remaining >= 0 ? "text-emerald-400" : "text-red-400";
+            }
+            <div class="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">Remaining</div>
+            <div class="text-xl font-mono font-bold @remColor">@Math.Round(remaining)</div>
         </div>
     </div>
 
-    <div class="p-3">
+    <div class="p-3 space-y-2">
         @{
             double p = Item.Meals.Sum(m => m.Protein);
-            double c = Item.Meals.Sum(m => m.Carbs);
             double f = Item.Meals.Sum(m => m.Fat);
+            double c = Item.Meals.Sum(m => m.Carbs);
+            
+            double pGoal = User?.DailyProteinGoal ?? 150;
+            double fGoal = User?.DailyFatGoal ?? 70;
+            double cGoal = User?.DailyCarbGoal ?? 200;
+            
+            double pPct = Math.Min((p / pGoal) * 100, 100);
+            double fPct = Math.Min((f / fGoal) * 100, 100);
+            double cPct = Math.Min((c / cGoal) * 100, 100);
         }
-        <div class="flex justify-between text-[10px] text-gray-400 mb-2 font-mono">
-            <span>P: <span class="text-white">@Math.Round(p)</span>g</span>
-            <span>C: <span class="text-white">@Math.Round(c)</span>g</span>
-            <span>F: <span class="text-white">@Math.Round(f)</span>g</span>
-            <span>Cal: <span class="text-white">@Math.Round(totalCals)</span></span>
+
+        <div>
+            <div class="flex justify-between text-[10px] mb-0.5">
+                <span class="text-blue-300 font-bold">Protein</span>
+                <span class="text-gray-400">@Math.Round(p)/@pGoal g</span>
+            </div>
+            <div class="h-1.5 w-full bg-gray-800 rounded-full overflow-hidden">
+                <div class="h-full bg-blue-500 rounded-full" style="width: @pPct%"></div>
+            </div>
         </div>
 
-        <div class="space-y-1">
-            @foreach(var meal in Item.Meals.Take(3))
-            {
-                <div class="flex justify-between items-center text-[10px] text-emerald-100/70 border-b border-emerald-900/30 pb-0.5 last:border-0">
-                    <span class="truncate pr-2">@meal.Name</span>
-                    <span class="shrink-0 text-emerald-500">@meal.Calories</span>
-                </div>
-            }
-            @if(Item.Meals.Count > 3) { <div class="text-[9px] text-center text-gray-500 italic">+@(Item.Meals.Count - 3) more...</div> }
+        <div>
+            <div class="flex justify-between text-[10px] mb-0.5">
+                <span class="text-yellow-300 font-bold">Fat</span>
+                <span class="text-gray-400">@Math.Round(f)/@fGoal g</span>
+            </div>
+            <div class="h-1.5 w-full bg-gray-800 rounded-full overflow-hidden">
+                <div class="h-full bg-yellow-500 rounded-full" style="width: @fPct%"></div>
+            </div>
         </div>
 
-        @if(Item.Workouts.Any())
-        {
-            <div class="mt-2 pt-2 border-t border-emerald-800/50">
-                @foreach(var w in Item.Workouts)
+        <div>
+            <div class="flex justify-between text-[10px] mb-0.5">
+                <span class="text-green-300 font-bold">Carbs</span>
+                <span class="text-gray-400">@Math.Round(c)/@cGoal g</span>
+            </div>
+            <div class="h-1.5 w-full bg-gray-800 rounded-full overflow-hidden">
+                <div class="h-full bg-green-500 rounded-full" style="width: @cPct%"></div>
+            </div>
+        </div>
+    </div>
+
+    @if(Item.Meals.Any())
+    {
+        <div class="px-3 pb-3 pt-1 border-t border-emerald-800/30">
+            <div class="space-y-1 mt-2">
+                @foreach(var meal in Item.Meals.Take(3))
                 {
-                    <div class="flex justify-between text-[10px] text-orange-300/80">
-                        <span>🔥 @w.Name</span>
-                        <span>-@w.CaloriesBurned</span>
+                    <div class="flex justify-between items-center text-[10px] text-gray-400">
+                        <span class="truncate pr-2">• @meal.Name</span>
+                        <span class="shrink-0 text-white font-mono">@meal.Calories</span>
                     </div>
                 }
+                @if(Item.Meals.Count > 3) { <div class="text-[9px] text-center text-gray-600 italic mt-1">+@(Item.Meals.Count - 3) more...</div> }
             </div>
-        }
-    </div>
+        </div>
+    }
 </div>
 
 @code {
     [Parameter] public BulletTaskService.TaskDTO Item { get; set; } = new();
+    [Parameter] public User? User { get; set; }
+    
     [Parameter] public EventCallback<BulletTaskService.TaskDTO> OnClick { get; set; }
     [Parameter] public EventCallback<int> OnDelete { get; set; }
 
