@@ -36,6 +36,7 @@ public class BulletSportsService
         public TeamRecord? FavoriteRecord { get; set; } 
     }
 
+    // --- GAMES ---
     public async Task<List<GameDTO>> GetGamesForRange(int userId, DateTime start, DateTime end)
     {
         var games = await (from baseItem in _db.BulletItems
@@ -69,7 +70,6 @@ public class BulletSportsService
                 g.HomeTeam = teams.FirstOrDefault(t => t.Id == g.Detail.HomeTeamId);
                 g.AwayTeam = teams.FirstOrDefault(t => t.Id == g.Detail.AwayTeamId);
 
-                // Calculate Record (Including this game if complete)
                 if (g.Detail.SeasonId > 0)
                 {
                     int favTeamId = 0;
@@ -78,7 +78,6 @@ public class BulletSportsService
 
                     if (favTeamId > 0)
                     {
-                        // UPDATED LOGIC: Pass the Date AND the Game ID to include it
                         g.FavoriteRecord = await GetTeamRecord(favTeamId, g.Detail.SeasonId, g.Date, g.Id);
                     }
                 }
@@ -87,18 +86,14 @@ public class BulletSportsService
         return games;
     }
 
-    // Calculates W-L-T record including all games up to (and including) the specific game
     private async Task<TeamRecord> GetTeamRecord(int teamId, int seasonId, DateTime gameDate, int currentGameId)
     {
         var record = new TeamRecord();
-
-        // Get all COMPLETED games for this team in this season <= current date
-        // We include the current game ID specifically to ensure it's counted if complete
         var pastGames = await (from d in _db.BulletGameDetails
                                join b in _db.BulletItems on d.BulletItemId equals b.Id
                                where d.SeasonId == seasonId 
                                      && d.IsComplete 
-                                     && (b.Date < gameDate || b.Id == currentGameId) // Include past OR this specific game
+                                     && (b.Date < gameDate || b.Id == currentGameId)
                                      && (d.HomeTeamId == teamId || d.AwayTeamId == teamId)
                                select d).ToListAsync();
 
@@ -112,11 +107,9 @@ public class BulletSportsService
             else if (myScore < oppScore) record.Losses++;
             else record.Ties++;
         }
-
         return record;
     }
 
-    // ... (Keep existing SaveGame/ImportGames logic exactly as is) ...
     public async Task SaveGame(GameDTO dto)
     {
         BulletItem? item = null;
@@ -153,19 +146,23 @@ public class BulletSportsService
     public async Task ToggleComplete(int id, bool isComplete)
     {
         var detail = await _db.BulletGameDetails.FindAsync(id);
-        if (detail != null)
-        {
-            detail.IsComplete = isComplete;
-            await _db.SaveChangesAsync();
-        }
+        if (detail != null) { detail.IsComplete = isComplete; await _db.SaveChangesAsync(); }
     }
 
+    // --- REFERENCE DATA (TEAMS, LEAGUES, SEASONS) ---
+    // These were missing causing the build error in TaskEditor
+    
+    public async Task<List<Team>> GetTeams(int userId) => await _db.Teams.Where(t => t.UserId == userId).OrderBy(t => t.Name).ToListAsync();
+    public async Task<List<League>> GetLeagues(int userId) => await _db.Leagues.Where(l => l.UserId == userId).OrderBy(l => l.Name).ToListAsync();
+    public async Task<List<Season>> GetSeasons(int userId) => await _db.Seasons.Where(s => s.UserId == userId).OrderByDescending(s => s.Name).ToListAsync();
+
+    // --- IMPORT LOGIC ---
     public async Task<int> ImportGames(int userId, string jsonContent)
     {
-        // (Use same robust import logic from previous turn)
         int count = 0;
         using var doc = JsonDocument.Parse(jsonContent);
         var root = doc.RootElement;
+        
         JsonElement items = root;
         if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("items", out var i)) items = i;
 
