@@ -128,7 +128,7 @@ public class BulletHealthService
                     var item = new BulletItem { 
                         UserId = userId, Type = "health", CreatedAt = DateTime.UtcNow, Date = itemDate,
                         Title = "Daily Health Log", Description = "", OriginalStringId = GetStr("id"),
-                        Category = "health" // Force category
+                        Category = "health" 
                     };
 
                     await _db.BulletItems.AddAsync(item);
@@ -136,21 +136,19 @@ public class BulletHealthService
 
                     var detail = new BulletHealthDetail { BulletItemId = item.Id };
                     
-                    if (el.TryGetProperty("weightLbs", out var w)) detail.WeightLbs = w.GetDouble();
+                    // Renamed variable to 'weightVal' to avoid conflict
+                    if (el.TryGetProperty("weightLbs", out var weightVal)) detail.WeightLbs = weightVal.GetDouble();
                     
                     // Parse Goals Object
                     if (el.TryGetProperty("goals", out var goals))
                     {
                         if(goals.TryGetProperty("tdee", out var tdee)) detail.CalculatedTDEE = tdee.GetInt32();
                         
-                        // Update User Goals (Using last entry wins strategy effectively)
                         if(user != null)
                         {
                             if(goals.TryGetProperty("protein", out var p)) user.DailyProteinGoal = p.GetInt32();
                             if(goals.TryGetProperty("fat", out var f)) user.DailyFatGoal = f.GetInt32();
                             if(goals.TryGetProperty("netCarbs", out var nc)) user.DailyCarbGoal = nc.GetInt32();
-                            // Calorie Goal logic? Maybe derive deficit from TDEE - Goal? 
-                            // For now just stick to defaults or separate update.
                         }
                     }
                     
@@ -176,12 +174,13 @@ public class BulletHealthService
                     // Parse Workouts
                     if (el.TryGetProperty("workouts", out var workArr) && workArr.ValueKind == JsonValueKind.Array)
                     {
-                        foreach(var w in workArr.EnumerateArray())
+                        // Renamed loop variable to 'workoutItem' to avoid conflict with earlier 'w'
+                        foreach(var workoutItem in workArr.EnumerateArray())
                         {
                             var workout = new BulletHealthWorkout { BulletItemId = item.Id };
-                            if(w.TryGetProperty("description", out var desc)) workout.Name = desc.ToString();
-                            if(w.TryGetProperty("calories", out var wc)) workout.CaloriesBurned = wc.GetDouble();
-                            if(w.TryGetProperty("timeSpent", out var wt)) workout.TimeSpentMinutes = wt.GetInt32();
+                            if(workoutItem.TryGetProperty("description", out var desc)) workout.Name = desc.ToString();
+                            if(workoutItem.TryGetProperty("calories", out var wc)) workout.CaloriesBurned = wc.GetDouble();
+                            if(workoutItem.TryGetProperty("timeSpent", out var wt)) workout.TimeSpentMinutes = wt.GetInt32();
                             await _db.BulletHealthWorkouts.AddAsync(workout);
                         }
                     }
