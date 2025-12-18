@@ -46,6 +46,21 @@ public class BulletVacationService
         return items;
     }
 
+    // NEW: Get Start/End dates for a specific group
+    public async Task<(DateTime Start, DateTime End)?> GetVacationGroupRange(int userId, string groupId)
+    {
+        if (string.IsNullOrEmpty(groupId)) return null;
+
+        var dates = await (from baseItem in _db.BulletItems
+                           join detail in _db.BulletVacationDetails on baseItem.Id equals detail.BulletItemId
+                           where baseItem.UserId == userId && detail.VacationGroupId == groupId
+                           select baseItem.Date).ToListAsync();
+
+        if (!dates.Any()) return null;
+
+        return (dates.Min(), dates.Max());
+    }
+
     public async Task SaveVacation(VacationDTO dto)
     {
         BulletItem? item = null;
@@ -76,23 +91,18 @@ public class BulletVacationService
         await _db.SaveChangesAsync();
     }
 
-    // NEW: Delete all items in a group
     public async Task DeleteVacationGroup(int userId, string groupId)
     {
         if (string.IsNullOrEmpty(groupId)) return;
 
-        // Find IDs of items in this group
-        var itemIds = await _db.BulletVacationDetails
-            .Where(v => v.VacationGroupId == groupId)
-            .Select(v => v.BulletItemId)
-            .ToListAsync();
+        var itemIds = await (from baseItem in _db.BulletItems
+                             join detail in _db.BulletVacationDetails on baseItem.Id equals detail.BulletItemId
+                             where baseItem.UserId == userId && detail.VacationGroupId == groupId
+                             select baseItem.Id).ToListAsync();
 
         if (itemIds.Any())
         {
-            var itemsToDelete = await _db.BulletItems
-                .Where(b => itemIds.Contains(b.Id) && b.UserId == userId)
-                .ToListAsync();
-
+            var itemsToDelete = await _db.BulletItems.Where(b => itemIds.Contains(b.Id)).ToListAsync();
             _db.BulletItems.RemoveRange(itemsToDelete);
             await _db.SaveChangesAsync();
         }

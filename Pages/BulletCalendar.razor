@@ -240,7 +240,7 @@
 
             loadedHabits = await HabitService.GetHabits(userId);
             var relevantHabits = loadedHabits.Where(h => h.Date.Date >= start.Date && h.Date.Date <= end.Date).ToList();
-            foreach(var h in relevantHabits) { loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, Description = h.Description, ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId, HabitDetail = h.Detail, SortOrder = h.SortOrder }); }
+            foreach(var h in relevantHabits) { loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, Description = h.Description, ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId, HabitDetail = h.Detail, Notes = h.Notes, SortOrder = h.SortOrder }); }
 
             loadedMedia = await MediaService.GetMedia(userId);
             var relevantMedia = loadedMedia.Where(m => m.Date.Date >= start.Date && m.Date.Date <= end.Date).ToList();
@@ -304,7 +304,20 @@
     private void OpenHolidayEdit(BulletTaskService.TaskDTO h) { editingItem = h; }
     private void OpenBirthdayEdit(BulletTaskService.TaskDTO b) { editingItem = b; }
     private void OpenAnniversaryEdit(BulletTaskService.TaskDTO a) { editingItem = a; }
-    private void OpenVacationEdit(BulletTaskService.TaskDTO v) { editingItem = v; }
+    // UPDATED: Now queries the range!
+    private async Task OpenVacationEdit(BulletTaskService.TaskDTO v) 
+    { 
+        editingItem = v; 
+        if(!string.IsNullOrEmpty(v.VacationDetail.VacationGroupId))
+        {
+            var range = await VacationService.GetVacationGroupRange(v.UserId, v.VacationDetail.VacationGroupId);
+            if(range != null)
+            {
+                editingItem.Date = range.Value.Start;
+                editingItem.EndDate = range.Value.End;
+            }
+        }
+    }
 
     private async Task ToggleComplete(BulletTaskService.TaskDTO t) { t.Detail.IsCompleted = !t.Detail.IsCompleted; await TaskService.ToggleComplete(t.Id, t.Detail.IsCompleted); }
     private async Task ToggleMeetingComplete(BulletTaskService.TaskDTO t) { if(t.MeetingDetail != null) { t.MeetingDetail.IsCompleted = !t.MeetingDetail.IsCompleted; await MeetingService.ToggleComplete(t.Id, t.MeetingDetail.IsCompleted); } }
@@ -367,8 +380,25 @@
         }
     }
     
-    private async Task DeleteTask(int id) { if(await JS.InvokeAsync<bool>("confirm", "Delete this item?")) { await BaseService.DeleteItem(id); await LoadData(); } }
+    // UPDATED DELETE LOGIC: Checks type and calls correct service
+    private async Task DeleteTask(int id) 
+    { 
+        if(await JS.InvokeAsync<bool>("confirm", "Delete this item?")) 
+        { 
+            var item = loadedItems.FirstOrDefault(i => i.Id == id);
+            if (item != null && item.Type == "vacation" && !string.IsNullOrEmpty(item.VacationDetail.VacationGroupId))
+            {
+                await VacationService.DeleteVacationGroup(item.UserId, item.VacationDetail.VacationGroupId);
+            }
+            else
+            {
+                await BaseService.DeleteItem(id); 
+            }
+            await LoadData(); 
+        } 
+    }
     
+    // Deletes currently editing task (Modal Delete button)
     private async Task DeleteCurrentTask() { 
         if(editingItem != null && editingItem.Id > 0 && await JS.InvokeAsync<bool>("confirm", "Delete?")) { 
             if (editingItem.Type == "vacation" && !string.IsNullOrEmpty(editingItem.VacationDetail.VacationGroupId)) { await VacationService.DeleteVacationGroup(editingItem.UserId, editingItem.VacationDetail.VacationGroupId); }
