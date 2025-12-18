@@ -33,6 +33,7 @@ public class SportsService
     }
 
     public async Task DeleteLeague(int id) { var l = await _db.Leagues.FindAsync(id); if (l != null) { _db.Leagues.Remove(l); await _db.SaveChangesAsync(); } }
+    public async Task ClearLeagues(int userId) { var items = await _db.Leagues.Where(x => x.UserId == userId).ToListAsync(); _db.Leagues.RemoveRange(items); await _db.SaveChangesAsync(); }
 
     // --- SEASONS ---
     public async Task<List<Season>> GetSeasons(int userId) => await _db.Seasons.Where(s => s.UserId == userId).OrderByDescending(s => s.Name).ToListAsync();
@@ -52,6 +53,7 @@ public class SportsService
     }
 
     public async Task DeleteSeason(int id) { var s = await _db.Seasons.FindAsync(id); if (s != null) { _db.Seasons.Remove(s); await _db.SaveChangesAsync(); } }
+    public async Task ClearSeasons(int userId) { var items = await _db.Seasons.Where(x => x.UserId == userId).ToListAsync(); _db.Seasons.RemoveRange(items); await _db.SaveChangesAsync(); }
 
     // --- TEAMS ---
     public async Task<List<Team>> GetTeams(int userId) => await _db.Teams.Where(t => t.UserId == userId).OrderBy(t => t.Name).ToListAsync();
@@ -73,6 +75,7 @@ public class SportsService
     }
 
     public async Task DeleteTeam(int id) { var t = await _db.Teams.FindAsync(id); if (t != null) { _db.Teams.Remove(t); await _db.SaveChangesAsync(); } }
+    public async Task ClearTeams(int userId) { var items = await _db.Teams.Where(x => x.UserId == userId).ToListAsync(); _db.Teams.RemoveRange(items); await _db.SaveChangesAsync(); }
 
     // --- IMPORT ---
     public async Task<int> ImportSportsData(int userId, string jsonContent)
@@ -99,15 +102,17 @@ public class SportsService
             await _db.SaveChangesAsync();
         }
 
-        // 2. TEAMS (Assuming JSON structure: "teams": [ { "name": "Cowboys", "abbr": "DAL", "league": "NFL" } ])
+        // 2. TEAMS
         if (root.TryGetProperty("teams", out var teamsArr) && teamsArr.ValueKind == JsonValueKind.Array)
         {
-            var userLeagues = await GetLeagues(userId); // Cache leagues
+            var userLeagues = await GetLeagues(userId); 
             foreach (var t in teamsArr.EnumerateArray())
             {
                 string name = t.TryGetProperty("name", out var n) ? n.ToString() : "";
                 string abbr = t.TryGetProperty("abbr", out var a) ? a.ToString() : "";
                 string leagueName = t.TryGetProperty("league", out var l) ? l.ToString() : "";
+                // FIX: Map 'logo' field from JSON
+                string logo = t.TryGetProperty("logo", out var lg) ? lg.ToString() : ""; 
                 bool isFav = t.TryGetProperty("isFavorite", out var f) && f.GetBoolean();
 
                 if (!string.IsNullOrWhiteSpace(name))
@@ -115,7 +120,8 @@ public class SportsService
                     var league = userLeagues.FirstOrDefault(x => x.Name.Equals(leagueName, StringComparison.OrdinalIgnoreCase));
                     int leagueId = league?.Id ?? 0;
 
-                    if (!await _db.Teams.AnyAsync(x => x.UserId == userId && x.Name == name))
+                    var existing = await _db.Teams.FirstOrDefaultAsync(x => x.UserId == userId && x.Name == name);
+                    if (existing == null)
                     {
                         await _db.Teams.AddAsync(new Team 
                         { 
@@ -123,9 +129,18 @@ public class SportsService
                             Name = name, 
                             Abbreviation = abbr, 
                             LeagueId = leagueId, 
+                            LogoUrl = logo, // Using mapped logo
                             IsFavorite = isFav 
                         });
                         count++;
+                    }
+                    else
+                    {
+                        // Update existing logo if missing
+                        if(string.IsNullOrEmpty(existing.LogoUrl) && !string.IsNullOrEmpty(logo))
+                        {
+                            existing.LogoUrl = logo;
+                        }
                     }
                 }
             }
