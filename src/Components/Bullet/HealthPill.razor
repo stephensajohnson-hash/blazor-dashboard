@@ -1,31 +1,56 @@
 @namespace Dashboard.Components.Bullet
 @using Dashboard
 
-<div class="bg-emerald-900/40 border border-emerald-600 hover:border-white rounded mb-1 overflow-hidden cursor-pointer transition flex group relative pr-6 shadow-sm" @onclick="HandleClick">
+@{
+    // 1. Calculate Net Calories
+    var netCalories = Item.Meals.Sum(m => m.Calories) - Item.Workouts.Sum(w => w.CaloriesBurned);
+
+    // 2. Calculate TDEE (Use stored, or calc on fly, or default)
+    double tdee = Item.HealthDetail.CalculatedTDEE;
+    if(tdee == 0 && User != null && Item.HealthDetail.WeightLbs > 0)
+    {
+        double weightKg = Item.HealthDetail.WeightLbs * 0.453592;
+        double heightCm = User.HeightInches * 2.54;
+        double bmr = (10 * weightKg) + (6.25 * heightCm) - (5 * User.Age) + (User.Gender == "Male" ? 5 : -161);
+        double multiplier = User.ActivityLevel switch { "Sedentary" => 1.2, "Light" => 1.375, "Moderate" => 1.55, "Active" => 1.725, "Extra" => 1.9, _ => 1.2 };
+        tdee = bmr * multiplier;
+    }
+    if(tdee == 0) tdee = 2000;
+
+    // 3. Calculate Goal Threshold
+    double dailyDeficit = (User?.WeeklyCalorieDeficitGoal ?? 3500) / 7.0;
+    double calorieTarget = tdee - dailyDeficit;
+
+    // 4. Determine Style
+    bool isOverLimit = netCalories > calorieTarget;
+    string borderClass = isOverLimit 
+        ? "border border-red-500 hover:border-red-400" 
+        : "border border-emerald-600 hover:border-white";
+}
+
+<div class="bg-emerald-900/40 @borderClass rounded mb-1 overflow-hidden cursor-pointer transition flex group relative pr-6 shadow-sm" @onclick="HandleClick">
     
     <div class="absolute right-0 top-0 bottom-0 w-5 flex flex-col opacity-0 group-hover:opacity-100 transition z-20 bg-black/20 backdrop-blur-sm border-l border-white/10">
         <button @onclick="MoveUp" @onclick:stopPropagation="true" class="flex-1 hover:bg-white/20 text-[8px] flex items-center justify-center text-white leading-none">▲</button>
         <button @onclick="MoveDown" @onclick:stopPropagation="true" class="flex-1 hover:bg-white/20 text-[8px] flex items-center justify-center text-white leading-none">▼</button>
     </div>
 
-    @{
-        var net = Item.Meals.Sum(m => m.Calories) - Item.Workouts.Sum(w => w.CaloriesBurned);
-    }
-
     <div class="p-1 flex-1 min-w-0 flex items-center justify-between">
         <div class="truncate text-[10px] text-emerald-100 group-hover:text-white transition font-sans font-bold flex gap-2">
             <span>🍏 Health</span>
             @if(Item.HealthDetail.WeightLbs > 0) { <span class="text-emerald-400">@Item.HealthDetail.WeightLbs lbs</span> }
         </div>
-        <div class="text-[9px] font-mono text-gray-400">
-            @Math.Round(net) cal
+        <div class="text-[9px] font-mono @(isOverLimit ? "text-red-300 font-bold" : "text-gray-400")">
+            Net Cal: @Math.Round(netCalories)
         </div>
     </div>
 </div>
 
 @code {
     [Parameter] public BulletTaskService.TaskDTO Item { get; set; } = new();
-    [Parameter] public string ImageWidth { get; set; } = "20%"; // Not used, keeping for interface consistency
+    [Parameter] public User? User { get; set; } // Added to calculate goals
+    
+    [Parameter] public string ImageWidth { get; set; } = "20%"; 
     [Parameter] public EventCallback<BulletTaskService.TaskDTO> OnClick { get; set; }
     [Parameter] public EventCallback<int> OnMoveUp { get; set; }
     [Parameter] public EventCallback<int> OnMoveDown { get; set; }
