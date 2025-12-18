@@ -12,6 +12,7 @@ public class AppDbContext : DbContext
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
+    // ... (Keep Users, LinkGroups, etc.) ...
     public DbSet<User> Users { get; set; }
     public DbSet<LinkGroup> LinkGroups { get; set; }
     public DbSet<Link> Links { get; set; }
@@ -41,22 +42,47 @@ public class AppDbContext : DbContext
     public DbSet<BulletHealthMeal> BulletHealthMeals { get; set; }
     public DbSet<BulletHealthWorkout> BulletHealthWorkouts { get; set; }
 
-    // NEW: Sports
+    // SPORTS
     public DbSet<League> Leagues { get; set; }
+    public DbSet<Season> Seasons { get; set; } // NEW
+    public DbSet<Team> Teams { get; set; } // NEW
 }
 
-// ... (Keep PasswordHelper, User, and all Bullet classes) ...
+// ... (Keep existing Bullet classes) ...
 
-// NEW: League Model
+// UPDATED: League
 public class League
 {
     public int Id { get; set; }
+    public int UserId { get; set; } // NEW
     public string Name { get; set; } = "";
-    public string ImgUrl { get; set; } = ""; // Logo
-    public string LinkUrl { get; set; } = ""; // Website
+    public string ImgUrl { get; set; } = ""; 
+    public string LinkUrl { get; set; } = ""; 
 }
 
-// ... (Keep existing classes below: StoredImage, Recipe, etc.) ...
+// NEW: Season
+public class Season
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public int LeagueId { get; set; }
+    public string Name { get; set; } = ""; // e.g. "2025-2026"
+    public string ImgUrl { get; set; } = "";
+}
+
+// NEW: Team
+public class Team
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public int LeagueId { get; set; }
+    public string Name { get; set; } = ""; // e.g. "Dallas Cowboys"
+    public string Abbreviation { get; set; } = ""; // e.g. "DAL"
+    public string LogoUrl { get; set; } = "";
+    public bool IsFavorite { get; set; } = false;
+}
+
+// ... (Keep existing User, BulletItem, and other classes below) ...
 public static class PasswordHelper { public static string HashPassword(string password) { using var sha256 = SHA256.Create(); var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password)); return Convert.ToBase64String(bytes); } public static bool VerifyPassword(string password, string storedHash) => HashPassword(password) == storedHash; }
 public class User { public int Id { get; set; } public string Username { get; set; } = ""; public string PasswordHash { get; set; } = ""; public string ZipCode { get; set; } = "75482"; public string AvatarUrl { get; set; } = ""; public int Age { get; set; } = 30; public double HeightInches { get; set; } = 70; public string Gender { get; set; } = "Male"; public string ActivityLevel { get; set; } = "Sedentary"; public int WeeklyCalorieDeficitGoal { get; set; } = 3500; public int DailyProteinGoal { get; set; } = 150; public int DailyFatGoal { get; set; } = 70; public int DailyCarbGoal { get; set; } = 200; }
 public class BulletItem { public int Id { get; set; } public int UserId { get; set; } public string Type { get; set; } = "task"; public string Category { get; set; } = "personal"; public DateTime Date { get; set; } public DateTime CreatedAt { get; set; } = DateTime.UtcNow; public string Title { get; set; } = ""; public string Description { get; set; } = ""; public string ImgUrl { get; set; } = ""; public string LinkUrl { get; set; } = ""; public string OriginalStringId { get; set; } = ""; [Column("Order")] public int SortOrder { get; set; } = 0; }

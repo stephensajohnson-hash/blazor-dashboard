@@ -16,7 +16,7 @@ public class BulletBaseService
 
     public async Task CreateBaseTablesIfMissing()
     {
-        // ... (Keep existing User & Bullet tables logic) ...
+        // ... (Existing User/Bullet/Health SQL calls) ...
         try { await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""WeeklyCalorieDeficitGoal"" INTEGER NOT NULL DEFAULT 3500;"); } catch { }
         try { await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""DailyProteinGoal"" INTEGER NOT NULL DEFAULT 150;"); } catch { }
         try { await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""DailyFatGoal"" INTEGER NOT NULL DEFAULT 70;"); } catch { }
@@ -38,13 +38,39 @@ public class BulletBaseService
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletHealthMeals"" (""Id"" SERIAL PRIMARY KEY, ""BulletItemId"" INTEGER NOT NULL, ""MealType"" TEXT NOT NULL DEFAULT 'Breakfast', ""Name"" TEXT NOT NULL DEFAULT '', ""Calories"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""Protein"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""Carbs"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""Fat"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""Fiber"" DOUBLE PRECISION NOT NULL DEFAULT 0, CONSTRAINT ""FK_BulletHealthMeals_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletHealthWorkouts"" (""Id"" SERIAL PRIMARY KEY, ""BulletItemId"" INTEGER NOT NULL, ""Name"" TEXT NOT NULL DEFAULT '', ""CaloriesBurned"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""TimeSpentMinutes"" INTEGER NOT NULL DEFAULT 0, CONSTRAINT ""FK_BulletHealthWorkouts_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
 
-        // NEW: Leagues
+        // 1. LEAGUES
         await _db.Database.ExecuteSqlRawAsync(@"
             CREATE TABLE IF NOT EXISTS ""Leagues"" (
                 ""Id"" SERIAL PRIMARY KEY,
+                ""UserId"" INTEGER NOT NULL DEFAULT 0, 
                 ""Name"" TEXT NOT NULL DEFAULT '',
                 ""ImgUrl"" TEXT NOT NULL DEFAULT '',
                 ""LinkUrl"" TEXT NOT NULL DEFAULT ''
+            );
+        ");
+        try { await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""Leagues"" ADD COLUMN IF NOT EXISTS ""UserId"" INTEGER NOT NULL DEFAULT 0;"); } catch { }
+
+        // 2. SEASONS
+        await _db.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS ""Seasons"" (
+                ""Id"" SERIAL PRIMARY KEY,
+                ""UserId"" INTEGER NOT NULL DEFAULT 0,
+                ""LeagueId"" INTEGER NOT NULL DEFAULT 0,
+                ""Name"" TEXT NOT NULL DEFAULT '',
+                ""ImgUrl"" TEXT NOT NULL DEFAULT ''
+            );
+        ");
+
+        // 3. TEAMS
+        await _db.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS ""Teams"" (
+                ""Id"" SERIAL PRIMARY KEY,
+                ""UserId"" INTEGER NOT NULL DEFAULT 0,
+                ""LeagueId"" INTEGER NOT NULL DEFAULT 0,
+                ""Name"" TEXT NOT NULL DEFAULT '',
+                ""Abbreviation"" TEXT NOT NULL DEFAULT '',
+                ""LogoUrl"" TEXT NOT NULL DEFAULT '',
+                ""IsFavorite"" BOOLEAN NOT NULL DEFAULT FALSE
             );
         ");
     }

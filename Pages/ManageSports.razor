@@ -4,15 +4,17 @@
 @using Microsoft.AspNetCore.Components.Web
 @using System.IO
 @using Microsoft.JSInterop 
+@using System.Text.Json
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject SportsService SportsService
 @inject BulletBaseService BaseService
+@inject AppDbContext Db
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
 
 <div class="min-h-screen bg-gray-900 text-white p-8 font-mono">
-    <div class="max-w-4xl mx-auto">
+    <div class="max-w-6xl mx-auto">
         
         <div class="flex justify-between items-center mb-10 border-b border-gray-800 pb-4">
             <h1 class="text-3xl font-bold flex items-center gap-2"><span>🏆</span> Manage Sports</h1>
@@ -22,170 +24,207 @@
         </div>
 
         <div class="flex gap-4 mb-6 border-b border-gray-800">
-            <button class="px-4 py-2 border-b-2 border-blue-500 text-white font-bold">Leagues</button>
-            <button class="px-4 py-2 text-gray-500 hover:text-gray-300">Seasons (Soon)</button>
-            <button class="px-4 py-2 text-gray-500 hover:text-gray-300">Teams (Soon)</button>
+            <button @onclick='() => activeTab = "leagues"' class="px-4 py-2 border-b-2 transition font-bold @(activeTab == "leagues" ? "border-blue-500 text-white" : "border-transparent text-gray-500 hover:text-gray-300")">Leagues</button>
+            <button @onclick='() => activeTab = "seasons"' class="px-4 py-2 border-b-2 transition font-bold @(activeTab == "seasons" ? "border-green-500 text-white" : "border-transparent text-gray-500 hover:text-gray-300")">Seasons</button>
+            <button @onclick='() => activeTab = "teams"' class="px-4 py-2 border-b-2 transition font-bold @(activeTab == "teams" ? "border-orange-500 text-white" : "border-transparent text-gray-500 hover:text-gray-300")">Teams</button>
         </div>
 
-        <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-xl">
-            <div class="flex justify-between items-center mb-6">
-                <div>
-                    <h2 class="text-xl font-bold text-gray-200">Leagues</h2>
-                    <div class="text-xs text-gray-500">Manage supported sports leagues</div>
-                </div>
-                <div class="flex gap-2">
-                    <button @onclick="ImportLeagues" class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded text-xs border border-gray-600">📥 Import JSON</button>
-                    <button @onclick="OpenAdd" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-xs font-bold uppercase shadow-lg">+ Add League</button>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                @foreach(var league in Leagues)
-                {
-                    <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700 flex items-center gap-4 group hover:border-gray-500 transition">
-                        <div class="w-12 h-12 bg-black rounded-full border border-gray-700 flex items-center justify-center overflow-hidden shrink-0">
-                            @if(!string.IsNullOrEmpty(league.ImgUrl)) { <img src="@league.ImgUrl" class="w-full h-full object-cover" /> }
-                            else { <span class="text-2xl">🏆</span> }
-                        </div>
-                        
-                        <div class="flex-1 min-w-0">
-                            <h3 class="font-bold text-white truncate">@league.Name</h3>
-                            @if(!string.IsNullOrEmpty(league.LinkUrl)) { <a href="@league.LinkUrl" target="_blank" class="text-xs text-blue-400 hover:underline truncate block">@league.LinkUrl</a> }
-                        </div>
-
-                        <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition">
-                            <button @onclick="() => OpenEdit(league)" class="text-gray-400 hover:text-white p-1">✏️</button>
-                            <button @onclick="() => Delete(league)" class="text-gray-400 hover:text-red-500 p-1">🗑️</button>
-                        </div>
-                    </div>
-                }
-                @if(!Leagues.Any())
-                {
-                    <div class="col-span-2 text-center text-gray-500 py-8 italic">No leagues found.</div>
-                }
-            </div>
+        <div class="flex justify-end mb-4">
+            <button @onclick="ImportSportsData" class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded text-xs border border-gray-600 flex items-center gap-2">
+                📥 Import JSON (Leagues & Teams)
+            </button>
         </div>
+
+        @if(activeTab == "leagues")
+        {
+            <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-xl">
+                <div class="flex justify-between items-center mb-6">
+                    <div><h2 class="text-xl font-bold text-blue-400">Leagues</h2></div>
+                    <button @onclick="OpenAddLeague" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-xs font-bold uppercase shadow-lg">+ Add League</button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    @foreach(var l in Leagues)
+                    {
+                        <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700 flex items-center gap-4 group hover:border-blue-500/50 transition">
+                            <div class="w-12 h-12 bg-black rounded-full border border-gray-700 flex items-center justify-center overflow-hidden shrink-0">
+                                @if(!string.IsNullOrEmpty(l.ImgUrl)) { <img src="@l.ImgUrl" class="w-full h-full object-cover" /> } else { <span class="text-2xl">🏆</span> }
+                            </div>
+                            <div class="flex-1 min-w-0"><h3 class="font-bold text-white truncate">@l.Name</h3></div>
+                            <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition">
+                                <button @onclick="() => OpenEditLeague(l)" class="text-gray-400 hover:text-white p-1">✏️</button>
+                                <button @onclick="() => DeleteLeague(l)" class="text-gray-400 hover:text-red-500 p-1">🗑️</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        @if(activeTab == "seasons")
+        {
+            <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-xl">
+                <div class="flex justify-between items-center mb-6">
+                    <div><h2 class="text-xl font-bold text-green-400">Seasons</h2></div>
+                    <button @onclick="OpenAddSeason" class="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded text-xs font-bold uppercase shadow-lg">+ Add Season</button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    @foreach(var s in Seasons)
+                    {
+                        var leagueName = Leagues.FirstOrDefault(l => l.Id == s.LeagueId)?.Name ?? "Unknown";
+                        <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700 flex items-center gap-4 group hover:border-green-500/50 transition">
+                            <div class="flex-1 min-w-0">
+                                <h3 class="font-bold text-white truncate">@s.Name</h3>
+                                <div class="text-xs text-gray-500">@leagueName</div>
+                            </div>
+                            <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition">
+                                <button @onclick="() => OpenEditSeason(s)" class="text-gray-400 hover:text-white p-1">✏️</button>
+                                <button @onclick="() => DeleteSeason(s)" class="text-gray-400 hover:text-red-500 p-1">🗑️</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        @if(activeTab == "teams")
+        {
+            <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-xl">
+                <div class="flex justify-between items-center mb-6">
+                    <div><h2 class="text-xl font-bold text-orange-400">Teams</h2></div>
+                    <button @onclick="OpenAddTeam" class="bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded text-xs font-bold uppercase shadow-lg">+ Add Team</button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    @foreach(var t in Teams)
+                    {
+                        var leagueName = Leagues.FirstOrDefault(l => l.Id == t.LeagueId)?.Name ?? "Unknown";
+                        <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700 flex flex-col items-center gap-2 group hover:border-orange-500/50 transition relative">
+                            @if(t.IsFavorite) { <span class="absolute top-2 right-2 text-yellow-400">★</span> }
+                            <div class="w-16 h-16 bg-black rounded-full border border-gray-700 flex items-center justify-center overflow-hidden">
+                                @if(!string.IsNullOrEmpty(t.LogoUrl)) { <img src="@t.LogoUrl" class="w-full h-full object-cover" /> } else { <span class="text-2xl">🛡️</span> }
+                            </div>
+                            <div class="text-center w-full">
+                                <h3 class="font-bold text-white truncate">@t.Name</h3>
+                                <div class="text-xs text-gray-500">@leagueName @if(!string.IsNullOrEmpty(t.Abbreviation)) { <span>(@t.Abbreviation)</span> }</div>
+                            </div>
+                            <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition absolute bottom-2 right-2 bg-gray-900/90 rounded border border-gray-700 px-1">
+                                <button @onclick="() => OpenEditTeam(t)" class="text-gray-400 hover:text-white p-1">✏️</button>
+                                <button @onclick="() => DeleteTeam(t)" class="text-gray-400 hover:text-red-500 p-1">🗑️</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
 
     </div>
 </div>
 
-@if(editingLeague != null)
-{
-    <div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div class="bg-gray-800 border border-gray-600 p-6 rounded-xl shadow-2xl w-full max-w-md">
-            <h3 class="text-lg font-bold text-white mb-6">@(editingLeague.Id == 0 ? "Add League" : "Edit League")</h3>
-            
+@if(editingLeague != null) {
+    <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 border border-gray-600 p-6 rounded-xl w-full max-w-md">
+            <h3 class="text-lg font-bold text-white mb-4">Edit League</h3>
             <div class="space-y-4">
-                <div>
-                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Name</label>
-                    <input @bind="editingLeague.Name" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" placeholder="e.g. NFL" />
-                </div>
-                
-                <div>
-                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Logo / Image</label>
-                    <div class="flex gap-2 mb-2">
-                        <input @bind="editingLeague.ImgUrl" class="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" placeholder="https://..." />
-                        <label class="cursor-pointer bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded text-sm flex items-center justify-center border border-gray-600">
-                            📂 <InputFile OnChange="@UploadImage" class="hidden" />
-                        </label>
-                    </div>
-                    @if(!string.IsNullOrEmpty(editingLeague.ImgUrl))
-                    {
-                        <div class="w-full h-32 bg-black rounded border border-gray-700 flex items-center justify-center overflow-hidden">
-                            <img src="@editingLeague.ImgUrl" class="h-full object-contain" />
-                        </div>
-                    }
-                </div>
-
-                <div>
-                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Website URL</label>
-                    <input @bind="editingLeague.LinkUrl" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" placeholder="https://..." />
-                </div>
+                <input @bind="editingLeague.Name" class="w-full bg-black border border-gray-700 rounded p-2 text-white" placeholder="Name" />
+                <div class="flex gap-2"><input @bind="editingLeague.ImgUrl" class="flex-1 bg-black border border-gray-700 rounded p-2 text-white text-xs" placeholder="Logo URL" /><label class="cursor-pointer bg-gray-700 px-3 py-2 rounded text-white text-xs">📂 <InputFile OnChange="@(e => UploadImage(e, url => editingLeague.ImgUrl = url))" class="hidden" /></label></div>
+                <input @bind="editingLeague.LinkUrl" class="w-full bg-black border border-gray-700 rounded p-2 text-white" placeholder="Link URL" />
             </div>
+            <div class="mt-6 flex justify-end gap-3"><button @onclick="() => editingLeague = null" class="text-gray-400">Cancel</button><button @onclick="SaveLeague" class="bg-blue-600 text-white px-4 py-2 rounded">Save</button></div>
+        </div>
+    </div>
+}
 
-            <div class="mt-8 flex justify-end gap-3">
-                <button @onclick="() => editingLeague = null" class="px-4 py-2 text-gray-400 hover:text-white text-xs font-bold uppercase">Cancel</button>
-                <button @onclick="Save" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold uppercase shadow-lg">Save</button>
+@if(editingSeason != null) {
+    <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 border border-gray-600 p-6 rounded-xl w-full max-w-md">
+            <h3 class="text-lg font-bold text-white mb-4">Edit Season</h3>
+            <div class="space-y-4">
+                <input @bind="editingSeason.Name" class="w-full bg-black border border-gray-700 rounded p-2 text-white" placeholder="Name (e.g. 2025-2026)" />
+                <select @bind="editingSeason.LeagueId" class="w-full bg-black border border-gray-700 rounded p-2 text-white"><option value="0">-- Select League --</option>@foreach(var l in Leagues){<option value="@l.Id">@l.Name</option>}</select>
+                <div class="flex gap-2"><input @bind="editingSeason.ImgUrl" class="flex-1 bg-black border border-gray-700 rounded p-2 text-white text-xs" placeholder="Image URL" /><label class="cursor-pointer bg-gray-700 px-3 py-2 rounded text-white text-xs">📂 <InputFile OnChange="@(e => UploadImage(e, url => editingSeason.ImgUrl = url))" class="hidden" /></label></div>
             </div>
+            <div class="mt-6 flex justify-end gap-3"><button @onclick="() => editingSeason = null" class="text-gray-400">Cancel</button><button @onclick="SaveSeason" class="bg-green-600 text-white px-4 py-2 rounded">Save</button></div>
+        </div>
+    </div>
+}
+
+@if(editingTeam != null) {
+    <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 border border-gray-600 p-6 rounded-xl w-full max-w-md">
+            <h3 class="text-lg font-bold text-white mb-4">Edit Team</h3>
+            <div class="space-y-4">
+                <input @bind="editingTeam.Name" class="w-full bg-black border border-gray-700 rounded p-2 text-white" placeholder="Team Name" />
+                <div class="grid grid-cols-2 gap-4">
+                    <input @bind="editingTeam.Abbreviation" class="w-full bg-black border border-gray-700 rounded p-2 text-white" placeholder="Abbr (DAL)" />
+                    <select @bind="editingTeam.LeagueId" class="w-full bg-black border border-gray-700 rounded p-2 text-white"><option value="0">-- League --</option>@foreach(var l in Leagues){<option value="@l.Id">@l.Name</option>}</select>
+                </div>
+                <div class="flex items-center gap-2 bg-black/30 p-2 rounded border border-gray-700"><input type="checkbox" @bind="editingTeam.IsFavorite" class="w-5 h-5" /><label>Is Favorite?</label></div>
+                <div class="flex gap-2"><input @bind="editingTeam.LogoUrl" class="flex-1 bg-black border border-gray-700 rounded p-2 text-white text-xs" placeholder="Logo URL" /><label class="cursor-pointer bg-gray-700 px-3 py-2 rounded text-white text-xs">📂 <InputFile OnChange="@(e => UploadImage(e, url => editingTeam.LogoUrl = url))" class="hidden" /></label></div>
+            </div>
+            <div class="mt-6 flex justify-end gap-3"><button @onclick="() => editingTeam = null" class="text-gray-400">Cancel</button><button @onclick="SaveTeam" class="bg-orange-600 text-white px-4 py-2 rounded">Save</button></div>
         </div>
     </div>
 }
 
 @code {
+    private int userId = 0;
+    private string activeTab = "leagues";
+    
     private List<League> Leagues = new();
-    private League? editingLeague = null;
+    private List<Season> Seasons = new();
+    private List<Team> Teams = new();
+
+    private League? editingLeague;
+    private Season? editingSeason;
+    private Team? editingTeam;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            await LoadData();
+            var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
+            if (!string.IsNullOrEmpty(json)) { using(var doc = JsonDocument.Parse(json)) { if(doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p)) userId = p.GetInt32(); } }
+            if(userId > 0) await LoadAll();
         }
     }
 
-    private async Task LoadData()
+    private async Task LoadAll()
     {
-        Leagues = await SportsService.GetLeagues();
+        Leagues = await SportsService.GetLeagues(userId);
+        Seasons = await SportsService.GetSeasons(userId);
+        Teams = await SportsService.GetTeams(userId);
         StateHasChanged();
     }
 
-    private void OpenAdd() { editingLeague = new League(); }
-    
-    private void OpenEdit(League l) 
-    { 
-        // Clone to avoid editing list directly
-        editingLeague = new League { Id = l.Id, Name = l.Name, ImgUrl = l.ImgUrl, LinkUrl = l.LinkUrl }; 
-    }
+    // LEAGUES
+    private void OpenAddLeague() { editingLeague = new League { UserId = userId }; }
+    private void OpenEditLeague(League l) { editingLeague = new League { Id = l.Id, UserId = userId, Name = l.Name, ImgUrl = l.ImgUrl, LinkUrl = l.LinkUrl }; }
+    private async Task SaveLeague() { if(editingLeague != null) { await SportsService.SaveLeague(editingLeague); editingLeague = null; await LoadAll(); } }
+    private async Task DeleteLeague(League l) { if(await JS.InvokeAsync<bool>("confirm", "Delete league?")) { await SportsService.DeleteLeague(l.Id); await LoadAll(); } }
 
-    private async Task Save()
+    // SEASONS
+    private void OpenAddSeason() { editingSeason = new Season { UserId = userId }; }
+    private void OpenEditSeason(Season s) { editingSeason = new Season { Id = s.Id, UserId = userId, Name = s.Name, ImgUrl = s.ImgUrl, LeagueId = s.LeagueId }; }
+    private async Task SaveSeason() { if(editingSeason != null) { await SportsService.SaveSeason(editingSeason); editingSeason = null; await LoadAll(); } }
+    private async Task DeleteSeason(Season s) { if(await JS.InvokeAsync<bool>("confirm", "Delete season?")) { await SportsService.DeleteSeason(s.Id); await LoadAll(); } }
+
+    // TEAMS
+    private void OpenAddTeam() { editingTeam = new Team { UserId = userId }; }
+    private void OpenEditTeam(Team t) { editingTeam = new Team { Id = t.Id, UserId = userId, Name = t.Name, Abbreviation = t.Abbreviation, LogoUrl = t.LogoUrl, LeagueId = t.LeagueId, IsFavorite = t.IsFavorite }; }
+    private async Task SaveTeam() { if(editingTeam != null) { await SportsService.SaveTeam(editingTeam); editingTeam = null; await LoadAll(); } }
+    private async Task DeleteTeam(Team t) { if(await JS.InvokeAsync<bool>("confirm", "Delete team?")) { await SportsService.DeleteTeam(t.Id); await LoadAll(); } }
+
+    // UTILS
+    private async Task UploadImage(InputFileChangeEventArgs e, Action<string> onSuccess)
     {
-        if(editingLeague != null && !string.IsNullOrWhiteSpace(editingLeague.Name))
-        {
-            await SportsService.SaveLeague(editingLeague);
-            editingLeague = null;
-            await LoadData();
-        }
+        try { var file = e.File; using var stream = file.OpenReadStream(5 * 1024 * 1024); using var ms = new MemoryStream(); await stream.CopyToAsync(ms); var url = await BaseService.SaveImageAsync(ms.ToArray(), file.ContentType); onSuccess(url); } catch { }
     }
 
-    private async Task Delete(League l)
-    {
-        if(await JS.InvokeAsync<bool>("confirm", $"Delete {l.Name}?"))
-        {
-            await SportsService.DeleteLeague(l.Id);
-            await LoadData();
-        }
-    }
-
-    private async Task UploadImage(InputFileChangeEventArgs e)
-    {
-        if(editingLeague == null) return;
-        try {
-            var file = e.File;
-            using var stream = file.OpenReadStream(5 * 1024 * 1024);
-            using var ms = new MemoryStream();
-            await stream.CopyToAsync(ms);
-            var url = await BaseService.SaveImageAsync(ms.ToArray(), file.ContentType);
-            editingLeague.ImgUrl = url;
-        } catch(Exception ex) { Console.WriteLine(ex.Message); }
-    }
-
-    private async Task ImportLeagues()
+    private async Task ImportSportsData()
     {
         try {
             var path = System.IO.Path.Combine(Env.WebRootPath, "bullet_calendar.json");
-            if (System.IO.File.Exists(path))
-            {
-                var content = await System.IO.File.ReadAllTextAsync(path);
-                int count = await SportsService.ImportLeaguesFromJson(content);
-                await JS.InvokeVoidAsync("alert", $"Imported {count} new leagues.");
-                await LoadData();
-            }
-            else
-            {
-                await JS.InvokeVoidAsync("alert", "bullet_calendar.json not found.");
-            }
-        } catch(Exception ex) {
-            await JS.InvokeVoidAsync("alert", "Error: " + ex.Message);
-        }
+            if (System.IO.File.Exists(path)) { var content = await System.IO.File.ReadAllTextAsync(path); int count = await SportsService.ImportSportsData(userId, content); await JS.InvokeVoidAsync("alert", $"Imported {count} items."); await LoadAll(); }
+            else await JS.InvokeVoidAsync("alert", "File not found.");
+        } catch(Exception ex) { await JS.InvokeVoidAsync("alert", "Error: " + ex.Message); }
     }
 }
