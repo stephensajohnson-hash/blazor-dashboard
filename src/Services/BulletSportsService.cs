@@ -100,13 +100,11 @@ public class BulletSportsService
         using var doc = JsonDocument.Parse(jsonContent);
         var root = doc.RootElement;
         
-        // Check for "games" array in root or "items"
         JsonElement items = root;
         if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("items", out var i)) items = i;
 
         if (items.ValueKind == JsonValueKind.Array)
         {
-            // Pre-load reference data to minimize DB hits
             var leagues = await _db.Leagues.Where(l => l.UserId == userId).ToListAsync();
             var teams = await _db.Teams.Where(t => t.UserId == userId).ToListAsync();
             
@@ -115,10 +113,18 @@ public class BulletSportsService
                 string type = (el.TryGetProperty("type", out var t) ? t.ToString() : "").ToLower();
                 if (type == "sports")
                 {
-                    string title = (el.TryGetProperty("title", out var tit) ? tit.ToString() : ""); // "WRE @ SOU"
+                    string title = (el.TryGetProperty("title", out var tit) ? tit.ToString() : ""); 
                     string dateStr = (el.TryGetProperty("date", out var d) ? d.ToString() : "");
                     string leagueName = (el.TryGetProperty("league", out var l) ? l.ToString() : "");
                     string seasonName = (el.TryGetProperty("season", out var s) ? s.ToString() : "");
+                    string originalId = (el.TryGetProperty("id", out var oid) ? oid.ToString() : "");
+
+                    // Check duplicate by original ID if present
+                    if (!string.IsNullOrEmpty(originalId))
+                    {
+                        var exists = await _db.BulletItems.AnyAsync(x => x.UserId == userId && x.OriginalStringId == originalId && x.Type == "sports");
+                        if(exists) continue; 
+                    }
                     
                     DateTime gameDate = DateTime.UtcNow;
                     if (DateTime.TryParse(dateStr, out var pd)) gameDate = DateTime.SpecifyKind(pd, DateTimeKind.Utc);
@@ -127,7 +133,7 @@ public class BulletSportsService
                     var league = leagues.FirstOrDefault(x => x.Name.Equals(leagueName, StringComparison.OrdinalIgnoreCase));
                     int leagueId = league?.Id ?? 0;
 
-                    // 2. Resolve Season (Create if missing)
+                    // 2. Resolve Season
                     int seasonId = 0;
                     if (!string.IsNullOrEmpty(seasonName) && leagueId > 0)
                     {
@@ -136,12 +142,12 @@ public class BulletSportsService
                         {
                             season = new Season { UserId = userId, LeagueId = leagueId, Name = seasonName };
                             await _db.Seasons.AddAsync(season);
-                            await _db.SaveChangesAsync(); // Save to get ID
+                            await _db.SaveChangesAsync();
                         }
                         seasonId = season.Id;
                     }
 
-                    // 3. Resolve Teams (Parse Title: "AWAY @ HOME")
+                    // 3. Resolve Teams
                     int homeId = 0;
                     int awayId = 0;
                     
@@ -164,7 +170,7 @@ public class BulletSportsService
                     // 4. Create Item
                     var item = new BulletItem {
                         UserId = userId, Type = "sports", Category = "personal",
-                        Title = title, Date = gameDate, OriginalStringId = (el.TryGetProperty("id", out var id) ? id.ToString() : "")
+                        Title = title, Date = gameDate, OriginalStringId = originalId
                     };
                     await _db.BulletItems.AddAsync(item);
                     await _db.SaveChangesAsync();
@@ -180,8 +186,10 @@ public class BulletSportsService
                         TvChannel = (el.TryGetProperty("tvChannel", out var tv) ? tv.ToString() : "")
                     };
 
-                    if (el.TryGetProperty("homeScore", out var hs)) detail.HomeScore = hs.GetInt32();
-                    if (el.TryGetProperty("awayScore", out var @as)) detail.AwayScore = @as.GetInt32();
+                    // FIX: Check ValueKind before parsing numbers (Handles 'null' in JSON)
+                    if (el.TryGetProperty("homeScore", out var hs) && hs.ValueKind == JsonValueKind.Number) detail.HomeScore = hs.GetInt32();
+                    if (el.TryGetProperty("awayScore", out var @as) && @as.ValueKind == JsonValueKind.Number) detail.AwayScore = @as.GetInt32();
+                    
                     if (el.TryGetProperty("startTime", out var stm) && TimeSpan.TryParse(stm.ToString(), out var ts))
                     {
                         detail.StartTime = gameDate.Date + ts;
