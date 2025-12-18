@@ -102,7 +102,7 @@ public class SportsService
         using var doc = JsonDocument.Parse(jsonContent);
         var root = doc.RootElement;
 
-        // 1. IMPORT LEAGUES FIRST (Crucial so IDs exist)
+        // 1. IMPORT LEAGUES FIRST
         if (root.TryGetProperty("leagues", out var leaguesArr) && leaguesArr.ValueKind == JsonValueKind.Array)
         {
             foreach (var l in leaguesArr.EnumerateArray())
@@ -117,22 +117,22 @@ public class SportsService
                     }
                 }
             }
-            await _db.SaveChangesAsync(); // Save immediately to generate IDs
+            await _db.SaveChangesAsync();
         }
 
         // 2. IMPORT TEAMS
         if (root.TryGetProperty("teams", out var teamsArr) && teamsArr.ValueKind == JsonValueKind.Array)
         {
-            // Refresh local league cache to get the new IDs
-            var userLeagues = await _db.Leagues.Where(l => l.UserId == userId).ToListAsync();
-
+            var userLeagues = await GetLeagues(userId); 
             foreach (var t in teamsArr.EnumerateArray())
             {
                 string name = t.TryGetProperty("name", out var n) ? n.ToString() : "";
-                string abbr = t.TryGetProperty("abbr", out var a) ? a.ToString() : "";
+                
+                // UPDATED: Only look for 'abbrev'
+                string abbr = t.TryGetProperty("abbrev", out var a) ? a.ToString() : "";
+
                 string leagueName = t.TryGetProperty("league", out var l) ? l.ToString() : "";
                 
-                // MAPPING LOGO: Check "logo", "logoUrl", or "img"
                 string logo = "";
                 if(t.TryGetProperty("logo", out var lg)) logo = lg.ToString();
                 else if(t.TryGetProperty("logoUrl", out lg)) logo = lg.ToString();
@@ -142,12 +142,10 @@ public class SportsService
 
                 if (!string.IsNullOrWhiteSpace(name))
                 {
-                    // Find League ID
                     var league = userLeagues.FirstOrDefault(x => x.Name.Equals(leagueName, StringComparison.OrdinalIgnoreCase));
                     int leagueId = league?.Id ?? 0;
 
                     var existingTeam = await _db.Teams.FirstOrDefaultAsync(x => x.UserId == userId && x.Name == name);
-                    
                     if (existingTeam == null)
                     {
                         await _db.Teams.AddAsync(new Team 
@@ -163,11 +161,12 @@ public class SportsService
                     }
                     else
                     {
-                        // Update existing team if missing data
                         bool changed = false;
                         if(existingTeam.LeagueId == 0 && leagueId != 0) { existingTeam.LeagueId = leagueId; changed = true; }
                         if(string.IsNullOrEmpty(existingTeam.LogoUrl) && !string.IsNullOrEmpty(logo)) { existingTeam.LogoUrl = logo; changed = true; }
+                        // Update abbreviation if missing
                         if(string.IsNullOrEmpty(existingTeam.Abbreviation) && !string.IsNullOrEmpty(abbr)) { existingTeam.Abbreviation = abbr; changed = true; }
+                        
                         if(changed) _db.Teams.Update(existingTeam);
                     }
                 }
