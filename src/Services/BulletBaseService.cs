@@ -73,6 +73,22 @@ public class BulletBaseService
                 ""IsFavorite"" BOOLEAN NOT NULL DEFAULT FALSE
             );
         ");
+
+        await _db.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS ""BulletGameDetails"" (
+                ""BulletItemId"" INTEGER NOT NULL PRIMARY KEY,
+                ""LeagueId"" INTEGER NOT NULL DEFAULT 0,
+                ""SeasonId"" INTEGER NOT NULL DEFAULT 0,
+                ""HomeTeamId"" INTEGER NOT NULL DEFAULT 0,
+                ""AwayTeamId"" INTEGER NOT NULL DEFAULT 0,
+                ""HomeScore"" INTEGER NOT NULL DEFAULT 0,
+                ""AwayScore"" INTEGER NOT NULL DEFAULT 0,
+                ""IsComplete"" BOOLEAN NOT NULL DEFAULT FALSE,
+                ""StartTime"" TIMESTAMP NULL,
+                ""TvChannel"" TEXT NOT NULL DEFAULT '',
+                CONSTRAINT ""FK_BulletGameDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE
+            );
+        ");
     }
 
     public async Task DeleteItem(int id) { var item = await _db.BulletItems.FindAsync(id); if (item != null) { _db.BulletItems.Remove(item); await _db.SaveChangesAsync(); } }

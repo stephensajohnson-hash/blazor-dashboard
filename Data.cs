@@ -46,6 +46,7 @@ public class AppDbContext : DbContext
     public DbSet<League> Leagues { get; set; }
     public DbSet<Season> Seasons { get; set; } // NEW
     public DbSet<Team> Teams { get; set; } // NEW
+    public DbSet<BulletGameDetail> BulletGameDetails { get; set; }
 }
 
 // ... (Keep existing Bullet classes) ...
@@ -109,3 +110,22 @@ public class Countdown { public int Id { get; set; } public int UserId { get; se
 public class Stock { public int Id { get; set; } public int UserId { get; set; } public string Symbol { get; set; } = ""; public string ImgUrl { get; set; } = ""; public string LinkUrl { get; set; } = ""; public double Shares { get; set; } public int Order { get; set; } }
 public class Feed { public int Id { get; set; } public int UserId { get; set; } public string Name { get; set; } = ""; public string Url { get; set; } = ""; public string Category { get; set; } = "General"; public bool IsEnabled { get; set; } = false; }
 public static class BulletViewConfig { public const string ImgWidthDay = "25%"; public const string ImgWidthWeek = "20%"; public const string ImgWidthMonth = "15%"; }
+
+public class BulletGameDetail
+{
+    [Key, ForeignKey("BulletItem")]
+    public int BulletItemId { get; set; }
+    public virtual BulletItem BulletItem { get; set; } = null!;
+
+    public int LeagueId { get; set; }
+    public int SeasonId { get; set; }
+    public int HomeTeamId { get; set; }
+    public int AwayTeamId { get; set; }
+    
+    public int HomeScore { get; set; }
+    public int AwayScore { get; set; }
+    
+    public bool IsComplete { get; set; } // "status": "completed"
+    public DateTime? StartTime { get; set; } // Just the time component usually, combined with Item.Date
+    public string TvChannel { get; set; } = "";
+}

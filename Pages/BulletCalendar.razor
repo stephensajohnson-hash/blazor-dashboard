@@ -19,6 +19,7 @@
 @inject BulletAnniversaryService AnniversaryService
 @inject BulletVacationService VacationService
 @inject BulletHealthService HealthService
+@inject BulletSportsService SportsService
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
@@ -54,8 +55,8 @@
                 <div class="fixed inset-0 z-40 cursor-default" @onclick="() => showUserMenu = false"></div>
                 <div class="absolute right-0 top-full mt-2 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 z-50" @onclick:stopPropagation="true">
                     <a href="/settings" class="block w-full text-left text-xs text-gray-300 hover:text-white hover:bg-gray-700 p-2 rounded mb-1 transition">⚙️ Settings</a>
-                    <a href="/manage-data" class="block w-full text-left text-xs text-blue-400 hover:bg-gray-700 p-2 rounded mb-1 transition">💾 Manage Data</a>
                     <a href="/manage-sports" class="block w-full text-left text-xs text-yellow-400 hover:bg-gray-700 p-2 rounded mb-1 transition">🏆 Manage Sports</a>
+                    <a href="/manage-data" class="block w-full text-left text-xs text-blue-400 hover:bg-gray-700 p-2 rounded mb-1 transition">💾 Manage Data</a>
                     <button @onclick="Logout" class="w-full text-left text-xs text-red-400 hover:bg-gray-700 p-2 rounded transition">Logout</button>
                 </div>
             }
@@ -92,6 +93,7 @@
                                         else if (item.Type == "anniversary") { <AnniversaryCard Item="item" OnClick="OpenAnniversaryEdit" OnDelete="DeleteTask" /> }
                                         else if (item.Type == "vacation") { <VacationCard Item="item" OnClick="OpenVacationEdit" OnDelete="DeleteTask" /> }
                                         else if (item.Type == "health") { <HealthCard Item="item" User="currentUser" OnClick="OpenHealthEdit" OnDelete="DeleteTask" /> }
+                                        else if (item.Type == "sports") { <SportsCard Item="@(GetGame(item.Id))" OnClick="OpenSportsEdit" OnDelete="DeleteTask" /> }
                                         else { <TaskCard Item="item" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteTask" /> }
                                     </div>
                                 }
@@ -122,6 +124,7 @@
                                 else if (item.Type == "anniversary") { <AnniversaryPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" /> }
                                 else if (item.Type == "vacation") { <VacationPill Item="item" OnClick="OpenVacationEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" /> }
                                 else if (item.Type == "health") { <HealthPill Item="item" User="currentUser" OnClick="OpenHealthEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" /> }
+                                else if (item.Type == "sports") { <SportsPill Item="@(GetGame(item.Id))" OnClick="OpenSportsEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" /> }
                                 else { <TaskPill Task="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" /> }
                             }
                             <button @onclick='() => OpenEditor("personal", "task", d)' class="w-full py-2 text-gray-600 hover:text-gray-400 hover:bg-gray-700/50 rounded text-xs transition mt-2">＋</button>
@@ -151,7 +154,8 @@
                                     else if (item.Type == "birthday") { <BirthdayPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
                                     else if (item.Type == "anniversary") { <AnniversaryPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
                                     else if (item.Type == "vacation") { <VacationPill Item="item" OnClick="OpenVacationEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
-                                    else if (item.Type == "health") { <HealthPill Item="item" OnClick="OpenHealthEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" /> }
+                                    else if (item.Type == "health") { <HealthPill Item="item" User="currentUser" OnClick="OpenHealthEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" /> }
+                                    else if (item.Type == "sports") { <SportsPill Item="@(GetGame(item.Id))" OnClick="OpenSportsEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" /> }
                                     else { <TaskPill Task="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
                                 }
                             </div>
@@ -196,6 +200,7 @@
     private List<BulletAnniversaryService.AnniversaryDTO> loadedAnniversaries = new();
     private List<BulletVacationService.VacationDTO> loadedVacations = new(); 
     private List<BulletHealthService.HealthDTO> loadedHealth = new();
+    private List<BulletSportsService.GameDTO> loadedGames = new();
     
     private BulletTaskService.TaskDTO? editingItem;
     private DateTime weekStart => viewDate.AddDays(-1 * ((7 + (viewDate.DayOfWeek - DayOfWeek.Monday)) % 7)).Date;
@@ -269,6 +274,9 @@
             loadedHealth = await HealthService.GetHealthItemsForRange(userId, start, end);
             foreach(var h in loadedHealth) { loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "health", Category = h.Category, Date = h.Date, Title = h.Title, Description = h.Description, ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId, HealthDetail = h.Detail, Meals = h.Meals, Workouts = h.Workouts, Notes = h.Notes, SortOrder = h.SortOrder }); }
 
+            loadedGames = await SportsService.GetGamesForRange(userId, start, end);
+            foreach(var g in loadedGames) { loadedItems.Add(new BulletTaskService.TaskDTO { Id = g.Id, UserId = g.UserId, Type = "sports", Category = g.Category, Date = g.Date, Title = g.Title, Description = g.Description, ImgUrl = g.ImgUrl, LinkUrl = g.LinkUrl, OriginalStringId = g.OriginalStringId, SortOrder = g.SortOrder }); }
+
         } catch(Exception ex) { statusMessage = "Error: " + ex.Message; }
         
         isLoading = false;
@@ -311,13 +319,15 @@
 
     private BulletHabitService.HabitDTO GetHabit(int id) => loadedHabits.FirstOrDefault(h => h.Id == id) ?? new();
     
-    // Open Editors (using serialization for deep copy)
+    private BulletSportsService.GameDTO GetGame(int id) => loadedGames.FirstOrDefault(g => g.Id == id) ?? new();
+
     private void OpenMediaEdit(BulletTaskService.TaskDTO m) { var json = JsonSerializer.Serialize(m); editingItem = JsonSerializer.Deserialize<BulletTaskService.TaskDTO>(json); }
     private void OpenHolidayEdit(BulletTaskService.TaskDTO h) { var json = JsonSerializer.Serialize(h); editingItem = JsonSerializer.Deserialize<BulletTaskService.TaskDTO>(json); }
     private void OpenBirthdayEdit(BulletTaskService.TaskDTO b) { var json = JsonSerializer.Serialize(b); editingItem = JsonSerializer.Deserialize<BulletTaskService.TaskDTO>(json); }
     private void OpenAnniversaryEdit(BulletTaskService.TaskDTO a) { var json = JsonSerializer.Serialize(a); editingItem = JsonSerializer.Deserialize<BulletTaskService.TaskDTO>(json); }
     private void OpenHealthEdit(BulletTaskService.TaskDTO h) { var json = JsonSerializer.Serialize(h); editingItem = JsonSerializer.Deserialize<BulletTaskService.TaskDTO>(json); }
-    
+    private void OpenSportsEdit(BulletTaskService.TaskDTO t) { OpenEdit(t); } // Currently just generic edit, but hooked up
+
     private async Task OpenVacationEdit(BulletTaskService.TaskDTO v) 
     { 
         var json = JsonSerializer.Serialize(v);
@@ -334,7 +344,6 @@
         }
     }
 
-    // UI Toggles
     private void OpenEditor(string category, string type, DateTime date) { editingItem = new BulletTaskService.TaskDTO { UserId = userId, Category = category, Type = type, Date = date }; }
     private void OpenEdit(BulletTaskService.TaskDTO t) { var json = JsonSerializer.Serialize(t); editingItem = JsonSerializer.Deserialize<BulletTaskService.TaskDTO>(json); if(editingItem != null) editingItem.Date = t.Date; }
     private void OpenHabitEdit(BulletHabitService.HabitDTO h) { editingItem = new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, Description = h.Description, ImgUrl = h.ImgUrl, LinkUrl = h.LinkUrl, OriginalStringId = h.OriginalStringId, Notes = h.Notes, HabitDetail = h.Detail, SortOrder = h.SortOrder }; }
@@ -392,6 +401,10 @@
             else if (editingItem.Type == "health") { 
                 var h = new BulletHealthService.HealthDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "health", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.HealthDetail, Meals = editingItem.Meals, Workouts = editingItem.Workouts, Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; 
                 await HealthService.SaveHealth(h); 
+            }
+            else if (editingItem.Type == "sports") { 
+                // Currently reusing basic task save because full sports editor isn't built yet, but basic fields work
+                await TaskService.SaveTask(editingItem); 
             }
             else { await TaskService.SaveTask(editingItem); }
             editingItem = null; await LoadData();
