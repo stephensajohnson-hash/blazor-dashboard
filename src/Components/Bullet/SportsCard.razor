@@ -102,7 +102,8 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        // CREATE ISOLATED SCOPE to prevent concurrency errors
+        // 1. Create a FRESH Scope for this component's data fetching
+        // This prevents "NpgsqlOperationInProgressException" when multiple cards load at once
         using (var scope = ScopeFactory.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -139,30 +140,40 @@
     {
         if (leagueId == 0) return "0-0";
 
-        var relevantGames = await (from d in db.BulletGameDetails
-                                   join i in db.BulletItems on d.BulletItemId equals i.Id
-                                   where d.LeagueId == leagueId
-                                      && d.IsComplete 
-                                      && (d.HomeTeamId == teamId || d.AwayTeamId == teamId)
-                                      && (i.Date < Item.Date || (i.Date == Item.Date && i.Id <= Item.Id))
-                                   select d).ToListAsync();
-
-        int wins = 0;
-        int losses = 0;
-        int ties = 0;
-
-        foreach (var g in relevantGames)
+        try 
         {
-            bool isHome = g.HomeTeamId == teamId;
-            int myScore = isHome ? g.HomeScore : g.AwayScore;
-            int oppScore = isHome ? g.AwayScore : g.HomeScore;
+            // Join BulletGameDetails with BulletItems to filter by DATE
+            // We want completed games from THIS League, up to (and including) THIS game
+            var relevantGames = await (from d in db.BulletGameDetails
+                                       join i in db.BulletItems on d.BulletItemId equals i.Id
+                                       where d.LeagueId == leagueId
+                                          && d.IsComplete 
+                                          && (d.HomeTeamId == teamId || d.AwayTeamId == teamId)
+                                          && (i.Date < Item.Date || (i.Date == Item.Date && i.Id <= Item.Id))
+                                       select d).ToListAsync();
 
-            if (myScore > oppScore) wins++;
-            else if (myScore < oppScore) losses++;
-            else ties++;
+            int wins = 0;
+            int losses = 0;
+            int ties = 0;
+
+            foreach (var g in relevantGames)
+            {
+                bool isHome = g.HomeTeamId == teamId;
+                int myScore = isHome ? g.HomeScore : g.AwayScore;
+                int oppScore = isHome ? g.AwayScore : g.HomeScore;
+
+                if (myScore > oppScore) wins++;
+                else if (myScore < oppScore) losses++;
+                else ties++;
+            }
+
+            return ties > 0 ? $"{wins}-{losses}-{ties}" : $"{wins}-{losses}";
         }
-
-        return ties > 0 ? $"{wins}-{losses}-{ties}" : $"{wins}-{losses}";
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error calculating record: {ex.Message}");
+            return "Err";
+        }
     }
 
     private bool IsFavorite(Team? t) => t?.IsFavorite ?? false;
