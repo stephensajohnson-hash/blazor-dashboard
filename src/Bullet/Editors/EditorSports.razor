@@ -1,10 +1,12 @@
 @namespace Dashboard.Components.Bullet.Editors
 @using Dashboard
+@using Microsoft.Extensions.Logging
 @inject BulletSportsService SportsService
+@inject ILogger<EditorSports> Logger
 
 <div class="bg-black/30 p-4 rounded border border-gray-700 space-y-4">
     <div>
-        <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">🏆 League</label>
+        <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">🏆 League (ID: @Detail.LeagueId)</label>
         <select @bind="Detail.LeagueId" @bind:after="OnLeagueChanged" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-2 text-sm text-white">
             <option value="0">-- Select League --</option>
             @foreach(var l in leagues) { <option value="@l.Id">@l.Name</option> }
@@ -13,7 +15,7 @@
 
     <div class="grid grid-cols-2 gap-4">
         <div>
-            <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">🏃‍♂️ Away Team</label>
+            <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">🏃‍♂️ Away Team (@Detail.AwayTeamId)</label>
             <select @bind="Detail.AwayTeamId" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm text-white">
                 <option value="0">-- Select --</option>
                 @foreach(var t in filteredTeams) { 
@@ -23,7 +25,7 @@
             <input type="number" @bind="Detail.AwayScore" class="w-full mt-1 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-white text-center font-bold" placeholder="0" />
         </div>
         <div>
-            <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">🏠 Home Team</label>
+            <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">🏠 Home Team (@Detail.HomeTeamId)</label>
             <select @bind="Detail.HomeTeamId" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm text-white">
                 <option value="0">-- Select --</option>
                 @foreach(var t in filteredTeams) { 
@@ -49,6 +51,10 @@
         <input type="checkbox" @bind="Detail.IsComplete" id="chkSport" class="w-5 h-5 rounded bg-gray-800 border-gray-600 text-green-500" />
         <label for="chkSport" class="text-sm text-white cursor-pointer">✅ Game Final</label>
     </div>
+    
+    <div class="text-[9px] text-gray-600 font-mono mt-2 border-t border-gray-800 pt-1">
+        DEBUG: User:@UserId | Lgs:@leagues.Count | Tms:@allTeams.Count | Filt:@filteredTeams.Count | SelLg:@Detail.LeagueId
+    </div>
 </div>
 
 @code {
@@ -61,19 +67,42 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        Logger.LogInformation($"[EditorSports] OnParametersSetAsync fired. UserId: {UserId}. Detail LeagueId: {Detail.LeagueId}, Home: {Detail.HomeTeamId}, Away: {Detail.AwayTeamId}");
+
         if (UserId > 0)
         {
+            // 1. Ensure Data is Loaded (only fetch if empty to avoid spamming DB)
             if (!leagues.Any()) 
             {
-                leagues = await SportsService.GetLeagues(UserId);
-                allTeams = await SportsService.GetTeams(UserId);
+                Logger.LogInformation("[EditorSports] Fetching Leagues and Teams from Service...");
+                try 
+                {
+                    leagues = await SportsService.GetLeagues(UserId);
+                    allTeams = await SportsService.GetTeams(UserId);
+                    Logger.LogInformation($"[EditorSports] Fetched {leagues.Count} leagues and {allTeams.Count} teams.");
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError($"[EditorSports] Error fetching data: {ex.Message}");
+                }
             }
+            else
+            {
+                Logger.LogInformation("[EditorSports] Data already loaded in component.");
+            }
+            
+            // 2. Filter Teams Immediately
             FilterTeams();
+        }
+        else
+        {
+            Logger.LogWarning("[EditorSports] UserId is 0 or invalid. Skipping load.");
         }
     }
 
     private void OnLeagueChanged()
     {
+        Logger.LogInformation($"[EditorSports] League Changed to {Detail.LeagueId}. Resetting teams.");
         FilterTeams();
         Detail.HomeTeamId = 0;
         Detail.AwayTeamId = 0;
@@ -81,16 +110,21 @@
 
     private void FilterTeams()
     {
+        Logger.LogInformation($"[EditorSports] Filtering teams for LeagueId: {Detail.LeagueId}");
+
         if (Detail.LeagueId > 0)
         {
             filteredTeams = allTeams
                 .Where(t => t.LeagueId == Detail.LeagueId)
-                .OrderByDescending(t => t.IsFavorite) // Dynamic Favorite Sorting
+                .OrderByDescending(t => t.IsFavorite) // Favorites first
                 .ThenBy(t => t.Name)
                 .ToList();
+            
+            Logger.LogInformation($"[EditorSports] Filtered down to {filteredTeams.Count} teams.");
         }
         else
         {
+            Logger.LogInformation("[EditorSports] No League selected. Clearing filtered teams.");
             filteredTeams = new List<Team>();
         }
         StateHasChanged();
