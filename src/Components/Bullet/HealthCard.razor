@@ -2,192 +2,241 @@
 @using Dashboard
 @inject BulletHealthService HealthService
 
-<div class="bg-emerald-900/20 border border-emerald-800 rounded-lg mb-3 relative group shadow-sm flex flex-col transition hover:border-emerald-500">
+<div class="bg-gray-800 border border-gray-700 rounded-lg mb-3 overflow-hidden shadow-lg group relative transition hover:border-emerald-500/50">
     
-    <div class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition z-30">
-        <button @onclick="HandleClick" class="p-1.5 rounded bg-gray-700 hover:bg-emerald-600 text-gray-300 hover:text-white border border-gray-600 shadow-md">✏️</button>
-        <button @onclick="HandleDelete" class="p-1.5 rounded bg-gray-700 hover:bg-red-600 text-red-400 hover:text-white border border-gray-600 shadow-md">✕</button>
-    </div>
-
-    @{
-        // DAILY CALCULATIONS
-        var totalConsumed = Item.Meals.Sum(m => m.Calories);
-        var burnedCals = Item.Workouts.Sum(w => w.CaloriesBurned);
-        var netCalories = totalConsumed - burnedCals;
-
-        // TDEE & TARGETS
-        double tdee = Item.HealthDetail.CalculatedTDEE;
-        if(tdee == 0 && User != null && Item.HealthDetail.WeightLbs > 0)
-        {
-            double weightKg = Item.HealthDetail.WeightLbs * 0.453592;
-            double heightCm = User.HeightInches * 2.54;
-            double bmr = (10 * weightKg) + (6.25 * heightCm) - (5 * User.Age) + (User.Gender == "Male" ? 5 : -161);
-            double multiplier = User.ActivityLevel switch { "Sedentary" => 1.2, "Light" => 1.375, "Moderate" => 1.55, "Active" => 1.725, "Extra" => 1.9, _ => 1.2 };
-            tdee = bmr * multiplier;
-        }
-        if(tdee == 0) tdee = 2000;
-
-        double weeklyGoal = User?.WeeklyCalorieDeficitGoal ?? 3500;
-        double dailyDeficitTarget = weeklyGoal / 7.0;
-        double calorieTarget = tdee - dailyDeficitTarget;
-        
-        // REMAINING CALCULATIONS
-        double remFromGoal = calorieTarget - netCalories;
-        double remFromTDEE = tdee - netCalories;
-
-        // MACROS
-        double pAct = Item.Meals.Sum(m => m.Protein); 
-        double pGoal = User?.DailyProteinGoal ?? 150; 
-        double pPct = pGoal > 0 ? (pAct / pGoal) * 100 : 0;
-
-        double fAct = Item.Meals.Sum(m => m.Fat); 
-        double fGoal = User?.DailyFatGoal ?? 70; 
-        double fPct = fGoal > 0 ? (fAct / fGoal) * 100 : 0;
-
-        // NET CARBS LOGIC
-        double cAct = Item.Meals.Sum(m => m.Carbs);
-        double fiberAct = Item.Meals.Sum(m => m.Fiber);
-        double netCarbsAct = cAct - fiberAct; // Net Carbs Calculation
-        double cGoal = User?.DailyCarbGoal ?? 200; 
-        double cPct = cGoal > 0 ? (netCarbsAct / cGoal) * 100 : 0; // % based on Net Carbs
-        
-        // WEEKLY DEFICIT
-        double wkPct = weeklyGoal > 0 ? (cumulativeDeficit / weeklyGoal) * 100 : 0;
-    }
-
-    <div class="p-3 border-b border-emerald-800/50 bg-emerald-950/30 flex justify-between items-end">
-        <div class="text-center">
-            <div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Weight</div>
-            <div class="text-lg font-bold text-white">
-                @(Item.HealthDetail.WeightLbs > 0 ? $"{Item.HealthDetail.WeightLbs}" : "--") <span class="text-[10px] text-gray-500 font-normal">lbs</span>
-            </div>
+    <div class="px-4 py-3 border-b border-gray-700 bg-gray-900/50 flex justify-between items-center">
+        <div class="flex items-center gap-2">
+            <span class="text-xs font-bold text-emerald-400 uppercase tracking-wider">💪 Health Log</span>
+            <span class="text-[10px] text-gray-500">@Item.Date.ToString("MMM dd")</span>
         </div>
-        <div class="flex flex-col items-center">
-            <div class="flex gap-4 mb-1">
-                <div class="text-center">
-                    <div class="text-[9px] text-gray-500 uppercase">Remaining (Goal)</div>
-                    <div class="text-sm font-mono font-bold @(remFromGoal >= 0 ? "text-emerald-400" : "text-red-400")">
-                        @Math.Round(remFromGoal)
-                    </div>
-                </div>
-                <div class="text-center">
-                    <div class="text-[9px] text-gray-500 uppercase">Remaining (TDEE)</div>
-                    <div class="text-sm font-mono font-bold @(remFromTDEE >= 0 ? "text-blue-400" : "text-orange-400")">
-                        @Math.Round(remFromTDEE)
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="text-center">
-            <div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">TDEE</div>
-            <div class="text-lg font-bold text-emerald-200 font-mono">@Math.Round(tdee)</div>
+        
+        <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition">
+            <button @onclick="HandleClick" class="p-1 rounded bg-gray-700 hover:bg-blue-600 text-gray-300 hover:text-white border border-gray-600 shadow-md" title="Edit Daily Settings">⚙️</button>
+            <button @onclick="HandleDelete" class="p-1 rounded bg-gray-700 hover:bg-red-600 text-red-400 hover:text-white border border-gray-600 shadow-md" title="Delete Day">✕</button>
         </div>
     </div>
 
-    <div class="p-4 space-y-5">
+    <div class="p-4 space-y-6">
         
-        <div>
-            <div class="flex justify-between text-xs mb-1">
-                <span class="font-bold text-orange-300 uppercase tracking-wide">Weekly Deficit</span>
-                <span class="font-mono text-gray-300">@Math.Round(cumulativeDeficit) / @weeklyGoal <span class="text-orange-400 ml-1">(@Math.Round(wkPct)%)</span></span>
+        <div class="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-gray-700/50">
+            <div class="text-center">
+                <div class="text-[10px] text-gray-500 uppercase font-bold">In</div>
+                <div class="text-xl font-bold text-white">@TotalIn</div>
             </div>
-            <div class="h-2 w-full bg-gray-800 rounded-full overflow-hidden border border-gray-700">
-                <div class="h-full bg-orange-500 rounded-full transition-all duration-500" style="width: @Math.Min(wkPct, 100)%"></div>
+            <div class="flex flex-col items-center px-4 w-full">
+                <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">Net Calories</div>
+                <div class="text-3xl font-black @GetNetColor()">@NetCalories</div>
+                <div class="text-[9px] text-gray-600">Goal: @TargetCals</div>
+            </div>
+            <div class="text-center">
+                <div class="text-[10px] text-gray-500 uppercase font-bold">Out</div>
+                <div class="text-xl font-bold text-orange-400">@TotalOut</div>
+            </div>
+        </div>
+
+        <div class="space-y-2">
+            <div>
+                <div class="flex justify-between text-[10px] uppercase font-bold text-gray-500 mb-1">
+                    <span>Protein</span>
+                    <span class="text-blue-400">@TotalProtein / @User.DailyProteinGoal g</span>
+                </div>
+                <div class="h-1.5 w-full bg-gray-700 rounded-full overflow-hidden">
+                    <div class="h-full bg-blue-500 transition-all duration-500" style="width: @(Math.Min(100, (TotalProtein / User.DailyProteinGoal) * 100))%"></div>
+                </div>
+            </div>
+            <div>
+                <div class="flex justify-between text-[10px] uppercase font-bold text-gray-500 mb-1">
+                    <span>Net Carbs</span>
+                    <span class="text-green-400">@TotalCarbs / @User.DailyCarbGoal g</span>
+                </div>
+                <div class="h-1.5 w-full bg-gray-700 rounded-full overflow-hidden">
+                    <div class="h-full bg-green-500 transition-all duration-500" style="width: @(Math.Min(100, (TotalCarbs / User.DailyCarbGoal) * 100))%"></div>
+                </div>
+            </div>
+            <div>
+                <div class="flex justify-between text-[10px] uppercase font-bold text-gray-500 mb-1">
+                    <span>Fat</span>
+                    <span class="text-yellow-400">@TotalFat / @User.DailyFatGoal g</span>
+                </div>
+                <div class="h-1.5 w-full bg-gray-700 rounded-full overflow-hidden">
+                    <div class="h-full bg-yellow-500 transition-all duration-500" style="width: @(Math.Min(100, (TotalFat / User.DailyFatGoal) * 100))%"></div>
+                </div>
             </div>
         </div>
 
         <div>
-            <div class="flex justify-between items-end mb-1">
-                <span class="text-xs font-bold text-emerald-300 uppercase tracking-wide">Daily Net Cal</span>
-                <div class="text-right">
-                    <span class="text-sm font-mono font-bold text-white">@Math.Round(netCalories)</span>
-                    <span class="text-xs text-gray-500"> / @Math.Round(calorieTarget)</span>
-                </div>
+            <div class="flex justify-between items-center mb-2 border-b border-gray-700 pb-1">
+                <h4 class="text-xs font-bold text-gray-400 uppercase">🍽️ Meals</h4>
+                <button @onclick="() => isAddingMeal = !isAddingMeal" class="text-[10px] bg-gray-700 hover:bg-emerald-600 text-white px-2 py-0.5 rounded transition">＋ Add</button>
             </div>
-            <div class="h-2.5 w-full bg-gray-800 rounded-full overflow-hidden border border-gray-700">
-                <div class="h-full rounded-full transition-all duration-500 @(netCalories > calorieTarget ? "bg-red-500" : "bg-emerald-500")" 
-                     style="width: @Math.Min(calorieTarget > 0 ? (netCalories/calorieTarget)*100 : 0, 100)%"></div>
-            </div>
-            <div class="flex justify-between text-[10px] text-gray-500 mt-1">
-                <span>In: @Math.Round(totalConsumed)</span>
-                <span>Out: @Math.Round(burnedCals)</span>
-            </div>
-        </div>
 
-        <div class="grid grid-cols-1 gap-2">
-            <div>
-                <div class="flex justify-between text-[10px] mb-0.5"><span class="font-bold text-blue-400">Protein</span><span class="font-mono text-gray-300">@Math.Round(pAct)/@pGoal g</span></div>
-                <div class="h-1.5 w-full bg-gray-800 rounded-full overflow-hidden"><div class="h-full bg-blue-500 rounded-full" style="width: @Math.Min(pPct, 100)%"></div></div>
-            </div>
-            <div>
-                <div class="flex justify-between text-[10px] mb-0.5"><span class="font-bold text-yellow-400">Fat</span><span class="font-mono text-gray-300">@Math.Round(fAct)/@fGoal g</span></div>
-                <div class="h-1.5 w-full bg-gray-800 rounded-full overflow-hidden"><div class="h-full bg-yellow-500 rounded-full" style="width: @Math.Min(fPct, 100)%"></div></div>
-            </div>
-            <div>
-                <div class="flex justify-between text-[10px] mb-0.5"><span class="font-bold text-green-400">Carbs (Net)</span><span class="font-mono text-gray-300">@Math.Round(netCarbsAct)/@cGoal g</span></div>
-                <div class="h-1.5 w-full bg-gray-800 rounded-full overflow-hidden"><div class="h-full bg-green-500 rounded-full" style="width: @Math.Min(cPct, 100)%"></div></div>
-            </div>
-        </div>
-
-        @if(Item.Meals.Any() || Item.Workouts.Any())
-        {
-            <div class="pt-4 border-t border-emerald-900/30">
-                <div class="space-y-4">
-                    @foreach(var meal in Item.Meals)
-                    {
-                        <div class="bg-black/20 rounded p-2 border border-emerald-900/10">
-                            <div class="flex justify-between items-start mb-2">
-                                <span class="text-xs text-white font-bold leading-tight">
-                                    <span class="text-[10px] text-emerald-500 font-bold uppercase tracking-wider mr-1 border border-emerald-900 px-1 rounded bg-black/40">@meal.MealType</span>
-                                    @meal.Name
-                                </span>
-                            </div>
-                            
-                            <div class="grid grid-cols-2 gap-y-1 gap-x-2 text-[10px] font-mono text-gray-400">
-                                <div class="text-white font-bold">Calories: @meal.Calories</div>
-                                <div>Protein: <span class="text-blue-300">@meal.Protein</span>g</div>
-                                <div>Fat: <span class="text-yellow-300">@meal.Fat</span>g</div>
-                                <div>Carbs: <span class="text-green-300">@meal.Carbs</span>g</div>
-                                <div>Fiber: <span class="text-gray-500">@meal.Fiber</span>g</div>
-                                <div class="text-green-400 font-bold">Net Carbs: @(meal.Carbs - meal.Fiber)g</div>
-                            </div>
-                        </div>
-                    }
+            @if(isAddingMeal)
+            {
+                <div class="bg-gray-900/80 p-3 rounded mb-2 border border-emerald-500/30 animate-in fade-in slide-in-from-top-2">
+                    <input @bind="newMeal.Name" class="w-full bg-black border border-gray-600 rounded px-2 py-1 text-xs text-white mb-2" placeholder="Meal Name (e.g. Chicken Salad)" />
+                    <div class="grid grid-cols-4 gap-2 mb-2">
+                        <input type="number" @bind="newMeal.Calories" class="bg-black border border-gray-600 rounded px-1 py-1 text-xs text-white text-center" placeholder="Cals" />
+                        <input type="number" @bind="newMeal.Protein" class="bg-black border border-gray-600 rounded px-1 py-1 text-xs text-blue-300 text-center border-blue-900/50" placeholder="P(g)" />
+                        <input type="number" @bind="newMeal.Carbs" class="bg-black border border-gray-600 rounded px-1 py-1 text-xs text-green-300 text-center border-green-900/50" placeholder="C(g)" />
+                        <input type="number" @bind="newMeal.Fat" class="bg-black border border-gray-600 rounded px-1 py-1 text-xs text-yellow-300 text-center border-yellow-900/50" placeholder="F(g)" />
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <button @onclick="() => isAddingMeal = false" class="text-[10px] text-gray-400 hover:text-white">Cancel</button>
+                        <button @onclick="AddMeal" class="text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded font-bold">Save Meal</button>
+                    </div>
                 </div>
-                
-                @if(Item.Workouts.Any())
+            }
+
+            <div class="space-y-1">
+                @foreach(var meal in Item.Meals)
                 {
-                    <div class="mt-4 pt-2 border-t border-emerald-900/20 space-y-2">
-                        <div class="text-[10px] font-bold text-orange-400 uppercase tracking-wider">Workouts</div>
-                        @foreach(var w in Item.Workouts)
-                        {
-                            <div class="flex justify-between items-center text-xs text-orange-200 bg-orange-900/10 p-2 rounded border border-orange-900/20">
-                                <span>🔥 @w.Name <span class="text-[10px] text-orange-400/70 ml-1">(@w.TimeSpentMinutes min)</span></span>
-                                <span class="font-mono font-bold">-@w.CaloriesBurned</span>
-                            </div>
-                        }
+                    <div class="flex justify-between items-center text-xs group/item hover:bg-gray-700/30 p-1 rounded transition">
+                        <div class="flex-1 truncate">
+                            <span class="text-white">@meal.Name</span>
+                            <span class="text-[9px] text-gray-500 ml-1">(@meal.Protein g P • @meal.Carbs g C • @meal.Fat g F)</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="font-mono text-gray-300">@meal.Calories</span>
+                            <button @onclick="() => DeleteMeal(meal)" class="text-gray-600 hover:text-red-500 opacity-0 group-hover/item:opacity-100 transition">✕</button>
+                        </div>
                     </div>
                 }
+                @if(!Item.Meals.Any()) { <div class="text-[10px] text-gray-600 italic">No meals logged.</div> }
             </div>
-        }
+        </div>
+
+        <div>
+            <div class="flex justify-between items-center mb-2 border-b border-gray-700 pb-1">
+                <h4 class="text-xs font-bold text-gray-400 uppercase">🔥 Workouts</h4>
+                <button @onclick="() => isAddingWorkout = !isAddingWorkout" class="text-[10px] bg-gray-700 hover:bg-orange-600 text-white px-2 py-0.5 rounded transition">＋ Add</button>
+            </div>
+
+            @if(isAddingWorkout)
+            {
+                <div class="bg-gray-900/80 p-3 rounded mb-2 border border-orange-500/30 animate-in fade-in slide-in-from-top-2">
+                    <input @bind="newWorkout.Name" class="w-full bg-black border border-gray-600 rounded px-2 py-1 text-xs text-white mb-2" placeholder="Workout Name (e.g. Running)" />
+                    <div class="grid grid-cols-2 gap-2 mb-2">
+                        <input type="number" @bind="newWorkout.CaloriesBurned" class="bg-black border border-gray-600 rounded px-1 py-1 text-xs text-white text-center" placeholder="Cals Burned" />
+                        <input type="number" @bind="newWorkout.TimeSpentMinutes" class="bg-black border border-gray-600 rounded px-1 py-1 text-xs text-white text-center" placeholder="Mins" />
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <button @onclick="() => isAddingWorkout = false" class="text-[10px] text-gray-400 hover:text-white">Cancel</button>
+                        <button @onclick="AddWorkout" class="text-[10px] bg-orange-600 hover:bg-orange-500 text-white px-3 py-1 rounded font-bold">Save Workout</button>
+                    </div>
+                </div>
+            }
+
+            <div class="space-y-1">
+                @foreach(var wo in Item.Workouts)
+                {
+                    <div class="flex justify-between items-center text-xs group/item hover:bg-gray-700/30 p-1 rounded transition">
+                        <div class="flex-1 truncate">
+                            <span class="text-white">@wo.Name</span>
+                            <span class="text-[9px] text-gray-500 ml-1">(@wo.TimeSpentMinutes min)</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="font-mono text-orange-400">-@wo.CaloriesBurned</span>
+                            <button @onclick="() => DeleteWorkout(wo)" class="text-gray-600 hover:text-red-500 opacity-0 group-hover/item:opacity-100 transition">✕</button>
+                        </div>
+                    </div>
+                }
+                @if(!Item.Workouts.Any()) { <div class="text-[10px] text-gray-600 italic">No workouts logged.</div> }
+            </div>
+        </div>
+
     </div>
 </div>
 
 @code {
     [Parameter] public BulletTaskService.TaskDTO Item { get; set; } = new();
-    [Parameter] public User? User { get; set; }
-    
+    [Parameter] public User User { get; set; } = new();
     [Parameter] public EventCallback<BulletTaskService.TaskDTO> OnClick { get; set; }
     [Parameter] public EventCallback<int> OnDelete { get; set; }
 
-    private double cumulativeDeficit = 0;
+    // UI State
+    private bool isAddingMeal = false;
+    private bool isAddingWorkout = false;
+    
+    // Temp Objects for Forms
+    private BulletHealthMeal newMeal = new();
+    private BulletHealthWorkout newWorkout = new();
 
-    protected override async Task OnParametersSetAsync()
+    // Computed Properties
+    private double TotalIn => Item.Meals.Sum(m => m.Calories);
+    private double TotalOut => Item.Workouts.Sum(w => w.CaloriesBurned) + (Item.HealthDetail?.CalculatedTDEE ?? 2000);
+    private double NetCalories => TotalIn - TotalOut;
+    private int TargetCals => (Item.HealthDetail?.CalculatedTDEE ?? 2000) - (User.WeeklyCalorieDeficitGoal / 7);
+
+    private double TotalProtein => Item.Meals.Sum(m => m.Protein);
+    private double TotalCarbs => Item.Meals.Sum(m => m.Carbs);
+    private double TotalFat => Item.Meals.Sum(m => m.Fat);
+
+    private string GetNetColor()
     {
-        if (User != null && Item != null)
+        // Green if under budget (creating deficit), Red if over
+        return NetCalories <= TargetCals ? "text-emerald-400" : "text-red-400";
+    }
+
+    private async Task AddMeal()
+    {
+        if (string.IsNullOrWhiteSpace(newMeal.Name)) return;
+        
+        // 1. Add to local list to update UI immediately
+        newMeal.BulletItemId = Item.Id;
+        Item.Meals.Add(newMeal);
+        
+        // 2. Save entire health object via Service
+        await SaveAll();
+
+        // 3. Reset form
+        newMeal = new();
+        isAddingMeal = false;
+    }
+
+    private async Task DeleteMeal(BulletHealthMeal meal)
+    {
+        Item.Meals.Remove(meal);
+        await SaveAll();
+    }
+
+    private async Task AddWorkout()
+    {
+        if (string.IsNullOrWhiteSpace(newWorkout.Name)) return;
+
+        newWorkout.BulletItemId = Item.Id;
+        Item.Workouts.Add(newWorkout);
+        
+        await SaveAll();
+
+        newWorkout = new();
+        isAddingWorkout = false;
+    }
+
+    private async Task DeleteWorkout(BulletHealthWorkout wo)
+    {
+        Item.Workouts.Remove(wo);
+        await SaveAll();
+    }
+
+    private async Task SaveAll()
+    {
+        // Re-map to HealthDTO because Service expects DTO
+        var dto = new BulletHealthService.HealthDTO
         {
-            cumulativeDeficit = await HealthService.GetWeeklyDeficit(User.Id, Item.Date, User);
-        }
+            Id = Item.Id,
+            UserId = Item.UserId,
+            Type = "health",
+            Category = Item.Category,
+            Date = Item.Date,
+            Title = Item.Title,
+            Description = Item.Description,
+            Detail = Item.HealthDetail ?? new(),
+            Meals = Item.Meals,
+            Workouts = Item.Workouts,
+            Notes = Item.Notes
+        };
+        await HealthService.SaveHealth(dto);
+        StateHasChanged();
     }
 
     private async Task HandleClick() => await OnClick.InvokeAsync(Item);
