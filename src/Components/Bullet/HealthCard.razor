@@ -202,23 +202,39 @@
     private BulletHealthMeal newMeal = new();
     private BulletHealthWorkout newWorkout = new();
 
-    // --- CALCULATIONS ---
-    // Total Intake from Meals
+    // CALCULATIONS
     private double TotalIn => Item.Meals.Sum(m => m.Calories);
-    
-    // Total Burn (Workouts)
     private double Burned => Item.Workouts.Sum(w => w.CaloriesBurned);
     
-    // Total Output (TDEE + Burn)
-    private double TDEE => (Item.HealthDetail?.CalculatedTDEE > 0) ? Item.HealthDetail.CalculatedTDEE : 2000;
-    
-    // Daily Deficit Goal (Weekly / 7)
-    private double DailyDeficit => User.WeeklyCalorieDeficitGoal / 7.0;
+    // Calculate TDEE dynamically using Mifflin-St Jeor (Sedentary Multiplier 1.2)
+    private double TDEE 
+    {
+        get 
+        {
+            // Mifflin-St Jeor: (10 × weight in kg) + (6.25 × height in cm) - (5 × age in years) + 5
+            // 268 lbs = 121.56 kg
+            // 6'0" = 182.88 cm
+            // Age 52 (Default if not set)
+            double w = Item.HealthDetail?.WeightLbs > 0 ? Item.HealthDetail.WeightLbs : 268;
+            double kg = w / 2.20462;
+            double cm = 182.88; // 6'0"
+            int age = 52; 
 
-    // The Calorie Goal Limit (To hit weight loss goal)
+            // Base Metabolic Rate (BMR)
+            double bmr = (10 * kg) + (6.25 * cm) - (5 * age) + 5; 
+            
+            // Sedentary Multiplier
+            return bmr * 1.2;
+        }
+    }
+    
+    // 3500 Weekly Deficit = 500 Daily
+    private double DailyDeficit => (User.WeeklyCalorieDeficitGoal > 0 ? User.WeeklyCalorieDeficitGoal : 3500) / 7.0;
+
+    // The Calorie Goal Limit (e.g. 2524 - 500 = 2024)
     private double GoalLimit => TDEE - DailyDeficit;
 
-    // Net Calories (Eaten - Burned) - Used for tracking against goal
+    // Net Calories (Eaten - Burned)
     private double NetCalories => TotalIn - Burned;
 
     // Remaining to hit Goal (Limit - Net)
