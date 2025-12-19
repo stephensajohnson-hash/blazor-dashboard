@@ -5,7 +5,7 @@
 <div class="bg-black/30 p-4 rounded border border-gray-700 space-y-4">
     <div>
         <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">🏆 League</label>
-        <select value="@Detail.LeagueId" @onchange="OnLeagueChanged" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-2 text-sm text-white">
+        <select @bind="Detail.LeagueId" @bind:after="OnLeagueChanged" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-2 text-sm text-white">
             <option value="0">-- Select League --</option>
             @foreach(var l in leagues) { <option value="@l.Id">@l.Name</option> }
         </select>
@@ -16,7 +16,9 @@
             <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">🏃‍♂️ Away Team</label>
             <select @bind="Detail.AwayTeamId" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm text-white">
                 <option value="0">-- Select --</option>
-                @foreach(var t in filteredTeams) { <option value="@t.Id">@t.Name</option> }
+                @foreach(var t in filteredTeams) { 
+                    <option value="@t.Id">@((t.IsFavorite ? "★ " : "") + t.Name)</option> 
+                }
             </select>
             <input type="number" @bind="Detail.AwayScore" class="w-full mt-1 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-white text-center font-bold" placeholder="0" />
         </div>
@@ -24,7 +26,9 @@
             <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">🏠 Home Team</label>
             <select @bind="Detail.HomeTeamId" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm text-white">
                 <option value="0">-- Select --</option>
-                @foreach(var t in filteredTeams) { <option value="@t.Id">@t.Name</option> }
+                @foreach(var t in filteredTeams) { 
+                    <option value="@t.Id">@((t.IsFavorite ? "★ " : "") + t.Name)</option> 
+                }
             </select>
             <input type="number" @bind="Detail.HomeScore" class="w-full mt-1 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-white text-center font-bold" placeholder="0" />
         </div>
@@ -59,38 +63,36 @@
     {
         if (UserId > 0)
         {
-            // Only fetch if we haven't already (or force refresh if needed)
             if (!leagues.Any()) 
             {
                 leagues = await SportsService.GetLeagues(UserId);
                 allTeams = await SportsService.GetTeams(UserId);
             }
-            
-            // Run filter immediately so dropdowns populate based on existing Detail.LeagueId
             FilterTeams();
         }
     }
 
-    private void OnLeagueChanged(ChangeEventArgs e)
+    private void OnLeagueChanged()
     {
-        if (int.TryParse(e.Value?.ToString(), out int id))
-        {
-            Detail.LeagueId = id;
-            FilterTeams();
-            Detail.HomeTeamId = 0;
-            Detail.AwayTeamId = 0;
-        }
+        FilterTeams();
+        Detail.HomeTeamId = 0;
+        Detail.AwayTeamId = 0;
     }
 
     private void FilterTeams()
     {
         if (Detail.LeagueId > 0)
         {
-            filteredTeams = allTeams.Where(t => t.LeagueId == Detail.LeagueId).OrderBy(t => t.Name).ToList();
+            filteredTeams = allTeams
+                .Where(t => t.LeagueId == Detail.LeagueId)
+                .OrderByDescending(t => t.IsFavorite) // Dynamic Favorite Sorting
+                .ThenBy(t => t.Name)
+                .ToList();
         }
         else
         {
             filteredTeams = new List<Team>();
         }
+        StateHasChanged();
     }
 }
