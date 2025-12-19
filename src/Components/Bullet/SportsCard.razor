@@ -1,6 +1,8 @@
 @namespace Dashboard.Components.Bullet
 @using Dashboard
+@using Microsoft.EntityFrameworkCore
 @inject BulletSportsService SportsService
+@inject AppDbContext Db 
 
 <div class="bg-gray-800 border border-gray-700 rounded-lg mb-3 overflow-hidden shadow-lg group relative transition hover:border-orange-500/50 flex">
     
@@ -10,7 +12,7 @@
     </div>
 
     <div class="w-24 shrink-0 bg-black/30 border-r border-gray-700 flex flex-col items-center justify-center p-2 relative">
-        @if(Item.SportsDetail.IsComplete)
+        @if(Item.Detail.IsComplete)
         {
             <div class="absolute inset-0 flex items-center justify-center bg-black/60 z-10">
                 @if(DidFavoriteWin)
@@ -26,10 +28,10 @@
         
         <span class="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">@LeagueName</span>
         
-        @if(!Item.SportsDetail.IsComplete)
+        @if(!Item.Detail.IsComplete)
         {
-            <div class="text-lg font-bold text-white">@Item.SportsDetail.StartTime?.ToString("h:mm")</div>
-            <div class="text-[10px] text-gray-400 uppercase">@Item.SportsDetail.StartTime?.ToString("tt")</div>
+            <div class="text-lg font-bold text-white">@Item.Detail.StartTime?.ToString("h:mm")</div>
+            <div class="text-[10px] text-gray-400 uppercase">@Item.Detail.StartTime?.ToString("tt")</div>
         }
         else
         {
@@ -52,8 +54,8 @@
                     }
                 </div>
             </div>
-            <div class="text-lg font-bold font-mono @(Item.SportsDetail.IsComplete && Item.SportsDetail.AwayScore > Item.SportsDetail.HomeScore ? "text-white" : "text-gray-500")">
-                @(Item.SportsDetail.AwayScore > 0 || Item.SportsDetail.IsComplete ? Item.SportsDetail.AwayScore : "")
+            <div class="text-lg font-bold font-mono @(Item.Detail.IsComplete && Item.Detail.AwayScore > Item.Detail.HomeScore ? "text-white" : "text-gray-500")">
+                @(Item.Detail.AwayScore > 0 || Item.Detail.IsComplete ? Item.Detail.AwayScore : "")
             </div>
         </div>
 
@@ -70,15 +72,15 @@
                     }
                 </div>
             </div>
-            <div class="text-lg font-bold font-mono @(Item.SportsDetail.IsComplete && Item.SportsDetail.HomeScore > Item.SportsDetail.AwayScore ? "text-white" : "text-gray-500")">
-                @(Item.SportsDetail.HomeScore > 0 || Item.SportsDetail.IsComplete ? Item.SportsDetail.HomeScore : "")
+            <div class="text-lg font-bold font-mono @(Item.Detail.IsComplete && Item.Detail.HomeScore > Item.Detail.AwayScore ? "text-white" : "text-gray-500")">
+                @(Item.Detail.HomeScore > 0 || Item.Detail.IsComplete ? Item.Detail.HomeScore : "")
             </div>
         </div>
 
-        @if(!string.IsNullOrEmpty(Item.SportsDetail.TvChannel))
+        @if(!string.IsNullOrEmpty(Item.Detail.TvChannel))
         {
             <div class="text-[9px] text-gray-600 uppercase font-bold text-right mt-1">
-                📺 @Item.SportsDetail.TvChannel
+                📺 @Item.Detail.TvChannel
             </div>
         }
     </div>
@@ -93,20 +95,21 @@
     private Team? AwayTeam;
     private string LeagueName = "GAME";
 
-    // KEY FIX: Show records if date is past OR game is explicitly marked complete
-    private bool ShowRecords => Item.Date <= DateTime.UtcNow.AddHours(12) || Item.SportsDetail.IsComplete;
+    // Show records if date is past OR game is explicitly marked complete
+    private bool ShowRecords => Item.Date <= DateTime.UtcNow.AddHours(12) || Item.Detail.IsComplete;
 
     protected override async Task OnParametersSetAsync()
     {
-        if (Item.SportsDetail.HomeTeamId > 0) 
-            HomeTeam = await SportsService.GetTeamById(Item.SportsDetail.HomeTeamId);
+        // FIX: Use Db context directly since Service methods were missing
+        if (Item.Detail.HomeTeamId > 0) 
+            HomeTeam = await Db.Teams.FindAsync(Item.Detail.HomeTeamId);
             
-        if (Item.SportsDetail.AwayTeamId > 0) 
-            AwayTeam = await SportsService.GetTeamById(Item.SportsDetail.AwayTeamId);
+        if (Item.Detail.AwayTeamId > 0) 
+            AwayTeam = await Db.Teams.FindAsync(Item.Detail.AwayTeamId);
 
-        if (Item.SportsDetail.LeagueId > 0)
+        if (Item.Detail.LeagueId > 0)
         {
-            var l = await SportsService.GetLeagueById(Item.SportsDetail.LeagueId);
+            var l = await Db.Leagues.FindAsync(Item.Detail.LeagueId);
             if (l != null) LeagueName = l.Name;
         }
     }
@@ -115,8 +118,6 @@
 
     private string GetRecord(Team? t) 
     {
-        // In a real app, this would come from the DB. 
-        // Returning placeholder logic or property if available on your Team object.
         return "0-0"; 
     }
 
@@ -124,12 +125,12 @@
     {
         get 
         {
-            if (!Item.SportsDetail.IsComplete) return false;
+            if (!Item.Detail.IsComplete) return false;
             bool homeFav = IsFavorite(HomeTeam);
             bool awayFav = IsFavorite(AwayTeam);
             
-            if (homeFav && Item.SportsDetail.HomeScore > Item.SportsDetail.AwayScore) return true;
-            if (awayFav && Item.SportsDetail.AwayScore > Item.SportsDetail.HomeScore) return true;
+            if (homeFav && Item.Detail.HomeScore > Item.Detail.AwayScore) return true;
+            if (awayFav && Item.Detail.AwayScore > Item.Detail.HomeScore) return true;
             return false;
         }
     }
@@ -145,7 +146,7 @@
             Date = Item.Date,
             Title = Item.Title,
             Description = Item.Description,
-            SportsDetail = Item.Detail, // Use the inner detail
+            SportsDetail = Item.Detail, // Use correct property
             Category = Item.Category
         };
         await OnClick.InvokeAsync(taskDto); 
