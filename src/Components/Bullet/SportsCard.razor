@@ -1,8 +1,9 @@
 @namespace Dashboard.Components.Bullet
 @using Dashboard
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.Extensions.DependencyInjection
 @inject BulletSportsService SportsService
-@inject AppDbContext Db 
+@inject IServiceScopeFactory ScopeFactory
 
 <div class="bg-gray-800 border border-gray-700 rounded-lg mb-3 overflow-hidden shadow-lg group relative transition hover:border-orange-500/50 flex">
     
@@ -101,41 +102,46 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (Item.Detail.HomeTeamId > 0) 
+        // CREATE ISOLATED SCOPE to prevent concurrency errors
+        using (var scope = ScopeFactory.CreateScope())
         {
-            HomeTeam = await Db.Teams.FindAsync(Item.Detail.HomeTeamId);
-            HomeRecord = await CalculatePointInTimeRecord(Item.Detail.HomeTeamId, Item.Detail.SeasonId);
-        }
-            
-        if (Item.Detail.AwayTeamId > 0) 
-        {
-            AwayTeam = await Db.Teams.FindAsync(Item.Detail.AwayTeamId);
-            AwayRecord = await CalculatePointInTimeRecord(Item.Detail.AwayTeamId, Item.Detail.SeasonId);
-        }
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        if (Item.Detail.LeagueId > 0)
-        {
-            var l = await Db.Leagues.FindAsync(Item.Detail.LeagueId);
-            if (l != null) LeagueName = l.Name;
-        }
+            if (Item.Detail.HomeTeamId > 0) 
+            {
+                HomeTeam = await db.Teams.FindAsync(Item.Detail.HomeTeamId);
+                HomeRecord = await CalculatePointInTimeRecord(db, Item.Detail.HomeTeamId, Item.Detail.LeagueId);
+            }
+                
+            if (Item.Detail.AwayTeamId > 0) 
+            {
+                AwayTeam = await db.Teams.FindAsync(Item.Detail.AwayTeamId);
+                AwayRecord = await CalculatePointInTimeRecord(db, Item.Detail.AwayTeamId, Item.Detail.LeagueId);
+            }
 
-        if (Item.Detail.SeasonId != null && Item.Detail.SeasonId > 0)
-        {
-            var s = await Db.Seasons.FindAsync(Item.Detail.SeasonId);
-            if (s != null) SeasonName = s.Name;
+            if (Item.Detail.LeagueId > 0)
+            {
+                var l = await db.Leagues.FindAsync(Item.Detail.LeagueId);
+                if (l != null) LeagueName = l.Name;
+            }
+
+            if (Item.Detail.SeasonId != null && Item.Detail.SeasonId > 0)
+            {
+                var s = await db.Seasons.FindAsync(Item.Detail.SeasonId);
+                if (s != null) SeasonName = s.Name;
+            }
         }
         
         StateHasChanged();
     }
 
-    private async Task<string> CalculatePointInTimeRecord(int teamId, int? seasonId)
+    private async Task<string> CalculatePointInTimeRecord(AppDbContext db, int teamId, int leagueId)
     {
-        if (seasonId == null || seasonId == 0) return "0-0";
+        if (leagueId == 0) return "0-0";
 
-        // Filter by SEASON ID (Now that it's fixed)
-        var relevantGames = await (from d in Db.BulletGameDetails
-                                   join i in Db.BulletItems on d.BulletItemId equals i.Id
-                                   where d.SeasonId == seasonId
+        var relevantGames = await (from d in db.BulletGameDetails
+                                   join i in db.BulletItems on d.BulletItemId equals i.Id
+                                   where d.LeagueId == leagueId
                                       && d.IsComplete 
                                       && (d.HomeTeamId == teamId || d.AwayTeamId == teamId)
                                       && (i.Date < Item.Date || (i.Date == Item.Date && i.Id <= Item.Id))
