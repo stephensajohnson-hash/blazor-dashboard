@@ -26,16 +26,22 @@
             </div>
         }
         
-        <span class="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">@LeagueName</span>
+        <span class="text-[10px] font-bold text-gray-500 uppercase tracking-widest leading-tight text-center">
+            @LeagueName
+            @if(!string.IsNullOrEmpty(SeasonName)) 
+            {
+                <br/><span class="text-[9px] text-gray-600 normal-case">@SeasonName</span>
+            }
+        </span>
         
         @if(!Item.Detail.IsComplete)
         {
-            <div class="text-lg font-bold text-white">@Item.Detail.StartTime?.ToString("h:mm")</div>
+            <div class="text-lg font-bold text-white mt-1">@Item.Detail.StartTime?.ToString("h:mm")</div>
             <div class="text-[10px] text-gray-400 uppercase">@Item.Detail.StartTime?.ToString("tt")</div>
         }
         else
         {
-            <div class="text-xs font-bold text-gray-400">FINAL</div>
+            <div class="text-xs font-bold text-gray-400 mt-1">FINAL</div>
         }
     </div>
 
@@ -88,10 +94,10 @@
     private Team? HomeTeam;
     private Team? AwayTeam;
     private string LeagueName = "GAME";
+    private string SeasonName = "";
     
-    // Stored Records
-    private string HomeRecord = "0-0";
-    private string AwayRecord = "0-0";
+    private string HomeRecord = "-";
+    private string AwayRecord = "-";
 
     protected override async Task OnParametersSetAsync()
     {
@@ -112,19 +118,24 @@
             var l = await Db.Leagues.FindAsync(Item.Detail.LeagueId);
             if (l != null) LeagueName = l.Name;
         }
+
+        if (Item.Detail.SeasonId != null && Item.Detail.SeasonId > 0)
+        {
+            var s = await Db.Seasons.FindAsync(Item.Detail.SeasonId);
+            if (s != null) SeasonName = s.Name;
+        }
+        
+        StateHasChanged();
     }
 
     private async Task<string> CalculatePointInTimeRecord(int teamId, int? seasonId)
     {
         if (seasonId == null || seasonId == 0) return "0-0";
 
-        // KEY CHANGE: Join BulletGameDetails with BulletItems to filter by DATE
-        // We want games where Date <= ThisGame.Date.
-        // If dates are identical, use Id to break ties (ensure consistent ordering).
-        
+        // Filter by SEASON ID (Now that it's fixed)
         var relevantGames = await (from d in Db.BulletGameDetails
                                    join i in Db.BulletItems on d.BulletItemId equals i.Id
-                                   where d.SeasonId == seasonId 
+                                   where d.SeasonId == seasonId
                                       && d.IsComplete 
                                       && (d.HomeTeamId == teamId || d.AwayTeamId == teamId)
                                       && (i.Date < Item.Date || (i.Date == Item.Date && i.Id <= Item.Id))
