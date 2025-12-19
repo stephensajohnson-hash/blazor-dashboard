@@ -1,29 +1,44 @@
 @namespace Dashboard.Components.Bullet
 @using Dashboard
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceScopeFactory ScopeFactory
 
-<div class="bg-gray-800 border border-gray-600 rounded mb-1 overflow-hidden cursor-pointer transition flex group relative pr-6 shadow-sm hover:bg-gray-700" @onclick="HandleClick">
+<div class="flex items-center gap-2 bg-gray-800/80 border border-gray-700 rounded px-2 py-1 cursor-pointer hover:bg-gray-700 transition group mb-1" 
+     @onclick="HandleClick">
     
-    <div class="absolute right-0 top-0 bottom-0 w-5 flex flex-col opacity-0 group-hover:opacity-100 transition z-20 bg-black/20 backdrop-blur-sm border-l border-white/10">
-        <button @onclick="MoveUp" @onclick:stopPropagation="true" class="flex-1 hover:bg-white/20 text-[8px] flex items-center justify-center text-white leading-none">▲</button>
-        <button @onclick="MoveDown" @onclick:stopPropagation="true" class="flex-1 hover:bg-white/20 text-[8px] flex items-center justify-center text-white leading-none">▼</button>
+    <div class="text-[10px] font-bold text-gray-400 w-8 shrink-0 text-center">
+        @if(Item.Detail.IsComplete) { <span>FIN</span> }
+        else { @Item.Detail.StartTime?.ToString("h:mm") }
     </div>
 
-    <div class="p-1 flex-1 min-w-0 flex items-center justify-center gap-3 relative">
-        
-        <div class="flex items-center gap-1.5">
-            @if(!string.IsNullOrEmpty(Item.AwayTeam?.LogoUrl)) { <img src="@Item.AwayTeam?.LogoUrl" class="w-5 h-5 object-contain" /> }
-            else { <span class="text-[9px] font-bold text-gray-400">@Item.AwayTeam?.Abbreviation</span> }
-            <span class="font-mono font-bold text-xs @(Item.Detail.AwayScore > Item.Detail.HomeScore ? "text-white" : "text-gray-500")">@Item.Detail.AwayScore</span>
+    <div class="flex-1 flex flex-col justify-center min-w-0">
+        <div class="flex justify-between items-center text-xs">
+            <div class="flex items-center gap-1 truncate">
+                <span class="@(IsFavorite(AwayTeam) ? "text-yellow-400 font-bold" : "text-gray-300") truncate">@AwayTeam?.Abbreviation</span>
+                @if(Item.Detail.IsComplete || Item.Detail.AwayScore > 0) { <span class="font-mono font-bold text-white ml-1">@Item.Detail.AwayScore</span> }
+            </div>
         </div>
-
-        <div class="text-[9px] text-gray-600 font-bold">@@</div>
-
-        <div class="flex items-center gap-1.5">
-            <span class="font-mono font-bold text-xs @(Item.Detail.HomeScore > Item.Detail.AwayScore ? "text-white" : "text-gray-500")">@Item.Detail.HomeScore</span>
-            @if(!string.IsNullOrEmpty(Item.HomeTeam?.LogoUrl)) { <img src="@Item.HomeTeam?.LogoUrl" class="w-5 h-5 object-contain" /> }
-            else { <span class="text-[9px] font-bold text-gray-400">@Item.HomeTeam?.Abbreviation</span> }
+        <div class="flex justify-between items-center text-xs">
+            <div class="flex items-center gap-1 truncate">
+                <span class="@(IsFavorite(HomeTeam) ? "text-yellow-400 font-bold" : "text-gray-300") truncate">@HomeTeam?.Abbreviation</span>
+                @if(Item.Detail.IsComplete || Item.Detail.HomeScore > 0) { <span class="font-mono font-bold text-white ml-1">@Item.Detail.HomeScore</span> }
+            </div>
         </div>
+    </div>
 
+    @if(ResultState != 0)
+    {
+        <div class="shrink-0">
+            <span class="text-[9px] font-black uppercase border px-1 rounded transform -rotate-6 shadow-md @GetStampClass()">
+                @GetStampText()
+            </span>
+        </div>
+    }
+
+    <div class="hidden group-hover:flex items-center gap-1 pl-2 border-l border-gray-600 ml-1">
+        <button @onclick="MoveUp" @onclick:stopPropagation="true" class="text-gray-400 hover:text-white text-[10px]">▲</button>
+        <button @onclick="MoveDown" @onclick:stopPropagation="true" class="text-gray-400 hover:text-white text-[10px]">▼</button>
     </div>
 </div>
 
@@ -33,10 +48,57 @@
     [Parameter] public EventCallback<int> OnMoveUp { get; set; }
     [Parameter] public EventCallback<int> OnMoveDown { get; set; }
 
+    private Team? HomeTeam;
+    private Team? AwayTeam;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        using (var scope = ScopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (Item.Detail.HomeTeamId > 0) HomeTeam = await db.Teams.FindAsync(Item.Detail.HomeTeamId);
+            if (Item.Detail.AwayTeamId > 0) AwayTeam = await db.Teams.FindAsync(Item.Detail.AwayTeamId);
+        }
+    }
+
+    private bool IsFavorite(Team? t) => t?.IsFavorite ?? false;
+
+    private int ResultState 
+    {
+        get 
+        {
+            if (!Item.Detail.IsComplete) return 0;
+            bool hFav = IsFavorite(HomeTeam);
+            bool aFav = IsFavorite(AwayTeam);
+            if (!hFav && !aFav) return 0;
+
+            int h = Item.Detail.HomeScore;
+            int a = Item.Detail.AwayScore;
+            if (h == a) return 3; // Tie
+            if (hFav) return h > a ? 1 : 2;
+            if (aFav) return a > h ? 1 : 2;
+            return 0;
+        }
+    }
+
+    private string GetStampText() => ResultState switch { 1 => "W", 2 => "L", 3 => "T", _ => "" };
+    
+    private string GetStampClass() => ResultState switch {
+        1 => "text-green-400 border-green-500 bg-green-900",
+        2 => "text-red-400 border-red-500 bg-red-900",
+        3 => "text-yellow-400 border-yellow-500 bg-yellow-900",
+        _ => "hidden"
+    };
+
     private async Task HandleClick() 
     {
-        await OnClick.InvokeAsync(new BulletTaskService.TaskDTO { Id = Item.Id, Type = "sports" });
+        var taskDto = new BulletTaskService.TaskDTO { 
+            Id = Item.Id, UserId = Item.UserId, Type = "sports", Date = Item.Date, 
+            Title = Item.Title, Description = Item.Description, SportsDetail = Item.Detail, Category = Item.Category 
+        };
+        await OnClick.InvokeAsync(taskDto); 
     }
+
     private async Task MoveUp() => await OnMoveUp.InvokeAsync(Item.Id);
     private async Task MoveDown() => await OnMoveDown.InvokeAsync(Item.Id);
 }
