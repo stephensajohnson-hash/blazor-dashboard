@@ -326,7 +326,36 @@
     private void OpenBirthdayEdit(BulletTaskService.TaskDTO t) { editingItem = CreateCopy(t); }
     private void OpenAnniversaryEdit(BulletTaskService.TaskDTO t) { editingItem = CreateCopy(t); }
     private void OpenHealthEdit(BulletTaskService.TaskDTO t) { editingItem = CreateCopy(t); }
-    private void OpenSportsEdit(BulletTaskService.TaskDTO t) { editingItem = CreateCopy(t); } 
+    
+    private async Task OpenSportsEdit(BulletTaskService.TaskDTO t) 
+    { 
+        editingItem = CreateCopy(t);
+        
+        // ROBUST FIX: If detail is missing/empty, fetch it directly
+        if(editingItem.SportsDetail == null || editingItem.SportsDetail.LeagueId == 0)
+        {
+            try {
+                // We don't have a direct "GetDetail" method exposed likely, 
+                // but we can try to find it from the loadedGames cache which might be better populated
+                var game = loadedGames.FirstOrDefault(g => g.Id == t.Id);
+                if(game != null && game.Detail != null && game.Detail.LeagueId > 0)
+                {
+                    editingItem.SportsDetail = new BulletGameDetail {
+                        BulletItemId = game.Id,
+                        LeagueId = game.Detail.LeagueId,
+                        HomeTeamId = game.Detail.HomeTeamId,
+                        AwayTeamId = game.Detail.AwayTeamId,
+                        HomeScore = game.Detail.HomeScore,
+                        AwayScore = game.Detail.AwayScore,
+                        StartTime = game.Detail.StartTime,
+                        IsComplete = game.Detail.IsComplete,
+                        TvChannel = game.Detail.TvChannel
+                    };
+                }
+            } catch(Exception ex) { Console.WriteLine($"Error fetching sports detail: {ex.Message}"); }
+        }
+    }
+    
     private void OpenEdit(BulletTaskService.TaskDTO t) { editingItem = CreateCopy(t); }
     private void OpenHabitEdit(BulletHabitService.HabitDTO h) { 
         editingItem = new BulletTaskService.TaskDTO { 
@@ -346,27 +375,60 @@
         }
     }
 
-    // Manual Helper to copy object fields without JSON
     private BulletTaskService.TaskDTO CreateCopy(BulletTaskService.TaskDTO t)
     {
-        return new BulletTaskService.TaskDTO {
-            Id = t.Id, UserId = t.UserId, Type = t.Type, Category = t.Category, Date = t.Date, EndDate = t.EndDate,
-            Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, LinkUrl = t.LinkUrl,
-            OriginalStringId = t.OriginalStringId, SortOrder = t.SortOrder,
-            Detail = t.Detail != null ? new BulletTaskDetail { BulletItemId = t.Id, DueDate = t.Detail.DueDate, IsCompleted = t.Detail.IsCompleted, Priority = t.Detail.Priority, Status = t.Detail.Status, TicketNumber = t.Detail.TicketNumber, TicketUrl = t.Detail.TicketUrl } : new(),
-            MeetingDetail = t.MeetingDetail != null ? new BulletMeetingDetail { BulletItemId = t.Id, StartTime = t.MeetingDetail.StartTime, DurationMinutes = t.MeetingDetail.DurationMinutes, ActualDurationMinutes = t.MeetingDetail.ActualDurationMinutes, IsCompleted = t.MeetingDetail.IsCompleted } : new(),
-            SportsDetail = t.SportsDetail != null ? new BulletGameDetail { BulletItemId = t.Id, LeagueId = t.SportsDetail.LeagueId, HomeTeamId = t.SportsDetail.HomeTeamId, AwayTeamId = t.SportsDetail.AwayTeamId, HomeScore = t.SportsDetail.HomeScore, AwayScore = t.SportsDetail.AwayScore, StartTime = t.SportsDetail.StartTime, IsComplete = t.SportsDetail.IsComplete, TvChannel = t.SportsDetail.TvChannel, SeasonId = t.SportsDetail.SeasonId } : new(),
-            HabitDetail = t.HabitDetail != null ? new BulletHabitDetail { BulletItemId = t.Id, StreakCount = t.HabitDetail.StreakCount, IsCompleted = t.HabitDetail.IsCompleted } : new(),
-            VacationDetail = t.VacationDetail != null ? new BulletVacationDetail { BulletItemId = t.Id, VacationGroupId = t.VacationDetail.VacationGroupId } : new(),
-            HealthDetail = t.HealthDetail != null ? new BulletHealthDetail { BulletItemId = t.Id, WeightLbs = t.HealthDetail.WeightLbs, CalculatedTDEE = t.HealthDetail.CalculatedTDEE } : new(),
-            MediaDetail = t.MediaDetail != null ? new BulletMediaDetail { BulletItemId = t.Id, Rating = t.MediaDetail.Rating, ReleaseYear = t.MediaDetail.ReleaseYear, Tags = t.MediaDetail.Tags } : new(),
-            HolidayDetail = t.HolidayDetail != null ? new BulletHolidayDetail { BulletItemId = t.Id, IsWorkHoliday = t.HolidayDetail.IsWorkHoliday } : new(),
-            BirthdayDetail = t.BirthdayDetail != null ? new BulletBirthdayDetail { BulletItemId = t.Id, DOB_Year = t.BirthdayDetail.DOB_Year } : new(),
-            AnniversaryDetail = t.AnniversaryDetail != null ? new BulletAnniversaryDetail { BulletItemId = t.Id, AnniversaryType = t.AnniversaryDetail.AnniversaryType, FirstYear = t.AnniversaryDetail.FirstYear } : new(),
+        var newItem = new BulletTaskService.TaskDTO {
+            Id = t.Id, 
+            UserId = t.UserId, 
+            Type = t.Type, 
+            Category = t.Category, 
+            Date = t.Date, 
+            EndDate = t.EndDate,
+            Title = t.Title, 
+            Description = t.Description, 
+            ImgUrl = t.ImgUrl, 
+            LinkUrl = t.LinkUrl,
+            OriginalStringId = t.OriginalStringId, 
+            SortOrder = t.SortOrder,
             Notes = t.Notes.Select(n => new BulletItemNote { Id = n.Id, BulletItemId = n.BulletItemId, Content = n.Content, ImgUrl = n.ImgUrl, LinkUrl = n.LinkUrl, Order = n.Order }).ToList(),
-            Meals = t.Meals.ToList(), // Reference is fine for lists as we replace them on save usually
+            Meals = t.Meals.ToList(),
             Workouts = t.Workouts.ToList()
         };
+
+        // Manual Deep Copy of Details
+        if (t.Detail != null) newItem.Detail = new BulletTaskDetail { BulletItemId = t.Id, DueDate = t.Detail.DueDate, IsCompleted = t.Detail.IsCompleted, Priority = t.Detail.Priority, Status = t.Detail.Status, TicketNumber = t.Detail.TicketNumber, TicketUrl = t.Detail.TicketUrl };
+        if (t.MeetingDetail != null) newItem.MeetingDetail = new BulletMeetingDetail { BulletItemId = t.Id, StartTime = t.MeetingDetail.StartTime, DurationMinutes = t.MeetingDetail.DurationMinutes, ActualDurationMinutes = t.MeetingDetail.ActualDurationMinutes, IsCompleted = t.MeetingDetail.IsCompleted };
+        
+        // SPORTS FIX: Explicitly copy every field
+        if (t.SportsDetail != null) 
+        {
+            newItem.SportsDetail = new BulletGameDetail { 
+                BulletItemId = t.Id, 
+                LeagueId = t.SportsDetail.LeagueId, 
+                HomeTeamId = t.SportsDetail.HomeTeamId, 
+                AwayTeamId = t.SportsDetail.AwayTeamId, 
+                HomeScore = t.SportsDetail.HomeScore, 
+                AwayScore = t.SportsDetail.AwayScore, 
+                StartTime = t.SportsDetail.StartTime, 
+                IsComplete = t.SportsDetail.IsComplete, 
+                TvChannel = t.SportsDetail.TvChannel, 
+                SeasonId = t.SportsDetail.SeasonId 
+            };
+        }
+        else
+        {
+            newItem.SportsDetail = new BulletGameDetail();
+        }
+
+        if (t.HabitDetail != null) newItem.HabitDetail = new BulletHabitDetail { BulletItemId = t.Id, StreakCount = t.HabitDetail.StreakCount, IsCompleted = t.HabitDetail.IsCompleted };
+        if (t.VacationDetail != null) newItem.VacationDetail = new BulletVacationDetail { BulletItemId = t.Id, VacationGroupId = t.VacationDetail.VacationGroupId };
+        if (t.HealthDetail != null) newItem.HealthDetail = new BulletHealthDetail { BulletItemId = t.Id, WeightLbs = t.HealthDetail.WeightLbs, CalculatedTDEE = t.HealthDetail.CalculatedTDEE };
+        if (t.MediaDetail != null) newItem.MediaDetail = new BulletMediaDetail { BulletItemId = t.Id, Rating = t.MediaDetail.Rating, ReleaseYear = t.MediaDetail.ReleaseYear, Tags = t.MediaDetail.Tags };
+        if (t.HolidayDetail != null) newItem.HolidayDetail = new BulletHolidayDetail { BulletItemId = t.Id, IsWorkHoliday = t.HolidayDetail.IsWorkHoliday };
+        if (t.BirthdayDetail != null) newItem.BirthdayDetail = new BulletBirthdayDetail { BulletItemId = t.Id, DOB_Year = t.BirthdayDetail.DOB_Year };
+        if (t.AnniversaryDetail != null) newItem.AnniversaryDetail = new BulletAnniversaryDetail { BulletItemId = t.Id, AnniversaryType = t.AnniversaryDetail.AnniversaryType, FirstYear = t.AnniversaryDetail.FirstYear };
+
+        return newItem;
     }
 
     private void OpenEditor(string category, string type, DateTime date) 
