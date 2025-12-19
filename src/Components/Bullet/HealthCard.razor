@@ -16,29 +16,35 @@
         </div>
     </div>
 
-    <div class="p-4 space-y-6">
+    <div class="p-4 space-y-5">
         
-        <div>
-            <div class="flex justify-between items-end mb-1">
-                <div class="text-xs font-bold text-white">
-                    @TotalIn.ToString("0") <span class="text-gray-500 font-normal">eaten</span>
-                </div>
-                <div class="text-xs font-bold text-gray-400">
-                    @TargetCals.ToString("0") <span class="text-gray-500 font-normal">budget</span>
-                </div>
+        <div class="grid grid-cols-3 gap-2 bg-black/20 p-2 rounded-lg border border-gray-700/50">
+            <div class="text-center border-r border-gray-700/50">
+                <div class="text-[9px] text-gray-500 uppercase font-bold">Weight</div>
+                <div class="text-sm font-bold text-white">@(Item.HealthDetail?.WeightLbs ?? 0) <span class="text-[9px] text-gray-600 font-normal">lbs</span></div>
             </div>
-            
-            <div class="h-4 w-full bg-gray-900 rounded-full border border-gray-700 overflow-hidden relative">
-                <div class="absolute top-0 bottom-0 w-0.5 bg-white/20 z-10" style="left: @(Math.Min(100, (TargetCals / (TotalOut > 0 ? TotalOut : 2000)) * 100))%"></div>
-                
-                <div class="h-full transition-all duration-500 @(NetCalories > TargetCals ? "bg-red-500" : "bg-emerald-500")" 
-                     style="width: @(TargetCals > 0 ? Math.Min(100, (TotalIn / TargetCals) * 100) : 0)%">
-                </div>
+            <div class="text-center border-r border-gray-700/50">
+                <div class="text-[9px] text-gray-500 uppercase font-bold">Rem (Goal)</div>
+                <div class="text-sm font-bold @(RemainingGoal < 0 ? "text-red-400" : "text-emerald-400")">@RemainingGoal.ToString("0")</div>
             </div>
+            <div class="text-center">
+                <div class="text-[9px] text-gray-500 uppercase font-bold">Rem (TDEE)</div>
+                <div class="text-sm font-bold @(RemainingTDEE < 0 ? "text-red-400" : "text-blue-400")">@RemainingTDEE.ToString("0")</div>
+            </div>
+        </div>
 
-            <div class="flex justify-between text-[10px] text-gray-500 mt-1">
-                <span>Net: <b class="@(NetCalories > TargetCals ? "text-red-400" : "text-emerald-400")">@(NetCalories.ToString("0"))</b></span>
-                <span>Out: <b>@TotalOut.ToString("0")</b></span>
+        <div>
+            <div class="flex justify-between items-end mb-1 text-[10px]">
+                <span class="text-gray-400">Net: <b class="text-white">@NetCalories.ToString("0")</b></span>
+                <span class="text-gray-400">Goal: <b class="text-white">@GoalLimit.ToString("0")</b></span>
+            </div>
+            <div class="h-5 w-full bg-gray-900 rounded-full border border-gray-700 overflow-hidden relative">
+                <div class="h-full transition-all duration-500 @(NetCalories > GoalLimit ? "bg-red-500" : "bg-emerald-600")" 
+                     style="width: @(Math.Min(100, PercentGoal))%">
+                </div>
+                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white shadow-black drop-shadow-md">
+                    @PercentGoal.ToString("0")%
+                </div>
             </div>
         </div>
 
@@ -196,20 +202,35 @@
     private BulletHealthMeal newMeal = new();
     private BulletHealthWorkout newWorkout = new();
 
-    // CALCULATIONS
+    // --- CALCULATIONS ---
+    // Total Intake from Meals
     private double TotalIn => Item.Meals.Sum(m => m.Calories);
-    // Total Out = BMR/TDEE + Active Burn
-    private double TotalOut => (Item.HealthDetail?.CalculatedTDEE ?? 2000) + Item.Workouts.Sum(w => w.CaloriesBurned);
     
-    // Net Calories = In - Out. 
-    // Usually "Net" means (In - Exercise) to see if you are under budget TDEE.
-    // Let's stick to the visual bar logic: 
-    // Target is TDEE - Deficit. 
-    // Net displayed is typically (In - Exercise).
+    // Total Burn (Workouts)
+    private double Burned => Item.Workouts.Sum(w => w.CaloriesBurned);
     
-    private double NetCalories => TotalIn - Item.Workouts.Sum(w => w.CaloriesBurned);
-    private double TargetCals => (Item.HealthDetail?.CalculatedTDEE ?? 2000) - (User.WeeklyCalorieDeficitGoal / 7.0);
+    // Total Output (TDEE + Burn)
+    private double TDEE => (Item.HealthDetail?.CalculatedTDEE > 0) ? Item.HealthDetail.CalculatedTDEE : 2000;
+    
+    // Daily Deficit Goal (Weekly / 7)
+    private double DailyDeficit => User.WeeklyCalorieDeficitGoal / 7.0;
 
+    // The Calorie Goal Limit (To hit weight loss goal)
+    private double GoalLimit => TDEE - DailyDeficit;
+
+    // Net Calories (Eaten - Burned) - Used for tracking against goal
+    private double NetCalories => TotalIn - Burned;
+
+    // Remaining to hit Goal (Limit - Net)
+    private double RemainingGoal => GoalLimit - NetCalories;
+
+    // Remaining to Maintenance (TDEE - Net)
+    private double RemainingTDEE => TDEE - NetCalories;
+
+    // Percent to Goal Limit (For progress bar)
+    private double PercentGoal => GoalLimit > 0 ? (NetCalories / GoalLimit) * 100 : 0;
+
+    // Macros
     private double TotalProtein => Item.Meals.Sum(m => m.Protein);
     private double TotalCarbs => Item.Meals.Sum(m => m.Carbs);
     private double TotalFat => Item.Meals.Sum(m => m.Fat);
