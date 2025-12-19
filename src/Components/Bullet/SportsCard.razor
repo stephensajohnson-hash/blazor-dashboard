@@ -48,10 +48,7 @@
                     <span class="text-sm font-bold @(IsFavorite(AwayTeam) ? "text-yellow-400" : "text-white") truncate">
                         @AwayTeam?.Name
                     </span>
-                    @if (ShowRecords)
-                    {
-                        <span class="text-[9px] text-gray-500">(@GetRecord(AwayTeam))</span>
-                    }
+                    <span class="text-[9px] text-gray-500">(@AwayRecord)</span>
                 </div>
             </div>
             <div class="text-lg font-bold font-mono @(Item.Detail.IsComplete && Item.Detail.AwayScore > Item.Detail.HomeScore ? "text-white" : "text-gray-500")">
@@ -66,10 +63,7 @@
                     <span class="text-sm font-bold @(IsFavorite(HomeTeam) ? "text-yellow-400" : "text-white") truncate">
                         @HomeTeam?.Name
                     </span>
-                    @if (ShowRecords)
-                    {
-                        <span class="text-[9px] text-gray-500">(@GetRecord(HomeTeam))</span>
-                    }
+                    <span class="text-[9px] text-gray-500">(@HomeRecord)</span>
                 </div>
             </div>
             <div class="text-lg font-bold font-mono @(Item.Detail.IsComplete && Item.Detail.HomeScore > Item.Detail.AwayScore ? "text-white" : "text-gray-500")">
@@ -94,18 +88,24 @@
     private Team? HomeTeam;
     private Team? AwayTeam;
     private string LeagueName = "GAME";
-
-    // Show records if date is past OR game is explicitly marked complete
-    private bool ShowRecords => Item.Date <= DateTime.UtcNow.AddHours(12) || Item.Detail.IsComplete;
+    
+    // Stored Records
+    private string HomeRecord = "0-0";
+    private string AwayRecord = "0-0";
 
     protected override async Task OnParametersSetAsync()
     {
-        // FIX: Use Db context directly since Service methods were missing
         if (Item.Detail.HomeTeamId > 0) 
+        {
             HomeTeam = await Db.Teams.FindAsync(Item.Detail.HomeTeamId);
+            HomeRecord = await CalculatePointInTimeRecord(Item.Detail.HomeTeamId, Item.Detail.SeasonId);
+        }
             
         if (Item.Detail.AwayTeamId > 0) 
+        {
             AwayTeam = await Db.Teams.FindAsync(Item.Detail.AwayTeamId);
+            AwayRecord = await CalculatePointInTimeRecord(Item.Detail.AwayTeamId, Item.Detail.SeasonId);
+        }
 
         if (Item.Detail.LeagueId > 0)
         {
@@ -114,12 +114,41 @@
         }
     }
 
-    private bool IsFavorite(Team? t) => t?.IsFavorite ?? false;
-
-    private string GetRecord(Team? t) 
+    private async Task<string> CalculatePointInTimeRecord(int teamId, int? seasonId)
     {
-        return "0-0"; 
+        if (seasonId == null || seasonId == 0) return "0-0";
+
+        // KEY CHANGE: Join BulletGameDetails with BulletItems to filter by DATE
+        // We want games where Date <= ThisGame.Date.
+        // If dates are identical, use Id to break ties (ensure consistent ordering).
+        
+        var relevantGames = await (from d in Db.BulletGameDetails
+                                   join i in Db.BulletItems on d.BulletItemId equals i.Id
+                                   where d.SeasonId == seasonId 
+                                      && d.IsComplete 
+                                      && (d.HomeTeamId == teamId || d.AwayTeamId == teamId)
+                                      && (i.Date < Item.Date || (i.Date == Item.Date && i.Id <= Item.Id))
+                                   select d).ToListAsync();
+
+        int wins = 0;
+        int losses = 0;
+        int ties = 0;
+
+        foreach (var g in relevantGames)
+        {
+            bool isHome = g.HomeTeamId == teamId;
+            int myScore = isHome ? g.HomeScore : g.AwayScore;
+            int oppScore = isHome ? g.AwayScore : g.HomeScore;
+
+            if (myScore > oppScore) wins++;
+            else if (myScore < oppScore) losses++;
+            else ties++;
+        }
+
+        return ties > 0 ? $"{wins}-{losses}-{ties}" : $"{wins}-{losses}";
     }
+
+    private bool IsFavorite(Team? t) => t?.IsFavorite ?? false;
 
     private bool DidFavoriteWin 
     {
@@ -137,7 +166,6 @@
 
     private async Task HandleClick() 
     {
-        // Convert GameDTO back to TaskDTO structure for the editor
         var taskDto = new BulletTaskService.TaskDTO 
         { 
             Id = Item.Id, 
@@ -146,7 +174,7 @@
             Date = Item.Date,
             Title = Item.Title,
             Description = Item.Description,
-            SportsDetail = Item.Detail, // Use correct property
+            SportsDetail = Item.Detail,
             Category = Item.Category
         };
         await OnClick.InvokeAsync(taskDto); 
