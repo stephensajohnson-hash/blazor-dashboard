@@ -55,6 +55,10 @@
                 <div class="absolute right-0 top-full mt-2 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-2 z-50" @onclick:stopPropagation="true">
                     <a href="/settings" class="block w-full text-left text-xs text-gray-300 hover:text-white hover:bg-gray-700 p-2 rounded mb-1 transition">⚙️ Settings</a>
                     <a href="/manage-sports" class="block w-full text-left text-xs text-yellow-400 hover:bg-gray-700 p-2 rounded mb-1 transition">🏆 Manage Sports</a>
+                    <button @onclick="RunSeasonPatch" class="bg-red-600 text-white text-xs font-bold px-3 py-1 rounded shadow-lg hover:bg-red-500 transition">
+    🛠️ FIX SEASONS
+</button>
+<span class="text-xs text-green-400 ml-2">@patchStatus</span>
                     <a href="/manage-data" class="block w-full text-left text-xs text-blue-400 hover:bg-gray-700 p-2 rounded mb-1 transition">💾 Manage Data</a>
                     <button @onclick="Logout" class="w-full text-left text-xs text-red-400 hover:bg-gray-700 p-2 rounded transition">Logout</button>
                 </div>
@@ -355,7 +359,7 @@
             } catch(Exception ex) { Console.WriteLine($"Error fetching sports detail: {ex.Message}"); }
         }
     }
-    
+
     private void OpenEdit(BulletTaskService.TaskDTO t) { editingItem = CreateCopy(t); }
     private void OpenHabitEdit(BulletHabitService.HabitDTO h) { 
         editingItem = new BulletTaskService.TaskDTO { 
@@ -556,4 +560,74 @@
     }
 
     private async Task Logout() { await JS.InvokeVoidAsync("localStorage.removeItem", "dashboard_session"); Nav.NavigateTo("/login", true); }
+
+    private string patchStatus = "";
+
+private async Task RunSeasonPatch()
+    {
+        patchStatus = "Running patch...";
+        StateHasChanged();
+
+        try
+        {
+            // Fetch all game details
+            var games = await Db.BulletGameDetails.ToListAsync();
+            int updatedCount = 0;
+            int skippedCount = 0;
+
+            foreach (var g in games)
+            {
+                if (g.LeagueId == 0) continue;
+
+                // 1. Get the League Name to decide the Season String
+                var league = await Db.Leagues.FindAsync(g.LeagueId);
+                if (league == null) continue;
+
+                string targetSeasonName = "";
+
+                // Define Rules
+                if (league.Name.Contains("NFL", StringComparison.OrdinalIgnoreCase) || 
+                    league.Name.Contains("EFL", StringComparison.OrdinalIgnoreCase) ||
+                    league.Name.Contains("Premier", StringComparison.OrdinalIgnoreCase) ||
+                    league.Name.Contains("Football", StringComparison.OrdinalIgnoreCase))
+                {
+                    targetSeasonName = "2025/2026";
+                }
+                else if (league.Name.Contains("MLB", StringComparison.OrdinalIgnoreCase) || 
+                         league.Name.Contains("Baseball", StringComparison.OrdinalIgnoreCase) ||
+                         league.Name.Contains("Rangers", StringComparison.OrdinalIgnoreCase))
+                {
+                    targetSeasonName = "2026";
+                }
+
+                // 2. Look up the SPECIFIC season for THIS League
+                if (!string.IsNullOrEmpty(targetSeasonName))
+                {
+                    var season = await Db.Seasons
+                        .FirstOrDefaultAsync(s => s.LeagueId == g.LeagueId && s.Name == targetSeasonName);
+
+                    if (season != null)
+                    {
+                        g.SeasonId = season.Id;
+                        updatedCount++;
+                    }
+                    else
+                    {
+                        skippedCount++; // Season didn't exist for this league yet
+                    }
+                }
+            }
+
+            await Db.SaveChangesAsync();
+            patchStatus = $"Done! Updated {updatedCount} games. Skipped {skippedCount} (Season not found).";
+            
+            // Reload data to reflect changes immediately
+            await LoadData(); 
+        }
+        catch (Exception ex)
+        {
+            patchStatus = $"Error: {ex.Message}";
+            Console.WriteLine(ex);
+        }
+    }
 }
