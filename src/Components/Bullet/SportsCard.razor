@@ -2,8 +2,10 @@
 @using Dashboard
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.Extensions.DependencyInjection
+@using Microsoft.Extensions.Logging
 @inject BulletSportsService SportsService
 @inject IServiceScopeFactory ScopeFactory
+@inject ILogger<SportsCard> Logger
 
 <div class="bg-gray-800 border border-gray-700 rounded-lg mb-3 overflow-hidden shadow-lg group relative transition hover:border-orange-500/50 flex">
     
@@ -16,23 +18,15 @@
         @if(Item.Detail.IsComplete)
         {
             <div class="absolute inset-0 flex items-center justify-center bg-black/60 z-10">
-                @if(DidFavoriteWin)
-                {
-                    <span class="text-green-500 font-black text-xl -rotate-12 border-2 border-green-500 px-1 rounded opacity-80">WIN</span>
-                }
-                else
-                {
-                    <span class="text-gray-500 font-black text-lg -rotate-12 border-2 border-gray-500 px-1 rounded opacity-60">FINAL</span>
-                }
+                <span class="font-black text-xl -rotate-12 border-2 px-1 rounded opacity-80 @(DidFavoriteWin ? "text-green-500 border-green-500" : "text-gray-500 border-gray-500")">
+                    @(DidFavoriteWin ? "WIN" : "FINAL")
+                </span>
             </div>
         }
         
         <span class="text-[10px] font-bold text-gray-500 uppercase tracking-widest leading-tight text-center">
             @LeagueName
-            @if(!string.IsNullOrEmpty(SeasonName)) 
-            {
-                <br/><span class="text-[9px] text-gray-600 normal-case">@SeasonName</span>
-            }
+            @if(!string.IsNullOrEmpty(SeasonName)) { <br/><span class="text-[9px] text-gray-600 normal-case">@SeasonName</span> }
         </span>
         
         @if(!Item.Detail.IsComplete)
@@ -40,21 +34,15 @@
             <div class="text-lg font-bold text-white mt-1">@Item.Detail.StartTime?.ToString("h:mm")</div>
             <div class="text-[10px] text-gray-400 uppercase">@Item.Detail.StartTime?.ToString("tt")</div>
         }
-        else
-        {
-            <div class="text-xs font-bold text-gray-400 mt-1">FINAL</div>
-        }
+        else { <div class="text-xs font-bold text-gray-400 mt-1">FINAL</div> }
     </div>
 
     <div class="flex-1 p-3 min-w-0 flex flex-col justify-center gap-2">
-        
         <div class="flex justify-between items-center">
             <div class="flex items-center gap-2 overflow-hidden">
                 @if(!string.IsNullOrEmpty(AwayTeam?.LogoUrl)) { <img src="@AwayTeam.LogoUrl" class="w-5 h-5 object-contain" /> }
                 <div class="flex flex-col truncate">
-                    <span class="text-sm font-bold @(IsFavorite(AwayTeam) ? "text-yellow-400" : "text-white") truncate">
-                        @AwayTeam?.Name
-                    </span>
+                    <span class="text-sm font-bold @(IsFavorite(AwayTeam) ? "text-yellow-400" : "text-white") truncate">@AwayTeam?.Name</span>
                     <span class="text-[9px] text-gray-500">(@AwayRecord)</span>
                 </div>
             </div>
@@ -67,9 +55,7 @@
             <div class="flex items-center gap-2 overflow-hidden">
                 @if(!string.IsNullOrEmpty(HomeTeam?.LogoUrl)) { <img src="@HomeTeam.LogoUrl" class="w-5 h-5 object-contain" /> }
                 <div class="flex flex-col truncate">
-                    <span class="text-sm font-bold @(IsFavorite(HomeTeam) ? "text-yellow-400" : "text-white") truncate">
-                        @HomeTeam?.Name
-                    </span>
+                    <span class="text-sm font-bold @(IsFavorite(HomeTeam) ? "text-yellow-400" : "text-white") truncate">@HomeTeam?.Name</span>
                     <span class="text-[9px] text-gray-500">(@HomeRecord)</span>
                 </div>
             </div>
@@ -78,12 +64,7 @@
             </div>
         </div>
 
-        @if(!string.IsNullOrEmpty(Item.Detail.TvChannel))
-        {
-            <div class="text-[9px] text-gray-600 uppercase font-bold text-right mt-1">
-                📺 @Item.Detail.TvChannel
-            </div>
-        }
+        @if(!string.IsNullOrEmpty(Item.Detail.TvChannel)) { <div class="text-[9px] text-gray-600 uppercase font-bold text-right mt-1">📺 @Item.Detail.TvChannel</div> }
     </div>
 </div>
 
@@ -96,14 +77,12 @@
     private Team? AwayTeam;
     private string LeagueName = "GAME";
     private string SeasonName = "";
-    
     private string HomeRecord = "-";
     private string AwayRecord = "-";
 
     protected override async Task OnParametersSetAsync()
     {
-        // 1. Create a FRESH Scope for this component's data fetching
-        // This prevents "NpgsqlOperationInProgressException" when multiple cards load at once
+        // ISOLATED SCOPE to prevent concurrency crash
         using (var scope = ScopeFactory.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -111,13 +90,15 @@
             if (Item.Detail.HomeTeamId > 0) 
             {
                 HomeTeam = await db.Teams.FindAsync(Item.Detail.HomeTeamId);
-                HomeRecord = await CalculatePointInTimeRecord(db, Item.Detail.HomeTeamId, Item.Detail.LeagueId);
+                // LOG: Calculating Home
+                HomeRecord = await CalculatePointInTimeRecord(db, Item.Detail.HomeTeamId, Item.Detail.LeagueId, "HOME");
             }
                 
             if (Item.Detail.AwayTeamId > 0) 
             {
                 AwayTeam = await db.Teams.FindAsync(Item.Detail.AwayTeamId);
-                AwayRecord = await CalculatePointInTimeRecord(db, Item.Detail.AwayTeamId, Item.Detail.LeagueId);
+                // LOG: Calculating Away
+                AwayRecord = await CalculatePointInTimeRecord(db, Item.Detail.AwayTeamId, Item.Detail.LeagueId, "AWAY");
             }
 
             if (Item.Detail.LeagueId > 0)
@@ -132,31 +113,40 @@
                 if (s != null) SeasonName = s.Name;
             }
         }
-        
         StateHasChanged();
     }
 
-    private async Task<string> CalculatePointInTimeRecord(AppDbContext db, int teamId, int leagueId)
+    private async Task<string> CalculatePointInTimeRecord(AppDbContext db, int teamId, int leagueId, string side)
     {
-        if (leagueId == 0) return "0-0";
+        // 1. Validation Log
+        if (leagueId == 0) 
+        {
+            Logger.LogWarning($"[RecordCalc] {side} Team {teamId} has LeagueId 0. Returning 0-0.");
+            return "0-0";
+        }
 
         try 
         {
-            // Join BulletGameDetails with BulletItems to filter by DATE
-            // We want completed games from THIS League, up to (and including) THIS game
-            var relevantGames = await (from d in db.BulletGameDetails
-                                       join i in db.BulletItems on d.BulletItemId equals i.Id
-                                       where d.LeagueId == leagueId
-                                          && d.IsComplete 
-                                          && (d.HomeTeamId == teamId || d.AwayTeamId == teamId)
-                                          && (i.Date < Item.Date || (i.Date == Item.Date && i.Id <= Item.Id))
-                                       select d).ToListAsync();
+            // 2. Fetch Data
+            // We fetch slightly more data so we can log WHY something was excluded if needed, 
+            // but the WHERE clause handles the main logic.
+            var games = await (from d in db.BulletGameDetails
+                               join i in db.BulletItems on d.BulletItemId equals i.Id
+                               where d.LeagueId == leagueId
+                                  && d.IsComplete 
+                                  && (d.HomeTeamId == teamId || d.AwayTeamId == teamId)
+                                  // Point-in-time logic:
+                                  && (i.Date < Item.Date || (i.Date == Item.Date && i.Id <= Item.Id))
+                               select new { d.HomeScore, d.AwayScore, d.HomeTeamId, d.AwayTeamId, i.Date, i.Id })
+                               .ToListAsync();
+
+            Logger.LogInformation($"[RecordCalc] Found {games.Count} completed previous games for Team {teamId} in League {leagueId} before {Item.Date}.");
 
             int wins = 0;
             int losses = 0;
             int ties = 0;
 
-            foreach (var g in relevantGames)
+            foreach (var g in games)
             {
                 bool isHome = g.HomeTeamId == teamId;
                 int myScore = isHome ? g.HomeScore : g.AwayScore;
@@ -165,13 +155,18 @@
                 if (myScore > oppScore) wins++;
                 else if (myScore < oppScore) losses++;
                 else ties++;
+                
+                // 3. Verbose Detail Log (Remove this after debugging!)
+                Logger.LogDebug($"   Game {g.Id} ({g.Date:MM/dd}): Me({myScore}) vs Opp({oppScore}) -> {(myScore > oppScore ? "WIN" : "LOSS")}");
             }
 
-            return ties > 0 ? $"{wins}-{losses}-{ties}" : $"{wins}-{losses}";
+            string record = ties > 0 ? $"{wins}-{losses}-{ties}" : $"{wins}-{losses}";
+            Logger.LogInformation($"[RecordCalc] Final Record for Team {teamId}: {record}");
+            return record;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error calculating record: {ex.Message}");
+            Logger.LogError($"[RecordCalc] Error: {ex.Message}");
             return "Err";
         }
     }
@@ -185,7 +180,6 @@
             if (!Item.Detail.IsComplete) return false;
             bool homeFav = IsFavorite(HomeTeam);
             bool awayFav = IsFavorite(AwayTeam);
-            
             if (homeFav && Item.Detail.HomeScore > Item.Detail.AwayScore) return true;
             if (awayFav && Item.Detail.AwayScore > Item.Detail.HomeScore) return true;
             return false;
@@ -196,14 +190,8 @@
     {
         var taskDto = new BulletTaskService.TaskDTO 
         { 
-            Id = Item.Id, 
-            UserId = Item.UserId, 
-            Type = "sports", 
-            Date = Item.Date,
-            Title = Item.Title,
-            Description = Item.Description,
-            SportsDetail = Item.Detail,
-            Category = Item.Category
+            Id = Item.Id, UserId = Item.UserId, Type = "sports", Date = Item.Date, Title = Item.Title, Description = Item.Description, 
+            SportsDetail = Item.Detail, Category = Item.Category 
         };
         await OnClick.InvokeAsync(taskDto); 
     }
