@@ -10,11 +10,11 @@
         </div>
         
         <div>
-            <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">⏳ Planned Duration</label>
+            <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">⏳ Duration</label>
             <input type="text" 
                    value="@FormatDuration(Detail.DurationMinutes)" 
                    @onchange="@(e => Detail.DurationMinutes = ParseTime(e.Value?.ToString()))"
-                   class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-2 text-white text-sm" 
+                   class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-2 text-white text-sm focus:border-blue-500 outline-none" 
                    placeholder="e.g. 1h, 30m, 1.5h" />
         </div>
     </div>
@@ -24,9 +24,9 @@
         <input type="text" 
                value="@FormatDuration(Detail.ActualDurationMinutes)" 
                @onchange="@(e => Detail.ActualDurationMinutes = ParseTime(e.Value?.ToString()))"
-               class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-2 text-white text-sm" 
+               class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-2 text-white text-sm focus:border-green-500 outline-none" 
                placeholder="e.g. 45m, 1h 15m" />
-        <p class="text-[9px] text-gray-500 mt-1">Accepts: "90", "1h 30m", "1.5h", "45m"</p>
+        <div class="text-[9px] text-gray-600 mt-1 italic">Supports: "90", "1h 30m", "1.5h", "45m"</div>
     </div>
 
     <div>
@@ -36,12 +36,12 @@
 
     <div>
         <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">🔗 Meeting Link</label>
-        <input type="text" @bind="Detail.LinkUrl" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-2 text-blue-400 text-sm" placeholder="https://zoom.us/..." />
+        <input type="text" @bind="Detail.LinkUrl" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-2 text-blue-400 text-sm underline" placeholder="https://zoom.us/..." />
     </div>
 
     <div class="flex items-center gap-3 bg-gray-900/50 p-2 rounded border border-gray-700">
-        <input type="checkbox" @bind="Detail.IsComplete" id="chkMeet" class="w-5 h-5 rounded bg-gray-800 border-gray-600 text-blue-500" />
-        <label for="chkMeet" class="text-sm text-white cursor-pointer">Mark as Complete</label>
+        <input type="checkbox" @bind="Detail.IsComplete" id="chkMeet" class="w-5 h-5 rounded bg-gray-800 border-gray-600 text-blue-500 focus:ring-offset-gray-800" />
+        <label for="chkMeet" class="text-sm text-white cursor-pointer select-none">Mark as Complete</label>
     </div>
 
 </div>
@@ -49,7 +49,7 @@
 @code {
     [Parameter] public BulletMeetingDetail Detail { get; set; } = new();
 
-    // Converts "1h 30m" -> 90
+    // Converts human strings ("1h 30m") to minutes (90)
     private int ParseTime(string? input)
     {
         if (string.IsNullOrWhiteSpace(input)) return 0;
@@ -57,49 +57,46 @@
 
         try 
         {
-            // 1. Check for decimal hour format (e.g. "1.5h" or "1.5")
-            if (input.Contains("h") && !input.Contains("m"))
+            // Case 1: Decimal Hours ("1.5" or "1.5h") -> check for dot
+            if (input.Contains("."))
             {
-                string hStr = input.Replace("h", "").Trim();
-                if (double.TryParse(hStr, out double hVal)) return (int)(hVal * 60);
+                string clean = input.Replace("h", "").Replace("m", "").Trim();
+                if (double.TryParse(clean, out double val)) return (int)(val * 60);
             }
 
-            // 2. Check for minutes only (e.g. "45m" or "45")
-            if (!input.Contains("h"))
+            // Case 2: Explicit Minutes ("45m")
+            if (input.EndsWith("m") && !input.Contains("h"))
             {
-                string mStr = input.Replace("m", "").Trim();
-                if (int.TryParse(mStr, out int mVal)) return mVal;
+                string clean = input.Replace("m", "").Trim();
+                return int.TryParse(clean, out int val) ? val : 0;
             }
 
-            // 3. Complex format (e.g. "1h 30m")
-            int hours = 0;
-            int minutes = 0;
-
+            // Case 3: Mixed ("1h 30m" or "1h")
+            int totalMin = 0;
             var parts = input.Split(new[] { 'h', 'm', ' ' }, StringSplitOptions.RemoveEmptyEntries);
-            
-            // Simple heuristics parsing
+
             if (input.Contains("h"))
             {
-                int hIndex = input.IndexOf("h");
-                string hPart = input.Substring(0, hIndex).Trim();
-                int.TryParse(hPart, out hours);
-
-                if (input.Length > hIndex + 1)
-                {
-                    string remainder = input.Substring(hIndex + 1).Replace("m", "").Trim();
-                    int.TryParse(remainder, out minutes);
-                }
+                // Parse first number as hours
+                if (parts.Length > 0 && int.TryParse(parts[0], out int h)) totalMin += h * 60;
+                // Parse second number as minutes
+                if (parts.Length > 1 && int.TryParse(parts[1], out int m)) totalMin += m;
+            }
+            else
+            {
+                // Case 4: Raw number ("90") -> assume minutes
+                if (int.TryParse(input, out int raw)) totalMin = raw;
             }
             
-            return (hours * 60) + minutes;
+            return totalMin;
         }
         catch 
         {
-            return 0; // Fallback
+            return 0; 
         }
     }
 
-    // Converts 90 -> "1h 30m"
+    // Converts 90 -> "1h 30m" for display
     private string FormatDuration(int minutes)
     {
         if (minutes <= 0) return "";
