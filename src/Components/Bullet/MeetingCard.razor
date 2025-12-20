@@ -10,12 +10,13 @@
 
     <div class="w-10 shrink-0 bg-black/20 border-r border-gray-700 flex items-center justify-center hover:bg-black/40 cursor-pointer transition z-10"
          @onclick="ToggleComplete">
-        <input type="checkbox" checked="@Item.Detail.IsComplete" class="w-5 h-5 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-offset-gray-800 cursor-pointer pointer-events-none" readonly />
+        <input type="checkbox" checked="@(Detail?.IsCompleted ?? false)" class="w-5 h-5 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-offset-gray-800 cursor-pointer pointer-events-none" readonly />
     </div>
 
     <div class="flex-1 p-3 min-w-0 flex flex-col justify-center">
         <div class="flex justify-between items-start">
-            <div class="truncate pr-8"> <h4 class="text-sm font-bold text-white truncate @(Item.Detail.IsComplete ? "line-through text-gray-500" : "")">
+            <div class="truncate pr-8"> 
+                <h4 class="text-sm font-bold text-white truncate @((Detail?.IsCompleted ?? false) ? "line-through text-gray-500" : "")">
                     @Item.Title
                 </h4>
                 @if (!string.IsNullOrWhiteSpace(Item.Description))
@@ -26,22 +27,28 @@
         </div>
 
         <div class="flex items-center gap-3 mt-2 text-[10px] uppercase font-bold tracking-wider">
-            <span class="text-blue-400">
-                ⏰ @Item.Detail.StartTime?.ToString("h:mm tt")
-            </span>
-
-            @if (Item.Detail.DurationMinutes > 0)
+            @if(Detail != null)
             {
-                <span class="text-gray-500">
-                    ⏳ @FormatDuration(Item.Detail.DurationMinutes)
-                </span>
-            }
+                @if(Detail.StartTime != null)
+                {
+                    <span class="text-blue-400">
+                        ⏰ @Detail.StartTime?.ToString("h:mm tt")
+                    </span>
+                }
 
-            @if (Item.Detail.ActualDurationMinutes > 0)
-            {
-                 <span class="@(Item.Detail.ActualDurationMinutes > Item.Detail.DurationMinutes ? "text-red-400" : "text-green-400")">
-                    ✅ Act: @FormatDuration(Item.Detail.ActualDurationMinutes)
-                </span>
+                @if (Detail.DurationMinutes > 0)
+                {
+                    <span class="text-gray-500">
+                        ⏳ @FormatDuration(Detail.DurationMinutes)
+                    </span>
+                }
+
+                @if (Detail.ActualDurationMinutes > 0)
+                {
+                     <span class="@(Detail.ActualDurationMinutes > Detail.DurationMinutes ? "text-red-400" : "text-green-400")">
+                        ✅ Act: @FormatDuration(Detail.ActualDurationMinutes)
+                    </span>
+                }
             }
         </div>
     </div>
@@ -53,6 +60,9 @@
     [Parameter] public EventCallback<int> OnDelete { get; set; }
     [Parameter] public EventCallback<BulletTaskService.TaskDTO> OnToggleComplete { get; set; }
 
+    // Helper to cast the generic detail object to the specific Meeting type
+    private BulletMeetingDetail? Detail => Item.Detail as BulletMeetingDetail;
+
     private string FormatDuration(int minutes)
     {
         if (minutes < 60) return $"{minutes}m";
@@ -63,8 +73,12 @@
 
     private async Task ToggleComplete()
     {
-        Item.Detail.IsComplete = !Item.Detail.IsComplete;
-        await OnToggleComplete.InvokeAsync(Item);
+        if(Detail != null)
+        {
+            // FIXED: Property name IsCompleted
+            Detail.IsCompleted = !Detail.IsCompleted;
+            await OnToggleComplete.InvokeAsync(Item);
+        }
     }
 
     private async Task HandleClick() => await OnClick.InvokeAsync(Item);
