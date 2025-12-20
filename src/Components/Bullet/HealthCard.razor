@@ -43,15 +43,19 @@
                 <div class="flex justify-between items-end mb-1 text-[10px]">
                     <span class="text-gray-400 font-bold">Weekly Deficit <span class="font-normal text-gray-600">(Mon - Today)</span></span>
                     <span class="text-gray-400">
-                        <b class="@(WeeklyDeficit >= 0 ? "text-emerald-400" : "text-red-400")">@WeeklyDeficit.ToString("0")</b> 
+                        <b class="@(WeeklyDeficit >= 0 ? "text-orange-400" : "text-red-400")">@WeeklyDeficit.ToString("0")</b> 
                         / @WeeklyGoal.ToString("0")
                     </span>
                 </div>
-                <div class="h-3 w-full bg-gray-900 rounded-full border border-gray-700 overflow-hidden relative">
+                <div class="h-5 w-full bg-gray-900 rounded-full border border-gray-700 overflow-hidden relative">
                     <div class="absolute top-0 bottom-0 w-0.5 bg-gray-600 z-10" style="left: 0%"></div> 
                     
-                    <div class="h-full transition-all duration-500 @(WeeklyDeficit >= 0 ? "bg-emerald-600" : "bg-red-500")" 
+                    <div class="h-full transition-all duration-500 @(WeeklyDeficit >= 0 ? "bg-orange-600" : "bg-red-500")" 
                          style="width: @(Math.Min(100, Math.Max(0, (WeeklyDeficit / (WeeklyGoal > 0 ? WeeklyGoal : 1)) * 100)))%">
+                    </div>
+                    
+                    <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white shadow-black drop-shadow-md z-20">
+                        @(Math.Min(100, Math.Max(0, (WeeklyDeficit / (WeeklyGoal > 0 ? WeeklyGoal : 1)) * 100)).ToString("0"))%
                     </div>
                 </div>
             </div>
@@ -108,8 +112,16 @@
             {
                 <div class="bg-gray-900/80 p-3 rounded mb-2 border border-emerald-500/30">
                     <label class="block text-[9px] font-bold text-gray-500 uppercase mb-1">Meal Name</label>
-                    <input @bind="tempMeal.Name" class="w-full bg-black border border-gray-600 rounded px-2 py-1 text-xs text-white mb-3" placeholder="e.g. Breakfast Eggs" />
+                    <input @bind="tempMeal.Name" class="w-full bg-black border border-gray-600 rounded px-2 py-1 text-xs text-white mb-2" placeholder="e.g. Breakfast Eggs" />
                     
+                    <label class="block text-[9px] font-bold text-gray-500 uppercase mb-1">Type</label>
+                    <select @bind="tempMeal.MealType" class="w-full bg-black border border-gray-600 rounded px-2 py-1 text-xs text-white mb-3">
+                        <option value="Breakfast">Breakfast</option>
+                        <option value="Lunch">Lunch</option>
+                        <option value="Dinner">Dinner</option>
+                        <option value="Snack">Snack</option>
+                    </select>
+
                     <div class="grid grid-cols-5 gap-2 mb-3">
                         <div>
                             <label class="block text-[9px] font-bold text-gray-500 text-center mb-1">Cals</label>
@@ -144,8 +156,14 @@
                 {
                     <div class="text-xs group/item hover:bg-gray-700/30 p-2 rounded transition border border-gray-800 hover:border-emerald-500/30 cursor-pointer" @onclick="() => EditMeal(meal)">
                         <div class="flex justify-between items-start mb-1">
-                            <span class="text-white font-bold text-sm">@meal.Name</span>
-                            <div class="flex gap-2">
+                            <div class="flex flex-col">
+                                @if(!string.IsNullOrEmpty(meal.MealType))
+                                {
+                                    <span class="text-[9px] font-bold text-gray-500 uppercase tracking-wide">@meal.MealType</span>
+                                }
+                                <span class="text-white font-bold text-sm">@meal.Name</span>
+                            </div>
+                            <div class="flex gap-2 items-center">
                                 <span class="font-mono text-white font-bold bg-gray-700 px-1.5 rounded text-[10px]">@meal.Calories Cals</span>
                                 <button @onclick="() => DeleteMeal(meal)" @onclick:stopPropagation="true" class="text-gray-600 hover:text-red-500 px-1">✕</button>
                             </div>
@@ -237,7 +255,6 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        // SAFE & LOGGED: Calculate Weekly Deficit
         using (var scope = ScopeFactory.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -262,7 +279,6 @@
 
                 foreach(var day in weekItems)
                 {
-                    // 3. Manual Fetch for each day to debug and ensure safety
                     var details = await db.BulletHealthDetails.FirstOrDefaultAsync(d => d.BulletItemId == day.Id);
                     var dayFood = await db.BulletHealthMeals.Where(m => m.BulletItemId == day.Id).SumAsync(m => m.Calories);
                     var dayBurn = await db.BulletHealthWorkouts.Where(w => w.BulletItemId == day.Id).SumAsync(w => w.CaloriesBurned);
@@ -273,7 +289,6 @@
                     double dayDeficit = (dayTDEE + dayBurn) - dayFood;
                     WeeklyDeficit += dayDeficit;
 
-                    // LOG THE MATH
                     Logger.LogInformation($"   -> {day.Date.DayOfWeek}: TDEE {dayTDEE:0} + Burn {dayBurn:0} - Food {dayFood:0} = Deficit {dayDeficit:0}. (Running Total: {WeeklyDeficit:0})");
                 }
             }
@@ -283,20 +298,16 @@
 
     private double CalculateFallbackTDEE()
     {
-        // FIX: Removed reference to missing property User.WeightLbs
-        // Corrected to use Item.HealthDetail.WeightLbs (which exists) or default
-        double w = (Item.HealthDetail != null && Item.HealthDetail.WeightLbs > 0) ? Item.HealthDetail.WeightLbs : 200; // Default weight
+        double w = (Item.HealthDetail != null && Item.HealthDetail.WeightLbs > 0) ? Item.HealthDetail.WeightLbs : 200; 
         double kg = w / 2.20462;
-        double cm = 178; // Default Height ~5'10
-        int age = 40;    // Default Age
+        double cm = 178; 
+        int age = 40;    
         
-        // Correctly reading User properties that DO exist
         if (User != null && User.HeightInches > 0) cm = User.HeightInches * 2.54;
         if (User != null && User.Age > 0) age = User.Age;
 
-        // Mifflin-St Jeor
         double bmr = (10 * kg) + (6.25 * cm) - (5 * age) + 5; 
-        return bmr * 1.2; // Sedentary
+        return bmr * 1.2; 
     }
 
     // --- DAILY CALCULATIONS ---
@@ -328,8 +339,52 @@
 
     // --- MEAL ACTIONS ---
     private void ToggleMealForm() { isAddingMeal = !isAddingMeal; if(!isAddingMeal) { tempMeal = new(); editingMeal = null; } }
-    private void EditMeal(BulletHealthMeal meal) { editingMeal = meal; tempMeal = new BulletHealthMeal { Id = meal.Id, BulletItemId = meal.BulletItemId, Name = meal.Name, Calories = meal.Calories, Protein = meal.Protein, Fat = meal.Fat, Carbs = meal.Carbs, Fiber = meal.Fiber }; isAddingMeal = true; }
-    private async Task SaveMeal() { if (string.IsNullOrWhiteSpace(tempMeal.Name)) return; if (editingMeal != null) { editingMeal.Name = tempMeal.Name; editingMeal.Calories = tempMeal.Calories; editingMeal.Protein = tempMeal.Protein; editingMeal.Fat = tempMeal.Fat; editingMeal.Carbs = tempMeal.Carbs; editingMeal.Fiber = tempMeal.Fiber; } else { tempMeal.BulletItemId = Item.Id; Item.Meals.Add(tempMeal); } await SaveAll(); tempMeal = new(); editingMeal = null; isAddingMeal = false; }
+    
+    private void EditMeal(BulletHealthMeal meal) 
+    { 
+        editingMeal = meal; 
+        tempMeal = new BulletHealthMeal 
+        { 
+            Id = meal.Id, 
+            BulletItemId = meal.BulletItemId, 
+            Name = meal.Name, 
+            Calories = meal.Calories, 
+            Protein = meal.Protein, 
+            Fat = meal.Fat, 
+            Carbs = meal.Carbs, 
+            Fiber = meal.Fiber,
+            MealType = meal.MealType // Ensure this property exists on your backend model!
+        }; 
+        isAddingMeal = true; 
+    }
+
+    private async Task SaveMeal() 
+    { 
+        if (string.IsNullOrWhiteSpace(tempMeal.Name)) return; 
+        
+        if (editingMeal != null) 
+        { 
+            editingMeal.Name = tempMeal.Name; 
+            editingMeal.Calories = tempMeal.Calories; 
+            editingMeal.Protein = tempMeal.Protein; 
+            editingMeal.Fat = tempMeal.Fat; 
+            editingMeal.Carbs = tempMeal.Carbs; 
+            editingMeal.Fiber = tempMeal.Fiber;
+            editingMeal.MealType = tempMeal.MealType;
+        } 
+        else 
+        { 
+            tempMeal.BulletItemId = Item.Id; 
+            if(string.IsNullOrEmpty(tempMeal.MealType)) tempMeal.MealType = "Breakfast";
+            Item.Meals.Add(tempMeal); 
+        } 
+        
+        await SaveAll(); 
+        tempMeal = new(); 
+        editingMeal = null; 
+        isAddingMeal = false; 
+    }
+
     private async Task DeleteMeal(BulletHealthMeal meal) { Item.Meals.Remove(meal); await SaveAll(); }
 
     // --- WORKOUT ACTIONS ---
