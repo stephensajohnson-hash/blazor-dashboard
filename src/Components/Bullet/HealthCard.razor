@@ -2,8 +2,10 @@
 @using Dashboard
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.Extensions.DependencyInjection
+@using Microsoft.Extensions.Logging
 @inject BulletHealthService HealthService
 @inject IServiceScopeFactory ScopeFactory
+@inject ILogger<HealthCard> Logger
 
 <div class="bg-gray-800 border border-gray-700 rounded-lg mb-3 overflow-hidden shadow-lg group relative transition hover:border-emerald-500/50">
     
@@ -235,7 +237,7 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        // SAFE: Calculate Weekly Deficit without assuming navigation properties
+        // SAFE & LOGGED: Calculate Weekly Deficit
         using (var scope = ScopeFactory.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -243,38 +245,61 @@
             // 1. Determine Date Range (Mon -> Item.Date)
             int diff = (7 + (Item.Date.DayOfWeek - DayOfWeek.Monday)) % 7;
             var startOfWeek = Item.Date.AddDays(-1 * diff).Date;
-            var endOfRange = Item.Date.Date.AddDays(1).AddSeconds(-1); // End of current day
+            var endOfRange = Item.Date.Date.AddDays(1).AddSeconds(-1); 
 
-            // 2. Fetch IDs of health items in this range
-            var healthItemIds = await db.BulletItems
+            // 2. Fetch all Items for the week
+            var weekItems = await db.BulletItems
                 .Where(i => i.UserId == Item.UserId && i.Type == "health" && i.Date >= startOfWeek && i.Date <= endOfRange)
-                .Select(i => i.Id)
+                .Select(i => new { i.Id, i.Date })
+                .OrderBy(i => i.Date)
                 .ToListAsync();
 
-            if (healthItemIds.Any())
+            WeeklyDeficit = 0;
+            
+            if (weekItems.Any())
             {
-                // 3. Perform manual sums using the IDs
-                var totalTDEE = await db.BulletHealthDetails
-                    .Where(d => healthItemIds.Contains(d.BulletItemId))
-                    .SumAsync(d => d.CalculatedTDEE);
+                Logger.LogInformation($"[HealthCard] Calculating Deficit for {Item.Date.ToShortDateString()} (Week Start: {startOfWeek.ToShortDateString()})");
 
-                var foodSum = await db.BulletHealthMeals
-                    .Where(m => healthItemIds.Contains(m.BulletItemId))
-                    .SumAsync(m => m.Calories);
+                foreach(var day in weekItems)
+                {
+                    // 3. Manual Fetch for each day to debug and ensure safety
+                    var details = await db.BulletHealthDetails.FirstOrDefaultAsync(d => d.BulletItemId == day.Id);
+                    var dayFood = await db.BulletHealthMeals.Where(m => m.BulletItemId == day.Id).SumAsync(m => m.Calories);
+                    var dayBurn = await db.BulletHealthWorkouts.Where(w => w.BulletItemId == day.Id).SumAsync(w => w.CaloriesBurned);
 
-                var burnSum = await db.BulletHealthWorkouts
-                    .Where(w => healthItemIds.Contains(w.BulletItemId))
-                    .SumAsync(w => w.CaloriesBurned);
+                    // 4. Fallback TDEE if 0 in DB
+                    double dayTDEE = (details != null && details.CalculatedTDEE > 0) ? details.CalculatedTDEE : CalculateFallbackTDEE();
 
-                // 4. Calculate Deficit
-                WeeklyDeficit = (totalTDEE + burnSum) - foodSum;
-            }
-            else
-            {
-                WeeklyDeficit = 0;
+                    double dayDeficit = (dayTDEE + dayBurn) - dayFood;
+                    WeeklyDeficit += dayDeficit;
+
+                    // LOG THE MATH
+                    Logger.LogInformation($"   -> {day.Date.DayOfWeek}: TDEE {dayTDEE:0} + Burn {dayBurn:0} - Food {dayFood:0} = Deficit {dayDeficit:0}. (Running Total: {WeeklyDeficit:0})");
+                }
             }
         }
         StateHasChanged();
+    }
+
+    private double CalculateFallbackTDEE()
+    {
+        // Fallback calc if TDEE is missing in DB record
+        double w = (Item.HealthDetail != null && Item.HealthDetail.WeightLbs > 0) ? Item.HealthDetail.WeightLbs : 200; // Default weight
+        double kg = w / 2.20462;
+        double cm = 178; // Default Height ~5'10
+        int age = 40;    // Default Age
+        
+        // Use User profile if available
+        if (User != null && User.WeightLbs > 0) 
+        {
+            kg = User.WeightLbs / 2.20462;
+            cm = (User.HeightInches > 0 ? User.HeightInches : 70) * 2.54;
+            age = (User.Age > 0 ? User.Age : 40);
+        }
+
+        // Mifflin-St Jeor
+        double bmr = (10 * kg) + (6.25 * cm) - (5 * age) + 5; 
+        return bmr * 1.2; // Sedentary
     }
 
     // --- DAILY CALCULATIONS ---
@@ -285,12 +310,8 @@
     {
         get 
         {
-            double w = Item.HealthDetail?.WeightLbs > 0 ? Item.HealthDetail.WeightLbs : 268;
-            double kg = w / 2.20462;
-            double cm = 182.88; // 6'0"
-            int age = 52; 
-            double bmr = (10 * kg) + (6.25 * cm) - (5 * age) + 5; 
-            return bmr * 1.2;
+            if (Item.HealthDetail?.CalculatedTDEE > 0) return Item.HealthDetail.CalculatedTDEE;
+            return CalculateFallbackTDEE();
         }
     }
     
