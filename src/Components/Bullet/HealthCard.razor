@@ -1,6 +1,9 @@
 @namespace Dashboard.Components.Bullet
 @using Dashboard
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.Extensions.DependencyInjection
 @inject BulletHealthService HealthService
+@inject IServiceScopeFactory ScopeFactory
 
 <div class="bg-gray-800 border border-gray-700 rounded-lg mb-3 overflow-hidden shadow-lg group relative transition hover:border-emerald-500/50">
     
@@ -32,17 +35,37 @@
             </div>
         </div>
 
-        <div>
-            <div class="flex justify-between items-end mb-1 text-[10px]">
-                <span class="text-gray-400">Net Calories: <b class="text-white">@NetCalories.ToString("0")</b></span>
-                <span class="text-gray-400">Goal: <b class="text-white">@GoalLimit.ToString("0")</b></span>
-            </div>
-            <div class="h-5 w-full bg-gray-900 rounded-full border border-gray-700 overflow-hidden relative">
-                <div class="h-full transition-all duration-500 @(NetCalories > GoalLimit ? "bg-red-500" : "bg-emerald-600")" 
-                     style="width: @(Math.Min(100, PercentGoal))%">
+        <div class="space-y-3">
+            
+            <div>
+                <div class="flex justify-between items-end mb-1 text-[10px]">
+                    <span class="text-gray-400 font-bold">Weekly Deficit <span class="font-normal text-gray-600">(Mon - Today)</span></span>
+                    <span class="text-gray-400">
+                        <b class="@(WeeklyDeficit >= 0 ? "text-emerald-400" : "text-red-400")">@WeeklyDeficit.ToString("0")</b> 
+                        / @WeeklyGoal.ToString("0")
+                    </span>
                 </div>
-                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white shadow-black drop-shadow-md">
-                    @PercentGoal.ToString("0")%
+                <div class="h-3 w-full bg-gray-900 rounded-full border border-gray-700 overflow-hidden relative">
+                    <div class="absolute top-0 bottom-0 w-0.5 bg-gray-600 z-10" style="left: 0%"></div> 
+                    
+                    <div class="h-full transition-all duration-500 @(WeeklyDeficit >= 0 ? "bg-emerald-600" : "bg-red-500")" 
+                         style="width: @(Math.Min(100, Math.Max(0, (WeeklyDeficit / (WeeklyGoal > 0 ? WeeklyGoal : 1)) * 100)))%">
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <div class="flex justify-between items-end mb-1 text-[10px]">
+                    <span class="text-gray-400">Net Calories: <b class="text-white">@NetCalories.ToString("0")</b></span>
+                    <span class="text-gray-400">Goal: <b class="text-white">@GoalLimit.ToString("0")</b></span>
+                </div>
+                <div class="h-5 w-full bg-gray-900 rounded-full border border-gray-700 overflow-hidden relative">
+                    <div class="h-full transition-all duration-500 @(NetCalories > GoalLimit ? "bg-red-500" : "bg-emerald-600")" 
+                         style="width: @(Math.Min(100, PercentGoal))%">
+                    </div>
+                    <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white shadow-black drop-shadow-md">
+                        @PercentGoal.ToString("0")%
+                    </div>
                 </div>
             </div>
         </div>
@@ -172,14 +195,14 @@
             <div class="space-y-1">
                 @foreach(var wo in Item.Workouts)
                 {
-                    <div class="flex justify-between items-center text-xs group/item hover:bg-gray-700/30 p-2 rounded transition border border-gray-800 hover:border-orange-500/30 cursor-pointer" @onclick="() => EditWorkout(wo)">
+                    <div class="flex justify-between items-center text-xs group/item hover:bg-gray-700/30 p-1 rounded transition border-l-2 border-transparent hover:border-orange-500">
                         <div class="flex-1 truncate">
                             <span class="text-white font-bold">@wo.Name</span>
                             <span class="text-[9px] text-gray-500 ml-1">(@wo.TimeSpentMinutes min)</span>
                         </div>
                         <div class="flex items-center gap-3">
                             <span class="font-mono text-orange-400 font-bold">-@wo.CaloriesBurned</span>
-                            <button @onclick="() => DeleteWorkout(wo)" @onclick:stopPropagation="true" class="text-gray-600 hover:text-red-500 px-1">✕</button>
+                            <button @onclick="() => DeleteWorkout(wo)" class="text-gray-600 hover:text-red-500 opacity-0 group-hover/item:opacity-100 transition">✕</button>
                         </div>
                     </div>
                 }
@@ -200,14 +223,56 @@
     private bool isAddingMeal = false;
     private bool isAddingWorkout = false;
     
-    // Temp Objects used for Editing/Adding
+    // Temp Objects
     private BulletHealthMeal tempMeal = new();
-    private BulletHealthMeal? editingMeal = null; // Ref to original being edited
-
+    private BulletHealthMeal? editingMeal = null;
     private BulletHealthWorkout tempWorkout = new();
     private BulletHealthWorkout? editingWorkout = null;
 
-    // --- CALCULATIONS ---
+    // Weekly Calorie Logic
+    private double WeeklyDeficit = 0;
+    private double WeeklyGoal => (User.WeeklyCalorieDeficitGoal > 0 ? User.WeeklyCalorieDeficitGoal : 3500);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Calculate Weekly Deficit (Isolated Scope to avoid Concurrency)
+        using (var scope = ScopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            
+            // 1. Determine Start of Week (Monday) based on Item.Date
+            // DayOfWeek.Monday = 1. If Sunday (0), subtract 6. If Tuesday (2), subtract 1.
+            int diff = (7 + (Item.Date.DayOfWeek - DayOfWeek.Monday)) % 7;
+            var startOfWeek = Item.Date.AddDays(-1 * diff).Date;
+            var endOfRange = Item.Date.Date.AddDays(1).AddSeconds(-1); // End of current day
+
+            // 2. Fetch all health items for this week up to today
+            var weekItems = await db.BulletItems
+                .Where(i => i.UserId == Item.UserId && i.Type == "health" && i.Date >= startOfWeek && i.Date <= endOfRange)
+                .Select(i => new 
+                {
+                    TDEE = i.HealthDetail != null ? i.HealthDetail.CalculatedTDEE : 0,
+                    Eaten = i.Meals.Sum(m => m.Calories),
+                    Burned = i.Workouts.Sum(w => w.CaloriesBurned)
+                })
+                .ToListAsync();
+
+            // 3. Sum Deficit
+            WeeklyDeficit = 0;
+            foreach(var day in weekItems)
+            {
+                // If TDEE is 0 in DB, calculate a fallback based on current card's user weight/age or default 2000
+                double dayTDEE = day.TDEE > 0 ? day.TDEE : 2000;
+                
+                // Deficit = (TDEE + Exercise) - Food
+                // Example: (2000 + 300) - 1500 = 800 Deficit (Positive is good)
+                WeeklyDeficit += (dayTDEE + day.Burned) - day.Eaten;
+            }
+        }
+        StateHasChanged();
+    }
+
+    // --- DAILY CALCULATIONS ---
     private double TotalIn => Item.Meals.Sum(m => m.Calories);
     private double Burned => Item.Workouts.Sum(w => w.CaloriesBurned);
     
@@ -224,8 +289,8 @@
         }
     }
     
-    private double DailyDeficit => (User.WeeklyCalorieDeficitGoal > 0 ? User.WeeklyCalorieDeficitGoal : 3500) / 7.0;
-    private double GoalLimit => TDEE - DailyDeficit;
+    private double DailyDeficitGoal => WeeklyGoal / 7.0;
+    private double GoalLimit => TDEE - DailyDeficitGoal;
     private double NetCalories => TotalIn - Burned;
     private double RemainingGoal => GoalLimit - NetCalories;
     private double RemainingTDEE => TDEE - NetCalories;
@@ -239,116 +304,22 @@
     private double TotalNetCarbs => TotalCarbs - TotalFiber;
 
     // --- MEAL ACTIONS ---
-    private void ToggleMealForm()
-    {
-        isAddingMeal = !isAddingMeal;
-        if(!isAddingMeal) { tempMeal = new(); editingMeal = null; }
-    }
-
-    private void EditMeal(BulletHealthMeal meal)
-    {
-        editingMeal = meal; // Keep ref to original
-        // Copy to temp
-        tempMeal = new BulletHealthMeal {
-            Id = meal.Id, BulletItemId = meal.BulletItemId, Name = meal.Name,
-            Calories = meal.Calories, Protein = meal.Protein, Fat = meal.Fat, Carbs = meal.Carbs, Fiber = meal.Fiber
-        };
-        isAddingMeal = true;
-    }
-
-    private async Task SaveMeal()
-    {
-        if (string.IsNullOrWhiteSpace(tempMeal.Name)) return;
-
-        if (editingMeal != null)
-        {
-            // UPDATE EXISTING IN LIST
-            editingMeal.Name = tempMeal.Name;
-            editingMeal.Calories = tempMeal.Calories;
-            editingMeal.Protein = tempMeal.Protein;
-            editingMeal.Fat = tempMeal.Fat;
-            editingMeal.Carbs = tempMeal.Carbs;
-            editingMeal.Fiber = tempMeal.Fiber;
-        }
-        else
-        {
-            // ADD NEW
-            tempMeal.BulletItemId = Item.Id;
-            Item.Meals.Add(tempMeal);
-        }
-
-        await SaveAll();
-        tempMeal = new();
-        editingMeal = null;
-        isAddingMeal = false;
-    }
-
-    private async Task DeleteMeal(BulletHealthMeal meal)
-    {
-        Item.Meals.Remove(meal);
-        await SaveAll();
-    }
+    private void ToggleMealForm() { isAddingMeal = !isAddingMeal; if(!isAddingMeal) { tempMeal = new(); editingMeal = null; } }
+    private void EditMeal(BulletHealthMeal meal) { editingMeal = meal; tempMeal = new BulletHealthMeal { Id = meal.Id, BulletItemId = meal.BulletItemId, Name = meal.Name, Calories = meal.Calories, Protein = meal.Protein, Fat = meal.Fat, Carbs = meal.Carbs, Fiber = meal.Fiber }; isAddingMeal = true; }
+    private async Task SaveMeal() { if (string.IsNullOrWhiteSpace(tempMeal.Name)) return; if (editingMeal != null) { editingMeal.Name = tempMeal.Name; editingMeal.Calories = tempMeal.Calories; editingMeal.Protein = tempMeal.Protein; editingMeal.Fat = tempMeal.Fat; editingMeal.Carbs = tempMeal.Carbs; editingMeal.Fiber = tempMeal.Fiber; } else { tempMeal.BulletItemId = Item.Id; Item.Meals.Add(tempMeal); } await SaveAll(); tempMeal = new(); editingMeal = null; isAddingMeal = false; }
+    private async Task DeleteMeal(BulletHealthMeal meal) { Item.Meals.Remove(meal); await SaveAll(); }
 
     // --- WORKOUT ACTIONS ---
-    private void ToggleWorkoutForm()
-    {
-        isAddingWorkout = !isAddingWorkout;
-        if(!isAddingWorkout) { tempWorkout = new(); editingWorkout = null; }
-    }
-
-    private void EditWorkout(BulletHealthWorkout wo)
-    {
-        editingWorkout = wo;
-        tempWorkout = new BulletHealthWorkout {
-            Id = wo.Id, BulletItemId = wo.BulletItemId, Name = wo.Name,
-            CaloriesBurned = wo.CaloriesBurned, TimeSpentMinutes = wo.TimeSpentMinutes
-        };
-        isAddingWorkout = true;
-    }
-
-    private async Task SaveWorkout()
-    {
-        if (string.IsNullOrWhiteSpace(tempWorkout.Name)) return;
-
-        if (editingWorkout != null)
-        {
-            editingWorkout.Name = tempWorkout.Name;
-            editingWorkout.CaloriesBurned = tempWorkout.CaloriesBurned;
-            editingWorkout.TimeSpentMinutes = tempWorkout.TimeSpentMinutes;
-        }
-        else
-        {
-            tempWorkout.BulletItemId = Item.Id;
-            Item.Workouts.Add(tempWorkout);
-        }
-
-        await SaveAll();
-        tempWorkout = new();
-        editingWorkout = null;
-        isAddingWorkout = false;
-    }
-
-    private async Task DeleteWorkout(BulletHealthWorkout wo)
-    {
-        Item.Workouts.Remove(wo);
-        await SaveAll();
-    }
+    private void ToggleWorkoutForm() { isAddingWorkout = !isAddingWorkout; if(!isAddingWorkout) { tempWorkout = new(); editingWorkout = null; } }
+    private async Task SaveWorkout() { if (string.IsNullOrWhiteSpace(tempWorkout.Name)) return; if (editingWorkout != null) { editingWorkout.Name = tempWorkout.Name; editingWorkout.CaloriesBurned = tempWorkout.CaloriesBurned; editingWorkout.TimeSpentMinutes = tempWorkout.TimeSpentMinutes; } else { tempWorkout.BulletItemId = Item.Id; Item.Workouts.Add(tempWorkout); } await SaveAll(); tempWorkout = new(); editingWorkout = null; isAddingWorkout = false; }
+    private async Task DeleteWorkout(BulletHealthWorkout wo) { Item.Workouts.Remove(wo); await SaveAll(); }
 
     private async Task SaveAll()
     {
         var dto = new BulletHealthService.HealthDTO
         {
-            Id = Item.Id,
-            UserId = Item.UserId,
-            Type = "health",
-            Category = Item.Category,
-            Date = Item.Date,
-            Title = Item.Title,
-            Description = Item.Description,
-            Detail = Item.HealthDetail ?? new(),
-            Meals = Item.Meals,
-            Workouts = Item.Workouts,
-            Notes = Item.Notes
+            Id = Item.Id, UserId = Item.UserId, Type = "health", Category = Item.Category, Date = Item.Date, Title = Item.Title, Description = Item.Description,
+            Detail = Item.HealthDetail ?? new(), Meals = Item.Meals, Workouts = Item.Workouts, Notes = Item.Notes
         };
         await HealthService.SaveHealth(dto);
         StateHasChanged();
