@@ -235,38 +235,43 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        // Calculate Weekly Deficit (Isolated Scope to avoid Concurrency)
+        // SAFE: Calculate Weekly Deficit without assuming navigation properties
         using (var scope = ScopeFactory.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             
-            // 1. Determine Start of Week (Monday) based on Item.Date
-            // DayOfWeek.Monday = 1. If Sunday (0), subtract 6. If Tuesday (2), subtract 1.
+            // 1. Determine Date Range (Mon -> Item.Date)
             int diff = (7 + (Item.Date.DayOfWeek - DayOfWeek.Monday)) % 7;
             var startOfWeek = Item.Date.AddDays(-1 * diff).Date;
             var endOfRange = Item.Date.Date.AddDays(1).AddSeconds(-1); // End of current day
 
-            // 2. Fetch all health items for this week up to today
-            var weekItems = await db.BulletItems
+            // 2. Fetch IDs of health items in this range
+            var healthItemIds = await db.BulletItems
                 .Where(i => i.UserId == Item.UserId && i.Type == "health" && i.Date >= startOfWeek && i.Date <= endOfRange)
-                .Select(i => new 
-                {
-                    TDEE = i.HealthDetail != null ? i.HealthDetail.CalculatedTDEE : 0,
-                    Eaten = i.Meals.Sum(m => m.Calories),
-                    Burned = i.Workouts.Sum(w => w.CaloriesBurned)
-                })
+                .Select(i => i.Id)
                 .ToListAsync();
 
-            // 3. Sum Deficit
-            WeeklyDeficit = 0;
-            foreach(var day in weekItems)
+            if (healthItemIds.Any())
             {
-                // If TDEE is 0 in DB, calculate a fallback based on current card's user weight/age or default 2000
-                double dayTDEE = day.TDEE > 0 ? day.TDEE : 2000;
-                
-                // Deficit = (TDEE + Exercise) - Food
-                // Example: (2000 + 300) - 1500 = 800 Deficit (Positive is good)
-                WeeklyDeficit += (dayTDEE + day.Burned) - day.Eaten;
+                // 3. Perform manual sums using the IDs
+                var totalTDEE = await db.BulletHealthDetails
+                    .Where(d => healthItemIds.Contains(d.BulletItemId))
+                    .SumAsync(d => d.CalculatedTDEE);
+
+                var foodSum = await db.BulletHealthMeals
+                    .Where(m => healthItemIds.Contains(m.BulletItemId))
+                    .SumAsync(m => m.Calories);
+
+                var burnSum = await db.BulletHealthWorkouts
+                    .Where(w => healthItemIds.Contains(w.BulletItemId))
+                    .SumAsync(w => w.CaloriesBurned);
+
+                // 4. Calculate Deficit
+                WeeklyDeficit = (totalTDEE + burnSum) - foodSum;
+            }
+            else
+            {
+                WeeklyDeficit = 0;
             }
         }
         StateHasChanged();
