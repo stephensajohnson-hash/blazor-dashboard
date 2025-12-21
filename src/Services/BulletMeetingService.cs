@@ -8,24 +8,19 @@ using System;
 
 public class BulletMeetingService
 {
-    private readonly IServiceScopeFactory _factory;
+    private readonly IDbContextFactory<AppDbContext> _factory;
 
-    public BulletMeetingService(IServiceScopeFactory factory)
+    public BulletMeetingService(IDbContextFactory<AppDbContext> factory)
     {
         _factory = factory;
     }
 
-    public class MeetingDTO : BulletItem
-    {
-        public BulletMeetingDetail Detail { get; set; } = new();
-        public List<BulletItemNote> Notes { get; set; } = new();
-    }
+    // Inheriting from TaskDTO ensures 'MeetingDetail' property is available and named consistently
+    public class MeetingDTO : BulletTaskService.TaskDTO { }
 
     public async Task<List<MeetingDTO>> GetMeetingsForRange(int userId, DateTime start, DateTime end)
     {
-        using var scope = _factory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
+        using var db = _factory.CreateDbContext();
         var items = await (from baseItem in db.BulletItems
                            join detail in db.BulletMeetingDetails on baseItem.Id equals detail.BulletItemId
                            where baseItem.UserId == userId 
@@ -45,7 +40,7 @@ public class BulletMeetingService
                                LinkUrl = baseItem.LinkUrl, 
                                OriginalStringId = baseItem.OriginalStringId,
                                SortOrder = baseItem.SortOrder,
-                               Detail = detail
+                               MeetingDetail = detail // Correctly map to the inherited property
                            }).ToListAsync();
 
         if (items.Any())
@@ -59,19 +54,21 @@ public class BulletMeetingService
 
     public async Task SaveMeeting(MeetingDTO dto)
     {
-        using var scope = _factory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        using var db = _factory.CreateDbContext();
         
         // UTC Fix
         if (dto.Date.Kind == DateTimeKind.Unspecified) dto.Date = DateTime.SpecifyKind(dto.Date, DateTimeKind.Utc);
         else if (dto.Date.Kind == DateTimeKind.Local) dto.Date = dto.Date.ToUniversalTime();
 
-        if (dto.Detail.StartTime.HasValue)
+        // Use the inherited MeetingDetail property
+        var detailSource = dto.MeetingDetail ?? new BulletMeetingDetail();
+
+        if (detailSource.StartTime.HasValue)
         {
-            if (dto.Detail.StartTime.Value.Kind == DateTimeKind.Unspecified) 
-                dto.Detail.StartTime = DateTime.SpecifyKind(dto.Detail.StartTime.Value, DateTimeKind.Utc);
-            else if (dto.Detail.StartTime.Value.Kind == DateTimeKind.Local) 
-                dto.Detail.StartTime = dto.Detail.StartTime.Value.ToUniversalTime();
+            if (detailSource.StartTime.Value.Kind == DateTimeKind.Unspecified) 
+                detailSource.StartTime = DateTime.SpecifyKind(detailSource.StartTime.Value, DateTimeKind.Utc);
+            else if (detailSource.StartTime.Value.Kind == DateTimeKind.Local) 
+                detailSource.StartTime = detailSource.StartTime.Value.ToUniversalTime();
         }
 
         BulletItem? item = null;
@@ -99,15 +96,16 @@ public class BulletMeetingService
             await db.BulletMeetingDetails.AddAsync(detail); 
         }
 
-        // Field Mapping
-        detail.StartTime = dto.Detail.StartTime;
-        detail.DurationMinutes = dto.Detail.DurationMinutes;
-        detail.ActualDurationMinutes = dto.Detail.ActualDurationMinutes;
-        detail.IsCompleted = dto.Detail.IsCompleted; // Persist Checkbox
+        // --- FIELD MAPPING ---
+        detail.StartTime = detailSource.StartTime;
+        detail.DurationMinutes = detailSource.DurationMinutes;
+        detail.ActualDurationMinutes = detailSource.ActualDurationMinutes;
+        detail.IsCompleted = detailSource.IsCompleted; // This now correctly captures the checkbox state
+        // ---------------------
 
         await db.SaveChangesAsync();
 
-        // Notes
+        // Save Notes
         var oldNotes = await db.BulletItemNotes.Where(n => n.BulletItemId == item.Id).ToListAsync();
         db.BulletItemNotes.RemoveRange(oldNotes);
         if (dto.Notes != null)
@@ -120,8 +118,7 @@ public class BulletMeetingService
 
     public async Task ToggleComplete(int id, bool isComplete)
     {
-        using var scope = _factory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        using var db = _factory.CreateDbContext();
         var detail = await db.BulletMeetingDetails.FindAsync(id);
         if (detail != null) 
         { 
@@ -132,8 +129,7 @@ public class BulletMeetingService
 
     public async Task<int> ImportFromOldJson(int userId, string jsonContent)
     {
-        using var scope = _factory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        using var db = _factory.CreateDbContext();
         int count = 0;
         using var doc = JsonDocument.Parse(jsonContent);
         var root = doc.RootElement;
