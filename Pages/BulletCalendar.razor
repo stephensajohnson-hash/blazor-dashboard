@@ -379,10 +379,9 @@
         }
     }
 
-    // UPDATED: Logic to Pre-fill Weight & Fix "Zero Calorie" Deficit Bug
+    // UPDATED: Logic to Pre-fill Weight with Safe Fallback
     private async Task OpenEditor(string category, string type, DateTime date) 
     { 
-        // 1. Log for debugging
         Console.WriteLine($"[BulletCalendar] OpenEditor called: Cat={category}, Type={type}, Date={date}");
 
         var newItem = new BulletTaskService.TaskDTO { 
@@ -393,14 +392,11 @@
             Meals = new(), Workouts = new()
         }; 
 
-        // 2. Health Logic
         if (type == "health")
         {
-            // Explicitly ensure detail object exists
             if(newItem.HealthDetail == null) newItem.HealthDetail = new BulletHealthDetail();
 
             try {
-                // Fetch last health item to get weight
                 var lastHealth = await Db.BulletHealthDetails
                     .Include(d => d.BulletItem)
                     .Where(d => d.BulletItem.UserId == userId && d.BulletItem.Type == "health" && d.BulletItem.Date < date)
@@ -414,10 +410,9 @@
                 }
                 else
                 {
-                    // Fallback to User Profile weight if no previous record exists
-                    double userWeight = currentUser?.WeightLbs > 0 ? currentUser.WeightLbs : 200;
-                    newItem.HealthDetail.WeightLbs = userWeight;
-                    Console.WriteLine($"[BulletCalendar] No previous weight found. Using User Profile/Default: {userWeight}");
+                    // SAFE FALLBACK: Hardcoded 200 (since User Profile has no weight property)
+                    newItem.HealthDetail.WeightLbs = 200; 
+                    Console.WriteLine($"[BulletCalendar] No previous weight found. Using Default: 200");
                 }
             } catch (Exception ex) { 
                 Console.WriteLine($"[BulletCalendar] Error fetching weight: {ex.Message}");
@@ -425,7 +420,7 @@
         }
 
         editingItem = newItem;
-        StateHasChanged(); // Force UI to reflect pre-filled data
+        StateHasChanged();
     }
 
     private BulletTaskService.TaskDTO CreateCopy(BulletTaskService.TaskDTO t)
