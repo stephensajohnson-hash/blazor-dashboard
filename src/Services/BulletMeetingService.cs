@@ -8,22 +8,24 @@ using System;
 
 public class BulletMeetingService
 {
-    // Restored IDbContextFactory as requested
-    private readonly IDbContextFactory<AppDbContext> _factory;
+    private readonly IServiceScopeFactory _factory;
 
-    public BulletMeetingService(IDbContextFactory<AppDbContext> factory)
+    public BulletMeetingService(IServiceScopeFactory factory)
     {
         _factory = factory;
     }
 
-    public class MeetingDTO : BulletTaskService.TaskDTO 
+    public class MeetingDTO : BulletItem
     {
-        // Inherits base properties to ensure compatibility with Calendar
+        public BulletMeetingDetail Detail { get; set; } = new();
+        public List<BulletItemNote> Notes { get; set; } = new();
     }
 
     public async Task<List<MeetingDTO>> GetMeetingsForRange(int userId, DateTime start, DateTime end)
     {
-        using var db = _factory.CreateDbContext();
+        using var scope = _factory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
         var items = await (from baseItem in db.BulletItems
                            join detail in db.BulletMeetingDetails on baseItem.Id equals detail.BulletItemId
                            where baseItem.UserId == userId 
@@ -43,7 +45,7 @@ public class BulletMeetingService
                                LinkUrl = baseItem.LinkUrl, 
                                OriginalStringId = baseItem.OriginalStringId,
                                SortOrder = baseItem.SortOrder,
-                               MeetingDetail = detail // Map to MeetingDetail property
+                               Detail = detail
                            }).ToListAsync();
 
         if (items.Any())
@@ -57,23 +59,20 @@ public class BulletMeetingService
 
     public async Task SaveMeeting(MeetingDTO dto)
     {
-        using var db = _factory.CreateDbContext();
+        using var scope = _factory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         
-        // --- 1. UTC FIX (Preserved) ---
+        // UTC Fix
         if (dto.Date.Kind == DateTimeKind.Unspecified) dto.Date = DateTime.SpecifyKind(dto.Date, DateTimeKind.Utc);
         else if (dto.Date.Kind == DateTimeKind.Local) dto.Date = dto.Date.ToUniversalTime();
 
-        // Handle nested detail time
-        var detailSource = dto.MeetingDetail ?? new BulletMeetingDetail();
-
-        if (detailSource.StartTime.HasValue)
+        if (dto.Detail.StartTime.HasValue)
         {
-            if (detailSource.StartTime.Value.Kind == DateTimeKind.Unspecified) 
-                detailSource.StartTime = DateTime.SpecifyKind(detailSource.StartTime.Value, DateTimeKind.Utc);
-            else if (detailSource.StartTime.Value.Kind == DateTimeKind.Local) 
-                detailSource.StartTime = detailSource.StartTime.Value.ToUniversalTime();
+            if (dto.Detail.StartTime.Value.Kind == DateTimeKind.Unspecified) 
+                dto.Detail.StartTime = DateTime.SpecifyKind(dto.Detail.StartTime.Value, DateTimeKind.Utc);
+            else if (dto.Detail.StartTime.Value.Kind == DateTimeKind.Local) 
+                dto.Detail.StartTime = dto.Detail.StartTime.Value.ToUniversalTime();
         }
-        // ------------------
 
         BulletItem? item = null;
         if (dto.Id > 0) item = await db.BulletItems.FindAsync(dto.Id);
@@ -92,7 +91,7 @@ public class BulletMeetingService
         item.SortOrder = dto.SortOrder;
         
         await db.SaveChangesAsync();
-        dto.Id = item.Id; // Ensure ID is set back to DTO
+        dto.Id = item.Id; 
 
         var detail = await db.BulletMeetingDetails.FindAsync(item.Id);
         if (detail == null) { 
@@ -100,17 +99,15 @@ public class BulletMeetingService
             await db.BulletMeetingDetails.AddAsync(detail); 
         }
 
-        // --- 2. FIELD MAPPING FIX ---
-        // Explicitly map properties from the DTO's detail to the DB entity
-        detail.StartTime = detailSource.StartTime;
-        detail.DurationMinutes = detailSource.DurationMinutes;
-        detail.ActualDurationMinutes = detailSource.ActualDurationMinutes;
-        detail.IsCompleted = detailSource.IsCompleted; // Fixes persistence
-        // ----------------------------
+        // Field Mapping
+        detail.StartTime = dto.Detail.StartTime;
+        detail.DurationMinutes = dto.Detail.DurationMinutes;
+        detail.ActualDurationMinutes = dto.Detail.ActualDurationMinutes;
+        detail.IsCompleted = dto.Detail.IsCompleted; // Persist Checkbox
 
         await db.SaveChangesAsync();
 
-        // Save Notes
+        // Notes
         var oldNotes = await db.BulletItemNotes.Where(n => n.BulletItemId == item.Id).ToListAsync();
         db.BulletItemNotes.RemoveRange(oldNotes);
         if (dto.Notes != null)
@@ -123,7 +120,8 @@ public class BulletMeetingService
 
     public async Task ToggleComplete(int id, bool isComplete)
     {
-        using var db = _factory.CreateDbContext();
+        using var scope = _factory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var detail = await db.BulletMeetingDetails.FindAsync(id);
         if (detail != null) 
         { 
@@ -132,10 +130,10 @@ public class BulletMeetingService
         }
     }
 
-    // (Preserved Import Logic)
     public async Task<int> ImportFromOldJson(int userId, string jsonContent)
     {
-        using var db = _factory.CreateDbContext();
+        using var scope = _factory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         int count = 0;
         using var doc = JsonDocument.Parse(jsonContent);
         var root = doc.RootElement;
