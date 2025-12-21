@@ -75,7 +75,11 @@
                     <div class="bg-gray-800/40 rounded-xl border border-gray-700 flex flex-col h-full overflow-hidden">
                         <div class="p-3 bg-gray-800/80 border-b border-gray-700 flex justify-between items-center sticky top-0 backdrop-blur z-10">
                             <span class="font-bold text-@cat.Item3-400 uppercase tracking-wider text-sm">@cat.Item1</span>
-                            <button @onclick='() => OpenEditor(cat.Item2, "task", viewDate)' class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition">＋ Add</button>
+                            
+                            @{
+                                string addType = cat.Item2 == "health" ? "health" : "task";
+                            }
+                            <button @onclick='async () => await OpenEditor(cat.Item2, addType, viewDate)' class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition">＋ Add</button>
                         </div>
                         <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide">
                             @if(isLoading)
@@ -130,7 +134,7 @@
                                 else if (item.Type == "sports") { <SportsPill Item="@(GetGame(item.Id))" OnClick="OpenSportsEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" /> }
                                 else { <TaskPill Task="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthWeek" /> }
                             }
-                            <button @onclick='() => OpenEditor("personal", "task", d)' class="w-full py-2 text-gray-600 hover:text-gray-400 hover:bg-gray-700/50 rounded text-xs transition mt-2">＋</button>
+                            <button @onclick='async () => await OpenEditor("personal", "task", d)' class="w-full py-2 text-gray-600 hover:text-gray-400 hover:bg-gray-700/50 rounded text-xs transition mt-2">＋</button>
                         </div>
                     </div>
                 }
@@ -330,17 +334,15 @@
     private void OpenBirthdayEdit(BulletTaskService.TaskDTO t) { editingItem = CreateCopy(t); }
     private void OpenAnniversaryEdit(BulletTaskService.TaskDTO t) { editingItem = CreateCopy(t); }
     private void OpenHealthEdit(BulletTaskService.TaskDTO t) { editingItem = CreateCopy(t); }
+    private void OpenEdit(BulletTaskService.TaskDTO t) { editingItem = CreateCopy(t); }
     
     private async Task OpenSportsEdit(BulletTaskService.TaskDTO t) 
     { 
         editingItem = CreateCopy(t);
-        
-        // ROBUST FIX: If detail is missing/empty, fetch it directly
+        // Ensure robust detail copy if missing (from previous fix)
         if(editingItem.SportsDetail == null || editingItem.SportsDetail.LeagueId == 0)
         {
             try {
-                // We don't have a direct "GetDetail" method exposed likely, 
-                // but we can try to find it from the loadedGames cache which might be better populated
                 var game = loadedGames.FirstOrDefault(g => g.Id == t.Id);
                 if(game != null && game.Detail != null && game.Detail.LeagueId > 0)
                 {
@@ -353,14 +355,14 @@
                         AwayScore = game.Detail.AwayScore,
                         StartTime = game.Detail.StartTime,
                         IsComplete = game.Detail.IsComplete,
-                        TvChannel = game.Detail.TvChannel
+                        TvChannel = game.Detail.TvChannel,
+                        SeasonId = game.Detail.SeasonId
                     };
                 }
             } catch(Exception ex) { Console.WriteLine($"Error fetching sports detail: {ex.Message}"); }
         }
     }
 
-    private void OpenEdit(BulletTaskService.TaskDTO t) { editingItem = CreateCopy(t); }
     private void OpenHabitEdit(BulletHabitService.HabitDTO h) { 
         editingItem = new BulletTaskService.TaskDTO { 
             Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, 
@@ -377,6 +379,37 @@
             var range = await VacationService.GetVacationGroupRange(editingItem.UserId, editingItem.VacationDetail.VacationGroupId);
             if(range != null) { editingItem.Date = range.Value.Start; editingItem.EndDate = range.Value.End; }
         }
+    }
+
+    // Updated OpenEditor to Async to handle Weight Fetch
+    private async Task OpenEditor(string category, string type, DateTime date) 
+    { 
+        var newItem = new BulletTaskService.TaskDTO { 
+            UserId = userId, Category = category, Type = type, Date = date,
+            Detail = new(), MeetingDetail = new(), HabitDetail = new(), MediaDetail = new(), 
+            HolidayDetail = new(), BirthdayDetail = new(), AnniversaryDetail = new(), 
+            VacationDetail = new(), HealthDetail = new(), SportsDetail = new(), Notes = new(),
+            Meals = new(), Workouts = new()
+        }; 
+
+        if (type == "health")
+        {
+            // Pre-fetch last weight to fix calorie jump issue
+            try {
+                var lastHealth = await Db.BulletHealthDetails
+                    .Include(d => d.BulletItem)
+                    .Where(d => d.BulletItem.UserId == userId && d.BulletItem.Type == "health" && d.BulletItem.Date < date)
+                    .OrderByDescending(d => d.BulletItem.Date)
+                    .FirstOrDefaultAsync();
+                
+                if(lastHealth != null) 
+                {
+                    newItem.HealthDetail.WeightLbs = lastHealth.WeightLbs;
+                }
+            } catch { /* Fail silently, weight will default to 0 */ }
+        }
+
+        editingItem = newItem;
     }
 
     private BulletTaskService.TaskDTO CreateCopy(BulletTaskService.TaskDTO t)
@@ -399,11 +432,9 @@
             Workouts = t.Workouts.ToList()
         };
 
-        // Manual Deep Copy of Details
         if (t.Detail != null) newItem.Detail = new BulletTaskDetail { BulletItemId = t.Id, DueDate = t.Detail.DueDate, IsCompleted = t.Detail.IsCompleted, Priority = t.Detail.Priority, Status = t.Detail.Status, TicketNumber = t.Detail.TicketNumber, TicketUrl = t.Detail.TicketUrl };
         if (t.MeetingDetail != null) newItem.MeetingDetail = new BulletMeetingDetail { BulletItemId = t.Id, StartTime = t.MeetingDetail.StartTime, DurationMinutes = t.MeetingDetail.DurationMinutes, ActualDurationMinutes = t.MeetingDetail.ActualDurationMinutes, IsCompleted = t.MeetingDetail.IsCompleted };
         
-        // SPORTS FIX: Explicitly copy every field
         if (t.SportsDetail != null) 
         {
             newItem.SportsDetail = new BulletGameDetail { 
@@ -419,10 +450,7 @@
                 SeasonId = t.SportsDetail.SeasonId 
             };
         }
-        else
-        {
-            newItem.SportsDetail = new BulletGameDetail();
-        }
+        else { newItem.SportsDetail = new BulletGameDetail(); }
 
         if (t.HabitDetail != null) newItem.HabitDetail = new BulletHabitDetail { BulletItemId = t.Id, StreakCount = t.HabitDetail.StreakCount, IsCompleted = t.HabitDetail.IsCompleted };
         if (t.VacationDetail != null) newItem.VacationDetail = new BulletVacationDetail { BulletItemId = t.Id, VacationGroupId = t.VacationDetail.VacationGroupId };
@@ -433,16 +461,6 @@
         if (t.AnniversaryDetail != null) newItem.AnniversaryDetail = new BulletAnniversaryDetail { BulletItemId = t.Id, AnniversaryType = t.AnniversaryDetail.AnniversaryType, FirstYear = t.AnniversaryDetail.FirstYear };
 
         return newItem;
-    }
-
-    private void OpenEditor(string category, string type, DateTime date) 
-    { 
-        editingItem = new BulletTaskService.TaskDTO { 
-            UserId = userId, Category = category, Type = type, Date = date,
-            Detail = new(), MeetingDetail = new(), HabitDetail = new(), MediaDetail = new(), 
-            HolidayDetail = new(), BirthdayDetail = new(), AnniversaryDetail = new(), 
-            VacationDetail = new(), HealthDetail = new(), SportsDetail = new(), Notes = new()
-        }; 
     }
 
     private async Task ToggleComplete(BulletTaskService.TaskDTO t) { t.Detail.IsCompleted = !t.Detail.IsCompleted; await TaskService.ToggleComplete(t.Id, t.Detail.IsCompleted); }
@@ -479,7 +497,6 @@
 
     private async Task SaveItem() { 
         if(editingItem != null) {
-            // ... (Save logic remains identical to previous, just ensuring properties are accessed safely)
             if (editingItem.Type == "meeting") { 
                 var m = new BulletMeetingService.MeetingDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "meeting", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.MeetingDetail ?? new(), Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; 
                 await MeetingService.SaveMeeting(m); 
@@ -563,14 +580,13 @@
 
     private string patchStatus = "";
 
-private async Task RunSeasonPatch()
+    private async Task RunSeasonPatch()
     {
         patchStatus = "Running patch...";
         StateHasChanged();
 
         try
         {
-            // Fetch all game details
             var games = await Db.BulletGameDetails.ToListAsync();
             int updatedCount = 0;
             int skippedCount = 0;
@@ -578,14 +594,10 @@ private async Task RunSeasonPatch()
             foreach (var g in games)
             {
                 if (g.LeagueId == 0) continue;
-
-                // 1. Get the League Name to decide the Season String
                 var league = await Db.Leagues.FindAsync(g.LeagueId);
                 if (league == null) continue;
 
                 string targetSeasonName = "";
-
-                // Define Rules
                 if (league.Name.Contains("NFL", StringComparison.OrdinalIgnoreCase) || 
                     league.Name.Contains("EFL", StringComparison.OrdinalIgnoreCase) ||
                     league.Name.Contains("Premier", StringComparison.OrdinalIgnoreCase) ||
@@ -600,7 +612,6 @@ private async Task RunSeasonPatch()
                     targetSeasonName = "2026";
                 }
 
-                // 2. Look up the SPECIFIC season for THIS League
                 if (!string.IsNullOrEmpty(targetSeasonName))
                 {
                     var season = await Db.Seasons
@@ -613,15 +624,13 @@ private async Task RunSeasonPatch()
                     }
                     else
                     {
-                        skippedCount++; // Season didn't exist for this league yet
+                        skippedCount++;
                     }
                 }
             }
 
             await Db.SaveChangesAsync();
             patchStatus = $"Done! Updated {updatedCount} games. Skipped {skippedCount} (Season not found).";
-            
-            // Reload data to reflect changes immediately
             await LoadData(); 
         }
         catch (Exception ex)

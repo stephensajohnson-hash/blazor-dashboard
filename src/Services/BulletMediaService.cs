@@ -119,4 +119,16 @@ public class BulletMediaService
         }
         return count;
     }
+
+    // Add this method to your BulletHealthService class
+    public async Task<double> GetLastRecordedWeight(int userId, DateTime date)
+    {
+        var lastItem = await _context.BulletItems
+            .Include(i => i.HealthDetail)
+            .Where(i => i.UserId == userId && i.Type == "health" && i.Date < date && i.HealthDetail != null)
+            .OrderByDescending(i => i.Date)
+            .FirstOrDefaultAsync();
+
+        return lastItem?.HealthDetail?.WeightLbs ?? 0;
+    }
 }
