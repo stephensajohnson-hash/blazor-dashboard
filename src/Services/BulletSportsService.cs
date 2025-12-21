@@ -26,8 +26,8 @@ public class BulletSportsService
         public string PctDisplay => TotalGames > 0 ? $".{(int)(WinPercentage * 1000):D3}" : ".000";
     }
 
-    // Inherit from TaskDTO for UI compatibility
-    public class GameDTO : BulletTaskService.TaskDTO
+    // Inherit from TaskDTO so Calendar works
+    public class GameDTO : BulletTaskService.TaskDTO 
     {
         public BulletGameDetail Detail { get; set; } = new();
         public League? League { get; set; }
@@ -37,7 +37,7 @@ public class BulletSportsService
         public TeamRecord? FavoriteRecord { get; set; } 
     }
 
-    // --- GAMES ---
+    // --- GAMES (For Calendar) ---
     public async Task<List<GameDTO>> GetGamesForRange(int userId, DateTime start, DateTime end)
     {
         using var db = _factory.CreateDbContext();
@@ -80,7 +80,6 @@ public class BulletSportsService
 
                     if (favTeamId > 0)
                     {
-                        // Note: Passing 'db' context to avoid creating nested contexts unnecessarily
                         g.FavoriteRecord = await GetTeamRecordInternal(db, favTeamId, g.Detail.SeasonId, g.Date, g.Id);
                     }
                 }
@@ -136,7 +135,6 @@ public class BulletSportsService
         var detail = await db.BulletGameDetails.FindAsync(item.Id);
         if (detail == null) { detail = new BulletGameDetail { BulletItemId = item.Id }; await db.BulletGameDetails.AddAsync(detail); }
 
-        // Use properties from DTO.Detail
         detail.LeagueId = dto.Detail.LeagueId;
         detail.SeasonId = dto.Detail.SeasonId;
         detail.HomeTeamId = dto.Detail.HomeTeamId;
@@ -157,12 +155,7 @@ public class BulletSportsService
         if (detail != null) { detail.IsComplete = isComplete; await db.SaveChangesAsync(); }
     }
 
-    // --- REFERENCE DATA ---
-    public async Task<List<Team>> GetTeams(int userId) { using var db = _factory.CreateDbContext(); return await db.Teams.Where(t => t.UserId == userId).OrderBy(t => t.Name).ToListAsync(); }
-    public async Task<List<League>> GetLeagues(int userId) { using var db = _factory.CreateDbContext(); return await db.Leagues.Where(l => l.UserId == userId).OrderBy(l => l.Name).ToListAsync(); }
-    public async Task<List<Season>> GetSeasons(int userId) { using var db = _factory.CreateDbContext(); return await db.Seasons.Where(s => s.UserId == userId).OrderByDescending(s => s.Name).ToListAsync(); }
-
-    // --- NEW METHODS FOR MANAGE SPORTS ---
+    // --- NEW: FOR MANAGE SPORTS PAGE ---
     public async Task<List<Team>> GetFavoriteTeams(int userId)
     {
         using var db = _factory.CreateDbContext();
@@ -175,7 +168,6 @@ public class BulletSportsService
     public async Task<List<GameDTO>> GetTeamSchedule(int userId, int teamId, int seasonId)
     {
         using var db = _factory.CreateDbContext();
-        
         var items = await (from baseItem in db.BulletItems
                            join detail in db.BulletGameDetails on baseItem.Id equals detail.BulletItemId
                            where baseItem.UserId == userId 
@@ -184,46 +176,38 @@ public class BulletSportsService
                            orderby baseItem.Date
                            select new GameDTO 
                            { 
-                               Id = baseItem.Id, 
-                               UserId = baseItem.UserId, 
-                               Type = baseItem.Type, 
-                               Category = baseItem.Category,
-                               Date = baseItem.Date, 
-                               Title = baseItem.Title, 
-                               Description = baseItem.Description, 
-                               ImgUrl = baseItem.ImgUrl, 
-                               LinkUrl = baseItem.LinkUrl, 
-                               OriginalStringId = baseItem.OriginalStringId,
+                               Id = baseItem.Id, UserId = baseItem.UserId, Type = baseItem.Type, Category = baseItem.Category,
+                               Date = baseItem.Date, Title = baseItem.Title, Description = baseItem.Description, 
+                               ImgUrl = baseItem.ImgUrl, LinkUrl = baseItem.LinkUrl, OriginalStringId = baseItem.OriginalStringId,
                                SortOrder = baseItem.SortOrder,
                                Detail = detail
                            }).ToListAsync();
 
-        // Hydrate Reference Data for Display
+        // Hydrate Teams for display
         if (items.Any())
         {
-            var teamIds = items.Select(g => g.Detail.HomeTeamId).Concat(items.Select(g => g.Detail.AwayTeamId)).Distinct().ToList();
-            var teams = await db.Teams.Where(t => teamIds.Contains(t.Id)).ToListAsync();
-            var league = await db.Leagues.FirstOrDefaultAsync(l => l.Id == items.First().Detail.LeagueId); // Assuming one league per list
-
+            var teams = await db.Teams.Where(t => t.UserId == userId).ToListAsync();
             foreach (var g in items)
             {
-                g.League = league;
                 g.HomeTeam = teams.FirstOrDefault(t => t.Id == g.Detail.HomeTeamId);
                 g.AwayTeam = teams.FirstOrDefault(t => t.Id == g.Detail.AwayTeamId);
             }
         }
-
         return items;
     }
 
-    // --- IMPORT LOGIC ---
+    // --- REFERENCE DATA ---
+    public async Task<List<Team>> GetTeams(int userId) { using var db = _factory.CreateDbContext(); return await db.Teams.Where(t => t.UserId == userId).OrderBy(t => t.Name).ToListAsync(); }
+    public async Task<List<League>> GetLeagues(int userId) { using var db = _factory.CreateDbContext(); return await db.Leagues.Where(l => l.UserId == userId).OrderBy(l => l.Name).ToListAsync(); }
+    public async Task<List<Season>> GetSeasons(int userId) { using var db = _factory.CreateDbContext(); return await db.Seasons.Where(s => s.UserId == userId).OrderByDescending(s => s.Name).ToListAsync(); }
+
+    // --- IMPORT LOGIC (Preserved) ---
     public async Task<int> ImportGames(int userId, string jsonContent)
     {
         using var db = _factory.CreateDbContext();
         int count = 0;
         using var doc = JsonDocument.Parse(jsonContent);
         var root = doc.RootElement;
-        
         JsonElement items = root;
         if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("items", out var i)) items = i;
 

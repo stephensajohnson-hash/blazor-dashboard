@@ -16,14 +16,14 @@
 
     <div class="flex gap-2 overflow-x-auto pb-4 mb-4 border-b border-gray-800 scrollbar-hide">
         <button @onclick="() => SelectTab(-1)" 
-                class="px-4 py-2 rounded-full text-sm font-bold transition shrink-0 @(selectedTeamId == -1 ? "bg-orange-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700")">
+                class="px-4 py-2 rounded-full text-sm font-bold transition shrink-0 @(selectedTeamId == -1 ? "bg-orange-600 text-white shadow-lg" : "bg-gray-800 text-gray-400 hover:bg-gray-700")">
             ⚙️ Configuration
         </button>
 
         @foreach (var team in favoriteTeams)
         {
             <button @onclick="() => SelectTeamTab(team)" 
-                    class="px-4 py-2 rounded-full text-sm font-bold transition shrink-0 flex items-center gap-2 @(selectedTeamId == team.Id ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700")">
+                    class="px-4 py-2 rounded-full text-sm font-bold transition shrink-0 flex items-center gap-2 @(selectedTeamId == team.Id ? "bg-blue-600 text-white shadow-lg" : "bg-gray-800 text-gray-400 hover:bg-gray-700")">
                 @if(!string.IsNullOrEmpty(team.LogoUrl)) { <img src="@team.LogoUrl" class="w-4 h-4 object-contain" /> }
                 @team.Name
             </button>
@@ -185,7 +185,7 @@
     private int nextGameId = 0;
     private bool isLoadingSchedule = false;
 
-    // Config Data (Existing)
+    // Config Data
     private List<League> leagues = new();
     private List<Season> seasons = new();
     private List<Team> teams = new();
@@ -193,7 +193,7 @@
     // Editor Data
     private BulletSportsService.GameDTO? editingGame;
 
-    // Inputs (Existing)
+    // Inputs
     private string newLeagueName = "";
     private string newSeasonName = "";
     private string newTeamName = "";
@@ -223,9 +223,10 @@
 
     private async Task LoadConfigData()
     {
-        leagues = await Db.Leagues.Where(l => l.UserId == userId).ToListAsync();
-        seasons = await Db.Seasons.Where(s => s.UserId == userId).ToListAsync();
-        teams = await Db.Teams.Where(t => t.UserId == userId).OrderBy(t => t.Name).ToListAsync();
+        // Use Service methods to ensure clean fetching
+        leagues = await SportsService.GetLeagues(userId);
+        seasons = await SportsService.GetSeasons(userId);
+        teams = await SportsService.GetTeams(userId);
     }
 
     private async Task LoadFavorites()
@@ -252,15 +253,7 @@
         
         if (availableSeasons.Any())
         {
-            // 2. Default to season logic: "Most recently completed game"
-            // Since we can't query games easily without loading them, let's load all games for all available seasons? 
-            // Or just default to the "Last Created" season which is usually the current one.
-            // Let's implement the smarter logic by checking the latest season first.
-            
             selectedSeasonId = availableSeasons.First().Id; // Default to newest
-            
-            // Refinement: If we wanted strict "last completed game" logic, we'd need to query which season has activity.
-            // For now, defaulting to the newest Season entry is usually correct for "Current Season".
         }
 
         await LoadSchedule();
@@ -292,12 +285,10 @@
 
     private string FormatGameDate(DateTime d)
     {
-        // "Sunday, Dec. 21st, 2025"
         string daySuffix = (d.Day % 10 == 1 && d.Day != 11) ? "st"
             : (d.Day % 10 == 2 && d.Day != 12) ? "nd"
             : (d.Day % 10 == 3 && d.Day != 13) ? "rd"
             : "th";
-        
         return $"{d:dddd, MMM. d}{daySuffix}, {d:yyyy}";
     }
 
@@ -305,7 +296,6 @@
 
     private void OpenGameEdit(BulletTaskService.TaskDTO gameBase)
     {
-        // Cast or Find the specific game DTO
         editingGame = teamGames.FirstOrDefault(g => g.Id == gameBase.Id);
     }
 
@@ -316,12 +306,12 @@
         if (editingGame != null)
         {
             await SportsService.SaveGame(editingGame);
-            await LoadSchedule(); // Refresh grid to update borders/status
+            await LoadSchedule(); 
             editingGame = null;
         }
     }
 
-    // --- CONFIGURATION ACTIONS (Existing) ---
+    // --- CONFIGURATION ACTIONS ---
 
     private async Task AddLeague()
     {
@@ -366,7 +356,9 @@
     private async Task ToggleFavorite(Team t)
     {
         t.IsFavorite = !t.IsFavorite;
+        // Using Db context directly here for simple toggle, consistent with other methods in this block
+        Db.Teams.Update(t);
         await Db.SaveChangesAsync();
-        await LoadFavorites(); // Refresh Tabs
+        await LoadFavorites(); 
     }
 }
