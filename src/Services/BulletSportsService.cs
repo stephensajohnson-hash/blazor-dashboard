@@ -231,4 +231,42 @@ public class BulletSportsService
         }
         return count;
     }
+
+    public async Task<List<Team>> GetFavoriteTeams(int userId)
+    {
+        using var db = _factory.CreateDbContext();
+        return await db.Teams
+            .Where(t => t.UserId == userId && t.IsFavorite)
+            .OrderBy(t => t.Name)
+            .ToListAsync();
+    }
+
+    public async Task<List<GameDTO>> GetTeamSchedule(int userId, int teamId, int seasonId)
+    {
+        using var db = _factory.CreateDbContext();
+        
+        var items = await (from baseItem in db.BulletItems
+                           join detail in db.BulletGameDetails on baseItem.Id equals detail.BulletItemId
+                           where baseItem.UserId == userId 
+                                 && detail.SeasonId == seasonId
+                                 && (detail.HomeTeamId == teamId || detail.AwayTeamId == teamId)
+                           orderby baseItem.Date
+                           select new GameDTO 
+                           { 
+                               Id = baseItem.Id, 
+                               UserId = baseItem.UserId, 
+                               Type = baseItem.Type, 
+                               Category = baseItem.Category,
+                               Date = baseItem.Date, 
+                               Title = baseItem.Title, 
+                               Description = baseItem.Description, 
+                               ImgUrl = baseItem.ImgUrl, 
+                               LinkUrl = baseItem.LinkUrl, 
+                               OriginalStringId = baseItem.OriginalStringId,
+                               SortOrder = baseItem.SortOrder,
+                               Detail = detail
+                           }).ToListAsync();
+
+        return items;
+    }
 }
