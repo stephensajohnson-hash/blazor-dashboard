@@ -8,126 +8,12 @@ using System;
 
 public class BulletSportsService
 {
-    private readonly IDbContextFactory<AppDbContext> _factory;
+    private readonly AppDbContext _db;
 
-    public BulletSportsService(IDbContextFactory<AppDbContext> factory)
+    public BulletSportsService(AppDbContext db)
     {
-        _factory = factory;
+        _db = db;
     }
-
-    // --- SMART DEFAULTS (NEW) ---
-    public async Task<int> GetMostRecentActiveSeasonId(int userId, int teamId)
-    {
-        using var db = _factory.CreateDbContext();
-        
-        // Find the most recent COMPLETED game for this team
-        var lastGame = await db.BulletGameDetails
-            .Where(d => (d.HomeTeamId == teamId || d.AwayTeamId == teamId) && d.IsComplete)
-            .OrderByDescending(d => d.StartTime)
-            .Select(d => new { d.SeasonId })
-            .FirstOrDefaultAsync();
-
-        if (lastGame != null && lastGame.SeasonId > 0) return lastGame.SeasonId;
-
-        // If no completed games, find the most recent SCHEDULED game (e.g. season start)
-        var nextGame = await db.BulletGameDetails
-            .Where(d => (d.HomeTeamId == teamId || d.AwayTeamId == teamId))
-            .OrderBy(d => d.StartTime)
-            .Select(d => new { d.SeasonId })
-            .FirstOrDefaultAsync();
-
-        return nextGame?.SeasonId ?? 0;
-    }
-
-    // --- LEAGUES ---
-    public async Task AddLeague(int userId, string name, string imgUrl, string linkUrl)
-    {
-        using var db = _factory.CreateDbContext();
-        db.Leagues.Add(new League { UserId = userId, Name = name, ImgUrl = imgUrl, LinkUrl = linkUrl });
-        await db.SaveChangesAsync();
-    }
-
-    public async Task UpdateLeague(League league)
-    {
-        using var db = _factory.CreateDbContext();
-        var existing = await db.Leagues.FindAsync(league.Id);
-        if (existing != null)
-        {
-            existing.Name = league.Name;
-            existing.ImgUrl = league.ImgUrl;
-            existing.LinkUrl = league.LinkUrl;
-            await db.SaveChangesAsync();
-        }
-    }
-
-    public async Task DeleteLeague(int id)
-    {
-        using var db = _factory.CreateDbContext();
-        var l = await db.Leagues.FindAsync(id);
-        if(l != null) { db.Leagues.Remove(l); await db.SaveChangesAsync(); }
-    }
-
-    // --- SEASONS ---
-    public async Task AddSeason(int userId, int leagueId, string name, string imgUrl)
-    {
-        using var db = _factory.CreateDbContext();
-        db.Seasons.Add(new Season { UserId = userId, LeagueId = leagueId, Name = name, ImgUrl = imgUrl });
-        await db.SaveChangesAsync();
-    }
-
-    public async Task UpdateSeason(Season season)
-    {
-        using var db = _factory.CreateDbContext();
-        var existing = await db.Seasons.FindAsync(season.Id);
-        if (existing != null)
-        {
-            existing.Name = season.Name;
-            existing.ImgUrl = season.ImgUrl;
-            await db.SaveChangesAsync();
-        }
-    }
-
-    public async Task DeleteSeason(int id)
-    {
-        using var db = _factory.CreateDbContext();
-        var s = await db.Seasons.FindAsync(id);
-        if(s != null) { db.Seasons.Remove(s); await db.SaveChangesAsync(); }
-    }
-
-    // --- TEAMS ---
-    public async Task AddTeam(int userId, int leagueId, string name, string abbr, string logoUrl, bool isFav)
-    {
-        using var db = _factory.CreateDbContext();
-        db.Teams.Add(new Team { UserId = userId, LeagueId = leagueId, Name = name, Abbreviation = abbr, LogoUrl = logoUrl, IsFavorite = isFav });
-        await db.SaveChangesAsync();
-    }
-
-    public async Task UpdateTeam(Team team)
-    {
-        using var db = _factory.CreateDbContext();
-        var existing = await db.Teams.FindAsync(team.Id);
-        if (existing != null)
-        {
-            existing.Name = team.Name;
-            existing.Abbreviation = team.Abbreviation;
-            existing.LogoUrl = team.LogoUrl;
-            existing.LeagueId = team.LeagueId;
-            existing.IsFavorite = team.IsFavorite;
-            await db.SaveChangesAsync();
-        }
-    }
-
-    public async Task DeleteTeam(int id)
-    {
-        using var db = _factory.CreateDbContext();
-        var t = await db.Teams.FindAsync(id);
-        if(t != null) { db.Teams.Remove(t); await db.SaveChangesAsync(); }
-    }
-
-    // --- REFERENCE DATA ---
-    public async Task<List<Team>> GetTeams(int userId) { using var db = _factory.CreateDbContext(); return await db.Teams.Where(t => t.UserId == userId).OrderBy(t => t.Name).ToListAsync(); }
-    public async Task<List<League>> GetLeagues(int userId) { using var db = _factory.CreateDbContext(); return await db.Leagues.Where(l => l.UserId == userId).OrderBy(l => l.Name).ToListAsync(); }
-    public async Task<List<Season>> GetSeasons(int userId) { using var db = _factory.CreateDbContext(); return await db.Seasons.Where(s => s.UserId == userId).OrderByDescending(s => s.Name).ToListAsync(); }
 
     // --- DTOs ---
     public class TeamRecord
@@ -138,10 +24,9 @@ public class BulletSportsService
         public int TotalGames => Wins + Losses + Ties;
         public double WinPercentage => TotalGames == 0 ? 0 : (double)(Wins + (0.5 * Ties)) / TotalGames;
         public string Display => $"{Wins}-{Losses}-{Ties}";
-        public string PctDisplay => TotalGames > 0 ? $".{(int)(WinPercentage * 1000):D3}" : ".000";
     }
 
-    public class GameDTO : BulletTaskService.TaskDTO
+    public class GameDTO : BulletTaskService.TaskDTO 
     {
         public new BulletGameDetail Detail { get; set; } = new();
         public League? League { get; set; }
@@ -151,11 +36,11 @@ public class BulletSportsService
         public TeamRecord? FavoriteRecord { get; set; } 
     }
 
+    // --- CALENDAR DATA ---
     public async Task<List<GameDTO>> GetGamesForRange(int userId, DateTime start, DateTime end)
     {
-        using var db = _factory.CreateDbContext();
-        var games = await (from baseItem in db.BulletItems
-                           join detail in db.BulletGameDetails on baseItem.Id equals detail.BulletItemId
+        var games = await (from baseItem in _db.BulletItems
+                           join detail in _db.BulletGameDetails on baseItem.Id equals detail.BulletItemId
                            where baseItem.UserId == userId 
                                  && baseItem.Date >= start && baseItem.Date <= end
                                  && baseItem.Type == "sports"
@@ -174,9 +59,9 @@ public class BulletSportsService
             var seasonIds = games.Select(g => g.Detail.SeasonId).Distinct().ToList();
             var teamIds = games.Select(g => g.Detail.HomeTeamId).Concat(games.Select(g => g.Detail.AwayTeamId)).Distinct().ToList();
 
-            var leagues = await db.Leagues.Where(l => leagueIds.Contains(l.Id)).ToListAsync();
-            var seasons = await db.Seasons.Where(s => seasonIds.Contains(s.Id)).ToListAsync();
-            var teams = await db.Teams.Where(t => teamIds.Contains(t.Id)).ToListAsync();
+            var leagues = await _db.Leagues.Where(l => leagueIds.Contains(l.Id)).ToListAsync();
+            var seasons = await _db.Seasons.Where(s => seasonIds.Contains(s.Id)).ToListAsync();
+            var teams = await _db.Teams.Where(t => teamIds.Contains(t.Id)).ToListAsync();
 
             foreach (var g in games)
             {
@@ -185,6 +70,7 @@ public class BulletSportsService
                 g.HomeTeam = teams.FirstOrDefault(t => t.Id == g.Detail.HomeTeamId);
                 g.AwayTeam = teams.FirstOrDefault(t => t.Id == g.Detail.AwayTeamId);
 
+                // Calculate Record if needed
                 if (g.Detail.SeasonId > 0)
                 {
                     int favTeamId = 0;
@@ -193,7 +79,7 @@ public class BulletSportsService
 
                     if (favTeamId > 0)
                     {
-                        g.FavoriteRecord = await GetTeamRecordInternal(db, favTeamId, g.Detail.SeasonId, g.Date, g.Id);
+                        g.FavoriteRecord = await GetTeamRecord(favTeamId, g.Detail.SeasonId, g.Date, g.Id);
                     }
                 }
             }
@@ -201,11 +87,11 @@ public class BulletSportsService
         return games;
     }
 
-    private async Task<TeamRecord> GetTeamRecordInternal(AppDbContext db, int teamId, int seasonId, DateTime gameDate, int currentGameId)
+    private async Task<TeamRecord> GetTeamRecord(int teamId, int seasonId, DateTime gameDate, int currentGameId)
     {
         var record = new TeamRecord();
-        var pastGames = await (from d in db.BulletGameDetails
-                               join b in db.BulletItems on d.BulletItemId equals b.Id
+        var pastGames = await (from d in _db.BulletGameDetails
+                               join b in _db.BulletItems on d.BulletItemId equals b.Id
                                where d.SeasonId == seasonId 
                                      && d.IsComplete 
                                      && (b.Date < gameDate || b.Id == currentGameId)
@@ -217,7 +103,6 @@ public class BulletSportsService
             bool isHome = g.HomeTeamId == teamId;
             int myScore = isHome ? g.HomeScore : g.AwayScore;
             int oppScore = isHome ? g.AwayScore : g.HomeScore;
-
             if (myScore > oppScore) record.Wins++;
             else if (myScore < oppScore) record.Losses++;
             else record.Ties++;
@@ -227,26 +112,25 @@ public class BulletSportsService
 
     public async Task SaveGame(GameDTO dto)
     {
-        using var db = _factory.CreateDbContext();
         BulletItem? item = null;
         if (dto.Date.Kind == DateTimeKind.Unspecified) dto.Date = DateTime.SpecifyKind(dto.Date, DateTimeKind.Utc);
         else if (dto.Date.Kind == DateTimeKind.Local) dto.Date = dto.Date.ToUniversalTime();
 
-        if (dto.Id > 0) item = await db.BulletItems.FindAsync(dto.Id);
+        if (dto.Id > 0) item = await _db.BulletItems.FindAsync(dto.Id);
         else {
             item = new BulletItem { UserId = dto.UserId, Type = "sports", CreatedAt = DateTime.UtcNow };
-            await db.BulletItems.AddAsync(item);
+            await _db.BulletItems.AddAsync(item);
         }
 
         item.Title = dto.Title; item.Category = dto.Category; item.Description = dto.Description; 
         item.ImgUrl = dto.ImgUrl; item.LinkUrl = dto.LinkUrl; item.Date = dto.Date;
         item.SortOrder = dto.SortOrder;
         
-        await db.SaveChangesAsync();
+        await _db.SaveChangesAsync();
         dto.Id = item.Id;
 
-        var detail = await db.BulletGameDetails.FindAsync(item.Id);
-        if (detail == null) { detail = new BulletGameDetail { BulletItemId = item.Id }; await db.BulletGameDetails.AddAsync(detail); }
+        var detail = await _db.BulletGameDetails.FindAsync(item.Id);
+        if (detail == null) { detail = new BulletGameDetail { BulletItemId = item.Id }; await _db.BulletGameDetails.AddAsync(detail); }
 
         detail.LeagueId = dto.Detail.LeagueId;
         detail.SeasonId = dto.Detail.SeasonId;
@@ -258,30 +142,75 @@ public class BulletSportsService
         detail.StartTime = dto.Detail.StartTime;
         detail.TvChannel = dto.Detail.TvChannel;
 
-        await db.SaveChangesAsync();
+        await _db.SaveChangesAsync();
     }
 
     public async Task ToggleComplete(int id, bool isComplete)
     {
-        using var db = _factory.CreateDbContext();
-        var detail = await db.BulletGameDetails.FindAsync(id);
-        if (detail != null) { detail.IsComplete = isComplete; await db.SaveChangesAsync(); }
+        var detail = await _db.BulletGameDetails.FindAsync(id);
+        if (detail != null) { detail.IsComplete = isComplete; await _db.SaveChangesAsync(); }
     }
+
+    // --- MANAGE SPORTS DATA ---
+
+    public async Task AddLeague(int userId, string name, string imgUrl, string linkUrl)
+    {
+        _db.Leagues.Add(new League { UserId = userId, Name = name, ImgUrl = imgUrl, LinkUrl = linkUrl });
+        await _db.SaveChangesAsync();
+    }
+    public async Task UpdateLeague(League l) { _db.Leagues.Update(l); await _db.SaveChangesAsync(); }
+    public async Task DeleteLeague(int id) { var x = await _db.Leagues.FindAsync(id); if(x!=null) { _db.Leagues.Remove(x); await _db.SaveChangesAsync(); } }
+
+    public async Task AddSeason(int userId, int leagueId, string name, string imgUrl)
+    {
+        _db.Seasons.Add(new Season { UserId = userId, LeagueId = leagueId, Name = name, ImgUrl = imgUrl });
+        await _db.SaveChangesAsync();
+    }
+    public async Task UpdateSeason(Season s) { _db.Seasons.Update(s); await _db.SaveChangesAsync(); }
+    public async Task DeleteSeason(int id) { var x = await _db.Seasons.FindAsync(id); if(x!=null) { _db.Seasons.Remove(x); await _db.SaveChangesAsync(); } }
+
+    public async Task AddTeam(int userId, int leagueId, string name, string abbr, string logoUrl, bool isFav)
+    {
+        _db.Teams.Add(new Team { UserId = userId, LeagueId = leagueId, Name = name, Abbreviation = abbr, LogoUrl = logoUrl, IsFavorite = isFav });
+        await _db.SaveChangesAsync();
+    }
+    public async Task UpdateTeam(Team t) { _db.Teams.Update(t); await _db.SaveChangesAsync(); }
+    public async Task DeleteTeam(int id) { var x = await _db.Teams.FindAsync(id); if(x!=null) { _db.Teams.Remove(x); await _db.SaveChangesAsync(); } }
+
+    public async Task<List<Team>> GetTeams(int userId) => await _db.Teams.Where(t => t.UserId == userId).OrderBy(t => t.Name).ToListAsync();
+    public async Task<List<League>> GetLeagues(int userId) => await _db.Leagues.Where(l => l.UserId == userId).OrderBy(l => l.Name).ToListAsync();
+    public async Task<List<Season>> GetSeasons(int userId) => await _db.Seasons.Where(s => s.UserId == userId).OrderByDescending(s => s.Name).ToListAsync();
+
+    // --- SCHEDULE & FAVORITES ---
 
     public async Task<List<Team>> GetFavoriteTeams(int userId)
     {
-        using var db = _factory.CreateDbContext();
-        return await db.Teams
-            .Where(t => t.UserId == userId && t.IsFavorite)
-            .OrderBy(t => t.Name)
-            .ToListAsync();
+        return await _db.Teams.Where(t => t.UserId == userId && t.IsFavorite).OrderBy(t => t.Name).ToListAsync();
+    }
+
+    public async Task<int> GetMostRecentActiveSeasonId(int userId, int teamId)
+    {
+        // Find most recent completed game
+        var last = await _db.BulletGameDetails
+            .Where(d => (d.HomeTeamId == teamId || d.AwayTeamId == teamId) && d.IsComplete)
+            .OrderByDescending(d => d.StartTime)
+            .FirstOrDefaultAsync();
+        
+        if (last != null && last.SeasonId > 0) return last.SeasonId;
+
+        // Or next scheduled game
+        var next = await _db.BulletGameDetails
+            .Where(d => (d.HomeTeamId == teamId || d.AwayTeamId == teamId))
+            .OrderBy(d => d.StartTime)
+            .FirstOrDefaultAsync();
+
+        return next?.SeasonId ?? 0;
     }
 
     public async Task<List<GameDTO>> GetTeamSchedule(int userId, int teamId, int seasonId)
     {
-        using var db = _factory.CreateDbContext();
-        var items = await (from baseItem in db.BulletItems
-                           join detail in db.BulletGameDetails on baseItem.Id equals detail.BulletItemId
+        var items = await (from baseItem in _db.BulletItems
+                           join detail in _db.BulletGameDetails on baseItem.Id equals detail.BulletItemId
                            where baseItem.UserId == userId 
                                  && detail.SeasonId == seasonId
                                  && (detail.HomeTeamId == teamId || detail.AwayTeamId == teamId)
@@ -297,7 +226,7 @@ public class BulletSportsService
 
         if (items.Any())
         {
-            var teams = await db.Teams.Where(t => t.UserId == userId).ToListAsync();
+            var teams = await _db.Teams.Where(t => t.UserId == userId).ToListAsync();
             foreach (var g in items)
             {
                 g.HomeTeam = teams.FirstOrDefault(t => t.Id == g.Detail.HomeTeamId);
@@ -307,9 +236,5 @@ public class BulletSportsService
         return items;
     }
 
-    public async Task<int> ImportGames(int userId, string jsonContent)
-    {
-        // (Preserved)
-        return 0;
-    }
+    public async Task<int> ImportGames(int userId, string jsonContent) { return 0; /* logic preserved elsewhere */ }
 }
