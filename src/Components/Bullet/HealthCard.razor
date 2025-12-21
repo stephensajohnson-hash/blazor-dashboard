@@ -15,7 +15,7 @@
         </div>
         
         <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition">
-            <button @onclick="HandleClick" class="p-1 rounded bg-gray-700 hover:bg-blue-600 text-gray-300 hover:text-white border border-gray-600 shadow-md" title="Edit Daily Settings">⚙️</button>
+            <button @onclick="HandleClick" class="p-1 rounded bg-gray-700 hover:bg-blue-600 text-gray-300 hover:text-white border border-gray-600 shadow-md" title="Edit Daily Settings">✏️</button>
             <button @onclick="HandleDelete" class="p-1 rounded bg-gray-700 hover:bg-red-600 text-red-400 hover:text-white border border-gray-600 shadow-md" title="Delete Day">✕</button>
         </div>
     </div>
@@ -239,19 +239,24 @@
     [Parameter] public EventCallback<BulletTaskService.TaskDTO> OnClick { get; set; }
     [Parameter] public EventCallback<int> OnDelete { get; set; }
 
+    // UI States
     private bool isAddingMeal = false;
     private bool isAddingWorkout = false;
     
+    // Temp Objects
     private BulletHealthMeal tempMeal = new();
     private BulletHealthMeal? editingMeal = null;
     private BulletHealthWorkout tempWorkout = new();
     private BulletHealthWorkout? editingWorkout = null;
 
+    // Weekly Calorie Logic
     private double WeeklyDeficit = 0;
     private double WeeklyGoal => (User.WeeklyCalorieDeficitGoal > 0 ? User.WeeklyCalorieDeficitGoal : 3500);
 
     protected override async Task OnParametersSetAsync()
     {
+        double tempWeeklyDeficit = 0; // LOCAL variable to avoid race conditions
+
         using (var scope = ScopeFactory.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -274,8 +279,6 @@
 
             Console.WriteLine($"[HealthCard DEBUG] Found {weekItems.Count} items in range.");
 
-            WeeklyDeficit = 0;
-            
             if (weekItems.Any())
             {
                 foreach(var day in weekItems)
@@ -284,7 +287,7 @@
 
                     if (day.Id == Item.Id)
                     {
-                        // In-Memory Calculation for Current Card
+                        // In-Memory Calculation for Current Card (Fixes "Zero Food" Glitch)
                         double currentWeight = Item.HealthDetail?.WeightLbs ?? 0;
                         dayTDEE = (Item.HealthDetail?.CalculatedTDEE > 0) ? Item.HealthDetail.CalculatedTDEE : CalculateFallbackTDEE(currentWeight);
                         dayFood = Item.Meals.Sum(m => m.Calories);
@@ -305,12 +308,15 @@
                     }
 
                     double dayDeficit = (dayTDEE + dayBurn) - dayFood;
-                    WeeklyDeficit += dayDeficit;
-                    Console.WriteLine($"      Day Deficit: {dayDeficit} | Running Total: {WeeklyDeficit}");
+                    tempWeeklyDeficit += dayDeficit; // Accumulate locally
+                    Console.WriteLine($"      Day Deficit: {dayDeficit} | Running Total: {tempWeeklyDeficit}");
                 }
             }
-            Console.WriteLine($"[HealthCard DEBUG] FINAL WEEKLY DEFICIT: {WeeklyDeficit}");
+            Console.WriteLine($"[HealthCard DEBUG] FINAL WEEKLY DEFICIT: {tempWeeklyDeficit}");
         }
+        
+        // Final atomic assignment to update UI
+        WeeklyDeficit = tempWeeklyDeficit;
         StateHasChanged();
     }
 
