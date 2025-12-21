@@ -56,9 +56,9 @@
                     <a href="/settings" class="block w-full text-left text-xs text-gray-300 hover:text-white hover:bg-gray-700 p-2 rounded mb-1 transition">⚙️ Settings</a>
                     <a href="/manage-sports" class="block w-full text-left text-xs text-yellow-400 hover:bg-gray-700 p-2 rounded mb-1 transition">🏆 Manage Sports</a>
                     <button @onclick="RunSeasonPatch" class="bg-red-600 text-white text-xs font-bold px-3 py-1 rounded shadow-lg hover:bg-red-500 transition">
-    🛠️ FIX SEASONS
-</button>
-<span class="text-xs text-green-400 ml-2">@patchStatus</span>
+                        🛠️ FIX SEASONS
+                    </button>
+                    <span class="text-xs text-green-400 ml-2">@patchStatus</span>
                     <a href="/manage-data" class="block w-full text-left text-xs text-blue-400 hover:bg-gray-700 p-2 rounded mb-1 transition">💾 Manage Data</a>
                     <button @onclick="Logout" class="w-full text-left text-xs text-red-400 hover:bg-gray-700 p-2 rounded transition">Logout</button>
                 </div>
@@ -76,10 +76,10 @@
                         <div class="p-3 bg-gray-800/80 border-b border-gray-700 flex justify-between items-center sticky top-0 backdrop-blur z-10">
                             <span class="font-bold text-@cat.Item3-400 uppercase tracking-wider text-sm">@cat.Item1</span>
                             
-                            @{
-                                string addType = cat.Item2 == "health" ? "health" : "task";
-                            }
-                            <button @onclick='async () => await OpenEditor(cat.Item2, addType, viewDate)' class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition">＋ Add</button>
+                            <button @onclick='async () => await OpenEditor(cat.Item2, cat.Item2 == "health" ? "health" : "task", viewDate)' 
+                                    class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition">
+                                ＋ Add
+                            </button>
                         </div>
                         <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide">
                             @if(isLoading)
@@ -328,7 +328,6 @@
     private BulletHabitService.HabitDTO GetHabit(int id) => loadedHabits.FirstOrDefault(h => h.Id == id) ?? new();
     private BulletSportsService.GameDTO GetGame(int id) => loadedGames.FirstOrDefault(g => g.Id == id) ?? new();
 
-    // === EDITING METHODS - MANUAL COPY TO PREVENT SERIALIZATION ISSUES ===
     private void OpenMediaEdit(BulletTaskService.TaskDTO t) { editingItem = CreateCopy(t); }
     private void OpenHolidayEdit(BulletTaskService.TaskDTO t) { editingItem = CreateCopy(t); }
     private void OpenBirthdayEdit(BulletTaskService.TaskDTO t) { editingItem = CreateCopy(t); }
@@ -339,7 +338,6 @@
     private async Task OpenSportsEdit(BulletTaskService.TaskDTO t) 
     { 
         editingItem = CreateCopy(t);
-        // Ensure robust detail copy if missing (from previous fix)
         if(editingItem.SportsDetail == null || editingItem.SportsDetail.LeagueId == 0)
         {
             try {
@@ -381,9 +379,12 @@
         }
     }
 
-    // Updated OpenEditor to Async to handle Weight Fetch
+    // UPDATED: Logic to Pre-fill Weight & Fix "Zero Calorie" Deficit Bug
     private async Task OpenEditor(string category, string type, DateTime date) 
     { 
+        // 1. Log for debugging
+        Console.WriteLine($"[BulletCalendar] OpenEditor called: Cat={category}, Type={type}, Date={date}");
+
         var newItem = new BulletTaskService.TaskDTO { 
             UserId = userId, Category = category, Type = type, Date = date,
             Detail = new(), MeetingDetail = new(), HabitDetail = new(), MediaDetail = new(), 
@@ -392,24 +393,39 @@
             Meals = new(), Workouts = new()
         }; 
 
+        // 2. Health Logic
         if (type == "health")
         {
-            // Pre-fetch last weight to fix calorie jump issue
+            // Explicitly ensure detail object exists
+            if(newItem.HealthDetail == null) newItem.HealthDetail = new BulletHealthDetail();
+
             try {
+                // Fetch last health item to get weight
                 var lastHealth = await Db.BulletHealthDetails
                     .Include(d => d.BulletItem)
                     .Where(d => d.BulletItem.UserId == userId && d.BulletItem.Type == "health" && d.BulletItem.Date < date)
                     .OrderByDescending(d => d.BulletItem.Date)
                     .FirstOrDefaultAsync();
                 
-                if(lastHealth != null) 
+                if(lastHealth != null && lastHealth.WeightLbs > 0) 
                 {
                     newItem.HealthDetail.WeightLbs = lastHealth.WeightLbs;
+                    Console.WriteLine($"[BulletCalendar] Found previous weight: {lastHealth.WeightLbs}");
                 }
-            } catch { /* Fail silently, weight will default to 0 */ }
+                else
+                {
+                    // Fallback to User Profile weight if no previous record exists
+                    double userWeight = currentUser?.WeightLbs > 0 ? currentUser.WeightLbs : 200;
+                    newItem.HealthDetail.WeightLbs = userWeight;
+                    Console.WriteLine($"[BulletCalendar] No previous weight found. Using User Profile/Default: {userWeight}");
+                }
+            } catch (Exception ex) { 
+                Console.WriteLine($"[BulletCalendar] Error fetching weight: {ex.Message}");
+            }
         }
 
         editingItem = newItem;
+        StateHasChanged(); // Force UI to reflect pre-filled data
     }
 
     private BulletTaskService.TaskDTO CreateCopy(BulletTaskService.TaskDTO t)
