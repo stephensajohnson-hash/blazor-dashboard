@@ -261,7 +261,9 @@
             var startOfWeek = Item.Date.AddDays(-1 * diff).Date;
             var endOfRange = Item.Date.Date.AddDays(1).AddSeconds(-1); 
 
-            Logger.LogWarning($"[HealthCard DEBUG] ID {Item.Id} ({Item.Date.ToShortDateString()}): Calculating Deficit for range {startOfWeek.ToShortDateString()} to {endOfRange.ToShortDateString()}");
+            // LOGGING START
+            Console.WriteLine($"[HealthCard DEBUG] ID {Item.Id} Date {Item.Date.ToShortDateString()}");
+            Console.WriteLine($"[HealthCard DEBUG] Range: {startOfWeek} to {endOfRange}");
 
             // 2. Fetch Items from DB
             var weekItems = await db.BulletItems
@@ -269,6 +271,8 @@
                 .Select(i => new { i.Id, i.Date })
                 .OrderBy(i => i.Date)
                 .ToListAsync();
+
+            Console.WriteLine($"[HealthCard DEBUG] Found {weekItems.Count} items in range.");
 
             WeeklyDeficit = 0;
             
@@ -286,7 +290,7 @@
                         dayFood = Item.Meals.Sum(m => m.Calories);
                         dayBurn = Item.Workouts.Sum(w => w.CaloriesBurned);
                         
-                        Logger.LogWarning($"   -> TODAY ({day.Date.DayOfWeek}): Using In-Memory Data. Weight={currentWeight}, TDEE={dayTDEE}, Food={dayFood}");
+                        Console.WriteLine($"   -> TODAY ({day.Date.DayOfWeek}): In-Memory. ID={day.Id}. Weight={currentWeight}. TDEE={dayTDEE} - Food={dayFood} + Burn={dayBurn}");
                     }
                     else
                     {
@@ -297,14 +301,15 @@
                         dayFood = await db.BulletHealthMeals.Where(m => m.BulletItemId == day.Id).SumAsync(m => m.Calories);
                         dayBurn = await db.BulletHealthWorkouts.Where(w => w.BulletItemId == day.Id).SumAsync(w => w.CaloriesBurned);
                         
-                        Logger.LogWarning($"   -> PAST ({day.Date.DayOfWeek}): Using DB Data. Weight={dbWeight}, TDEE={dayTDEE}, Food={dayFood}");
+                        Console.WriteLine($"   -> PAST ({day.Date.DayOfWeek}): DB Fetch. ID={day.Id}. Weight={dbWeight}. TDEE={dayTDEE} - Food={dayFood} + Burn={dayBurn}");
                     }
 
                     double dayDeficit = (dayTDEE + dayBurn) - dayFood;
                     WeeklyDeficit += dayDeficit;
+                    Console.WriteLine($"      Day Deficit: {dayDeficit} | Running Total: {WeeklyDeficit}");
                 }
             }
-            Logger.LogWarning($"[HealthCard DEBUG] Final Weekly Deficit: {WeeklyDeficit}");
+            Console.WriteLine($"[HealthCard DEBUG] FINAL WEEKLY DEFICIT: {WeeklyDeficit}");
         }
         StateHasChanged();
     }
@@ -323,6 +328,7 @@
         return bmr * 1.2; 
     }
 
+    // --- DAILY CALCULATIONS ---
     private double TotalIn => Item.Meals.Sum(m => m.Calories);
     private double Burned => Item.Workouts.Sum(w => w.CaloriesBurned);
     
@@ -342,12 +348,14 @@
     private double RemainingTDEE => TDEE - NetCalories;
     private double PercentGoal => GoalLimit > 0 ? (NetCalories / GoalLimit) * 100 : 0;
 
+    // Macros
     private double TotalProtein => Item.Meals.Sum(m => m.Protein);
     private double TotalCarbs => Item.Meals.Sum(m => m.Carbs);
     private double TotalFat => Item.Meals.Sum(m => m.Fat);
     private double TotalFiber => Item.Meals.Sum(m => m.Fiber);
     private double TotalNetCarbs => TotalCarbs - TotalFiber;
 
+    // --- MEAL ACTIONS ---
     private void ToggleMealForm() { isAddingMeal = !isAddingMeal; if(!isAddingMeal) { tempMeal = new(); editingMeal = null; } }
     
     private void EditMeal(BulletHealthMeal meal) 
@@ -397,6 +405,7 @@
 
     private async Task DeleteMeal(BulletHealthMeal meal) { Item.Meals.Remove(meal); await SaveAll(); }
 
+    // --- WORKOUT ACTIONS ---
     private void ToggleWorkoutForm() { isAddingWorkout = !isAddingWorkout; if(!isAddingWorkout) { tempWorkout = new(); editingWorkout = null; } }
     private async Task SaveWorkout() { if (string.IsNullOrWhiteSpace(tempWorkout.Name)) return; if (editingWorkout != null) { editingWorkout.Name = tempWorkout.Name; editingWorkout.CaloriesBurned = tempWorkout.CaloriesBurned; editingWorkout.TimeSpentMinutes = tempWorkout.TimeSpentMinutes; } else { tempWorkout.BulletItemId = Item.Id; Item.Workouts.Add(tempWorkout); } await SaveAll(); tempWorkout = new(); editingWorkout = null; isAddingWorkout = false; }
     private async Task DeleteWorkout(BulletHealthWorkout wo) { Item.Workouts.Remove(wo); await SaveAll(); }
