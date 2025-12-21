@@ -127,16 +127,17 @@ public class BulletMediaService
         await db.SaveChangesAsync();
     }
 
-    // RESTORED METHOD FOR IMPORT
-    public async Task ImportFromOldJson(int userId, string jsonContent)
+    // UPDATED: Now returns int (count of imported items)
+    public async Task<int> ImportFromOldJson(int userId, string jsonContent)
     {
         using var scope = _factory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        int count = 0;
 
         try
         {
             var oldMedia = JsonSerializer.Deserialize<List<OldMediaItem>>(jsonContent);
-            if (oldMedia == null) return;
+            if (oldMedia == null) return 0;
 
             foreach (var m in oldMedia)
             {
@@ -166,13 +167,15 @@ public class BulletMediaService
                     Tags = m.Tags ?? ""
                 };
                 db.BulletMediaDetails.Add(detail);
+                count++;
             }
             await db.SaveChangesAsync();
+            return count;
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Import Error: {ex.Message}");
-            throw; // Let UI handle it
+            throw; 
         }
     }
 
