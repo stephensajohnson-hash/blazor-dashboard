@@ -126,4 +126,64 @@ public class BulletMediaService
 
         await db.SaveChangesAsync();
     }
+
+    // RESTORED METHOD FOR IMPORT
+    public async Task ImportFromOldJson(int userId, string jsonContent)
+    {
+        using var scope = _factory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        try
+        {
+            var oldMedia = JsonSerializer.Deserialize<List<OldMediaItem>>(jsonContent);
+            if (oldMedia == null) return;
+
+            foreach (var m in oldMedia)
+            {
+                // Check dupes
+                var exists = await db.BulletItems.AnyAsync(i => i.UserId == userId && i.Type == "media" && i.Title == m.Title && i.Date.Date == m.Date.Date);
+                if (exists) continue;
+
+                var item = new BulletItem
+                {
+                    UserId = userId,
+                    Type = "media",
+                    Category = "personal",
+                    Date = DateTime.SpecifyKind(m.Date, DateTimeKind.Utc),
+                    Title = m.Title ?? "",
+                    Description = m.Review ?? "",
+                    ImgUrl = m.ImgUrl ?? "",
+                    CreatedAt = DateTime.UtcNow
+                };
+                db.BulletItems.Add(item);
+                await db.SaveChangesAsync();
+
+                var detail = new BulletMediaDetail
+                {
+                    BulletItemId = item.Id,
+                    Rating = m.Rating,
+                    ReleaseYear = m.Year,
+                    Tags = m.Tags ?? ""
+                };
+                db.BulletMediaDetails.Add(detail);
+            }
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Import Error: {ex.Message}");
+            throw; // Let UI handle it
+        }
+    }
+
+    private class OldMediaItem
+    {
+        public DateTime Date { get; set; }
+        public string? Title { get; set; }
+        public string? Review { get; set; }
+        public int Rating { get; set; }
+        public int Year { get; set; }
+        public string? Tags { get; set; }
+        public string? ImgUrl { get; set; }
+    }
 }
