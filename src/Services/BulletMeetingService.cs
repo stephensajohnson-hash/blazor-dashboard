@@ -15,7 +15,7 @@ public class BulletMeetingService
         _factory = factory;
     }
 
-    // Inheriting from TaskDTO ensures 'MeetingDetail' property is available and named consistently
+    // Inherit from TaskDTO to share property structure with Calendar
     public class MeetingDTO : BulletTaskService.TaskDTO { }
 
     public async Task<List<MeetingDTO>> GetMeetingsForRange(int userId, DateTime start, DateTime end)
@@ -40,7 +40,7 @@ public class BulletMeetingService
                                LinkUrl = baseItem.LinkUrl, 
                                OriginalStringId = baseItem.OriginalStringId,
                                SortOrder = baseItem.SortOrder,
-                               MeetingDetail = detail // Correctly map to the inherited property
+                               MeetingDetail = detail // Populate the specific Meeting property
                            }).ToListAsync();
 
         if (items.Any())
@@ -60,7 +60,7 @@ public class BulletMeetingService
         if (dto.Date.Kind == DateTimeKind.Unspecified) dto.Date = DateTime.SpecifyKind(dto.Date, DateTimeKind.Utc);
         else if (dto.Date.Kind == DateTimeKind.Local) dto.Date = dto.Date.ToUniversalTime();
 
-        // Use the inherited MeetingDetail property
+        // Use the MeetingDetail property
         var detailSource = dto.MeetingDetail ?? new BulletMeetingDetail();
 
         if (detailSource.StartTime.HasValue)
@@ -96,12 +96,12 @@ public class BulletMeetingService
             await db.BulletMeetingDetails.AddAsync(detail); 
         }
 
-        // --- FIELD MAPPING ---
+        // --- MAP FIELDS ---
         detail.StartTime = detailSource.StartTime;
         detail.DurationMinutes = detailSource.DurationMinutes;
         detail.ActualDurationMinutes = detailSource.ActualDurationMinutes;
-        detail.IsCompleted = detailSource.IsCompleted; // This now correctly captures the checkbox state
-        // ---------------------
+        detail.IsCompleted = detailSource.IsCompleted; // Persist Checkbox State
+        // ------------------
 
         await db.SaveChangesAsync();
 

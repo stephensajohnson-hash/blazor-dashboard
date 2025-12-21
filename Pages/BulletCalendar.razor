@@ -256,8 +256,9 @@
             var tasks = await TaskService.GetTasksForRange(userId, start, end);
             loadedItems.AddRange(tasks);
             
+            // FIXED: AddRange because MeetingDTO now correctly inherits TaskDTO
             var meetings = await MeetingService.GetMeetingsForRange(userId, start, end);
-            foreach (var m in meetings) { loadedItems.Add(new BulletTaskService.TaskDTO { Id = m.Id, UserId = m.UserId, Type = "meeting", Category = m.Category, Date = m.Date, Title = m.Title, Description = m.Description, ImgUrl = m.ImgUrl, LinkUrl = m.LinkUrl, OriginalStringId = m.OriginalStringId, MeetingDetail = m.Detail, Notes = m.Notes, SortOrder = m.SortOrder }); }
+            loadedItems.AddRange(meetings);
 
             loadedHabits = await HabitService.GetHabits(userId);
             var relevantHabits = loadedHabits.Where(h => h.Date.Date >= start.Date && h.Date.Date <= end.Date).ToList();
@@ -379,11 +380,8 @@
         }
     }
 
-    // UPDATED: Logic to Pre-fill Weight with Safe Fallback
     private async Task OpenEditor(string category, string type, DateTime date) 
     { 
-        Console.WriteLine($"[BulletCalendar] OpenEditor called: Cat={category}, Type={type}, Date={date}");
-
         var newItem = new BulletTaskService.TaskDTO { 
             UserId = userId, Category = category, Type = type, Date = date,
             Detail = new(), MeetingDetail = new(), HabitDetail = new(), MediaDetail = new(), 
@@ -406,21 +404,15 @@
                 if(lastHealth != null && lastHealth.WeightLbs > 0) 
                 {
                     newItem.HealthDetail.WeightLbs = lastHealth.WeightLbs;
-                    Console.WriteLine($"[BulletCalendar] Found previous weight: {lastHealth.WeightLbs}");
                 }
                 else
                 {
-                    // SAFE FALLBACK: Hardcoded 200 (since User Profile has no weight property)
                     newItem.HealthDetail.WeightLbs = 200; 
-                    Console.WriteLine($"[BulletCalendar] No previous weight found. Using Default: 200");
                 }
-            } catch (Exception ex) { 
-                Console.WriteLine($"[BulletCalendar] Error fetching weight: {ex.Message}");
-            }
+            } catch (Exception ex) { Console.WriteLine(ex); }
         }
 
         editingItem = newItem;
-        StateHasChanged();
     }
 
     private BulletTaskService.TaskDTO CreateCopy(BulletTaskService.TaskDTO t)
@@ -475,31 +467,18 @@
     }
 
     private async Task ToggleComplete(BulletTaskService.TaskDTO t) { t.Detail.IsCompleted = !t.Detail.IsCompleted; await TaskService.ToggleComplete(t.Id, t.Detail.IsCompleted); }
-    
-    private async Task ToggleMeetingComplete(BulletTaskService.TaskDTO t) 
-    { 
+    private async Task ToggleMeetingComplete(BulletTaskService.TaskDTO t) { 
         if(t.MeetingDetail != null) 
         { 
-            // Correctly map to MeetingDTO which now inherits from TaskDTO
+            t.MeetingDetail.IsCompleted = !t.MeetingDetail.IsCompleted; // Update local
             var m = new BulletMeetingService.MeetingDTO { 
-                Id = t.Id, 
-                UserId = t.UserId, 
-                Type = "meeting", 
-                Category = t.Category, 
-                Date = t.Date, 
-                Title = t.Title, 
-                Description = t.Description, 
-                ImgUrl = t.ImgUrl, 
-                LinkUrl = t.LinkUrl, 
-                OriginalStringId = t.OriginalStringId, 
-                MeetingDetail = t.MeetingDetail, // Mapped to the correct property
-                Notes = t.Notes, 
-                SortOrder = t.SortOrder 
+                Id = t.Id, UserId = t.UserId, Type = "meeting", Category = t.Category, Date = t.Date, Title = t.Title, 
+                Description = t.Description, ImgUrl = t.ImgUrl, LinkUrl = t.LinkUrl, OriginalStringId = t.OriginalStringId, 
+                MeetingDetail = t.MeetingDetail, Notes = t.Notes, SortOrder = t.SortOrder 
             }; 
-            await MeetingService.SaveMeeting(m); 
+            await MeetingService.SaveMeeting(m); // Full save ensures persistence
         } 
     }
-
     private async Task SaveHabitDirectly(BulletHabitService.HabitDTO h) { await HabitService.SaveHabit(h); }
 
     private async Task MoveItemUp(int id) => await ReorderItem(id, -1);
@@ -533,7 +512,7 @@
     private async Task SaveItem() { 
         if(editingItem != null) {
             if (editingItem.Type == "meeting") { 
-                var m = new BulletMeetingService.MeetingDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "meeting", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, Detail = editingItem.MeetingDetail ?? new(), Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; 
+                var m = new BulletMeetingService.MeetingDTO { Id = editingItem.Id, UserId = editingItem.UserId, Type = "meeting", Category = editingItem.Category, Date = editingItem.Date, Title = editingItem.Title, Description = editingItem.Description, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, OriginalStringId = editingItem.OriginalStringId, MeetingDetail = editingItem.MeetingDetail ?? new(), Notes = editingItem.Notes, SortOrder = editingItem.SortOrder }; 
                 await MeetingService.SaveMeeting(m); 
             }
             else if (editingItem.Type == "habit") { 
