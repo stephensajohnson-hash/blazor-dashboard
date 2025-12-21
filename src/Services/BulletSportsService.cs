@@ -15,6 +15,27 @@ public class BulletSportsService
         _factory = factory;
     }
 
+    // --- LEAGUE MANAGEMENT (NEW) ---
+    public async Task AddLeague(int userId, string name)
+    {
+        using var db = _factory.CreateDbContext();
+        db.Leagues.Add(new League { UserId = userId, Name = name });
+        await db.SaveChangesAsync();
+    }
+
+    public async Task DeleteLeague(int id)
+    {
+        using var db = _factory.CreateDbContext();
+        var l = await db.Leagues.FindAsync(id);
+        if(l != null) { db.Leagues.Remove(l); await db.SaveChangesAsync(); }
+    }
+
+    // --- REFERENCE DATA ---
+    public async Task<List<Team>> GetTeams(int userId) { using var db = _factory.CreateDbContext(); return await db.Teams.Where(t => t.UserId == userId).OrderBy(t => t.Name).ToListAsync(); }
+    public async Task<List<League>> GetLeagues(int userId) { using var db = _factory.CreateDbContext(); return await db.Leagues.Where(l => l.UserId == userId).OrderBy(l => l.Name).ToListAsync(); }
+    public async Task<List<Season>> GetSeasons(int userId) { using var db = _factory.CreateDbContext(); return await db.Seasons.Where(s => s.UserId == userId).OrderByDescending(s => s.Name).ToListAsync(); }
+
+    // --- DTOs ---
     public class TeamRecord
     {
         public int Wins { get; set; }
@@ -28,7 +49,6 @@ public class BulletSportsService
 
     public class GameDTO : BulletTaskService.TaskDTO
     {
-        // Added 'new' to fix warning about hiding TaskDTO.Detail
         public new BulletGameDetail Detail { get; set; } = new();
         public League? League { get; set; }
         public Season? Season { get; set; }
@@ -37,6 +57,7 @@ public class BulletSportsService
         public TeamRecord? FavoriteRecord { get; set; } 
     }
 
+    // --- CALENDAR METHODS ---
     public async Task<List<GameDTO>> GetGamesForRange(int userId, DateTime start, DateTime end)
     {
         using var db = _factory.CreateDbContext();
@@ -157,16 +178,12 @@ public class BulletSportsService
     public async Task<List<Team>> GetFavoriteTeams(int userId)
     {
         using var db = _factory.CreateDbContext();
-        return await db.Teams
-            .Where(t => t.UserId == userId && t.IsFavorite)
-            .OrderBy(t => t.Name)
-            .ToListAsync();
+        return await db.Teams.Where(t => t.UserId == userId && t.IsFavorite).OrderBy(t => t.Name).ToListAsync();
     }
 
     public async Task<List<GameDTO>> GetTeamSchedule(int userId, int teamId, int seasonId)
     {
         using var db = _factory.CreateDbContext();
-        
         var items = await (from baseItem in db.BulletItems
                            join detail in db.BulletGameDetails on baseItem.Id equals detail.BulletItemId
                            where baseItem.UserId == userId 
@@ -194,18 +211,14 @@ public class BulletSportsService
         return items;
     }
 
-    // --- REFERENCE DATA ---
-    public async Task<List<Team>> GetTeams(int userId) { using var db = _factory.CreateDbContext(); return await db.Teams.Where(t => t.UserId == userId).OrderBy(t => t.Name).ToListAsync(); }
-    public async Task<List<League>> GetLeagues(int userId) { using var db = _factory.CreateDbContext(); return await db.Leagues.Where(l => l.UserId == userId).OrderBy(l => l.Name).ToListAsync(); }
-    public async Task<List<Season>> GetSeasons(int userId) { using var db = _factory.CreateDbContext(); return await db.Seasons.Where(s => s.UserId == userId).OrderByDescending(s => s.Name).ToListAsync(); }
-
-    // --- IMPORT LOGIC ---
+    // --- IMPORT ---
     public async Task<int> ImportGames(int userId, string jsonContent)
     {
         using var db = _factory.CreateDbContext();
         int count = 0;
         using var doc = JsonDocument.Parse(jsonContent);
         var root = doc.RootElement;
+        
         JsonElement items = root;
         if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("items", out var i)) items = i;
 

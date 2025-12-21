@@ -3,7 +3,6 @@
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.JSInterop
 @using Microsoft.AspNetCore.Components.Web 
-@inject AppDbContext Db
 @inject BulletSportsService SportsService
 @inject IJSRuntime JS
 
@@ -65,6 +64,10 @@
                 }
             </div>
         }
+        
+        <div class="mt-8 pt-4 border-t border-gray-800 text-[10px] text-gray-600 font-mono">
+            DEBUG: UserID=@userId | Leagues Loaded=@leagues.Count
+        </div>
     </div>
 </div>
 
@@ -115,10 +118,8 @@
         isLoading = true;
         StateHasChanged();
 
-        leagues = await Db.Leagues
-            .Where(l => l.UserId == userId)
-            .OrderBy(l => l.Name)
-            .ToListAsync();
+        // Use SERVICE instead of direct Db context
+        leagues = await SportsService.GetLeagues(userId);
 
         isLoading = false;
         StateHasChanged();
@@ -128,14 +129,7 @@
     {
         if (string.IsNullOrWhiteSpace(newLeagueName) || userId == 0) return;
 
-        var newLeague = new League 
-        { 
-            UserId = userId, 
-            Name = newLeagueName.Trim() 
-        };
-
-        Db.Leagues.Add(newLeague);
-        await Db.SaveChangesAsync();
+        await SportsService.AddLeague(userId, newLeagueName.Trim());
 
         newLeagueName = "";
         await LoadLeagues();
@@ -143,12 +137,7 @@
 
     private async Task DeleteLeague(int id)
     {
-        var league = await Db.Leagues.FindAsync(id);
-        if (league != null)
-        {
-            Db.Leagues.Remove(league);
-            await Db.SaveChangesAsync();
-            await LoadLeagues();
-        }
+        await SportsService.DeleteLeague(id);
+        await LoadLeagues();
     }
 }
