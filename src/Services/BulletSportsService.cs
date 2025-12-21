@@ -15,6 +15,30 @@ public class BulletSportsService
         _factory = factory;
     }
 
+    // --- SMART DEFAULTS (NEW) ---
+    public async Task<int> GetMostRecentActiveSeasonId(int userId, int teamId)
+    {
+        using var db = _factory.CreateDbContext();
+        
+        // Find the most recent COMPLETED game for this team
+        var lastGame = await db.BulletGameDetails
+            .Where(d => (d.HomeTeamId == teamId || d.AwayTeamId == teamId) && d.IsComplete)
+            .OrderByDescending(d => d.StartTime)
+            .Select(d => new { d.SeasonId })
+            .FirstOrDefaultAsync();
+
+        if (lastGame != null && lastGame.SeasonId > 0) return lastGame.SeasonId;
+
+        // If no completed games, find the most recent SCHEDULED game (e.g. season start)
+        var nextGame = await db.BulletGameDetails
+            .Where(d => (d.HomeTeamId == teamId || d.AwayTeamId == teamId))
+            .OrderBy(d => d.StartTime)
+            .Select(d => new { d.SeasonId })
+            .FirstOrDefaultAsync();
+
+        return nextGame?.SeasonId ?? 0;
+    }
+
     // --- LEAGUES ---
     public async Task AddLeague(int userId, string name, string imgUrl, string linkUrl)
     {
@@ -70,7 +94,7 @@ public class BulletSportsService
         if(s != null) { db.Seasons.Remove(s); await db.SaveChangesAsync(); }
     }
 
-    // --- TEAMS (NEW) ---
+    // --- TEAMS ---
     public async Task AddTeam(int userId, int leagueId, string name, string abbr, string logoUrl, bool isFav)
     {
         using var db = _factory.CreateDbContext();
@@ -105,7 +129,7 @@ public class BulletSportsService
     public async Task<List<League>> GetLeagues(int userId) { using var db = _factory.CreateDbContext(); return await db.Leagues.Where(l => l.UserId == userId).OrderBy(l => l.Name).ToListAsync(); }
     public async Task<List<Season>> GetSeasons(int userId) { using var db = _factory.CreateDbContext(); return await db.Seasons.Where(s => s.UserId == userId).OrderByDescending(s => s.Name).ToListAsync(); }
 
-    // --- DTOs & Calendar Helpers (Preserved) ---
+    // --- DTOs ---
     public class TeamRecord
     {
         public int Wins { get; set; }
@@ -285,7 +309,7 @@ public class BulletSportsService
 
     public async Task<int> ImportGames(int userId, string jsonContent)
     {
-        // (Import logic preserved)
+        // (Preserved)
         return 0;
     }
 }
