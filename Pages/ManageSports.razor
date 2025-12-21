@@ -100,30 +100,55 @@
     @if(activeTab == "teams")
     {
         <div class="max-w-3xl">
-            <div class="flex justify-end mb-4">
+            <div class="flex justify-between items-center mb-4">
+                <div class="w-1/2">
+                    <select @bind="filterLeagueId" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-500 outline-none shadow-sm">
+                        @foreach (var l in leagues)
+                        {
+                            <option value="@l.Id">@l.Name</option>
+                        }
+                    </select>
+                </div>
+
                 <button @onclick="OpenAddTeam" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold shadow transition">+ Add Team</button>
             </div>
 
             @if (isLoading) { <div class="text-gray-500 italic animate-pulse">Loading teams...</div> }
+            else if (filterLeagueId == 0) { <div class="text-gray-500 italic p-4 text-center border border-gray-800 rounded-lg">No leagues available. Add a league first.</div> }
             else
             {
                 <div class="grid gap-2">
-                    @foreach(var t in teams)
+                    @{
+                        // Filter by League -> Sort by Favorite -> Sort by Name
+                        var filteredTeams = teams
+                            .Where(t => t.LeagueId == filterLeagueId)
+                            .OrderByDescending(t => t.IsFavorite)
+                            .ThenBy(t => t.Name)
+                            .ToList();
+                    }
+
+                    @if(!filteredTeams.Any())
                     {
-                        var lg = leagues.FirstOrDefault(l => l.Id == t.LeagueId);
-                        <div class="flex justify-between items-center bg-gray-800 p-2 px-3 rounded border border-gray-700 hover:border-gray-500 transition">
+                        <div class="text-gray-500 italic p-4 text-center border border-gray-800 rounded-lg">No teams in this league.</div>
+                    }
+
+                    @foreach(var t in filteredTeams)
+                    {
+                        <div class="flex justify-between items-center bg-gray-800 p-2 px-3 rounded border @(t.IsFavorite ? "border-yellow-500/30 bg-yellow-900/10" : "border-gray-700") hover:border-gray-500 transition">
                             <div class="flex items-center gap-3">
                                 <div class="w-8 h-8 flex items-center justify-center bg-black/40 rounded p-1">
                                     @if(!string.IsNullOrEmpty(t.LogoUrl)) { <img src="@t.LogoUrl" class="w-full h-full object-contain" /> }
                                     else { <span class="text-xs">🛡️</span> }
                                 </div>
                                 <div>
-                                    <div class="font-bold text-sm text-white">@t.Name <span class="text-gray-500 text-xs ml-1">(@t.Abbreviation)</span></div>
-                                    <div class="text-[10px] text-gray-400">@(lg?.Name ?? "No League")</div>
+                                    <div class="font-bold text-sm text-white flex items-center gap-2">
+                                        @t.Name 
+                                        <span class="text-gray-500 text-xs font-normal">(@t.Abbreviation)</span>
+                                        @if(t.IsFavorite) { <span class="text-yellow-500 text-xs">⭐</span> }
+                                    </div>
                                 </div>
                             </div>
                             <div class="flex items-center gap-3">
-                                @if(t.IsFavorite) { <span class="text-yellow-500 text-lg">⭐</span> }
                                 <button @onclick="() => OpenEditTeam(t)" class="text-gray-400 hover:text-white text-xs p-1">✏️</button>
                                 <button @onclick="() => DeleteTeam(t.Id)" class="text-gray-600 hover:text-red-500 text-sm font-bold px-1">✕</button>
                             </div>
@@ -225,6 +250,7 @@
     private int userId = 0;
     private bool isLoading = true;
     private string activeTab = "leagues";
+    private int filterLeagueId = 0; // Filter for Teams tab
     
     // Data Lists
     private List<League> leagues = new();
@@ -273,6 +299,10 @@
         leagues = await SportsService.GetLeagues(userId);
         seasons = await SportsService.GetSeasons(userId);
         teams = await SportsService.GetTeams(userId);
+        
+        // Auto-select first league filter if not set
+        if(filterLeagueId == 0 && leagues.Any()) filterLeagueId = leagues.First().Id;
+
         isLoading = false;
         StateHasChanged();
     }
@@ -293,7 +323,8 @@
     }
 
     private void OpenAddTeam() { 
-        modalType = "team"; modalTitle = "Add Team"; editingId = 0; tempName = ""; tempImgUrl = ""; tempAbbr = ""; tempLeagueId = 0; tempIsFav = false; showModal = true; 
+        // Default the team league to the current filter
+        modalType = "team"; modalTitle = "Add Team"; editingId = 0; tempName = ""; tempImgUrl = ""; tempAbbr = ""; tempLeagueId = filterLeagueId; tempIsFav = false; showModal = true; 
     }
     private void OpenEditTeam(Team t) { 
         modalType = "team"; modalTitle = "Edit Team"; editingId = t.Id; tempName = t.Name; tempImgUrl = t.LogoUrl; tempAbbr = t.Abbreviation; tempLeagueId = t.LeagueId; tempIsFav = t.IsFavorite; showModal = true; 
