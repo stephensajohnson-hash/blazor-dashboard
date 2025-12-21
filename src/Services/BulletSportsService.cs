@@ -15,11 +15,18 @@ public class BulletSportsService
         _factory = factory;
     }
 
-    // --- LEAGUE MANAGEMENT (NEW) ---
+    // --- LEAGUES ---
     public async Task AddLeague(int userId, string name)
     {
         using var db = _factory.CreateDbContext();
         db.Leagues.Add(new League { UserId = userId, Name = name });
+        await db.SaveChangesAsync();
+    }
+
+    public async Task UpdateLeague(League league)
+    {
+        using var db = _factory.CreateDbContext();
+        db.Leagues.Update(league);
         await db.SaveChangesAsync();
     }
 
@@ -30,12 +37,34 @@ public class BulletSportsService
         if(l != null) { db.Leagues.Remove(l); await db.SaveChangesAsync(); }
     }
 
+    // --- SEASONS ---
+    public async Task AddSeason(int userId, int leagueId, string name)
+    {
+        using var db = _factory.CreateDbContext();
+        db.Seasons.Add(new Season { UserId = userId, LeagueId = leagueId, Name = name });
+        await db.SaveChangesAsync();
+    }
+
+    public async Task UpdateSeason(Season season)
+    {
+        using var db = _factory.CreateDbContext();
+        db.Seasons.Update(season);
+        await db.SaveChangesAsync();
+    }
+
+    public async Task DeleteSeason(int id)
+    {
+        using var db = _factory.CreateDbContext();
+        var s = await db.Seasons.FindAsync(id);
+        if(s != null) { db.Seasons.Remove(s); await db.SaveChangesAsync(); }
+    }
+
     // --- REFERENCE DATA ---
     public async Task<List<Team>> GetTeams(int userId) { using var db = _factory.CreateDbContext(); return await db.Teams.Where(t => t.UserId == userId).OrderBy(t => t.Name).ToListAsync(); }
     public async Task<List<League>> GetLeagues(int userId) { using var db = _factory.CreateDbContext(); return await db.Leagues.Where(l => l.UserId == userId).OrderBy(l => l.Name).ToListAsync(); }
     public async Task<List<Season>> GetSeasons(int userId) { using var db = _factory.CreateDbContext(); return await db.Seasons.Where(s => s.UserId == userId).OrderByDescending(s => s.Name).ToListAsync(); }
 
-    // --- DTOs ---
+    // --- DTOs & Calendar Helpers (Preserved) ---
     public class TeamRecord
     {
         public int Wins { get; set; }
@@ -57,7 +86,6 @@ public class BulletSportsService
         public TeamRecord? FavoriteRecord { get; set; } 
     }
 
-    // --- CALENDAR METHODS ---
     public async Task<List<GameDTO>> GetGamesForRange(int userId, DateTime start, DateTime end)
     {
         using var db = _factory.CreateDbContext();
@@ -178,7 +206,10 @@ public class BulletSportsService
     public async Task<List<Team>> GetFavoriteTeams(int userId)
     {
         using var db = _factory.CreateDbContext();
-        return await db.Teams.Where(t => t.UserId == userId && t.IsFavorite).OrderBy(t => t.Name).ToListAsync();
+        return await db.Teams
+            .Where(t => t.UserId == userId && t.IsFavorite)
+            .OrderBy(t => t.Name)
+            .ToListAsync();
     }
 
     public async Task<List<GameDTO>> GetTeamSchedule(int userId, int teamId, int seasonId)
