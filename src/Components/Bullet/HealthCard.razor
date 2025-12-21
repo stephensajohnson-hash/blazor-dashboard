@@ -255,16 +255,17 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        // SAFE & HYBRID CALCULATION:
+        // Combines DB data for past days with In-Memory data for the current item to prevent "Zero Meal" lag.
         using (var scope = ScopeFactory.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             
-            // 1. Determine Date Range (Mon -> Item.Date)
             int diff = (7 + (Item.Date.DayOfWeek - DayOfWeek.Monday)) % 7;
             var startOfWeek = Item.Date.AddDays(-1 * diff).Date;
             var endOfRange = Item.Date.Date.AddDays(1).AddSeconds(-1); 
 
-            // 2. Fetch all Items for the week
+            // 1. Fetch basic item info for the week
             var weekItems = await db.BulletItems
                 .Where(i => i.UserId == Item.UserId && i.Type == "health" && i.Date >= startOfWeek && i.Date <= endOfRange)
                 .Select(i => new { i.Id, i.Date })
@@ -275,33 +276,46 @@
             
             if (weekItems.Any())
             {
-                Logger.LogInformation($"[HealthCard] Calculating Deficit for {Item.Date.ToShortDateString()} (Week Start: {startOfWeek.ToShortDateString()})");
+                Logger.LogInformation($"[HealthCard] Calculating Deficit. Current Item ID: {Item.Id}");
 
                 foreach(var day in weekItems)
                 {
-                    var details = await db.BulletHealthDetails.FirstOrDefaultAsync(d => d.BulletItemId == day.Id);
-                    var dayFood = await db.BulletHealthMeals.Where(m => m.BulletItemId == day.Id).SumAsync(m => m.Calories);
-                    var dayBurn = await db.BulletHealthWorkouts.Where(w => w.BulletItemId == day.Id).SumAsync(w => w.CaloriesBurned);
+                    double dayTDEE, dayFood, dayBurn;
 
-                    // 4. Fallback TDEE if 0 in DB
-                    double dayTDEE = (details != null && details.CalculatedTDEE > 0) ? details.CalculatedTDEE : CalculateFallbackTDEE();
+                    // HYBRID LOGIC:
+                    if (day.Id == Item.Id)
+                    {
+                        // USE IN-MEMORY DATA FOR CURRENT ITEM (Instant updates)
+                        dayTDEE = (Item.HealthDetail?.CalculatedTDEE > 0) ? Item.HealthDetail.CalculatedTDEE : CalculateFallbackTDEE(Item.HealthDetail?.WeightLbs ?? 0);
+                        dayFood = Item.Meals.Sum(m => m.Calories);
+                        dayBurn = Item.Workouts.Sum(w => w.CaloriesBurned);
+                    }
+                    else
+                    {
+                        // USE DB DATA FOR PAST ITEMS
+                        var details = await db.BulletHealthDetails.FirstOrDefaultAsync(d => d.BulletItemId == day.Id);
+                        dayTDEE = (details != null && details.CalculatedTDEE > 0) ? details.CalculatedTDEE : CalculateFallbackTDEE(details?.WeightLbs ?? 0);
+                        dayFood = await db.BulletHealthMeals.Where(m => m.BulletItemId == day.Id).SumAsync(m => m.Calories);
+                        dayBurn = await db.BulletHealthWorkouts.Where(w => w.BulletItemId == day.Id).SumAsync(w => w.CaloriesBurned);
+                    }
 
                     double dayDeficit = (dayTDEE + dayBurn) - dayFood;
                     WeeklyDeficit += dayDeficit;
 
-                    Logger.LogInformation($"   -> {day.Date.DayOfWeek}: TDEE {dayTDEE:0} + Burn {dayBurn:0} - Food {dayFood:0} = Deficit {dayDeficit:0}. (Running Total: {WeeklyDeficit:0})");
+                    Logger.LogInformation($"   -> {day.Date.DayOfWeek}: TDEE {dayTDEE:0} + Burn {dayBurn:0} - Food {dayFood:0} = {dayDeficit:0}");
                 }
             }
         }
         StateHasChanged();
     }
 
-    private double CalculateFallbackTDEE()
+    private double CalculateFallbackTDEE(double weightLbs)
     {
-        double w = (Item.HealthDetail != null && Item.HealthDetail.WeightLbs > 0) ? Item.HealthDetail.WeightLbs : 200; 
+        // Safe Fallback if DB record is missing TDEE
+        double w = weightLbs > 0 ? weightLbs : 200; // Default 200 if 0 passed
         double kg = w / 2.20462;
-        double cm = 178; 
-        int age = 40;    
+        double cm = 178; // Default Height
+        int age = 40;    // Default Age
         
         if (User != null && User.HeightInches > 0) cm = User.HeightInches * 2.54;
         if (User != null && User.Age > 0) age = User.Age;
@@ -310,7 +324,7 @@
         return bmr * 1.2; 
     }
 
-    // --- DAILY CALCULATIONS ---
+    // --- DAILY CALCULATIONS (Pure In-Memory) ---
     private double TotalIn => Item.Meals.Sum(m => m.Calories);
     private double Burned => Item.Workouts.Sum(w => w.CaloriesBurned);
     
@@ -319,7 +333,7 @@
         get 
         {
             if (Item.HealthDetail?.CalculatedTDEE > 0) return Item.HealthDetail.CalculatedTDEE;
-            return CalculateFallbackTDEE();
+            return CalculateFallbackTDEE(Item.HealthDetail?.WeightLbs ?? 0);
         }
     }
     
@@ -353,7 +367,7 @@
             Fat = meal.Fat, 
             Carbs = meal.Carbs, 
             Fiber = meal.Fiber,
-            MealType = meal.MealType // Ensure this property exists on your backend model!
+            MealType = meal.MealType 
         }; 
         isAddingMeal = true; 
     }
