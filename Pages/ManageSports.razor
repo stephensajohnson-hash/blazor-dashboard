@@ -1,364 +1,147 @@
 @page "/manage-sports"
 @using Dashboard
-@using Dashboard.Components.Bullet
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.JSInterop
 @inject AppDbContext Db
 @inject BulletSportsService SportsService
 @inject IJSRuntime JS
 
-<div class="min-h-screen bg-gray-900 text-white p-6 pb-20">
+<div class="min-h-screen bg-gray-900 text-white p-6">
     
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold text-orange-500">🏆 Manage Sports</h1>
-        <a href="/bullet-calendar" class="text-sm text-gray-400 hover:text-white">← Back to Calendar</a>
+    <div class="flex justify-between items-center mb-8">
+        <div class="flex items-center gap-3">
+            <span class="text-3xl">🏆</span>
+            <h1 class="text-2xl font-bold text-white">Manage Sports</h1>
+        </div>
+        <a href="/bullet-calendar" class="text-sm text-gray-400 hover:text-white transition">← Back to Calendar</a>
     </div>
 
-    <div class="flex gap-2 overflow-x-auto pb-4 mb-4 border-b border-gray-800 scrollbar-hide">
-        <button @onclick="() => SelectTab(-1)" 
-                class="px-4 py-2 rounded-full text-sm font-bold transition shrink-0 @(selectedTeamId == -1 ? "bg-orange-600 text-white shadow-lg" : "bg-gray-800 text-gray-400 hover:bg-gray-700")">
-            ⚙️ Configuration
+    <div class="flex border-b border-gray-800 mb-6">
+        <button class="px-6 py-3 text-sm font-bold border-b-2 border-orange-500 text-white bg-gray-800/50 rounded-t-lg">
+            Leagues
         </button>
+        <button class="px-6 py-3 text-sm font-bold border-b-2 border-transparent text-gray-500 cursor-not-allowed opacity-50">Seasons</button>
+        <button class="px-6 py-3 text-sm font-bold border-b-2 border-transparent text-gray-500 cursor-not-allowed opacity-50">Teams</button>
+    </div>
 
-        @foreach (var team in favoriteTeams)
-        {
-            <button @onclick="() => SelectTeamTab(team)" 
-                    class="px-4 py-2 rounded-full text-sm font-bold transition shrink-0 flex items-center gap-2 @(selectedTeamId == team.Id ? "bg-blue-600 text-white shadow-lg" : "bg-gray-800 text-gray-400 hover:bg-gray-700")">
-                @if(!string.IsNullOrEmpty(team.LogoUrl)) { <img src="@team.LogoUrl" class="w-4 h-4 object-contain" /> }
-                @team.Name
+    <div class="max-w-2xl">
+        
+        <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 mb-6 flex gap-3 shadow-lg">
+            <input @bind="newLeagueName" 
+                   @onkeyup="@(e => e.Key == "Enter" ? AddLeague() : Task.CompletedTask)"
+                   placeholder="Enter League Name (e.g. NFL, MLB)..." 
+                   class="flex-1 bg-black border border-gray-600 rounded-lg px-4 py-2 text-white focus:border-orange-500 outline-none transition" />
+            <button @onclick="AddLeague" class="bg-orange-600 hover:bg-orange-500 text-white px-6 py-2 rounded-lg font-bold transition">
+                Add League
             </button>
+        </div>
+
+        @if (isLoading)
+        {
+            <div class="text-gray-500 italic animate-pulse">Loading leagues...</div>
+        }
+        else if (leagues.Count == 0)
+        {
+            <div class="text-gray-500 italic p-4 text-center border border-gray-800 rounded-lg">No leagues found. Add one above!</div>
+        }
+        else
+        {
+            <div class="grid gap-3">
+                @foreach (var l in leagues)
+                {
+                    <div class="flex justify-between items-center bg-gray-800 p-4 rounded-lg border border-gray-700 hover:border-gray-500 transition group shadow-md">
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-xl shadow-inner">
+                                🏅
+                            </div>
+                            <span class="font-bold text-lg text-white">@l.Name</span>
+                        </div>
+                        
+                        <button @onclick="() => DeleteLeague(l.Id)" class="text-gray-500 hover:text-red-500 p-2 rounded hover:bg-gray-700 transition" title="Delete League">
+                            🗑️
+                        </button>
+                    </div>
+                }
+            </div>
         }
     </div>
-
-    @if (selectedTeamId > 0)
-    {
-        <div class="max-w-3xl mx-auto">
-            
-            <div class="flex justify-end mb-4">
-                <select value="@selectedSeasonId" @onchange="OnSeasonChanged" class="bg-gray-800 border border-gray-700 text-white text-sm rounded px-3 py-1 focus:border-blue-500 outline-none">
-                    @foreach (var s in availableSeasons)
-                    {
-                        <option value="@s.Id">@s.Name</option>
-                    }
-                </select>
-            </div>
-
-            @if (isLoadingSchedule)
-            {
-                <div class="text-center text-gray-500 py-10 animate-pulse">Loading schedule...</div>
-            }
-            else if (!teamGames.Any())
-            {
-                <div class="text-center text-gray-500 py-10">No games found for this season.</div>
-            }
-            else
-            {
-                <div class="space-y-6">
-                    @foreach (var game in teamGames)
-                    {
-                        var isNextUp = game.Id == nextGameId;
-                        
-                        <div class="relative">
-                            <div class="text-xs font-bold text-gray-500 mb-1 ml-1 uppercase tracking-wide">
-                                @FormatGameDate(game.Date)
-                            </div>
-
-                            <div class="rounded-xl transition duration-300 @(isNextUp ? "p-1 bg-yellow-500/80 shadow-[0_0_20px_rgba(234,179,8,0.3)]" : "")">
-                                <SportsCard Item="game" OnClick="OpenGameEdit" />
-                            </div>
-                        </div>
-                    }
-                </div>
-            }
-        </div>
-    }
-
-    @if (selectedTeamId == -1)
-    {
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div class="bg-gray-800/50 p-4 rounded-xl border border-gray-700">
-                <h2 class="text-lg font-bold text-white mb-4 border-b border-gray-700 pb-2">Leagues & Seasons</h2>
-                
-                <div class="flex gap-2 mb-4">
-                    <input @bind="newLeagueName" placeholder="New League Name..." class="flex-1 bg-black border border-gray-600 rounded px-2 py-1 text-sm text-white" />
-                    <button @onclick="AddLeague" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-sm">Add</button>
-                </div>
-
-                <div class="space-y-4">
-                    @foreach (var l in leagues)
-                    {
-                        <div class="bg-gray-900 p-3 rounded border border-gray-700">
-                            <div class="flex justify-between items-center mb-2">
-                                <span class="font-bold text-blue-400">@l.Name</span>
-                                <button @onclick="() => DeleteLeague(l.Id)" class="text-xs text-red-500 hover:text-red-400">Delete</button>
-                            </div>
-                            
-                            <div class="pl-2 border-l-2 border-gray-700 space-y-2">
-                                <div class="text-[10px] text-gray-500 uppercase font-bold">Seasons</div>
-                                @foreach(var s in seasons.Where(x => x.LeagueId == l.Id))
-                                {
-                                    <div class="flex justify-between text-xs text-gray-300 bg-black/30 p-1 rounded">
-                                        <span>@s.Name</span>
-                                        <button @onclick="() => DeleteSeason(s.Id)" class="text-red-500 hover:text-white">✕</button>
-                                    </div>
-                                }
-                                <div class="flex gap-1 mt-1">
-                                    <input @bind="newSeasonName" placeholder="2025-2026..." class="w-full bg-black border border-gray-600 rounded px-1 py-0.5 text-xs text-white" />
-                                    <button @onclick="() => AddSeason(l.Id)" class="bg-green-700 hover:bg-green-600 text-white px-2 rounded text-xs">＋</button>
-                                </div>
-                            </div>
-                        </div>
-                    }
-                </div>
-            </div>
-
-            <div class="bg-gray-800/50 p-4 rounded-xl border border-gray-700">
-                <h2 class="text-lg font-bold text-white mb-4 border-b border-gray-700 pb-2">Teams</h2>
-                
-                <div class="mb-4 space-y-2 bg-gray-900 p-3 rounded border border-gray-700">
-                    <select @bind="newTeamLeagueId" class="w-full bg-black border border-gray-600 rounded px-2 py-1 text-sm text-white">
-                        <option value="0">Select League...</option>
-                        @foreach(var l in leagues) { <option value="@l.Id">@l.Name</option> }
-                    </select>
-                    <div class="flex gap-2">
-                        <input @bind="newTeamName" placeholder="Team Name..." class="flex-1 bg-black border border-gray-600 rounded px-2 py-1 text-sm text-white" />
-                        <input @bind="newTeamAbbr" placeholder="ABR" class="w-16 bg-black border border-gray-600 rounded px-2 py-1 text-sm text-white text-center uppercase" />
-                    </div>
-                    <input @bind="newTeamLogo" placeholder="Logo URL..." class="w-full bg-black border border-gray-600 rounded px-2 py-1 text-sm text-white" />
-                    <button @onclick="AddTeam" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-1 rounded text-sm font-bold">Create Team</button>
-                </div>
-
-                <div class="space-y-2 max-h-[500px] overflow-y-auto pr-2">
-                    @foreach (var t in teams)
-                    {
-                        var leagueName = leagues.FirstOrDefault(l => l.Id == t.LeagueId)?.Name ?? "Unknown";
-                        <div class="flex justify-between items-center bg-gray-900 p-2 rounded border border-gray-700 hover:border-gray-500 transition">
-                            <div class="flex items-center gap-3">
-                                <img src="@(string.IsNullOrEmpty(t.LogoUrl) ? "https://via.placeholder.com/30" : t.LogoUrl)" class="w-8 h-8 object-contain" />
-                                <div>
-                                    <div class="font-bold text-sm text-white">@t.Name <span class="text-gray-500 text-xs">(@t.Abbreviation)</span></div>
-                                    <div class="text-[10px] text-blue-400">@leagueName</div>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-3">
-                                <button @onclick="() => ToggleFavorite(t)" class="text-lg @(t.IsFavorite ? "grayscale-0" : "grayscale opacity-30 hover:opacity-100") transition" title="Toggle Favorite">⭐</button>
-                                <button @onclick="() => DeleteTeam(t.Id)" class="text-gray-600 hover:text-red-500">✕</button>
-                            </div>
-                        </div>
-                    }
-                </div>
-            </div>
-        </div>
-    }
 </div>
-
-@if (editingGame != null)
-{
-    <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" @onclick="CloseEditor">
-        <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden" @onclick:stopPropagation="true">
-            <div class="p-3 bg-gray-800 border-b border-gray-700 flex justify-between items-center">
-                <h3 class="font-bold text-white">Edit Game</h3>
-                <button @onclick="CloseEditor" class="text-gray-400 hover:text-white">✕</button>
-            </div>
-            <div class="p-4">
-                <Dashboard.Components.Bullet.Editors.EditorSports Detail="editingGame.Detail" />
-                
-                <div class="flex gap-2 mt-4">
-                    <button @onclick="SaveGame" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded font-bold transition">Save Game</button>
-                </div>
-            </div>
-        </div>
-    </div>
-}
 
 @code {
     private int userId = 0;
-    
-    // Tab Data
-    private List<Team> favoriteTeams = new();
-    private int selectedTeamId = -1; // -1 = Config
-    
-    // Schedule Data
-    private List<BulletSportsService.GameDTO> teamGames = new();
-    private List<Season> availableSeasons = new();
-    private int selectedSeasonId = 0;
-    private int nextGameId = 0;
-    private bool isLoadingSchedule = false;
-
-    // Config Data
+    private bool isLoading = true;
     private List<League> leagues = new();
-    private List<Season> seasons = new();
-    private List<Team> teams = new();
-
-    // Editor Data
-    private BulletSportsService.GameDTO? editingGame;
-
-    // Inputs
     private string newLeagueName = "";
-    private string newSeasonName = "";
-    private string newTeamName = "";
-    private string newTeamAbbr = "";
-    private string newTeamLogo = "";
-    private int newTeamLeagueId = 0;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
-            if (!string.IsNullOrEmpty(json))
+            try 
             {
-                using var doc = System.Text.Json.JsonDocument.Parse(json);
-                if (doc.RootElement.TryGetProperty("UserId", out var p)) userId = p.GetInt32();
-                
-                if (userId > 0) 
-                {
-                    await LoadConfigData();
-                    await LoadFavorites();
-                    StateHasChanged();
+                var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
+                if (!string.IsNullOrEmpty(json)) 
+                { 
+                    using(var doc = System.Text.Json.JsonDocument.Parse(json)) 
+                    {
+                        if(doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p)) 
+                            userId = p.GetInt32();
+                    }
+                    
+                    if(userId > 0) 
+                    {
+                        await LoadLeagues();
+                    }
                 }
+            }
+            catch (Exception ex) 
+            {
+                Console.WriteLine($"Error loading session: {ex.Message}");
             }
         }
     }
 
-    private async Task LoadConfigData()
+    private async Task LoadLeagues()
     {
-        // Use Service methods to ensure clean fetching
-        leagues = await SportsService.GetLeagues(userId);
-        seasons = await SportsService.GetSeasons(userId);
-        teams = await SportsService.GetTeams(userId);
-    }
+        isLoading = true;
+        StateHasChanged();
 
-    private async Task LoadFavorites()
-    {
-        favoriteTeams = await SportsService.GetFavoriteTeams(userId);
-    }
+        // Direct DB Access for simplicity and stability on this page
+        leagues = await Db.Leagues
+            .Where(l => l.UserId == userId)
+            .OrderBy(l => l.Name)
+            .ToListAsync();
 
-    // --- TAB LOGIC ---
-
-    private void SelectTab(int id)
-    {
-        selectedTeamId = id;
-        teamGames.Clear();
-        selectedSeasonId = 0;
-    }
-
-    private async Task SelectTeamTab(Team team)
-    {
-        selectedTeamId = team.Id;
-        isLoadingSchedule = true;
-        
-        // 1. Load Seasons for this team's League
-        availableSeasons = seasons.Where(s => s.LeagueId == team.LeagueId).OrderByDescending(s => s.Name).ToList();
-        
-        if (availableSeasons.Any())
-        {
-            selectedSeasonId = availableSeasons.First().Id; // Default to newest
-        }
-
-        await LoadSchedule();
-    }
-
-    private async Task OnSeasonChanged(ChangeEventArgs e)
-    {
-        if (int.TryParse(e.Value?.ToString(), out int sid))
-        {
-            selectedSeasonId = sid;
-            await LoadSchedule();
-        }
-    }
-
-    private async Task LoadSchedule()
-    {
-        if (selectedTeamId <= 0 || selectedSeasonId <= 0) return;
-
-        isLoadingSchedule = true;
-        teamGames = await SportsService.GetTeamSchedule(userId, selectedTeamId, selectedSeasonId);
-        
-        // Calculate "Next Game" (First incomplete game)
-        var nextUp = teamGames.FirstOrDefault(g => !g.Detail.IsComplete);
-        nextGameId = nextUp?.Id ?? 0;
-
-        isLoadingSchedule = false;
+        isLoading = false;
         StateHasChanged();
     }
 
-    private string FormatGameDate(DateTime d)
-    {
-        string daySuffix = (d.Day % 10 == 1 && d.Day != 11) ? "st"
-            : (d.Day % 10 == 2 && d.Day != 12) ? "nd"
-            : (d.Day % 10 == 3 && d.Day != 13) ? "rd"
-            : "th";
-        return $"{d:dddd, MMM. d}{daySuffix}, {d:yyyy}";
-    }
-
-    // --- EDITOR LOGIC ---
-
-    private void OpenGameEdit(BulletTaskService.TaskDTO gameBase)
-    {
-        editingGame = teamGames.FirstOrDefault(g => g.Id == gameBase.Id);
-    }
-
-    private void CloseEditor() => editingGame = null;
-
-    private async Task SaveGame()
-    {
-        if (editingGame != null)
-        {
-            await SportsService.SaveGame(editingGame);
-            await LoadSchedule(); 
-            editingGame = null;
-        }
-    }
-
-    // --- CONFIGURATION ACTIONS ---
-
     private async Task AddLeague()
     {
-        if(!string.IsNullOrWhiteSpace(newLeagueName)) {
-            Db.Leagues.Add(new League { UserId = userId, Name = newLeagueName });
-            await Db.SaveChangesAsync();
-            newLeagueName = ""; await LoadConfigData();
-        }
-    }
+        if (string.IsNullOrWhiteSpace(newLeagueName) || userId == 0) return;
 
-    private async Task DeleteLeague(int id) {
-        var l = await Db.Leagues.FindAsync(id);
-        if(l != null) { Db.Leagues.Remove(l); await Db.SaveChangesAsync(); await LoadConfigData(); }
-    }
+        var newLeague = new League 
+        { 
+            UserId = userId, 
+            Name = newLeagueName.Trim() 
+        };
 
-    private async Task AddSeason(int leagueId) {
-        if(!string.IsNullOrWhiteSpace(newSeasonName)) {
-            Db.Seasons.Add(new Season { UserId = userId, LeagueId = leagueId, Name = newSeasonName });
-            await Db.SaveChangesAsync();
-            newSeasonName = ""; await LoadConfigData();
-        }
-    }
-
-    private async Task DeleteSeason(int id) {
-        var s = await Db.Seasons.FindAsync(id);
-        if(s != null) { Db.Seasons.Remove(s); await Db.SaveChangesAsync(); await LoadConfigData(); }
-    }
-
-    private async Task AddTeam() {
-        if(!string.IsNullOrWhiteSpace(newTeamName) && newTeamLeagueId > 0) {
-            Db.Teams.Add(new Team { UserId = userId, LeagueId = newTeamLeagueId, Name = newTeamName, Abbreviation = newTeamAbbr, LogoUrl = newTeamLogo });
-            await Db.SaveChangesAsync();
-            newTeamName = ""; newTeamAbbr = ""; newTeamLogo = ""; await LoadConfigData();
-        }
-    }
-
-    private async Task DeleteTeam(int id) {
-        var t = await Db.Teams.FindAsync(id);
-        if(t != null) { Db.Teams.Remove(t); await Db.SaveChangesAsync(); await LoadConfigData(); }
-    }
-
-    private async Task ToggleFavorite(Team t)
-    {
-        t.IsFavorite = !t.IsFavorite;
-        // Using Db context directly here for simple toggle, consistent with other methods in this block
-        Db.Teams.Update(t);
+        Db.Leagues.Add(newLeague);
         await Db.SaveChangesAsync();
-        await LoadFavorites(); 
+
+        newLeagueName = "";
+        await LoadLeagues();
+    }
+
+    private async Task DeleteLeague(int id)
+    {
+        // Simple confirmation could go here
+        var league = await Db.Leagues.FindAsync(id);
+        if (league != null)
+        {
+            Db.Leagues.Remove(league);
+            await Db.SaveChangesAsync();
+            await LoadLeagues();
+        }
     }
 }
