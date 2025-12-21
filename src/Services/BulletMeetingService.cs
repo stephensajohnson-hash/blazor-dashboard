@@ -15,7 +15,7 @@ public class BulletMeetingService
         _factory = factory;
     }
 
-    // Inherit from TaskDTO to share property structure with Calendar
+    // Inheriting from TaskDTO ensures property compatibility with Calendar
     public class MeetingDTO : BulletTaskService.TaskDTO { }
 
     public async Task<List<MeetingDTO>> GetMeetingsForRange(int userId, DateTime start, DateTime end)
@@ -40,7 +40,7 @@ public class BulletMeetingService
                                LinkUrl = baseItem.LinkUrl, 
                                OriginalStringId = baseItem.OriginalStringId,
                                SortOrder = baseItem.SortOrder,
-                               MeetingDetail = detail // Populate the specific Meeting property
+                               MeetingDetail = detail // Map DB detail to DTO property
                            }).ToListAsync();
 
         if (items.Any())
@@ -56,11 +56,10 @@ public class BulletMeetingService
     {
         using var db = _factory.CreateDbContext();
         
-        // UTC Fix
+        // UTC Formatting
         if (dto.Date.Kind == DateTimeKind.Unspecified) dto.Date = DateTime.SpecifyKind(dto.Date, DateTimeKind.Utc);
         else if (dto.Date.Kind == DateTimeKind.Local) dto.Date = dto.Date.ToUniversalTime();
 
-        // Use the MeetingDetail property
         var detailSource = dto.MeetingDetail ?? new BulletMeetingDetail();
 
         if (detailSource.StartTime.HasValue)
@@ -96,16 +95,13 @@ public class BulletMeetingService
             await db.BulletMeetingDetails.AddAsync(detail); 
         }
 
-        // --- MAP FIELDS ---
         detail.StartTime = detailSource.StartTime;
         detail.DurationMinutes = detailSource.DurationMinutes;
         detail.ActualDurationMinutes = detailSource.ActualDurationMinutes;
-        detail.IsCompleted = detailSource.IsCompleted; // Persist Checkbox State
-        // ------------------
+        detail.IsCompleted = detailSource.IsCompleted; 
 
         await db.SaveChangesAsync();
 
-        // Save Notes
         var oldNotes = await db.BulletItemNotes.Where(n => n.BulletItemId == item.Id).ToListAsync();
         db.BulletItemNotes.RemoveRange(oldNotes);
         if (dto.Notes != null)
@@ -116,10 +112,12 @@ public class BulletMeetingService
         await db.SaveChangesAsync();
     }
 
+    // --- SIMPLE TOGGLE METHOD ---
     public async Task ToggleComplete(int id, bool isComplete)
     {
         using var db = _factory.CreateDbContext();
-        var detail = await db.BulletMeetingDetails.FindAsync(id);
+        // Look up by BulletItemId (foreign key), assuming 1:1 relationship
+        var detail = await db.BulletMeetingDetails.FirstOrDefaultAsync(d => d.BulletItemId == id);
         if (detail != null) 
         { 
             detail.IsCompleted = isComplete; 
