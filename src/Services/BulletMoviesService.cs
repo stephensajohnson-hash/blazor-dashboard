@@ -25,83 +25,43 @@ public class BulletMoviesService
         public double Rating { get; set; } 
         public string Notes { get; set; } = "";
         public string Genre { get; set; } = "";
+        
+        // Helper to store the full detail for the editor
+        public BulletMediaDetail Detail { get; set; } = new();
     }
 
-    // --- GET DATA ---
     public async Task<List<MovieDTO>> GetMovies(int userId)
     {
-        Console.WriteLine($"[MoviesService] Fetching movies for User {userId}...");
+        // JOIN BulletItems with BulletMediaDetails to get the REAL data
+        var query = from i in _db.BulletItems
+                    join d in _db.BulletMediaDetails on i.Id equals d.BulletItemId into details
+                    from subDetail in details.DefaultIfEmpty() // Left Join
+                    where i.UserId == userId && (i.Type == "movie" || i.Type == "media")
+                    select new { Item = i, Detail = subDetail };
 
-        // FIX: Fetch both "movie" (new) and "media" (old calendar items)
-        var items = await _db.BulletItems
-            .Where(i => i.UserId == userId && (i.Type == "movie" || i.Type == "media"))
-            .ToListAsync();
-
-        Console.WriteLine($"[MoviesService] Found {items.Count} items.");
-
+        var data = await query.ToListAsync();
         var result = new List<MovieDTO>();
 
-        foreach (var item in items)
+        foreach (var row in data)
         {
-            // Try to parse "Year|Rating|Genre" from Description
-            var parts = (item.Description ?? "").Split('|');
+            var d = row.Detail ?? new BulletMediaDetail();
             
-            // Default values
-            int relYear = DateTime.Now.Year;
-            double rating = 0;
-            string genre = "";
-
-            // Parsing logic (Safe)
-            if (parts.Length > 0 && int.TryParse(parts[0], out int y)) relYear = y;
-            
-            // If description isn't pipe-delimited, check if we have a MediaDetail record (from Calendar)
-            // (You might need to join tables properly later, but this gets the basic item first)
-            
-            if (parts.Length > 1 && double.TryParse(parts[1], out double r)) rating = r;
-            if (parts.Length > 2) genre = parts[2];
-
             result.Add(new MovieDTO
             {
-                Id = item.Id,
-                UserId = item.UserId,
-                Title = item.Title,
-                ImgUrl = item.ImgUrl,
-                DateWatched = item.Date, 
-                ReleaseYear = relYear,
-                Rating = rating,
-                Genre = genre,
-                Notes = item.Category
+                Id = row.Item.Id,
+                UserId = row.Item.UserId,
+                Title = row.Item.Title,
+                ImgUrl = row.Item.ImgUrl,
+                DateWatched = row.Item.Date,
+                ReleaseYear = d.ReleaseYear, // Real DB value
+                Rating = d.Rating,           // Real DB value
+                Genre = d.Tags,              // Mapping Tags to Genre
+                Notes = row.Item.Notes.FirstOrDefault()?.Content ?? "", // Grab first note if exists
+                Detail = d
             });
         }
 
         return result;
-    }
-
-    // --- CRUD ---
-    public async Task SaveMovie(MovieDTO dto)
-    {
-        BulletItem? item = null;
-        if (dto.Id > 0) item = await _db.BulletItems.FindAsync(dto.Id);
-        else
-        {
-            // We save as "movie" going forward to distinguish from generic media if needed
-            item = new BulletItem { UserId = dto.UserId, Type = "movie", CreatedAt = DateTime.UtcNow };
-            await _db.BulletItems.AddAsync(item);
-        }
-
-        if (dto.DateWatched.Kind == DateTimeKind.Unspecified) dto.DateWatched = DateTime.SpecifyKind(dto.DateWatched, DateTimeKind.Utc);
-        else if (dto.DateWatched.Kind == DateTimeKind.Local) dto.DateWatched = dto.DateWatched.ToUniversalTime();
-
-        item.Title = dto.Title;
-        item.Date = dto.DateWatched;
-        item.ImgUrl = dto.ImgUrl;
-        item.Category = dto.Notes; 
-        
-        // Save metadata in Description for portability
-        item.Description = $"{dto.ReleaseYear}|{dto.Rating}|{dto.Genre}";
-
-        await _db.SaveChangesAsync();
-        Console.WriteLine($"[MoviesService] Saved movie: {dto.Title}");
     }
 
     public async Task DeleteMovie(int id)
@@ -111,7 +71,6 @@ public class BulletMoviesService
         {
             _db.BulletItems.Remove(item);
             await _db.SaveChangesAsync();
-            Console.WriteLine($"[MoviesService] Deleted movie ID {id}");
         }
     }
 }
