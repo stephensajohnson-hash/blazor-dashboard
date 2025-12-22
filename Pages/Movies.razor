@@ -1,0 +1,293 @@
+@page "/movies"
+@using Dashboard
+@using System.Text.Json
+@inject BulletMoviesService MoviesService
+@inject IJSRuntime JS
+
+<div class="min-h-screen bg-gray-900 text-white p-6">
+
+    <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+        <div class="flex items-center gap-3">
+            <span class="text-3xl">🎬</span>
+            <h1 class="text-2xl font-bold text-white">Movies & Media</h1>
+        </div>
+
+        <div class="flex flex-wrap gap-2 w-full md:w-auto">
+            <select @bind="selectedYear" class="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5">
+                <option value="0">All Years</option>
+                @foreach (var y in availableYears)
+                {
+                    <option value="@y">@y</option>
+                }
+            </select>
+
+            <select @bind="sortOption" class="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5">
+                <option value="date_desc">Watched Date (Newest)</option>
+                <option value="date_asc">Watched Date (Oldest)</option>
+                <option value="release_desc">Release Year (Newest)</option>
+                <option value="release_asc">Release Year (Oldest)</option>
+                <option value="rating_desc">Rating (High to Low)</option>
+                <option value="rating_asc">Rating (Low to High)</option>
+                <option value="alpha_asc">Alphabetical (A-Z)</option>
+            </select>
+
+            <button @onclick="OpenAddModal" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-lg transition shadow-lg">
+                + Add Movie
+            </button>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="flex flex-col items-center justify-center h-64 space-y-4">
+            <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+            <p class="text-gray-400 animate-pulse">Loading library...</p>
+        </div>
+    }
+    else if (!filteredMovies.Any())
+    {
+        <div class="text-center py-20 bg-gray-800/50 rounded-xl border border-dashed border-gray-700">
+            <span class="text-4xl">🍿</span>
+            <p class="text-gray-400 mt-2">No movies found for this filter.</p>
+        </div>
+    }
+    else
+    {
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+            @foreach (var m in filteredMovies)
+            {
+                <div class="group relative bg-gray-800 rounded-xl overflow-hidden shadow-lg border border-gray-700 hover:border-gray-500 transition-all duration-300 hover:-translate-y-1">
+                    
+                    <div class="aspect-[2/3] w-full bg-gray-900 relative overflow-hidden">
+                        @if (!string.IsNullOrEmpty(m.ImgUrl))
+                        {
+                            <img src="@m.ImgUrl" class="w-full h-full object-cover transition duration-500 group-hover:scale-110" />
+                        }
+                        else
+                        {
+                            <div class="w-full h-full flex items-center justify-center text-gray-700 text-4xl">🎥</div>
+                        }
+
+                        <div class="absolute top-2 right-2 bg-black/80 backdrop-blur-sm px-2 py-1 rounded-md border border-yellow-500/50 flex items-center gap-1 shadow-xl">
+                            <span class="text-yellow-400 text-xs">⭐</span>
+                            <span class="font-bold text-sm text-white">@m.Rating.ToString("0.0")</span>
+                        </div>
+                    </div>
+
+                    <div class="p-3">
+                        <h3 class="font-bold text-white text-sm truncate" title="@m.Title">@m.Title</h3>
+                        <div class="flex justify-between items-center mt-1">
+                            <span class="text-xs text-gray-500">@m.ReleaseYear</span>
+                            <span class="text-xs text-blue-400 font-mono">@m.DateWatched.ToString("MMM d")</span>
+                        </div>
+                    </div>
+
+                    <div class="absolute inset-0 bg-black/80 flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition duration-200">
+                        <button @onclick="() => OpenEditModal(m)" class="bg-gray-700 hover:bg-white hover:text-black text-white p-2 rounded-full shadow-lg transition" title="Edit">
+                            ✏️
+                        </button>
+                        <button @onclick="() => DeleteMovie(m.Id)" class="bg-red-900/80 hover:bg-red-600 text-white p-2 rounded-full shadow-lg transition" title="Delete">
+                            🗑️
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@if (showModal)
+{
+    <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" @onclick="CloseModal">
+        <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden" @onclick:stopPropagation="true">
+            <div class="p-4 border-b border-gray-700 bg-gray-800/50 flex justify-between items-center">
+                <h3 class="font-bold text-white">@(editingItem.Id == 0 ? "Add Movie" : "Edit Movie")</h3>
+                <button @onclick="CloseModal" class="text-gray-400 hover:text-white">✕</button>
+            </div>
+            <div class="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+                
+                <div>
+                    <label class="block text-xs text-gray-500 uppercase font-bold mb-1">Title</label>
+                    <input @bind="editingItem.Title" class="w-full bg-black border border-gray-600 rounded p-2 text-white focus:border-blue-500 outline-none" placeholder="Movie Title" />
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs text-gray-500 uppercase font-bold mb-1">Date Watched</label>
+                        <input type="date" @bind="editingItem.DateWatched" class="w-full bg-black border border-gray-600 rounded p-2 text-white focus:border-blue-500 outline-none" />
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 uppercase font-bold mb-1">Release Year</label>
+                        <input type="number" @bind="editingItem.ReleaseYear" class="w-full bg-black border border-gray-600 rounded p-2 text-white focus:border-blue-500 outline-none" />
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs text-gray-500 uppercase font-bold mb-1">Rating (0-10)</label>
+                        <input type="number" step="0.1" @bind="editingItem.Rating" class="w-full bg-black border border-gray-600 rounded p-2 text-white focus:border-blue-500 outline-none" />
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 uppercase font-bold mb-1">Genre</label>
+                        <input @bind="editingItem.Genre" class="w-full bg-black border border-gray-600 rounded p-2 text-white focus:border-blue-500 outline-none" placeholder="Action, Sci-Fi..." />
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs text-gray-500 uppercase font-bold mb-1">Poster Image</label>
+                    <div class="flex gap-2">
+                        @if(!string.IsNullOrEmpty(editingItem.ImgUrl)) { <img src="@editingItem.ImgUrl" class="w-10 h-14 object-cover border border-gray-600" /> }
+                        <InputFile OnChange="HandleFileSelected" class="text-xs text-gray-400 w-full" />
+                    </div>
+                </div>
+
+                <div class="pt-4 flex gap-3">
+                    <button @onclick="CloseModal" class="flex-1 bg-gray-700 text-white py-2 rounded font-bold hover:bg-gray-600">Cancel</button>
+                    <button @onclick="SaveMovie" class="flex-1 bg-blue-600 text-white py-2 rounded font-bold hover:bg-blue-500">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private int userId = 0;
+    private bool isLoading = true;
+    
+    // Data lists
+    private List<BulletMoviesService.MovieDTO> allMovies = new();
+    private List<BulletMoviesService.MovieDTO> filteredMovies = new();
+    private List<int> availableYears = new();
+
+    // Filters & Sorts
+    private int _selectedYear = 0;
+    private int selectedYear 
+    { 
+        get => _selectedYear; 
+        set { _selectedYear = value; ApplyFilterAndSort(); } 
+    }
+
+    private string _sortOption = "date_desc";
+    private string sortOption
+    {
+        get => _sortOption;
+        set { _sortOption = value; ApplyFilterAndSort(); }
+    }
+
+    // Modal State
+    private bool showModal = false;
+    private BulletMoviesService.MovieDTO editingItem = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try {
+                var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
+                if (!string.IsNullOrEmpty(json)) { 
+                    using(var doc = JsonDocument.Parse(json)) {
+                         if(doc.RootElement.TryGetProperty("UserId", out var p) || 
+                           doc.RootElement.TryGetProperty("userId", out p) ||
+                           doc.RootElement.TryGetProperty("id", out p)) 
+                        {
+                            userId = p.GetInt32();
+                        }
+                    }
+                }
+                if (userId > 0) await LoadData();
+            }
+            catch {}
+            finally { isLoading = false; StateHasChanged(); }
+        }
+    }
+
+    private async Task LoadData()
+    {
+        allMovies = await MoviesService.GetMovies(userId);
+        
+        // Populate Years (Distinct, Ordered Descending)
+        availableYears = allMovies.Select(m => m.DateWatched.Year).Distinct().OrderByDescending(y => y).ToList();
+
+        // Default to most recent year if we haven't selected one, or if current selection is invalid
+        if (selectedYear == 0 && availableYears.Any())
+        {
+            _selectedYear = availableYears.First(); // Pre-select most recent
+        }
+
+        ApplyFilterAndSort();
+    }
+
+    private void ApplyFilterAndSort()
+    {
+        var query = allMovies.AsEnumerable();
+
+        // 1. Filter by Year (if not "All Years" / 0)
+        if (selectedYear > 0)
+        {
+            query = query.Where(m => m.DateWatched.Year == selectedYear);
+        }
+
+        // 2. Sorting
+        query = sortOption switch
+        {
+            "date_desc" => query.OrderByDescending(m => m.DateWatched),
+            "date_asc" => query.OrderBy(m => m.DateWatched),
+            "release_desc" => query.OrderByDescending(m => m.ReleaseYear),
+            "release_asc" => query.OrderBy(m => m.ReleaseYear),
+            "rating_desc" => query.OrderByDescending(m => m.Rating),
+            "rating_asc" => query.OrderBy(m => m.Rating),
+            "alpha_asc" => query.OrderBy(m => m.Title),
+            _ => query.OrderByDescending(m => m.DateWatched)
+        };
+
+        filteredMovies = query.ToList();
+        StateHasChanged();
+    }
+
+    // --- CRUD ---
+    private void OpenAddModal() 
+    { 
+        editingItem = new BulletMoviesService.MovieDTO { UserId = userId, DateWatched = DateTime.Today, ReleaseYear = DateTime.Today.Year }; 
+        showModal = true; 
+    }
+    
+    private void OpenEditModal(BulletMoviesService.MovieDTO m) 
+    { 
+        // Clone to avoid editing the list directly before save
+        editingItem = new BulletMoviesService.MovieDTO 
+        { 
+            Id = m.Id, UserId = m.UserId, Title = m.Title, ImgUrl = m.ImgUrl, 
+            DateWatched = m.DateWatched, ReleaseYear = m.ReleaseYear, Rating = m.Rating, Genre = m.Genre, Notes = m.Notes 
+        };
+        showModal = true; 
+    }
+
+    private void CloseModal() { showModal = false; }
+
+    private async Task SaveMovie()
+    {
+        if(string.IsNullOrEmpty(editingItem.Title)) return;
+        await MoviesService.SaveMovie(editingItem);
+        await LoadData(); // Reload to refresh lists/years
+        showModal = false;
+    }
+
+    private async Task DeleteMovie(int id)
+    {
+        if(await JS.InvokeAsync<bool>("confirm", "Delete this movie?"))
+        {
+            await MoviesService.DeleteMovie(id);
+            await LoadData();
+        }
+    }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e) 
+    { 
+        try { 
+            var f = e.File; 
+            var b = new byte[f.Size]; 
+            await f.OpenReadStream(5*1024*1024).ReadAsync(b); 
+            editingItem.ImgUrl = $"data:{f.ContentType};base64,{Convert.ToBase64String(b)}"; 
+        } catch {} 
+    }
+}
