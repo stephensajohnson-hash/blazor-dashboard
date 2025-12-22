@@ -15,6 +15,7 @@ public class BulletSportsService
         _db = db;
     }
 
+    // --- DTOs ---
     public class TeamRecord
     {
         public int Wins { get; set; }
