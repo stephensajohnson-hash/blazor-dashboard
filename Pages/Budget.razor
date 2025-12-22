@@ -4,34 +4,45 @@
 @using System.IO
 @using Microsoft.EntityFrameworkCore
 @using System.Text.Json
-@inject BudgetService BudgetService  @inject IJSRuntime JS
+@inject BudgetService BudgetService
+@inject IJSRuntime JS
 @inject AppDbContext Db
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env 
 
 <BulletHeader />
 
 <div class="min-h-screen bg-gray-900 text-white p-6">
-    <div class="flex justify-between items-center mb-6">
+    <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
         <h1 class="text-3xl font-bold flex items-center gap-3">
-            <span>💵</span> Budget Tracker <span class="text-xs font-normal text-gray-500 self-end mb-1">v1.0</span>
+            <span>💵</span> Budget Tracker <span class="text-xs font-normal text-gray-500 self-end mb-1">v1.1</span>
         </h1>
         
-        <div class="relative">
-            <label class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded cursor-pointer transition shadow-lg flex items-center gap-2">
-                <span>📂 Import JSON</span>
-                <InputFile OnChange="LoadJsonFile" class="hidden" />
-            </label>
+        <div class="flex gap-3">
+            <button @onclick="LoadServerDefaults" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded transition shadow-lg flex items-center gap-2 border border-gray-600">
+                <span>⚡ Load Server Data</span>
+            </button>
+
+            <div class="relative">
+                <label class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded cursor-pointer transition shadow-lg flex items-center gap-2">
+                    <span>📂 Upload JSON</span>
+                    <InputFile OnChange="LoadJsonFile" class="hidden" />
+                </label>
+            </div>
         </div>
     </div>
 
     @if (isLoading)
     {
-        <div class="text-center py-20 animate-pulse text-gray-400">Processing Data...</div>
+        <div class="flex flex-col items-center justify-center py-20 space-y-4">
+            <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+            <div class="text-gray-400 animate-pulse">Processing Data...</div>
+        </div>
     }
     else if (!periods.Any())
     {
-        <div class="text-center py-20 border-2 border-dashed border-gray-700 rounded-xl">
-            <p class="text-gray-500 text-xl">No budgets loaded.</p>
-            <p class="text-sm text-gray-600">Upload a JSON file to get started.</p>
+        <div class="text-center py-20 border-2 border-dashed border-gray-700 rounded-xl bg-gray-800/30">
+            <p class="text-gray-500 text-xl mb-2">No budgets loaded.</p>
+            <p class="text-sm text-gray-600">Click <b>"Load Server Data"</b> to import Dec '25 & Jan '26.</p>
         </div>
     }
     else
@@ -39,36 +50,56 @@
         @foreach (var period in periods)
         {
             <div class="bg-gray-800 border border-gray-700 rounded-xl mb-8 overflow-hidden shadow-2xl">
-                <div class="bg-gray-900 p-4 border-b border-gray-700 flex justify-between items-center">
+                <div class="bg-gray-900 p-4 border-b border-gray-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div>
-                        <h2 class="text-xl font-bold text-white">@period.DisplayName</h2>
-                        <div class="text-xs text-gray-400">Start: @period.StartDate.ToShortDateString() | Opening: @period.InitialBankBalance.ToString("C")</div>
+                        <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                            @period.DisplayName
+                            @if(period.StringId.Contains("2026")) { <span class="text-xs bg-blue-900 text-blue-200 px-2 py-0.5 rounded border border-blue-700">Future</span> }
+                        </h2>
+                        <div class="text-xs text-gray-400 mt-1">Start: @period.StartDate.ToShortDateString() | Opening: <span class="text-white font-mono">@period.InitialBankBalance.ToString("C")</span></div>
                     </div>
-                    <div class="flex gap-4 text-sm font-bold">
-                        <div class="text-green-400">In: @period.Transactions.Where(t => t.Amount > 0).Sum(t => t.Amount).ToString("C")</div>
-                        <div class="text-red-400">Out: @Math.Abs(period.Transactions.Where(t => t.Amount < 0).Sum(t => t.Amount)).ToString("C")</div>
+                    <div class="flex gap-6 text-sm font-bold bg-black/20 p-2 rounded-lg border border-gray-700/50">
+                        <div class="text-green-400 flex flex-col items-end leading-tight">
+                            <span class="text-[10px] text-gray-500 uppercase">Income</span>
+                            @period.Transactions.Where(t => t.Amount > 0).Sum(t => t.Amount).ToString("C0")
+                        </div>
+                        <div class="w-px bg-gray-700"></div>
+                        <div class="text-red-400 flex flex-col items-end leading-tight">
+                            <span class="text-[10px] text-gray-500 uppercase">Expenses</span>
+                            @Math.Abs(period.Transactions.Where(t => t.Amount < 0).Sum(t => t.Amount)).ToString("C0")
+                        </div>
                     </div>
                 </div>
 
                 <div class="p-4 grid lg:grid-cols-2 gap-6">
                     <div class="space-y-4">
-                        <h3 class="text-lg font-bold text-blue-300 border-b border-gray-700 pb-2">Budget Items</h3>
+                        <h3 class="text-sm font-bold text-blue-400 uppercase tracking-widest border-b border-gray-700 pb-2 mb-2">Budget Cycles</h3>
                         @foreach (var cycle in period.Cycles.OrderBy(c => c.CycleNumber))
                         {
-                            <div class="bg-gray-800/50 border border-gray-600 rounded-lg p-3">
-                                <div class="font-bold text-gray-400 text-xs uppercase mb-2">Cycle @cycle.CycleNumber: @cycle.Label</div>
-                                <div class="space-y-2">
+                            <div class="bg-gray-800/50 border border-gray-700 rounded-lg overflow-hidden">
+                                <div class="bg-gray-900/50 p-2 border-b border-gray-700 flex justify-between items-center">
+                                    <span class="font-bold text-gray-300 text-xs uppercase">Cycle @cycle.CycleNumber: @cycle.Label</span>
+                                    <span class="text-[10px] text-gray-500">@cycle.Items.Count items</span>
+                                </div>
+                                <div class="divide-y divide-gray-700/50">
                                     @foreach (var item in cycle.Items)
                                     {
-                                        <div class="flex items-center justify-between bg-gray-900 p-2 rounded">
+                                        <div class="flex items-center justify-between p-2 hover:bg-gray-700/30 transition">
                                             <div class="flex items-center gap-3">
-                                                @if(!string.IsNullOrEmpty(item.ImgUrl)) { <img src="@item.ImgUrl" class="w-8 h-8 rounded object-cover" /> }
+                                                @if(!string.IsNullOrEmpty(item.ImgUrl)) 
+                                                { 
+                                                    <img src="@item.ImgUrl" class="w-8 h-8 rounded object-cover bg-black/40" /> 
+                                                }
+                                                else
+                                                {
+                                                    <div class="w-8 h-8 rounded bg-gray-700 flex items-center justify-center text-xs">💰</div>
+                                                }
                                                 <div>
-                                                    <div class="font-bold text-sm">@item.Name</div>
+                                                    <div class="font-bold text-sm text-gray-200">@item.Name</div>
                                                     @if(item.CarriedOver > 0) { <div class="text-[10px] text-yellow-500">Carry: @item.CarriedOver.ToString("C")</div> }
                                                 </div>
                                             </div>
-                                            <div class="font-mono font-bold">@item.PlannedAmount.ToString("C0")</div>
+                                            <div class="font-mono font-bold text-gray-300">@item.PlannedAmount.ToString("C0")</div>
                                         </div>
                                     }
                                 </div>
@@ -77,18 +108,25 @@
                     </div>
 
                     <div>
-                        <h3 class="text-lg font-bold text-purple-300 border-b border-gray-700 pb-2 mb-4">Ledger (@period.Transactions.Count)</h3>
-                        <div class="space-y-1 max-h-[500px] overflow-y-auto pr-2 scrollbar-thin">
-                            @foreach (var t in period.Transactions.OrderBy(x => x.Date))
+                        <h3 class="text-sm font-bold text-purple-400 uppercase tracking-widest border-b border-gray-700 pb-2 mb-4">Transactions (@period.Transactions.Count)</h3>
+                        <div class="space-y-1 max-h-[600px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
+                            @foreach (var t in period.Transactions.OrderByDescending(x => x.Date))
                             {
-                                <div class="flex justify-between items-center p-2 rounded hover:bg-gray-700 transition border-b border-gray-700/50 text-sm">
+                                <div class="flex justify-between items-start p-3 rounded bg-gray-800 hover:bg-gray-700 transition border border-gray-700/50 text-sm group">
                                     <div class="flex-1">
-                                        <div class="text-gray-300 font-bold">@t.Description</div>
-                                        <div class="text-xs text-gray-500">@t.Date.ToShortDateString()</div>
+                                        <div class="text-gray-200 font-bold group-hover:text-white transition">@t.Description</div>
+                                        <div class="text-xs text-gray-500">@t.Date.ToString("MMM dd")</div>
                                         @if(t.Splits.Any()) 
                                         { 
-                                            <div class="text-[10px] text-gray-400 mt-1 pl-2 border-l-2 border-gray-600">
-                                                @foreach(var s in t.Splits) { <div>↳ @s.Amount.ToString("C") @s.Note</div> }
+                                            <div class="mt-1 space-y-1">
+                                                @foreach(var s in t.Splits) 
+                                                { 
+                                                    <div class="text-[10px] text-gray-400 flex gap-2 pl-2 border-l-2 border-gray-600">
+                                                        <span>↳</span>
+                                                        <span class="font-mono">@s.Amount.ToString("C")</span>
+                                                        <span class="italic">@s.Note</span>
+                                                    </div> 
+                                                }
                                             </div> 
                                         }
                                     </div>
@@ -122,7 +160,8 @@
                     using (var doc = JsonDocument.Parse(json))
                     {
                         if (doc.RootElement.TryGetProperty("UserId", out var p) || 
-                            doc.RootElement.TryGetProperty("userId", out p))
+                            doc.RootElement.TryGetProperty("userId", out p) ||
+                            doc.RootElement.TryGetProperty("id", out p))
                         {
                             userId = p.GetInt32();
                         }
@@ -145,6 +184,49 @@
         periods = await BudgetService.GetPeriods(userId);
     }
 
+    // --- NEW: LOAD FROM SERVER FILES ---
+    private async Task LoadServerDefaults()
+    {
+        if (userId == 0) return;
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            // The path to wwwroot
+            var webRoot = Env.WebRootPath;
+            
+            var files = new[] { "budget_dec25.json", "budget_jan26.json" };
+            int successCount = 0;
+
+            foreach(var fileName in files)
+            {
+                var path = Path.Combine(webRoot, fileName);
+                if(File.Exists(path))
+                {
+                    var json = await File.ReadAllTextAsync(path);
+                    await BudgetService.ImportBudgetJson(userId, json);
+                    successCount++;
+                }
+            }
+
+            await LoadData();
+            
+            if(successCount > 0) await JS.InvokeVoidAsync("alert", $"{successCount} budget files imported successfully!");
+            else await JS.InvokeVoidAsync("alert", "No budget files found in wwwroot.");
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", "Server Load Error: " + ex.Message);
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // --- EXISTING: UPLOAD HANDLER ---
     private async Task LoadJsonFile(InputFileChangeEventArgs e)
     {
         if (userId == 0) return;
@@ -154,7 +236,7 @@
         try
         {
             var file = e.File;
-            using var reader = new StreamReader(file.OpenReadStream(2 * 1024 * 1024)); // 2MB max
+            using var reader = new StreamReader(file.OpenReadStream(2 * 1024 * 1024)); 
             var json = await reader.ReadToEndAsync();
             
             await BudgetService.ImportBudgetJson(userId, json);
