@@ -33,7 +33,7 @@
 
     <div class="relative">
         <div class="cursor-pointer" @onclick="ToggleUserMenu">
-            <img src="@(string.IsNullOrEmpty(currentUser?.AvatarUrl) ? "https://i.imgur.com/7Y5j5Yx.png" : currentUser.AvatarUrl)" 
+            <img src="@(currentUser?.AvatarUrl ?? "https://i.imgur.com/7Y5j5Yx.png")" 
                  alt="User" 
                  class="w-10 h-10 rounded-full border-2 border-gray-600 hover:border-white transition object-cover" />
         </div>
@@ -70,50 +70,46 @@
     {
         try
         {
-            // 1. Get ID from Local Storage
+            // 1. EXACT LOGIC FROM BULLET CALENDAR
             var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
             if (!string.IsNullOrEmpty(json))
             {
                 using (var doc = JsonDocument.Parse(json))
                 {
-                    if (TryGetInt(doc.RootElement, "UserId", out int id) || 
-                        TryGetInt(doc.RootElement, "id", out id))
+                    // Check for UserId (Title Case) or userId (camelCase)
+                    // Also handle if it's stored as a STRING "1" or a NUMBER 1
+                    if (doc.RootElement.TryGetProperty("UserId", out var p) || 
+                        doc.RootElement.TryGetProperty("userId", out p) ||
+                        doc.RootElement.TryGetProperty("id", out p))
                     {
-                        userId = id;
+                        if (p.ValueKind == JsonValueKind.Number)
+                        {
+                            userId = p.GetInt32();
+                        }
+                        else if (p.ValueKind == JsonValueKind.String && int.TryParse(p.GetString(), out int parsedId))
+                        {
+                            userId = parsedId;
+                        }
                     }
                 }
             }
 
+            // 2. ISOLATED DB CALL (Prevents "Second operation started" error)
             if (userId > 0)
             {
-                // 2. CREATE A NEW SCOPE to avoid conflict with the Parent Page's DbContext
                 using (var scope = ScopeFactory.CreateScope())
                 {
                     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                     currentUser = await db.Users.FindAsync(userId);
                 }
+                // Force UI update immediately after data is found
                 StateHasChanged();
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Header Error: {ex.Message}");
+            Console.WriteLine($"Header Load Error: {ex.Message}");
         }
-    }
-
-    private bool TryGetInt(JsonElement element, string propName, out int value)
-    {
-        value = 0;
-        if (element.TryGetProperty(propName, out var prop) || 
-            element.TryGetProperty(propName.ToLower(), out prop))
-        {
-            if(prop.ValueKind == JsonValueKind.Number)
-            {
-                value = prop.GetInt32();
-                return true;
-            }
-        }
-        return false;
     }
 
     private void ToggleUserMenu() => showUserMenu = !showUserMenu;
