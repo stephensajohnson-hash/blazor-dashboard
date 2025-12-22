@@ -17,7 +17,7 @@
 <div class="min-h-screen bg-gray-900 text-white p-6">
     <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
         <h1 class="text-3xl font-bold flex items-center gap-3">
-            <span>💵</span> Budget Tracker <span class="text-xs font-normal text-gray-500 self-end mb-1">v1.1</span>
+            <span>💵</span> Budget Tracker <span class="text-xs font-normal text-gray-500 self-end mb-1">v1.2 (Debug)</span>
         </h1>
         
         <div class="flex gap-3">
@@ -34,40 +34,49 @@
         </div>
     </div>
 
-    <div class="mb-8 p-4 border-2 border-dashed border-red-500 bg-red-900/20 rounded-xl">
-        <div class="flex flex-col md:flex-row justify-between items-center gap-4">
-            <div>
-                <h3 class="font-bold text-red-400 text-lg">⚠️ Database Setup</h3>
-                <p class="text-sm text-gray-400">If you see "relation does not exist" errors, click this button to create the tables.</p>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div class="p-4 border-2 border-dashed border-red-500 bg-red-900/20 rounded-xl">
+            <div class="flex flex-col gap-4">
+                <div>
+                    <h3 class="font-bold text-red-400 text-lg">⚠️ Database Setup</h3>
+                    <p class="text-sm text-gray-400">Click this to force Entity Framework to create the missing tables.</p>
+                </div>
+                <button class="bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-6 rounded shadow-lg transition w-full" 
+                        @onclick="CreateDatabaseTables">
+                    🛠️ Create Missing Tables Now
+                </button>
             </div>
-            <button class="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-6 rounded shadow-lg transition" 
-                    @onclick="CreateDatabaseTables">
-                Create Missing Tables
-            </button>
         </div>
-        @if (!string.IsNullOrEmpty(adminStatus))
-        {
-            <div class="mt-3 p-2 bg-black/40 rounded border border-gray-700 font-mono text-sm">
-                <div class="text-yellow-400">@adminStatus</div>
-                @if (!string.IsNullOrEmpty(adminError))
+
+        <div class="bg-black border border-gray-700 rounded-xl p-4 font-mono text-xs h-48 overflow-y-auto flex flex-col-reverse shadow-inner">
+            @if (debugLogs.Count == 0)
+            {
+                <div class="text-gray-600 italic">Waiting for logs...</div>
+            }
+            else
+            {
+                @foreach (var log in ((IEnumerable<string>)debugLogs).Reverse())
                 {
-                    <div class="text-red-400 mt-1 whitespace-pre-wrap">@adminError</div>
+                    <div class="border-b border-gray-900 py-0.5">
+                        <span class="text-gray-500">@log.Split('|')[0]</span> 
+                        <span class="@GetLogColor(log)">@log.Split('|')[1]</span>
+                    </div>
                 }
-            </div>
-        }
+            }
+        </div>
     </div>
     @if (isLoading)
     {
         <div class="flex flex-col items-center justify-center py-20 space-y-4">
             <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-            <div class="text-gray-400 animate-pulse">Processing Data...</div>
+            <div class="text-gray-400 animate-pulse">Processing... check console above</div>
         </div>
     }
     else if (!periods.Any())
     {
         <div class="text-center py-20 border-2 border-dashed border-gray-700 rounded-xl bg-gray-800/30">
             <p class="text-gray-500 text-xl mb-2">No budgets loaded.</p>
-            <p class="text-sm text-gray-600">Click <b>"Load Server Data"</b> to import Dec '25 & Jan '26.</p>
+            <p class="text-sm text-gray-600">If tables are created, try clicking <b>"Load Server Data"</b>.</p>
         </div>
     }
     else
@@ -173,14 +182,25 @@
     private bool isLoading = true;
     private List<BudgetPeriod> periods = new();
     
-    // --- ADMIN STATE ---
-    private string adminStatus = "";
-    private string adminError = "";
+    // --- DEBUG CONSOLE STATE ---
+    private List<string> debugLogs = new();
+    private void Log(string msg, string type = "info") 
+    {
+        debugLogs.Add($"{DateTime.Now:HH:mm:ss}|{msg}|{type}");
+        StateHasChanged();
+    }
+    private string GetLogColor(string log) 
+    {
+        if(log.Contains("|error")) return "text-red-400 font-bold";
+        if(log.Contains("|success")) return "text-green-400 font-bold";
+        return "text-gray-300";
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
+            Log("Page initializing...");
             try
             {
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
@@ -193,13 +213,30 @@
                             doc.RootElement.TryGetProperty("id", out p))
                         {
                             userId = p.GetInt32();
+                            Log($"User Identified: ID {userId}", "success");
                         }
                     }
                 }
                 
-                if (userId > 0) await LoadData();
+                if (userId > 0) 
+                {
+                    Log("Attempting auto-load of data...");
+                    await LoadData();
+                }
+                else 
+                {
+                    Log("No user found in local storage.", "error");
+                }
             }
-            catch {}
+            catch (Exception ex)
+            {
+                // WE CATCH IT HERE SO THE PAGE DOESN'T CRASH
+                Log($"Auto-Load Failed: {ex.Message}", "error");
+                if (ex.Message.Contains("BudgetPeriods"))
+                {
+                    Log("HINT: Tables missing. Click 'Create Missing Tables' button.", "error");
+                }
+            }
             finally 
             { 
                 isLoading = false; 
@@ -210,33 +247,44 @@
 
     private async Task LoadData()
     {
+        Log("Querying Database for periods...");
         periods = await BudgetService.GetPeriods(userId);
+        Log($"Loaded {periods.Count} periods.", "success");
     }
 
     // --- ADMIN MIGRATION HANDLER ---
     private async Task CreateDatabaseTables()
     {
-        adminStatus = "⏳ Migrating database...";
-        adminError = "";
-        StateHasChanged();
-
+        Log("Button Clicked: Starting Migration...", "info");
+        
         try
         {
+            Log("Running Db.Database.MigrateAsync()...");
             await Db.Database.MigrateAsync();
-            adminStatus = "✅ Success! Tables Created.";
+            Log("MIGRATION SUCCESSFUL! Tables created.", "success");
+            Log("You can now click 'Load Server Data'.", "info");
         }
         catch (Exception ex)
         {
-            adminStatus = "❌ Error during migration.";
-            adminError = ex.Message + (ex.InnerException != null ? "\n" + ex.InnerException.Message : "");
+            Log($"MIGRATION FAILED: {ex.Message}", "error");
+            if(ex.InnerException != null)
+            {
+                Log($"Inner Error: {ex.InnerException.Message}", "error");
+            }
         }
     }
 
     // --- LOAD FROM SERVER FILES ---
     private async Task LoadServerDefaults()
     {
-        if (userId == 0) return;
+        if (userId == 0) 
+        {
+            Log("Cannot load: UserID is 0", "error");
+            return;
+        }
+
         isLoading = true;
+        Log("Starting JSON import from server...", "info");
         StateHasChanged();
 
         try
@@ -248,22 +296,27 @@
             foreach(var fileName in files)
             {
                 var path = Path.Combine(webRoot, fileName);
+                Log($"Looking for {fileName}...", "info");
+                
                 if(File.Exists(path))
                 {
                     var json = await File.ReadAllTextAsync(path);
+                    Log($"Importing {fileName}...", "info");
                     await BudgetService.ImportBudgetJson(userId, json);
                     successCount++;
                 }
+                else 
+                {
+                    Log($"File not found: {path}", "error");
+                }
             }
-
-            await LoadData();
             
-            if(successCount > 0) await JS.InvokeVoidAsync("alert", $"{successCount} budget files imported successfully!");
-            else await JS.InvokeVoidAsync("alert", "No budget files found in wwwroot.");
+            Log($"Import finished. {successCount} files processed.", "success");
+            await LoadData();
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", "Server Load Error: " + ex.Message);
+            Log($"Import Error: {ex.Message}", "error");
         }
         finally
         {
@@ -277,6 +330,7 @@
     {
         if (userId == 0) return;
         isLoading = true;
+        Log($"Uploading file: {e.File.Name}...", "info");
         StateHasChanged();
 
         try
@@ -287,10 +341,11 @@
             
             await BudgetService.ImportBudgetJson(userId, json);
             await LoadData();
+            Log("Upload successful.", "success");
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", "Error importing: " + ex.Message);
+            Log($"Upload Failed: {ex.Message}", "error");
         }
         finally
         {
