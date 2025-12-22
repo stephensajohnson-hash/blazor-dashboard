@@ -156,8 +156,40 @@ public class BulletSportsService
 
     public async Task<List<GameDTO>> GetGamesForRange(int userId, DateTime start, DateTime end) 
     { 
-        // Preserved for Calendar
-        return new List<GameDTO>(); 
+        // 1. Get the games + details joining both tables for the date range
+        var items = await (from baseItem in _db.BulletItems
+                           join detail in _db.BulletGameDetails on baseItem.Id equals detail.BulletItemId
+                           where baseItem.UserId == userId 
+                                 && baseItem.Type == "sports"
+                                 && baseItem.Date >= start 
+                                 && baseItem.Date <= end
+                           orderby baseItem.Date
+                           select new GameDTO 
+                           { 
+                               Id = baseItem.Id, UserId = baseItem.UserId, Type = baseItem.Type, Category = baseItem.Category,
+                               Date = baseItem.Date, Title = baseItem.Title, Description = baseItem.Description, 
+                               ImgUrl = baseItem.ImgUrl, LinkUrl = baseItem.LinkUrl, OriginalStringId = baseItem.OriginalStringId,
+                               SortOrder = baseItem.SortOrder,
+                               Detail = detail
+                           }).ToListAsync();
+
+        // 2. Fill in the team names/logos so the card looks nice
+        if (items.Any())
+        {
+            var teams = await _db.Teams.Where(t => t.UserId == userId).ToListAsync();
+            foreach (var g in items)
+            {
+                g.HomeTeam = teams.FirstOrDefault(t => t.Id == g.Detail.HomeTeamId);
+                g.AwayTeam = teams.FirstOrDefault(t => t.Id == g.Detail.AwayTeamId);
+            }
+        }
+
+        return items;
     }
-    public async Task<int> ImportGames(int userId, string jsonContent) { return 0; }
+
+    public async Task<int> ImportGames(int userId, string jsonContent) 
+    { 
+        // Stub: Implement import logic if needed later
+        return 0; 
+    }
 }
