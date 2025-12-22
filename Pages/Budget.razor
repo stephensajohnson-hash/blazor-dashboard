@@ -34,6 +34,28 @@
         </div>
     </div>
 
+    <div class="mb-8 p-4 border-2 border-dashed border-red-500 bg-red-900/20 rounded-xl">
+        <div class="flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+                <h3 class="font-bold text-red-400 text-lg">⚠️ Database Setup</h3>
+                <p class="text-sm text-gray-400">If you see "relation does not exist" errors, click this button to create the tables.</p>
+            </div>
+            <button class="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-6 rounded shadow-lg transition" 
+                    @onclick="CreateDatabaseTables">
+                Create Missing Tables
+            </button>
+        </div>
+        @if (!string.IsNullOrEmpty(adminStatus))
+        {
+            <div class="mt-3 p-2 bg-black/40 rounded border border-gray-700 font-mono text-sm">
+                <div class="text-yellow-400">@adminStatus</div>
+                @if (!string.IsNullOrEmpty(adminError))
+                {
+                    <div class="text-red-400 mt-1 whitespace-pre-wrap">@adminError</div>
+                }
+            </div>
+        }
+    </div>
     @if (isLoading)
     {
         <div class="flex flex-col items-center justify-center py-20 space-y-4">
@@ -150,6 +172,10 @@
     private int userId = 0;
     private bool isLoading = true;
     private List<BudgetPeriod> periods = new();
+    
+    // --- ADMIN STATE ---
+    private string adminStatus = "";
+    private string adminError = "";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -187,7 +213,26 @@
         periods = await BudgetService.GetPeriods(userId);
     }
 
-    // --- NEW: LOAD FROM SERVER FILES ---
+    // --- ADMIN MIGRATION HANDLER ---
+    private async Task CreateDatabaseTables()
+    {
+        adminStatus = "⏳ Migrating database...";
+        adminError = "";
+        StateHasChanged();
+
+        try
+        {
+            await Db.Database.MigrateAsync();
+            adminStatus = "✅ Success! Tables Created.";
+        }
+        catch (Exception ex)
+        {
+            adminStatus = "❌ Error during migration.";
+            adminError = ex.Message + (ex.InnerException != null ? "\n" + ex.InnerException.Message : "");
+        }
+    }
+
+    // --- LOAD FROM SERVER FILES ---
     private async Task LoadServerDefaults()
     {
         if (userId == 0) return;
@@ -196,9 +241,7 @@
 
         try
         {
-            // The path to wwwroot
             var webRoot = Env.WebRootPath;
-            
             var files = new[] { "budget_dec25.json", "budget_jan26.json" };
             int successCount = 0;
 
@@ -229,7 +272,7 @@
         }
     }
 
-    // --- EXISTING: UPLOAD HANDLER ---
+    // --- UPLOAD HANDLER ---
     private async Task LoadJsonFile(InputFileChangeEventArgs e)
     {
         if (userId == 0) return;
