@@ -32,7 +32,9 @@
 
     <div class="relative">
         <div class="cursor-pointer" @onclick="ToggleUserMenu">
-            <img src="@avatarUrl" alt="User" class="w-10 h-10 rounded-full border-2 border-gray-600 hover:border-white transition object-cover" />
+            <img src="@(currentUser?.AvatarUrl ?? "https://i.imgur.com/7Y5j5Yx.png")" 
+                 alt="User" 
+                 class="w-10 h-10 rounded-full border-2 border-gray-600 hover:border-white transition object-cover" />
         </div>
 
         @if (showUserMenu)
@@ -52,7 +54,7 @@
 
 @code {
     private bool showUserMenu = false;
-    private string avatarUrl = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2NjYyI+PHBhdGggZD0iTTEyIDEyYzIuMjEgMCDoLTEuNzkgNC00cy0xLjc5LTQtNC00LTQgMS43OS00IDQgMS43OSA0IDQgNHptMCAyYy0yLjY3IDAtOCAxLjM0LTggNHYyaDE2di0yYzAtMi42Ni01LjMzLTQtOC00eiIvPjwvc3ZnPg==";
+    private User? currentUser;
     private int userId = 0;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -67,7 +69,6 @@
     {
         try
         {
-            // 1. Get User ID from Local Storage
             var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
             if (!string.IsNullOrEmpty(json))
             {
@@ -79,37 +80,18 @@
                         userId = id;
                     }
                 }
-            }
 
-            // 2. Query DB for the Real Avatar URL
-            if (userId > 0)
-            {
-                // We create a quick scope or use the injected Db if it's scoped correctly
-                var user = await Db.Users.AsNoTracking()
-                    .Where(u => u.Id == userId)
-                    .Select(u => new { u.AvatarUrl })
-                    .FirstOrDefaultAsync();
-
-                if (user != null && !string.IsNullOrEmpty(user.AvatarUrl))
+                if (userId > 0)
                 {
-                    // Logic: If it looks like a web link (http), keep it. 
-                    // If it looks like a filename (myface.png), prepend /images/
-                    if (user.AvatarUrl.StartsWith("http") || user.AvatarUrl.StartsWith("/"))
-                    {
-                        avatarUrl = user.AvatarUrl;
-                    }
-                    else
-                    {
-                        avatarUrl = $"/images/{user.AvatarUrl}";
-                    }
-                    
+                    // Exact match to BulletCalendar logic
+                    currentUser = await Db.Users.FindAsync(userId);
                     StateHasChanged();
                 }
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Header Avatar Error: {ex.Message}");
+            Console.WriteLine($"Header Error: {ex.Message}");
         }
     }
 
