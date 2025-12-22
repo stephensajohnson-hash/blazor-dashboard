@@ -1,6 +1,8 @@
 @namespace Dashboard.Components.Bullet
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject Dashboard.AppDbContext Db
+@using Microsoft.EntityFrameworkCore
 @using System.Text.Json
 
 <header class="flex flex-row justify-between items-center bg-gray-800 p-3 shadow-md border-b border-gray-700 mb-4">
@@ -50,73 +52,90 @@
 
 @code {
     private bool showUserMenu = false;
-    
-    // Default SVG (Gray User Icon) so it never looks "Broken"
     private string avatarUrl = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2NjYyI+PHBhdGggZD0iTTEyIDEyYzIuMjEgMCDoLTEuNzkgNC00cy0xLjc5LTQtNC00LTQgMS43OS00IDQgMS43OSA0IDQgNHptMCAyYy0yLjY3IDAtOCAxLjM0LTggNHYyaDE2di0yYzAtMi42Ni01LjMzLTQtOC00eiIvPjwvc3ZnPg==";
+    private int userId = 0;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            try
-            {
-                // Retrieve the session JSON exactly like Movies.razor
-                var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
-                
-                if (!string.IsNullOrEmpty(json))
-                {
-                    using (var doc = JsonDocument.Parse(json))
-                    {
-                        // Check common property names for the avatar URL
-                        if (TryGetString(doc.RootElement, "AvatarUrl", out var url))                            
-                        {
-                            if (!string.IsNullOrEmpty(url))
-                            {
-                                avatarUrl = url;
-                                StateHasChanged(); // Force re-render to show the new image
-                            }
-                        }
-                    }
-                }
-            }
-            catch
-            {
-                // If parsing fails, we just keep the default SVG
-            }
+            await LoadUserData();
         }
     }
 
-    // Helper to safely get string property
-    private bool TryGetString(JsonElement element, string propName, out string? value)
+    private async Task LoadUserData()
     {
-        value = null;
-        if (element.TryGetProperty(propName, out var prop) || 
-            element.TryGetProperty(propName.ToLower(), out prop)) // Check lowercase too
+        try
         {
-            value = prop.GetString();
-            return true;
+            // 1. Get User ID from Local Storage
+            var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
+            if (!string.IsNullOrEmpty(json))
+            {
+                using (var doc = JsonDocument.Parse(json))
+                {
+                    if (TryGetInt(doc.RootElement, "UserId", out int id) || 
+                        TryGetInt(doc.RootElement, "id", out id))
+                    {
+                        userId = id;
+                    }
+                }
+            }
+
+            // 2. Query DB for the Real Avatar URL
+            if (userId > 0)
+            {
+                // We create a quick scope or use the injected Db if it's scoped correctly
+                var user = await Db.Users.AsNoTracking()
+                    .Where(u => u.Id == userId)
+                    .Select(u => new { u.AvatarUrl })
+                    .FirstOrDefaultAsync();
+
+                if (user != null && !string.IsNullOrEmpty(user.AvatarUrl))
+                {
+                    // Logic: If it looks like a web link (http), keep it. 
+                    // If it looks like a filename (myface.png), prepend /images/
+                    if (user.AvatarUrl.StartsWith("http") || user.AvatarUrl.StartsWith("/"))
+                    {
+                        avatarUrl = user.AvatarUrl;
+                    }
+                    else
+                    {
+                        avatarUrl = $"/images/{user.AvatarUrl}";
+                    }
+                    
+                    StateHasChanged();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Header Avatar Error: {ex.Message}");
+        }
+    }
+
+    private bool TryGetInt(JsonElement element, string propName, out int value)
+    {
+        value = 0;
+        if (element.TryGetProperty(propName, out var prop) || 
+            element.TryGetProperty(propName.ToLower(), out prop))
+        {
+            if(prop.ValueKind == JsonValueKind.Number)
+            {
+                value = prop.GetInt32();
+                return true;
+            }
         }
         return false;
     }
 
-    private void ToggleUserMenu()
-    {
-        showUserMenu = !showUserMenu;
-    }
+    private void ToggleUserMenu() => showUserMenu = !showUserMenu;
 
     private void GoToCalendar(string viewType, bool isToday)
     {
         var url = $"/bullet-calendar?view={viewType}";
-        if (isToday)
-        {
-            var todayStr = DateTime.Now.ToString("yyyy-MM-dd");
-            url += $"&date={todayStr}";
-        }
+        if (isToday) url += $"&date={DateTime.Now:yyyy-MM-dd}";
         Nav.NavigateTo(url);
     }
 
-    private void Logout()
-    {
-        Nav.NavigateTo("/");
-    }
+    private void Logout() => Nav.NavigateTo("/");
 }
