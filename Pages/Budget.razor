@@ -1,0 +1,173 @@
+@page "/budget-tracker"
+@using Dashboard
+@using Dashboard.Components.Bullet
+@using System.IO
+@using Microsoft.EntityFrameworkCore
+@using System.Text.Json
+@inject BudgetService BudgetService  @inject IJSRuntime JS
+@inject AppDbContext Db
+
+<BulletHeader />
+
+<div class="min-h-screen bg-gray-900 text-white p-6">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold flex items-center gap-3">
+            <span>💵</span> Budget Tracker <span class="text-xs font-normal text-gray-500 self-end mb-1">v1.0</span>
+        </h1>
+        
+        <div class="relative">
+            <label class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded cursor-pointer transition shadow-lg flex items-center gap-2">
+                <span>📂 Import JSON</span>
+                <InputFile OnChange="LoadJsonFile" class="hidden" />
+            </label>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center py-20 animate-pulse text-gray-400">Processing Data...</div>
+    }
+    else if (!periods.Any())
+    {
+        <div class="text-center py-20 border-2 border-dashed border-gray-700 rounded-xl">
+            <p class="text-gray-500 text-xl">No budgets loaded.</p>
+            <p class="text-sm text-gray-600">Upload a JSON file to get started.</p>
+        </div>
+    }
+    else
+    {
+        @foreach (var period in periods)
+        {
+            <div class="bg-gray-800 border border-gray-700 rounded-xl mb-8 overflow-hidden shadow-2xl">
+                <div class="bg-gray-900 p-4 border-b border-gray-700 flex justify-between items-center">
+                    <div>
+                        <h2 class="text-xl font-bold text-white">@period.DisplayName</h2>
+                        <div class="text-xs text-gray-400">Start: @period.StartDate.ToShortDateString() | Opening: @period.InitialBankBalance.ToString("C")</div>
+                    </div>
+                    <div class="flex gap-4 text-sm font-bold">
+                        <div class="text-green-400">In: @period.Transactions.Where(t => t.Amount > 0).Sum(t => t.Amount).ToString("C")</div>
+                        <div class="text-red-400">Out: @Math.Abs(period.Transactions.Where(t => t.Amount < 0).Sum(t => t.Amount)).ToString("C")</div>
+                    </div>
+                </div>
+
+                <div class="p-4 grid lg:grid-cols-2 gap-6">
+                    <div class="space-y-4">
+                        <h3 class="text-lg font-bold text-blue-300 border-b border-gray-700 pb-2">Budget Items</h3>
+                        @foreach (var cycle in period.Cycles.OrderBy(c => c.CycleNumber))
+                        {
+                            <div class="bg-gray-800/50 border border-gray-600 rounded-lg p-3">
+                                <div class="font-bold text-gray-400 text-xs uppercase mb-2">Cycle @cycle.CycleNumber: @cycle.Label</div>
+                                <div class="space-y-2">
+                                    @foreach (var item in cycle.Items)
+                                    {
+                                        <div class="flex items-center justify-between bg-gray-900 p-2 rounded">
+                                            <div class="flex items-center gap-3">
+                                                @if(!string.IsNullOrEmpty(item.ImgUrl)) { <img src="@item.ImgUrl" class="w-8 h-8 rounded object-cover" /> }
+                                                <div>
+                                                    <div class="font-bold text-sm">@item.Name</div>
+                                                    @if(item.CarriedOver > 0) { <div class="text-[10px] text-yellow-500">Carry: @item.CarriedOver.ToString("C")</div> }
+                                                </div>
+                                            </div>
+                                            <div class="font-mono font-bold">@item.PlannedAmount.ToString("C0")</div>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <div>
+                        <h3 class="text-lg font-bold text-purple-300 border-b border-gray-700 pb-2 mb-4">Ledger (@period.Transactions.Count)</h3>
+                        <div class="space-y-1 max-h-[500px] overflow-y-auto pr-2 scrollbar-thin">
+                            @foreach (var t in period.Transactions.OrderBy(x => x.Date))
+                            {
+                                <div class="flex justify-between items-center p-2 rounded hover:bg-gray-700 transition border-b border-gray-700/50 text-sm">
+                                    <div class="flex-1">
+                                        <div class="text-gray-300 font-bold">@t.Description</div>
+                                        <div class="text-xs text-gray-500">@t.Date.ToShortDateString()</div>
+                                        @if(t.Splits.Any()) 
+                                        { 
+                                            <div class="text-[10px] text-gray-400 mt-1 pl-2 border-l-2 border-gray-600">
+                                                @foreach(var s in t.Splits) { <div>↳ @s.Amount.ToString("C") @s.Note</div> }
+                                            </div> 
+                                        }
+                                    </div>
+                                    <div class="font-mono font-bold @(t.Amount >= 0 ? "text-green-400" : "text-white")">
+                                        @t.Amount.ToString("C")
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private int userId = 0;
+    private bool isLoading = true;
+    private List<BudgetPeriod> periods = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
+                if (!string.IsNullOrEmpty(json))
+                {
+                    using (var doc = JsonDocument.Parse(json))
+                    {
+                        if (doc.RootElement.TryGetProperty("UserId", out var p) || 
+                            doc.RootElement.TryGetProperty("userId", out p))
+                        {
+                            userId = p.GetInt32();
+                        }
+                    }
+                }
+                
+                if (userId > 0) await LoadData();
+            }
+            catch {}
+            finally 
+            { 
+                isLoading = false; 
+                StateHasChanged(); 
+            }
+        }
+    }
+
+    private async Task LoadData()
+    {
+        periods = await BudgetService.GetPeriods(userId);
+    }
+
+    private async Task LoadJsonFile(InputFileChangeEventArgs e)
+    {
+        if (userId == 0) return;
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var file = e.File;
+            using var reader = new StreamReader(file.OpenReadStream(2 * 1024 * 1024)); // 2MB max
+            var json = await reader.ReadToEndAsync();
+            
+            await BudgetService.ImportBudgetJson(userId, json);
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", "Error importing: " + ex.Message);
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+}

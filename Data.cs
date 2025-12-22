@@ -47,6 +47,14 @@ public class AppDbContext : DbContext
     public DbSet<Season> Seasons { get; set; } // NEW
     public DbSet<Team> Teams { get; set; } // NEW
     public DbSet<BulletGameDetail> BulletGameDetails { get; set; }
+
+    public DbSet<BudgetPeriod> BudgetPeriods { get; set; }
+    public DbSet<BudgetCycle> BudgetCycles { get; set; }
+    public DbSet<BudgetItem> BudgetItems { get; set; }
+    public DbSet<BudgetTransaction> BudgetTransactions { get; set; }
+    public DbSet<BudgetTransactionSplit> BudgetTransactionSplits { get; set; }
+    public DbSet<BudgetTransfer> BudgetTransfers { get; set; }
+    public DbSet<BudgetIncomeSource> BudgetIncomeSources { get; set; }
 }
 
 // ... (Keep existing Bullet classes) ...
@@ -128,4 +136,90 @@ public class BulletGameDetail
     public bool IsComplete { get; set; } // "status": "completed"
     public DateTime? StartTime { get; set; } // Just the time component usually, combined with Item.Date
     public string TvChannel { get; set; } = "";
+}
+
+public class BudgetPeriod
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public string StringId { get; set; } = ""; // "2025-12"
+    public string DisplayName { get; set; } = "";
+    public DateTime StartDate { get; set; }
+    public decimal InitialBankBalance { get; set; }
+    public List<BudgetCycle> Cycles { get; set; } = new();
+    public List<BudgetTransaction> Transactions { get; set; } = new();
+    public List<BudgetTransfer> Transfers { get; set; } = new();
+}
+
+public class BudgetCycle
+{
+    public int Id { get; set; }
+    public int BudgetPeriodId { get; set; }
+    public int CycleNumber { get; set; } // 1 or 2
+    public string Label { get; set; } = "";
+    public List<BudgetItem> Items { get; set; } = new();
+}
+
+public class BudgetItem
+{
+    public int Id { get; set; }
+    public int BudgetCycleId { get; set; }
+    public string StringId { get; set; } = ""; // "b1", "b176..."
+    public string Name { get; set; } = "";
+    public decimal PlannedAmount { get; set; }
+    public decimal CarriedOver { get; set; }
+    public string ImgUrl { get; set; } = "";
+}
+
+public class BudgetTransaction
+{
+    public int Id { get; set; }
+    public int BudgetPeriodId { get; set; }
+    public string StringId { get; set; } = "";
+    public DateTime Date { get; set; }
+    public string Description { get; set; } = "";
+    public decimal Amount { get; set; } // Positive = Income, Negative = Expense
+    public string Type { get; set; } = "expense"; // "income" or "expense"
+    
+    // Relationships
+    public string? SourceStringId { get; set; } // For Income
+    public string? LinkedBudgetItemStringId { get; set; } // "b1"
+    
+    // We store the resolved DB ID after import
+    public int? ResolvedBudgetItemId { get; set; } 
+    
+    public List<BudgetTransactionSplit> Splits { get; set; } = new();
+}
+
+public class BudgetTransactionSplit
+{
+    public int Id { get; set; }
+    public int BudgetTransactionId { get; set; }
+    public string LinkedBudgetItemStringId { get; set; } = "";
+    public decimal Amount { get; set; }
+    public string Note { get; set; } = "";
+    public int? ResolvedBudgetItemId { get; set; }
+}
+
+public class BudgetTransfer
+{
+    public int Id { get; set; }
+    public int BudgetPeriodId { get; set; }
+    public DateTime Date { get; set; }
+    public string FromStringId { get; set; } = "";
+    public string ToStringId { get; set; } = "";
+    public decimal Amount { get; set; }
+    public string Note { get; set; } = "";
+    
+    public int? ResolvedFromId { get; set; }
+    public int? ResolvedToId { get; set; }
+}
+
+public class BudgetIncomeSource
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public string StringId { get; set; } = ""; // "inc176..."
+    public string Name { get; set; } = "";
+    public string ImgUrl { get; set; } = "";
 }
