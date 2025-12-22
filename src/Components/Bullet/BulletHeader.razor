@@ -1,6 +1,7 @@
 @namespace Dashboard.Components.Bullet
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@using System.Text.Json
 
 <header class="flex flex-row justify-between items-center bg-gray-800 p-3 shadow-md border-b border-gray-700 mb-4">
     
@@ -29,7 +30,7 @@
 
     <div class="relative">
         <div class="cursor-pointer" @onclick="ToggleUserMenu">
-            <img src="/images/avatar.png" alt="User" class="w-10 h-10 rounded-full border-2 border-gray-600 hover:border-white transition" />
+            <img src="@avatarUrl" alt="User" class="w-10 h-10 rounded-full border-2 border-gray-600 hover:border-white transition object-cover" />
         </div>
 
         @if (showUserMenu)
@@ -49,6 +50,54 @@
 
 @code {
     private bool showUserMenu = false;
+    
+    // Default SVG (Gray User Icon) so it never looks "Broken"
+    private string avatarUrl = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2NjYyI+PHBhdGggZD0iTTEyIDEyYzIuMjEgMCDoLTEuNzkgNC00cy0xLjc5LTQtNC00LTQgMS43OS00IDQgMS43OSA0IDQgNHptMCAyYy0yLjY3IDAtOCAxLjM0LTggNHYyaDE2di0yYzAtMi42Ni01LjMzLTQtOC00eiIvPjwvc3ZnPg==";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                // Retrieve the session JSON exactly like Movies.razor
+                var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
+                
+                if (!string.IsNullOrEmpty(json))
+                {
+                    using (var doc = JsonDocument.Parse(json))
+                    {
+                        // Check common property names for the avatar URL
+                        if (TryGetString(doc.RootElement, "AvatarUrl", out var url))                            
+                        {
+                            if (!string.IsNullOrEmpty(url))
+                            {
+                                avatarUrl = url;
+                                StateHasChanged(); // Force re-render to show the new image
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // If parsing fails, we just keep the default SVG
+            }
+        }
+    }
+
+    // Helper to safely get string property
+    private bool TryGetString(JsonElement element, string propName, out string? value)
+    {
+        value = null;
+        if (element.TryGetProperty(propName, out var prop) || 
+            element.TryGetProperty(propName.ToLower(), out prop)) // Check lowercase too
+        {
+            value = prop.GetString();
+            return true;
+        }
+        return false;
+    }
 
     private void ToggleUserMenu()
     {
@@ -57,14 +106,12 @@
 
     private void GoToCalendar(string viewType, bool isToday)
     {
-        var url = $"/bullet_calendar?view={viewType}";
-        
+        var url = $"/bullet-calendar?view={viewType}";
         if (isToday)
         {
             var todayStr = DateTime.Now.ToString("yyyy-MM-dd");
             url += $"&date={todayStr}";
         }
-
         Nav.NavigateTo(url);
     }
 
