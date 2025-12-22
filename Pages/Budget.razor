@@ -20,7 +20,7 @@
 <div class="min-h-screen bg-gray-900 text-white p-6">
     <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
         <h1 class="text-3xl font-bold flex items-center gap-3">
-            <span>💵</span> Budget Tracker <span class="text-xs font-normal text-gray-500 self-end mb-1">v1.7 (Deep Log)</span>
+            <span>💵</span> Budget Tracker <span class="text-xs font-normal text-gray-500 self-end mb-1">v1.8 (Copy & Date Fix)</span>
         </h1>
         
         <div class="flex gap-3">
@@ -51,21 +51,28 @@
             </div>
         </div>
 
-        <div class="bg-black border border-gray-700 rounded-xl p-4 font-mono text-xs h-48 overflow-y-auto flex flex-col-reverse shadow-inner">
-            @if (debugLogs.Count == 0)
-            {
-                <div class="text-gray-600 italic">Waiting for logs...</div>
-            }
-            else
-            {
-                @foreach (var log in ((IEnumerable<string>)debugLogs).Reverse())
+        <div class="relative bg-black border border-gray-700 rounded-xl p-4 font-mono text-xs h-48 overflow-hidden shadow-inner flex flex-col">
+            <button class="absolute top-2 right-2 bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded border border-gray-600 text-[10px] z-10 transition" 
+                    @onclick="CopyLogs">
+                📋 Copy Log
+            </button>
+
+            <div class="overflow-y-auto flex flex-col-reverse h-full pt-6">
+                @if (debugLogs.Count == 0)
                 {
-                    <div class="border-b border-gray-900 py-0.5">
-                        <span class="text-gray-500">@log.Split('|')[0]</span> 
-                        <span class="@GetLogColor(log)">@log.Split('|')[1]</span>
-                    </div>
+                    <div class="text-gray-600 italic">Waiting for logs...</div>
                 }
-            }
+                else
+                {
+                    @foreach (var log in ((IEnumerable<string>)debugLogs).Reverse())
+                    {
+                        <div class="border-b border-gray-900 py-0.5 whitespace-pre-wrap break-all">
+                            <span class="text-gray-500 select-none">@log.Split('|')[0]</span> 
+                            <span class="@GetLogColor(log)">@log.Split('|')[1]</span>
+                        </div>
+                    }
+                }
+            </div>
         </div>
     </div>
     @if (isLoading)
@@ -199,6 +206,14 @@
         return "text-gray-300";
     }
 
+    // --- NEW: COPY TO CLIPBOARD ---
+    private async Task CopyLogs()
+    {
+        var text = string.Join("\n", debugLogs.Select(l => l.Replace("|", " : ")));
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+        Log("Logs copied to clipboard.", "success");
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
@@ -246,7 +261,6 @@
         Log($"Loaded {periods.Count} periods.", "success");
     }
 
-    // --- REPLACED: RAW SQL CREATION ---
     private async Task ForceCreateTablesSQL()
     {
         Log("Button Clicked: Starting RAW SQL Creation...", "info");
@@ -337,7 +351,6 @@
         }
     }
 
-    // --- LOAD FROM SERVER FILES (UPDATED CATCH BLOCK) ---
     private async Task LoadServerDefaults()
     {
         if (userId == 0) 
@@ -352,6 +365,12 @@
 
         try
         {
+            // --- FIX FOR POSTGRES DATETIME ERROR ---
+            // This forces Npgsql to accept dates without TimeZone info (legacy mode)
+            AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+            Log("Applied Legacy Timestamp Fix.", "info");
+            // ---------------------------------------
+
             var webRoot = Env.WebRootPath;
             var files = new[] { "budget_dec25.json", "budget_jan26.json" };
             int successCount = 0;
@@ -379,7 +398,6 @@
         }
         catch (Exception ex)
         {
-            // --- NEW: RECURSIVE ERROR LOGGING ---
             Log($"Import Error: {ex.Message}", "error");
             var inner = ex.InnerException;
             while (inner != null)
@@ -387,7 +405,6 @@
                 Log($" >> {inner.Message}", "error");
                 inner = inner.InnerException;
             }
-            // ------------------------------------
         }
         finally
         {
@@ -396,7 +413,6 @@
         }
     }
 
-    // --- UPLOAD HANDLER (UPDATED CATCH BLOCK) ---
     private async Task LoadJsonFile(InputFileChangeEventArgs e)
     {
         if (userId == 0) return;
@@ -406,6 +422,10 @@
 
         try
         {
+            // --- FIX FOR POSTGRES DATETIME ERROR ---
+            AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+            // ---------------------------------------
+
             var file = e.File;
             using var reader = new StreamReader(file.OpenReadStream(2 * 1024 * 1024)); 
             var json = await reader.ReadToEndAsync();
@@ -416,7 +436,6 @@
         }
         catch (Exception ex)
         {
-            // --- NEW: RECURSIVE ERROR LOGGING ---
             Log($"Upload Failed: {ex.Message}", "error");
             var inner = ex.InnerException;
             while (inner != null)
@@ -424,7 +443,6 @@
                 Log($" >> {inner.Message}", "error");
                 inner = inner.InnerException;
             }
-            // ------------------------------------
         }
         finally
         {
