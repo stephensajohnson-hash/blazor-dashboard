@@ -5,6 +5,7 @@
 @using Microsoft.AspNetCore.Components.Web 
 @using Microsoft.AspNetCore.Components.Forms 
 @using System.IO
+@using System.Text.Json
 @inject BulletSportsService SportsService
 @inject IJSRuntime JS
 
@@ -29,7 +30,13 @@
     {
         <div class="flex flex-col items-center justify-center h-64 text-gray-400">
             <span class="text-4xl mb-2">🔒</span>
-            <p>Please log in to manage your sports teams.</p>
+            <p class="text-xl font-bold text-white">Please Log In</p>
+            <p class="mb-6">We could not find your user session.</p>
+            
+            <div class="bg-gray-800 p-4 rounded border border-gray-700 max-w-lg overflow-hidden">
+                <p class="text-xs text-orange-400 font-bold mb-1">DEBUG INFO:</p>
+                <code class="text-xs font-mono text-gray-300 break-all">Storage Value: @debugText</code>
+            </div>
         </div>
     }
     else
@@ -222,6 +229,7 @@
 @code {
     private int userId = 0;
     private bool isLoading = true;
+    private string debugText = ""; // For debugging login issues
     
     private int activeTeamId = -1; // -1 = Config
     private string configTab = "leagues";
@@ -251,15 +259,24 @@
         if (firstRender) {
             try {
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
+                debugText = json ?? "NULL (No Session Found)"; // Capture for debug display
+
                 if (!string.IsNullOrEmpty(json)) { 
-                    using(var doc = System.Text.Json.JsonDocument.Parse(json)) { 
-                        if(doc.RootElement.TryGetProperty("UserId", out var p)) userId = p.GetInt32(); 
+                    using(var doc = JsonDocument.Parse(json)) {
+                        // CASE INSENSITIVE CHECK to avoid "userId" vs "UserId" bugs
+                        if(doc.RootElement.TryGetProperty("UserId", out var p) || 
+                           doc.RootElement.TryGetProperty("userId", out p) ||
+                           doc.RootElement.TryGetProperty("id", out p)) 
+                        {
+                            userId = p.GetInt32();
+                        }
                     }
                 }
+                
                 if(userId > 0) await LoadAllData();
-            } catch { 
+            } catch (Exception ex) { 
+                debugText += " | ERROR: " + ex.Message; // Show error on screen if crash
             } finally {
-                // ENSURES SPINNER STOPS EVEN IF ERROR OR NO USER
                 isLoading = false;
                 StateHasChanged();
             }
@@ -314,7 +331,6 @@
         }
     }
 
-    // --- THESE METHODS WERE MISSING IN YOUR LAST BUILD ---
     private void OpenAddLeague() { modalType = "league"; modalTitle = "Add League"; editingId = 0; tempName = ""; tempImgUrl = ""; tempLinkUrl = ""; showConfigModal = true; }
     private void OpenEditLeague(League l) { modalType = "league"; modalTitle = "Edit League"; editingId = l.Id; tempName = l.Name; tempImgUrl = l.ImgUrl; tempLinkUrl = l.LinkUrl; showConfigModal = true; }
     
