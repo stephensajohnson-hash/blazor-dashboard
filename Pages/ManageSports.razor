@@ -7,6 +7,7 @@
 @using System.IO
 @using System.Text.Json
 @inject BulletSportsService SportsService
+@inject BulletBaseService BaseService
 @inject IJSRuntime JS
 
 <div class="min-h-screen bg-gray-900 text-white p-6">
@@ -32,6 +33,7 @@
             <span class="text-4xl mb-2">🔒</span>
             <p class="text-xl font-bold text-white">Please Log In</p>
             <p class="mb-6">We could not find your user session.</p>
+            
             <div class="bg-gray-800 p-4 rounded border border-gray-700 max-w-lg overflow-hidden">
                 <p class="text-xs text-orange-400 font-bold mb-1">DEBUG INFO:</p>
                 <code class="text-xs font-mono text-gray-300 break-all">Storage Value: @debugText</code>
@@ -152,9 +154,8 @@
 
         @if(activeTeamId > 0)
         {
-            <div class="max-w-2xl mx-auto">
-                <div class="flex justify-between items-center mb-6">
-                    <h2 class="text-lg font-bold text-gray-300">Season Schedule</h2>
+            <div class="max-w-3xl mx-auto">
+                <div class="flex justify-end mb-6">
                     <select value="@selectedSeasonId" @onchange="OnScheduleSeasonChanged" class="bg-gray-800 border border-gray-600 rounded px-4 py-2 text-white font-bold focus:border-blue-500 outline-none shadow-lg">
                         @foreach(var s in teamSeasons) { <option value="@s.Id">@s.Name</option> }
                     </select>
@@ -167,77 +168,22 @@
                     var nextGame = teamGames.FirstOrDefault(g => !g.Detail.IsComplete);
                     int nextGameId = nextGame?.Id ?? 0;
 
-                    <div class="space-y-4">
+                    <div class="space-y-6">
                         @foreach(var g in teamGames)
                         {
                             bool isNext = g.Id == nextGameId;
-                            bool isHome = g.Detail.HomeTeamId == activeTeamId;
-                            bool isWin = false; bool isLoss = false;
-                            
-                            // Determine W/L for styling
-                            if (g.Detail.IsComplete) {
-                                if (isHome) { isWin = g.Detail.HomeScore > g.Detail.AwayScore; isLoss = g.Detail.HomeScore < g.Detail.AwayScore; }
-                                else { isWin = g.Detail.AwayScore > g.Detail.HomeScore; isLoss = g.Detail.AwayScore < g.Detail.HomeScore; }
-                            }
-
-                            <div class="relative group" @onclick="() => OpenEditGame(g)">
-                                <div class="bg-gray-800 rounded-xl overflow-hidden border transition duration-300 @(isNext ? "border-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.2)]" : "border-gray-700 hover:border-gray-500")">
+                            <div class="relative group">
+                                <div class="text-xs font-bold text-gray-500 mb-1 ml-1 uppercase tracking-wide">@FormatDate(g.Date)</div>
+                                <div class="rounded-xl overflow-hidden transition duration-300 @(isNext ? "p-1 bg-yellow-500/80 shadow-[0_0_20px_rgba(234,179,8,0.3)]" : "border border-transparent") relative">
+                                    <SportsCard Item="g" />
                                     
-                                    <div class="bg-gray-900/50 p-2 px-4 flex justify-between items-center border-b border-gray-700/50">
-                                        <div class="text-xs font-bold text-gray-400 uppercase tracking-wide">@FormatDate(g.Date)</div>
-                                        <div class="text-xs text-gray-500 font-mono">
-                                            @if(g.Detail.IsComplete) { <span class="text-gray-400">FINAL</span> }
-                                            else { <span>@(g.Detail.StartTime.HasValue ? g.Detail.StartTime.Value.ToString("h:mm tt") : "TBD") @if(!string.IsNullOrEmpty(g.Detail.TvChannel)) { <span class="bg-gray-700 text-white px-1 rounded ml-1">@g.Detail.TvChannel</span> }</span> }
-                                        </div>
-                                    </div>
-
-                                    <div class="p-4 flex items-center justify-between relative">
-                                        
-                                        @if(g.Detail.IsComplete)
-                                        {
-                                            <div class="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
-                                                <span class="text-8xl font-black @(isWin ? "text-green-500" : isLoss ? "text-red-500" : "text-gray-500")">
-                                                    @(isWin ? "W" : isLoss ? "L" : "T")
-                                                </span>
-                                            </div>
-                                        }
-
-                                        <div class="flex flex-col items-center w-1/3 z-10">
-                                            <div class="w-12 h-12 mb-2 flex items-center justify-center">
-                                                @if(g.AwayTeam != null && !string.IsNullOrEmpty(g.AwayTeam.LogoUrl)) { <img src="@g.AwayTeam.LogoUrl" class="w-full h-full object-contain drop-shadow-md" /> }
-                                                else { <span class="text-2xl">🛡️</span> }
-                                            </div>
-                                            <div class="text-center leading-tight">
-                                                <div class="font-bold text-white text-sm">@g.AwayTeam?.Name</div>
-                                                @if(g.AwayTeam?.Id == activeTeamId && g.FavoriteRecord != null) { <div class="text-[10px] text-gray-500">(@g.FavoriteRecord.Display)</div> }
-                                            </div>
-                                        </div>
-
-                                        <div class="flex flex-col items-center justify-center w-1/3 z-10">
-                                            @if(g.Detail.IsComplete)
-                                            {
-                                                <div class="flex items-center gap-3 text-2xl font-black text-white">
-                                                    <span class="@(g.Detail.AwayScore > g.Detail.HomeScore ? "text-white" : "text-gray-500")">@g.Detail.AwayScore</span>
-                                                    <span class="text-xs text-gray-600 font-normal">-</span>
-                                                    <span class="@(g.Detail.HomeScore > g.Detail.AwayScore ? "text-white" : "text-gray-500")">@g.Detail.HomeScore</span>
-                                                </div>
-                                            }
-                                            else
-                                            {
-                                                <div class="text-xs font-bold text-gray-600 bg-gray-900 px-2 py-1 rounded-full">VS</div>
-                                            }
-                                        </div>
-
-                                        <div class="flex flex-col items-center w-1/3 z-10">
-                                            <div class="w-12 h-12 mb-2 flex items-center justify-center">
-                                                @if(g.HomeTeam != null && !string.IsNullOrEmpty(g.HomeTeam.LogoUrl)) { <img src="@g.HomeTeam.LogoUrl" class="w-full h-full object-contain drop-shadow-md" /> }
-                                                else { <span class="text-2xl">🛡️</span> }
-                                            </div>
-                                            <div class="text-center leading-tight">
-                                                <div class="font-bold text-white text-sm">@g.HomeTeam?.Name</div>
-                                                @if(g.HomeTeam?.Id == activeTeamId && g.FavoriteRecord != null) { <div class="text-[10px] text-gray-500">(@g.FavoriteRecord.Display)</div> }
-                                            </div>
-                                        </div>
+                                    <div class="absolute inset-0 bg-black/80 flex items-center justify-center gap-4 opacity-0 group-hover:opacity-100 transition duration-200 z-30">
+                                        <button @onclick="() => OpenEditGame(g)" class="bg-gray-700 hover:bg-white hover:text-black text-white w-10 h-10 flex items-center justify-center rounded-full shadow-lg transition" title="Edit">
+                                            ✏️
+                                        </button>
+                                        <button @onclick="() => DeleteGame(g.Id)" class="bg-red-900/80 hover:bg-red-600 text-white w-10 h-10 flex items-center justify-center rounded-full shadow-lg transition font-bold text-lg" title="Delete">
+                                            ✕
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -422,9 +368,48 @@
     private async Task DeleteSeason(int id) { if(await JS.InvokeAsync<bool>("confirm", "Delete?")) { await SportsService.DeleteSeason(id); await LoadAllData(); } }
     private async Task DeleteTeam(int id) { if(await JS.InvokeAsync<bool>("confirm", "Delete?")) { await SportsService.DeleteTeam(id); await LoadAllData(); } }
 
-    private void OpenEditGame(BulletTaskService.TaskDTO g) { editingGame = teamGames.FirstOrDefault(x => x.Id == g.Id); }
+    private void OpenEditGame(BulletTaskService.TaskDTO g) 
+    { 
+        var source = teamGames.FirstOrDefault(x => x.Id == g.Id);
+        if(source != null)
+        {
+            // FIX: Deep Copy ensures the editor has data and cancelling doesn't corrupt state
+            editingGame = new BulletSportsService.GameDTO 
+            { 
+                Id = source.Id,
+                UserId = source.UserId,
+                Date = source.Date,
+                Type = source.Type,
+                Title = source.Title,
+                Detail = new BulletGameDetail 
+                { 
+                    BulletItemId = source.Id,
+                    LeagueId = source.Detail.LeagueId,
+                    HomeTeamId = source.Detail.HomeTeamId,
+                    AwayTeamId = source.Detail.AwayTeamId,
+                    HomeScore = source.Detail.HomeScore,
+                    AwayScore = source.Detail.AwayScore,
+                    StartTime = source.Detail.StartTime,
+                    IsComplete = source.Detail.IsComplete,
+                    TvChannel = source.Detail.TvChannel,
+                    SeasonId = source.Detail.SeasonId
+                }
+            };
+        }
+    }
+    
     private void CloseGameEditor() { editingGame = null; }
+    
     private async Task SaveGame() { if(editingGame != null) { await SportsService.SaveGame(editingGame); await LoadSchedule(); editingGame = null; } }
+
+    private async Task DeleteGame(int id)
+    {
+        if(await JS.InvokeAsync<bool>("confirm", "Delete this game?"))
+        {
+            await BaseService.DeleteItem(id);
+            await LoadSchedule();
+        }
+    }
 
     private async Task HandleFileSelected(InputFileChangeEventArgs e) { try { var f = e.File; var b = new byte[f.Size]; await f.OpenReadStream(5*1024*1024).ReadAsync(b); tempImgUrl = $"data:{f.ContentType};base64,{Convert.ToBase64String(b)}"; } catch {} }
 
