@@ -16,25 +16,37 @@
     </div>
 
     <div class="flex flex-col items-center gap-2">
-        <h2 class="text-2xl font-bold text-white tracking-tight text-center drop-shadow-md">
-            @DateTime.Now.ToString("dddd, MMMM d, yyyy")
-        </h2>
+        <div class="flex items-center gap-4">
+            @if(ShowControls)
+            {
+                <button @onclick="TriggerPrev" class="w-8 h-8 flex items-center justify-center bg-gray-800 hover:bg-gray-700 hover:scale-110 rounded-full text-white border border-gray-700 transition shadow-lg text-lg">◀</button>
+            }
+
+            <h2 class="text-2xl font-bold text-white tracking-tight text-center drop-shadow-md min-w-[300px]">
+                @(string.IsNullOrEmpty(CustomDateText) ? DateTime.Now.ToString("dddd, MMMM d, yyyy") : CustomDateText)
+            </h2>
+
+            @if(ShowControls)
+            {
+                <button @onclick="TriggerNext" class="w-8 h-8 flex items-center justify-center bg-gray-800 hover:bg-gray-700 hover:scale-110 rounded-full text-white border border-gray-700 transition shadow-lg text-lg">▶</button>
+            }
+        </div>
 
         <div class="flex bg-gray-900/50 rounded-lg p-1 border border-gray-700">
-            <button @onclick='() => GoToCalendar("day", true)' 
+            <button @onclick='() => HandleViewClick("day", true)' 
                     class="px-4 py-1.5 text-xs font-bold rounded-md text-gray-300 hover:bg-blue-900/50 hover:text-white transition uppercase mr-2 border-r border-gray-700 flex items-center gap-1">
                 📅 Today
             </button>
-            <button @onclick='() => GoToCalendar("day", false)' 
-                    class="px-3 py-1.5 text-xs font-bold rounded-md text-gray-400 hover:text-white transition flex items-center gap-1">
+            <button @onclick='() => HandleViewClick("day", false)' 
+                    class="px-3 py-1.5 text-xs font-bold rounded-md transition flex items-center gap-1 @(ActiveView == "day" ? "bg-blue-600 text-white shadow" : "text-gray-400 hover:text-white")">
                 ☀️ Day
             </button>
-            <button @onclick='() => GoToCalendar("week", false)' 
-                    class="px-3 py-1.5 text-xs font-bold rounded-md text-gray-400 hover:text-white transition flex items-center gap-1">
+            <button @onclick='() => HandleViewClick("week", false)' 
+                    class="px-3 py-1.5 text-xs font-bold rounded-md transition flex items-center gap-1 @(ActiveView == "week" ? "bg-blue-600 text-white shadow" : "text-gray-400 hover:text-white")">
                 🗓️ Week
             </button>
-            <button @onclick='() => GoToCalendar("month", false)' 
-                    class="px-3 py-1.5 text-xs font-bold rounded-md text-gray-400 hover:text-white transition flex items-center gap-1">
+            <button @onclick='() => HandleViewClick("month", false)' 
+                    class="px-3 py-1.5 text-xs font-bold rounded-md transition flex items-center gap-1 @(ActiveView == "month" ? "bg-blue-600 text-white shadow" : "text-gray-400 hover:text-white")">
                 📆 Month
             </button>
         </div>
@@ -70,16 +82,23 @@
 </header>
 
 @code {
+    // === NEW PARAMETERS FOR CALENDAR CONTROL ===
+    [Parameter] public bool ShowControls { get; set; } = false;
+    [Parameter] public string CustomDateText { get; set; } = "";
+    [Parameter] public string ActiveView { get; set; } = "day"; // Used for highlighting the active button
+    
+    [Parameter] public EventCallback OnPrev { get; set; }
+    [Parameter] public EventCallback OnNext { get; set; }
+    [Parameter] public EventCallback OnGoToday { get; set; }
+    [Parameter] public EventCallback<string> OnViewChanged { get; set; }
+
     private bool showUserMenu = false;
     private User? currentUser;
     private int userId = 0;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
-        {
-            await LoadUserData();
-        }
+        if (firstRender) await LoadUserData();
     }
 
     private async Task LoadUserData()
@@ -92,17 +111,11 @@
                 using (var doc = JsonDocument.Parse(json))
                 {
                     if (doc.RootElement.TryGetProperty("UserId", out var p) || 
-                        doc.RootElement.TryGetProperty("userId", out p) ||
+                        doc.RootElement.TryGetProperty("userId", out p) || 
                         doc.RootElement.TryGetProperty("id", out p))
                     {
-                        if (p.ValueKind == JsonValueKind.Number)
-                        {
-                            userId = p.GetInt32();
-                        }
-                        else if (p.ValueKind == JsonValueKind.String && int.TryParse(p.GetString(), out int parsedId))
-                        {
-                            userId = parsedId;
-                        }
+                        if (p.ValueKind == JsonValueKind.Number) userId = p.GetInt32();
+                        else if (p.ValueKind == JsonValueKind.String && int.TryParse(p.GetString(), out int parsedId)) userId = parsedId;
                     }
                 }
             }
@@ -117,20 +130,39 @@
                 StateHasChanged();
             }
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Header Load Error: {ex.Message}");
-        }
+        catch (Exception ex) { Console.WriteLine($"Header Load Error: {ex.Message}"); }
     }
 
     private void ToggleUserMenu() => showUserMenu = !showUserMenu;
 
-    private void GoToCalendar(string viewType, bool isToday)
+    private void Logout() => Nav.NavigateTo("/");
+
+    // === NAVIGATION LOGIC ===
+
+    private async Task TriggerPrev()
     {
-        var url = $"/bullet-calendar?view={viewType}";
-        if (isToday) url += $"&date={DateTime.Now:yyyy-MM-dd}";
-        Nav.NavigateTo(url);
+        if (ShowControls && OnPrev.HasDelegate) await OnPrev.InvokeAsync();
     }
 
-    private void Logout() => Nav.NavigateTo("/");
+    private async Task TriggerNext()
+    {
+        if (ShowControls && OnNext.HasDelegate) await OnNext.InvokeAsync();
+    }
+
+    private async Task HandleViewClick(string viewType, bool isToday)
+    {
+        if (ShowControls)
+        {
+            // If we are ON the calendar, execute Parent Logic
+            if (isToday && OnGoToday.HasDelegate) await OnGoToday.InvokeAsync();
+            else if (OnViewChanged.HasDelegate) await OnViewChanged.InvokeAsync(viewType);
+        }
+        else
+        {
+            // If we are elsewhere (e.g. Movies), Redirect
+            var url = $"/bullet-calendar?view={viewType}";
+            if (isToday) url += $"&date={DateTime.Now:yyyy-MM-dd}";
+            Nav.NavigateTo(url);
+        }
+    }
 }
