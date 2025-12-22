@@ -16,7 +16,18 @@
     <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
         <div class="flex items-center gap-3">
             <span class="text-3xl">🎬</span>
-            <h1 class="text-2xl font-bold text-white">Movies & Media</h1>
+            <h1 class="text-2xl font-bold text-white">
+                Movies & Media 
+                <span class="text-gray-500 text-sm font-normal ml-2">(@filteredMovies.Count items)</span>
+            </h1>
+            
+            @if (!string.IsNullOrEmpty(selectedTag))
+            {
+                <button @onclick="ClearTag" class="flex items-center gap-1 bg-purple-600 hover:bg-purple-500 text-white text-xs px-2 py-1 rounded-full transition shadow-lg animate-pulse">
+                    <span>Filter: <b>@selectedTag</b></span>
+                    <span class="font-bold ml-1">✕</span>
+                </button>
+            }
         </div>
 
         <div class="flex flex-wrap gap-2 w-full md:w-auto">
@@ -39,7 +50,7 @@
             </select>
 
             <button @onclick="OpenAddModal" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-lg transition shadow-lg">
-                + Add Movie
+                + Add
             </button>
         </div>
     </div>
@@ -56,16 +67,17 @@
         <div class="text-center py-20 bg-gray-800/50 rounded-xl border border-dashed border-gray-700">
             <span class="text-4xl">🍿</span>
             <p class="text-gray-400 mt-2">No movies found for this filter.</p>
+            @if(!string.IsNullOrEmpty(selectedTag)) { <button @onclick="ClearTag" class="text-blue-400 underline mt-2">Clear Tag Filter</button> }
         </div>
     }
     else
     {
-        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             @foreach (var m in filteredMovies)
             {
-                <div class="group relative bg-gray-800 rounded-xl overflow-hidden shadow-lg border border-gray-700 hover:border-gray-500 transition-all duration-300 hover:-translate-y-1">
+                <div class="group relative bg-gray-800 rounded-xl overflow-hidden shadow-lg border border-gray-700 hover:border-gray-500 transition-all duration-300 hover:-translate-y-1 flex flex-col h-full">
                     
-                    <div class="aspect-[2/3] w-full bg-gray-900 relative overflow-hidden">
+                    <div class="aspect-[2/3] w-full bg-gray-900 relative overflow-hidden shrink-0">
                         @if (!string.IsNullOrEmpty(m.ImgUrl))
                         {
                             <img src="@m.ImgUrl" class="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
@@ -81,24 +93,42 @@
                         </div>
                     </div>
 
-                    <div class="p-4">
-                        <div class="mb-1">
-                            <h3 class="font-bold text-white text-sm truncate" title="@m.Title">
+                    <div class="p-4 flex flex-col flex-1">
+                        <div class="mb-2">
+                            <h3 class="font-bold text-white text-lg leading-tight">
                                 @m.Title 
-                                @if(m.ReleaseYear > 0) { <span class="text-gray-400 font-normal">(@m.ReleaseYear)</span> }
+                                @if(m.ReleaseYear > 0) { <span class="text-gray-400 font-normal text-base">(@m.ReleaseYear)</span> }
                             </h3>
                         </div>
-                        <div class="text-right">
-                             <span class="text-[10px] text-blue-400 font-mono uppercase tracking-wide">@FormatLongDate(m.DateWatched)</span>
+
+                        <div class="mb-3">
+                             <span class="text-sm text-blue-400 font-mono">@FormatLongDate(m.DateWatched)</span>
                         </div>
+                        
+                        @if(!string.IsNullOrEmpty(m.Genre))
+                        {
+                            <div class="mt-auto pt-2 flex flex-wrap gap-2 border-t border-gray-700/50">
+                                @foreach(var g in m.Genre.Split(','))
+                                {
+                                    var tag = g.Trim();
+                                    if(string.IsNullOrWhiteSpace(tag)) continue;
+                                    
+                                    <button @onclick="() => FilterByTag(tag)" @onclick:stopPropagation="true"
+                                            class="text-[10px] uppercase font-bold px-2 py-1 rounded transition border border-transparent 
+                                            @(selectedTag == tag ? "bg-purple-600 text-white border-purple-400" : "bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white")">
+                                        @tag
+                                    </button>
+                                }
+                            </div>
+                        }
                     </div>
 
-                    <div class="absolute inset-0 bg-black/80 flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition duration-200">
-                        <button @onclick="() => OpenEditModal(m)" class="bg-gray-700 hover:bg-white hover:text-black text-white p-2 rounded-full shadow-lg transition" title="Edit">
+                    <div class="absolute inset-0 bg-black/80 flex items-center justify-center gap-4 opacity-0 group-hover:opacity-100 transition duration-200 z-10">
+                        <button @onclick="() => OpenEditModal(m)" class="bg-gray-700 hover:bg-white hover:text-black text-white w-10 h-10 flex items-center justify-center rounded-full shadow-lg transition" title="Edit">
                             ✏️
                         </button>
-                        <button @onclick="() => DeleteMovie(m.Id)" class="bg-red-900/80 hover:bg-red-600 text-white p-2 rounded-full shadow-lg transition" title="Delete">
-                            🗑️
+                        <button @onclick="() => DeleteMovie(m.Id)" class="bg-red-900/80 hover:bg-red-600 text-white w-10 h-10 flex items-center justify-center rounded-full shadow-lg transition font-bold text-lg" title="Delete">
+                            ✕
                         </button>
                     </div>
                 </div>
@@ -135,6 +165,9 @@
         get => _sortOption;
         set { _sortOption = value; ApplyFilterAndSort(); }
     }
+
+    // New Tag Filter State
+    private string selectedTag = "";
 
     private BulletTaskService.TaskDTO? editingTask;
 
@@ -178,11 +211,19 @@
     {
         var query = allMovies.AsEnumerable();
 
+        // 1. Year Filter
         if (selectedYear > 0)
         {
             query = query.Where(m => m.DateWatched.Year == selectedYear);
         }
 
+        // 2. Tag Filter
+        if (!string.IsNullOrEmpty(selectedTag))
+        {
+            query = query.Where(m => m.Genre != null && m.Genre.Contains(selectedTag, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // 3. Sorting
         query = sortOption switch
         {
             "date_desc" => query.OrderByDescending(m => m.DateWatched),
@@ -197,6 +238,18 @@
 
         filteredMovies = query.ToList();
         StateHasChanged();
+    }
+
+    private void FilterByTag(string tag)
+    {
+        selectedTag = tag;
+        ApplyFilterAndSort();
+    }
+
+    private void ClearTag()
+    {
+        selectedTag = "";
+        ApplyFilterAndSort();
     }
 
     private void OpenAddModal() 
@@ -218,13 +271,13 @@
             Id = m.Id, 
             UserId = m.UserId, 
             Title = m.Title, 
-            Description = m.Description, // FIXED: Now passing Description
+            Description = m.Description, 
             ImgUrl = m.ImgUrl, 
             Date = m.DateWatched, 
             Type = "media",
             Category = "personal", 
             MediaDetail = m.Detail ?? new BulletMediaDetail(),
-            Notes = new List<BulletItemNote>() // Note: Full notes editing requires extra fetch if using complex notes
+            Notes = new List<BulletItemNote>() 
         };
     }
 
@@ -247,7 +300,6 @@
             };
             
             await MediaService.SaveMedia(mediaDto);
-            
             editingTask = null;
             await LoadData(); 
         }
