@@ -229,9 +229,9 @@
 @code {
     private int userId = 0;
     private bool isLoading = true;
-    private string debugText = ""; // For debugging login issues
+    private string debugText = ""; 
     
-    private int activeTeamId = -1; // -1 = Config
+    private int activeTeamId = -1; 
     private string configTab = "leagues";
     private int filterLeagueId = 0;
 
@@ -259,11 +259,10 @@
         if (firstRender) {
             try {
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
-                debugText = json ?? "NULL (No Session Found)"; // Capture for debug display
+                debugText = json ?? "NULL (No Session Found)"; 
 
                 if (!string.IsNullOrEmpty(json)) { 
                     using(var doc = JsonDocument.Parse(json)) {
-                        // CASE INSENSITIVE CHECK to avoid "userId" vs "UserId" bugs
                         if(doc.RootElement.TryGetProperty("UserId", out var p) || 
                            doc.RootElement.TryGetProperty("userId", out p) ||
                            doc.RootElement.TryGetProperty("id", out p)) 
@@ -275,7 +274,7 @@
                 
                 if(userId > 0) await LoadAllData();
             } catch (Exception ex) { 
-                debugText += " | ERROR: " + ex.Message; // Show error on screen if crash
+                debugText += " | ERROR: " + ex.Message; 
             } finally {
                 isLoading = false;
                 StateHasChanged();
@@ -283,19 +282,13 @@
         }
     }
 
+    // --- FIX: SAFE SEQUENTIAL LOADING (Prevents Concurrency Crash) ---
     private async Task LoadAllData()
     {
-        var t1 = SportsService.GetLeagues(userId);
-        var t2 = SportsService.GetSeasons(userId);
-        var t3 = SportsService.GetTeams(userId);
-        var t4 = SportsService.GetFavoriteTeams(userId);
-
-        await Task.WhenAll(t1, t2, t3, t4);
-
-        leagues = t1.Result;
-        seasons = t2.Result;
-        teams = t3.Result;
-        favoriteTeams = t4.Result;
+        leagues = await SportsService.GetLeagues(userId);
+        seasons = await SportsService.GetSeasons(userId);
+        teams = await SportsService.GetTeams(userId);
+        favoriteTeams = await SportsService.GetFavoriteTeams(userId);
 
         if(filterLeagueId == 0 && leagues.Any()) filterLeagueId = leagues.First().Id;
     }
