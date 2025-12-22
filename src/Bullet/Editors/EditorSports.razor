@@ -1,23 +1,24 @@
 @namespace Dashboard.Components.Bullet.Editors
 @using Dashboard
-@using Microsoft.EntityFrameworkCore
-@inject BulletSportsService SportsService
-@inject AppDbContext Db 
 
 <div class="bg-black/30 p-4 rounded border border-gray-700 space-y-4">
+    
     <div class="grid grid-cols-2 gap-4">
         <div>
             <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">🏆 League</label>
-            <select @bind="Detail.LeagueId" @bind:after="OnLeagueChanged" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-2 text-sm text-white">
+            <select @bind="Detail.LeagueId" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-2 text-sm text-white">
                 <option value="0">-- Select League --</option>
-                @foreach(var l in leagues) { <option value="@l.Id">@l.Name</option> }
+                @foreach(var l in Leagues) { <option value="@l.Id">@l.Name</option> }
             </select>
         </div>
         <div>
             <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">📅 Season</label>
             <select @bind="Detail.SeasonId" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-2 text-sm text-white">
                 <option value="0">-- Select Season --</option>
-                @foreach(var s in seasons) { <option value="@s.Id">@s.Name</option> }
+                @foreach(var s in Seasons.Where(x => x.LeagueId == Detail.LeagueId || Detail.LeagueId == 0)) 
+                { 
+                    <option value="@s.Id">@s.Name</option> 
+                }
             </select>
         </div>
     </div>
@@ -27,7 +28,7 @@
             <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">🏃‍♂️ Away Team</label>
             <select @bind="Detail.AwayTeamId" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm text-white">
                 <option value="0">-- Select --</option>
-                @foreach(var t in filteredTeams) { 
+                @foreach(var t in GetFilteredTeams()) { 
                     <option value="@t.Id">@((t.IsFavorite ? "★ " : "") + t.Name)</option> 
                 }
             </select>
@@ -37,7 +38,7 @@
             <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">🏠 Home Team</label>
             <select @bind="Detail.HomeTeamId" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm text-white">
                 <option value="0">-- Select --</option>
-                @foreach(var t in filteredTeams) { 
+                @foreach(var t in GetFilteredTeams()) { 
                     <option value="@t.Id">@((t.IsFavorite ? "★ " : "") + t.Name)</option> 
                 }
             </select>
@@ -60,78 +61,23 @@
         <input type="checkbox" @bind="Detail.IsComplete" id="chkSport" class="w-5 h-5 rounded bg-gray-800 border-gray-600 text-green-500" />
         <label for="chkSport" class="text-sm text-white cursor-pointer">✅ Game Final</label>
     </div>
-    
-    <div class="text-[9px] text-gray-600 font-mono mt-2 border-t border-gray-800 pt-1">
-        DEBUG: Lg:@Detail.LeagueId | Seas:@Detail.SeasonId | Teams:@filteredTeams.Count
-    </div>
 </div>
 
 @code {
     [Parameter] public BulletGameDetail Detail { get; set; } = new();
-    [Parameter] public int UserId { get; set; }
+    
+    // THESE PARAMETERS MUST EXIST (Parent passes them)
+    [Parameter] public List<League> Leagues { get; set; } = new();
+    [Parameter] public List<Season> Seasons { get; set; } = new();
+    [Parameter] public List<Team> Teams { get; set; } = new();
 
-    private List<League> leagues = new();
-    private List<Season> seasons = new();
-    private List<Team> allTeams = new();
-    private List<Team> filteredTeams = new();
-
-    protected override async Task OnParametersSetAsync()
+    private IEnumerable<Team> GetFilteredTeams()
     {
-        if (UserId > 0)
-        {
-            // 1. Ensure Reference Data (Leagues/Teams) is Loaded
-            if (!leagues.Any()) 
-            {
-                leagues = await SportsService.GetLeagues(UserId);
-                allTeams = await SportsService.GetTeams(UserId);
-            }
-            
-            // 2. Load Seasons specific to the selected League (if any)
-            if (Detail.LeagueId > 0 && (!seasons.Any() || seasons.First().LeagueId != Detail.LeagueId))
-            {
-                await LoadSeasonsForLeague(Detail.LeagueId);
-            }
-
-            // 3. Filter Teams
-            FilterTeams();
-        }
-    }
-
-    private async Task OnLeagueChanged()
-    {
-        // When League changes: Reload Seasons, Reset Selection, Re-filter Teams
-        Detail.SeasonId = 0;
-        await LoadSeasonsForLeague(Detail.LeagueId);
-        FilterTeams();
-        
-        Detail.HomeTeamId = 0;
-        Detail.AwayTeamId = 0;
-        StateHasChanged();
-    }
-
-    private async Task LoadSeasonsForLeague(int leagueId)
-    {
-        // Direct DB fetch for seasons since Service might not have a specific helper exposed
-        seasons = await Db.Seasons
-            .Where(s => s.LeagueId == leagueId)
-            .OrderByDescending(s => s.Name)
-            .ToListAsync();
-    }
-
-    private void FilterTeams()
-    {
+        var q = Teams.AsEnumerable();
         if (Detail.LeagueId > 0)
         {
-            filteredTeams = allTeams
-                .Where(t => t.LeagueId == Detail.LeagueId)
-                .OrderByDescending(t => t.IsFavorite) 
-                .ThenBy(t => t.Name)
-                .ToList();
+            q = q.Where(t => t.LeagueId == Detail.LeagueId);
         }
-        else
-        {
-            filteredTeams = new List<Team>();
-        }
-        StateHasChanged();
+        return q.OrderByDescending(t => t.IsFavorite).ThenBy(t => t.Name);
     }
 }
