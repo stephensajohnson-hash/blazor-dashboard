@@ -256,14 +256,10 @@
                         if(doc.RootElement.TryGetProperty("UserId", out var p)) userId = p.GetInt32(); 
                     }
                 }
-                
-                if(userId > 0) {
-                    await LoadAllData();
-                }
+                if(userId > 0) await LoadAllData();
             } catch { 
-                // Ignore parsing errors
             } finally {
-                // <--- CRITICAL FIX: Always stop the spinner, even if no user found
+                // ENSURES SPINNER STOPS EVEN IF ERROR OR NO USER
                 isLoading = false;
                 StateHasChanged();
             }
@@ -272,7 +268,6 @@
 
     private async Task LoadAllData()
     {
-        // Parallel Task Execution (Fixes N+1 Performance Issue)
         var t1 = SportsService.GetLeagues(userId);
         var t2 = SportsService.GetSeasons(userId);
         var t3 = SportsService.GetTeams(userId);
@@ -319,5 +314,42 @@
         }
     }
 
+    // --- THESE METHODS WERE MISSING IN YOUR LAST BUILD ---
+    private void OpenAddLeague() { modalType = "league"; modalTitle = "Add League"; editingId = 0; tempName = ""; tempImgUrl = ""; tempLinkUrl = ""; showConfigModal = true; }
+    private void OpenEditLeague(League l) { modalType = "league"; modalTitle = "Edit League"; editingId = l.Id; tempName = l.Name; tempImgUrl = l.ImgUrl; tempLinkUrl = l.LinkUrl; showConfigModal = true; }
+    
+    private void OpenAddSeason() { modalType = "season"; modalTitle = "Add Season"; editingId = 0; tempName = ""; tempImgUrl = ""; tempLeagueId = 0; showConfigModal = true; }
+    private void OpenEditSeason(Season s) { modalType = "season"; modalTitle = "Edit Season"; editingId = s.Id; tempName = s.Name; tempImgUrl = s.ImgUrl; tempLeagueId = s.LeagueId; showConfigModal = true; }
+    
+    private void OpenAddTeam() { modalType = "team"; modalTitle = "Add Team"; editingId = 0; tempName = ""; tempImgUrl = ""; tempAbbr = ""; tempLeagueId = filterLeagueId; tempIsFav = false; showConfigModal = true; }
+    private void OpenEditTeam(Team t) { modalType = "team"; modalTitle = "Edit Team"; editingId = t.Id; tempName = t.Name; tempImgUrl = t.LogoUrl; tempAbbr = t.Abbreviation; tempLeagueId = t.LeagueId; tempIsFav = t.IsFavorite; showConfigModal = true; }
+    
+    private void CloseModal() { showConfigModal = false; }
+    
+    private async Task DeleteLeague(int id) { if(await JS.InvokeAsync<bool>("confirm", "Delete?")) { await SportsService.DeleteLeague(id); await LoadAllData(); } }
+    private async Task DeleteSeason(int id) { if(await JS.InvokeAsync<bool>("confirm", "Delete?")) { await SportsService.DeleteSeason(id); await LoadAllData(); } }
+    private async Task DeleteTeam(int id) { if(await JS.InvokeAsync<bool>("confirm", "Delete?")) { await SportsService.DeleteTeam(id); await LoadAllData(); } }
+
     private void OpenEditGame(BulletTaskService.TaskDTO g) { editingGame = teamGames.FirstOrDefault(x => x.Id == g.Id); }
-    private void CloseGameEditor() { editingGame = null
+    private void CloseGameEditor() { editingGame = null; }
+    private async Task SaveGame() { if(editingGame != null) { await SportsService.SaveGame(editingGame); await LoadSchedule(); editingGame = null; } }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e) { try { var f = e.File; var b = new byte[f.Size]; await f.OpenReadStream(5*1024*1024).ReadAsync(b); tempImgUrl = $"data:{f.ContentType};base64,{Convert.ToBase64String(b)}"; } catch {} }
+
+    private async Task SaveConfigModal()
+    {
+        if(string.IsNullOrWhiteSpace(tempName)) return;
+        if(modalType == "league") { if(editingId==0) await SportsService.AddLeague(userId, tempName, tempImgUrl, tempLinkUrl); else await SportsService.UpdateLeague(new League{Id=editingId, UserId=userId, Name=tempName, ImgUrl=tempImgUrl, LinkUrl=tempLinkUrl}); }
+        else if(modalType == "season") { if(tempLeagueId==0) return; if(editingId==0) await SportsService.AddSeason(userId, tempLeagueId, tempName, tempImgUrl); else await SportsService.UpdateSeason(new Season{Id=editingId, UserId=userId, LeagueId=tempLeagueId, Name=tempName, ImgUrl=tempImgUrl}); }
+        else if(modalType == "team") { if(tempLeagueId==0) return; var t = new Team{Id=editingId, UserId=userId, LeagueId=tempLeagueId, Name=tempName, Abbreviation=tempAbbr, LogoUrl=tempImgUrl, IsFavorite=tempIsFav}; if(editingId==0) await SportsService.AddTeam(userId, tempLeagueId, tempName, tempAbbr, tempImgUrl, tempIsFav); else await SportsService.UpdateTeam(t); }
+        
+        showConfigModal = false;
+        await LoadAllData();
+    }
+
+    private string FormatDate(DateTime d)
+    {
+        string daySuffix = (d.Day % 10 == 1 && d.Day != 11) ? "st" : (d.Day % 10 == 2 && d.Day != 12) ? "nd" : (d.Day % 10 == 3 && d.Day != 13) ? "rd" : "th";
+        return $"{d:dddd, MMM. d}{daySuffix}, {d:yyyy}";
+    }
+}
