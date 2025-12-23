@@ -3,213 +3,232 @@
 @rendermode RenderMode.InteractiveServer
 @using Dashboard
 @using Dashboard.Components.Bullet
-@using System.IO
 @using Microsoft.EntityFrameworkCore
-@using Microsoft.AspNetCore.Components.Forms
-@using Microsoft.JSInterop 
-@* ^^^ THIS WAS THE MISSING LINE ^^^ *@
-@using System.Text.Json
+@using System.Globalization
 @inject IJSRuntime JS
 @inject BudgetService BudgetService
 @inject AppDbContext Db
 
 <BulletHeader />
 
-<div class="min-h-screen bg-gray-900 text-white p-6">
-    <div class="flex justify-between items-center mb-8">
-        <h1 class="text-3xl font-bold flex items-center gap-3">
-            <span class="text-green-400">💵</span> Budget Tracker
-        </h1>
-        
-        <div class="text-xs text-gray-500 font-mono">
-            @(periods.Count) Period(s) Loaded
-        </div>
-    </div>
-
+<div class="min-h-screen bg-[#1e2124] text-white p-4 font-sans">
+    
     @if (isLoading)
     {
-        <div class="flex flex-col items-center justify-center py-20 space-y-4">
-            <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-            <div class="text-gray-400 animate-pulse">Loading Budget...</div>
+        <div class="flex flex-col items-center justify-center h-[80vh]">
+            <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            <div class="text-gray-400 mt-4 animate-pulse">Loading Financials...</div>
         </div>
     }
-    else if (!periods.Any())
+    else if (CurrentPeriod == null)
     {
-        <div class="text-center py-20 border-2 border-dashed border-gray-700 rounded-xl bg-gray-800/30">
+        <div class="flex flex-col items-center justify-center h-[80vh] border-2 border-dashed border-gray-700 rounded-xl bg-gray-800/30">
             <p class="text-gray-500 text-xl mb-2">No Budget Data Found.</p>
-            <p class="text-sm text-gray-600">Start by adding a new Budget Period.</p>
+            <p class="text-sm text-gray-600">Please import data or create a new period.</p>
         </div>
     }
     else
     {
-        @foreach (var period in periods)
-        {
-            <div class="bg-gray-800 border border-gray-700 rounded-xl mb-12 overflow-hidden shadow-2xl">
-                <div class="bg-gray-900 p-6 border-b border-gray-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                    <div>
-                        <h2 class="text-2xl font-bold text-white flex items-center gap-3">
-                            @period.DisplayName
-                            @if(period.StartDate > DateTime.UtcNow) 
-                            { 
-                                <span class="text-xs bg-blue-900 text-blue-200 px-2 py-0.5 rounded border border-blue-700 uppercase tracking-wider font-bold">Future</span> 
-                            }
-                        </h2>
-                        <div class="text-sm text-gray-400 mt-1 flex gap-4">
-                            <span>Start: <span class="text-gray-200 font-mono">@period.StartDate.ToShortDateString()</span></span>
-                            <span>Opening: <span class="text-white font-mono">@period.InitialBankBalance.ToString("C")</span></span>
-                        </div>
-                    </div>
-                    
-                    <div class="flex gap-8 text-base font-bold bg-black/40 px-6 py-3 rounded-lg border border-gray-700/50 shadow-inner">
-                        <div class="text-green-400 flex flex-col items-end leading-tight">
-                            <span class="text-[10px] text-gray-500 uppercase tracking-widest mb-1">Income</span>
-                            @period.Transactions.Where(t => t.Amount > 0).Sum(t => t.Amount).ToString("C0")
-                        </div>
-                        <div class="w-px bg-gray-700"></div>
-                        <div class="text-red-400 flex flex-col items-end leading-tight">
-                            <span class="text-[10px] text-gray-500 uppercase tracking-widest mb-1">Expenses</span>
-                            @Math.Abs(period.Transactions.Where(t => t.Amount < 0).Sum(t => t.Amount)).ToString("C0")
-                        </div>
-                    </div>
+        <div class="bg-[#282b30] p-4 rounded-t-xl border-b border-gray-700 shadow-lg flex flex-col md:flex-row justify-between items-center gap-4 mb-4">
+            <div class="text-sm font-mono text-gray-400 flex gap-4">
+                <span>Start: <span class="text-white font-bold">@CurrentPeriod.InitialBankBalance.ToString("C")</span></span>
+                <span>Current: <span class="@GetBalanceColor(CurrentBalance)">@CurrentBalance.ToString("C")</span></span>
+            </div>
+
+            <div class="flex items-center gap-6">
+                <button @onclick="PrevPeriod" class="p-2 hover:bg-gray-700 rounded-full transition text-gray-400 hover:text-white" disabled="@(!CanGoBack)">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+                </button>
+                
+                <div class="text-center">
+                    <h1 class="text-xl font-bold text-white tracking-wide">@CurrentPeriod.DisplayName</h1>
+                    @if(CurrentPeriod.StartDate > DateTime.UtcNow) 
+                    { 
+                        <span class="text-[10px] bg-blue-900 text-blue-200 px-2 py-0.5 rounded border border-blue-700 uppercase tracking-wider font-bold">Future</span> 
+                    }
                 </div>
 
-                <div class="p-6 grid lg:grid-cols-2 gap-8">
-                    <div class="space-y-6">
-                        <h3 class="text-sm font-bold text-blue-400 uppercase tracking-widest border-b border-gray-700 pb-2">Budget Cycles</h3>
-                        @foreach (var cycle in period.Cycles.OrderBy(c => c.CycleNumber))
+                <button @onclick="NextPeriod" class="p-2 hover:bg-gray-700 rounded-full transition text-gray-400 hover:text-white" disabled="@(!CanGoNext)">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+                </button>
+            </div>
+
+            <div>
+                <button class="bg-green-600 hover:bg-green-500 text-white text-sm font-bold py-2 px-4 rounded shadow transition flex items-center gap-2">
+                    <span>+ Add Transaction</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="grid lg:grid-cols-[1fr_380px] gap-6">
+            
+            <div class="bg-[#282b30] rounded-xl shadow-xl overflow-hidden flex flex-col h-[calc(100vh-180px)]">
+                <div class="p-3 bg-[#1e2124] border-b border-gray-700 font-bold text-gray-400 text-xs uppercase tracking-widest flex justify-between">
+                    <span>Date</span>
+                    <div class="grid grid-cols-3 gap-8 w-1/2 text-right pr-4">
+                        <span>Description</span>
+                        <span>Amount</span>
+                        <span>Balance</span>
+                    </div>
+                </div>
+                
+                <div class="overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-[#282b30]">
+                    @if (!CurrentPeriod.Transactions.Any())
+                    {
+                        <div class="text-center py-20 text-gray-500 italic">No transactions recorded.</div>
+                    }
+                    else
+                    {
+                        decimal runningBalance = CurrentPeriod.InitialBankBalance;
+                        // We must process oldest to newest to calculate balance, then flip for display if desired
+                        // For display: Newest at top
+                        var sortedTrans = CurrentPeriod.Transactions.OrderBy(t => t.Date).ToList();
+                        var transWithBal = new List<(BudgetTransaction T, decimal Bal)>();
+                        
+                        foreach(var t in sortedTrans)
                         {
-                            <div class="bg-gray-800/50 border border-gray-700 rounded-lg overflow-hidden">
-                                <div class="bg-gray-900/50 px-4 py-2 border-b border-gray-700 flex justify-between items-center">
-                                    <span class="font-bold text-gray-300 text-xs uppercase tracking-wider">@cycle.Label</span>
-                                    <span class="text-[10px] text-gray-500">@cycle.Items.Count items</span>
-                                </div>
-                                <div class="divide-y divide-gray-700/50">
-                                    @foreach (var item in cycle.Items)
-                                    {
-                                        <div class="flex items-center justify-between p-3 hover:bg-gray-700/30 transition group">
-                                            <div class="flex items-center gap-3">
-                                                @if(!string.IsNullOrEmpty(item.ImgUrl)) 
-                                                { 
-                                                    <img src="@item.ImgUrl" class="w-8 h-8 rounded object-cover bg-black/40 ring-1 ring-gray-700" /> 
-                                                }
-                                                else
-                                                {
-                                                    <div class="w-8 h-8 rounded bg-gray-700 flex items-center justify-center text-xs text-gray-400">💰</div>
-                                                }
-                                                <div>
-                                                    <div class="font-bold text-sm text-gray-200 group-hover:text-white transition">@item.Name</div>
-                                                    @if(item.CarriedOver > 0) { <div class="text-[10px] text-yellow-500">Carry: @item.CarriedOver.ToString("C0")</div> }
-                                                </div>
-                                            </div>
-                                            <div class="font-mono font-bold text-gray-300">@item.PlannedAmount.ToString("C0")</div>
-                                        </div>
-                                    }
+                            runningBalance += t.Amount;
+                            transWithBal.Add((t, runningBalance));
+                        }
+
+                        // Render Newest First
+                        foreach (var (t, bal) in ((IEnumerable<(BudgetTransaction, decimal)>)transWithBal).Reverse())
+                        {
+                            <div class="flex justify-between items-center p-3 border-b border-gray-700/50 hover:bg-white/5 transition group text-sm">
+                                <div class="text-gray-400 font-mono w-24">@t.Date.ToString("MMM dd")</div>
+                                
+                                <div class="flex-1 grid grid-cols-3 gap-8 items-center text-right">
+                                    <div class="text-left text-gray-200 font-medium truncate">
+                                        @t.Description
+                                        @if(t.Splits.Any()) 
+                                        { 
+                                            <span class="text-[10px] text-gray-500 ml-2">(Split)</span> 
+                                        }
+                                    </div>
+                                    
+                                    <div class="font-mono font-bold @(t.Amount >= 0 ? "text-green-400" : "text-red-400")">
+                                        @t.Amount.ToString("N2")
+                                    </div>
+                                    
+                                    <div class="font-mono text-gray-500">
+                                        @bal.ToString("N2")
+                                    </div>
                                 </div>
                             </div>
                         }
-                    </div>
+                    }
+                </div>
+            </div>
 
-                    <div class="space-y-8">
-                        
-                        <div class="bg-gray-800/30 border border-yellow-700/30 rounded-lg overflow-hidden">
-                            <h3 class="text-sm font-bold text-yellow-400 uppercase tracking-widest px-4 py-2 bg-yellow-900/20 border-b border-yellow-700/30 flex justify-between items-center">
-                                <span>Expected Income</span>
-                                <span class="bg-yellow-900/40 text-yellow-200 px-2 py-0.5 rounded text-xs">
-                                    @((period.ExpectedIncome ?? new List<BudgetExpectedIncome>()).Sum(x => x.Amount).ToString("C0"))
-                                </span>
-                            </h3>
-                            @if(period.ExpectedIncome != null && period.ExpectedIncome.Any())
-                            {
-                                <div class="divide-y divide-gray-700/50">
-                                    @foreach(var inc in period.ExpectedIncome.OrderBy(x => x.Date))
-                                    {
-                                        <div class="flex justify-between items-center p-3 text-sm hover:bg-white/5 transition">
-                                            <div class="flex items-center gap-3">
-                                                <div class="flex flex-col items-center justify-center bg-gray-800 w-10 h-10 rounded border border-gray-700">
-                                                    <span class="text-[8px] text-gray-500 uppercase">@inc.Date.ToString("MMM")</span>
-                                                    <span class="text-sm font-bold text-gray-200 leading-none">@inc.Date.Day</span>
-                                                </div>
-                                                <span class="text-gray-200 font-bold">@GetSourceName(inc.SourceStringId)</span> 
-                                            </div>
-                                            <span class="font-mono text-yellow-200 font-bold">@inc.Amount.ToString("C0")</span>
-                                        </div>
-                                    }
-                                </div>
-                            }
-                            else { <div class="p-4 text-xs text-gray-500 italic text-center">No expected income.</div> }
-                        </div>
-
-                        <div class="bg-gray-800/30 border border-red-700/30 rounded-lg overflow-hidden">
-                            <h3 class="text-sm font-bold text-red-400 uppercase tracking-widest px-4 py-2 bg-red-900/20 border-b border-red-700/30 flex justify-between items-center">
-                                <span>Watch List</span>
-                                <span class="bg-red-900/40 text-red-200 px-2 py-0.5 rounded text-xs">
-                                    @((period.WatchList ?? new List<BudgetWatchItem>()).Sum(x => x.Amount).ToString("C0"))
-                                </span>
-                            </h3>
-                            @if(period.WatchList != null && period.WatchList.Any())
-                            {
-                                <div class="divide-y divide-gray-700/50">
-                                    @foreach(var item in period.WatchList.OrderBy(x => x.DueDate ?? DateTime.MaxValue))
-                                    {
-                                        <div class="flex justify-between items-center p-3 text-sm hover:bg-white/5 transition">
-                                            <div class="flex items-center gap-3">
-                                                <div class="flex flex-col items-center justify-center w-10 h-10 rounded border border-gray-700 @(item.DueDate == null ? "bg-gray-800" : "bg-red-900/20 border-red-800")">
-                                                    @if(item.DueDate.HasValue)
-                                                    {
-                                                        <span class="text-[8px] text-gray-500 uppercase">@item.DueDate.Value.ToString("MMM")</span>
-                                                        <span class="text-sm font-bold text-gray-200 leading-none">@item.DueDate.Value.Day</span>
-                                                    }
-                                                    else
-                                                    {
-                                                        <span class="text-[9px] font-bold text-gray-500">TBD</span>
-                                                    }
-                                                </div>
-
-                                                <div>
-                                                    <div class="text-gray-200 font-bold">@item.Description</div>
-                                                </div>
-                                            </div>
-                                            <span class="font-mono text-red-200 font-bold">@item.Amount.ToString("C0")</span>
-                                        </div>
-                                    }
-                                </div>
-                            }
-                            else { <div class="p-4 text-xs text-gray-500 italic text-center">All clear.</div> }
-                        </div>
-
-                        <div>
-                            <h3 class="text-sm font-bold text-purple-400 uppercase tracking-widest border-b border-gray-700 pb-2 mb-4">Transactions</h3>
-                            <div class="space-y-1 max-h-[500px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
-                                @foreach (var t in period.Transactions.OrderByDescending(x => x.Date))
+            <div class="space-y-6 h-[calc(100vh-180px)] overflow-y-auto scrollbar-hide pb-20">
+                
+                <div class="space-y-4">
+                    @foreach (var cycle in CurrentPeriod.Cycles.OrderBy(c => c.CycleNumber))
+                    {
+                        <div class="bg-[#282b30] rounded-lg overflow-hidden border border-gray-700 shadow-lg">
+                            <div class="bg-[#1e2124]/50 px-3 py-2 border-b border-gray-700 flex justify-between items-center">
+                                <span class="font-bold text-gray-300 text-xs uppercase tracking-wider">@cycle.Label</span>
+                                <span class="text-[10px] text-gray-500">@cycle.Items.Count items</span>
+                            </div>
+                            <div class="divide-y divide-gray-700/50">
+                                @foreach (var item in cycle.Items)
                                 {
-                                    <div class="flex justify-between items-start p-3 rounded bg-gray-800 hover:bg-gray-700 transition border border-gray-700/50 text-sm group">
-                                        <div class="flex-1">
-                                            <div class="text-gray-200 font-bold group-hover:text-white transition">@t.Description</div>
-                                            <div class="text-xs text-gray-500">@t.Date.ToString("MMM dd")</div>
-                                            @if(t.Splits.Any()) 
+                                    <div class="flex items-center justify-between p-2 hover:bg-white/5 transition group">
+                                        <div class="flex items-center gap-3">
+                                            @if(!string.IsNullOrEmpty(item.ImgUrl)) 
                                             { 
-                                                <div class="mt-1 space-y-1">
-                                                    @foreach(var s in t.Splits) 
-                                                    { 
-                                                        <div class="text-[10px] text-gray-400 flex gap-2 pl-2 border-l-2 border-gray-600">
-                                                            <span>↳</span>
-                                                            <span class="font-mono">@s.Amount.ToString("C")</span>
-                                                            <span class="italic">@s.Note</span>
-                                                        </div> 
-                                                    }
-                                                </div> 
+                                                <img src="@item.ImgUrl" class="w-8 h-8 rounded object-cover bg-black/40 ring-1 ring-gray-600" /> 
                                             }
+                                            else
+                                            {
+                                                <div class="w-8 h-8 rounded bg-gray-700 flex items-center justify-center text-xs text-gray-400">💰</div>
+                                            }
+                                            <div>
+                                                <div class="font-bold text-sm text-gray-200">@item.Name</div>
+                                                @if(item.CarriedOver > 0) { <div class="text-[10px] text-yellow-500">Carry: @item.CarriedOver.ToString("C0")</div> }
+                                            </div>
                                         </div>
-                                        <div class="font-mono font-bold @(t.Amount >= 0 ? "text-green-400" : "text-white")">@t.Amount.ToString("C")</div>
+                                        <div class="text-right">
+                                            <div class="font-mono font-bold text-gray-300 text-sm">@item.PlannedAmount.ToString("C0")</div>
+                                            <div class="w-16 h-1 bg-gray-700 rounded-full mt-1 ml-auto overflow-hidden">
+                                                <div class="bg-blue-500 h-full w-1/3"></div>
+                                            </div>
+                                        </div>
                                     </div>
                                 }
                             </div>
                         </div>
-
-                    </div>
+                    }
                 </div>
+
+                <div class="bg-[#282b30] rounded-lg overflow-hidden border border-green-900/50 shadow-lg">
+                    <div class="bg-green-600 px-3 py-2 flex justify-between items-center">
+                        <span class="font-bold text-white text-xs uppercase tracking-wider">Expected Income</span>
+                        <span class="text-xs font-mono font-bold text-white bg-green-700 px-2 py-0.5 rounded">
+                            @((CurrentPeriod.ExpectedIncome ?? new()).Sum(x => x.Amount).ToString("C0"))
+                        </span>
+                    </div>
+                    @if(CurrentPeriod.ExpectedIncome != null && CurrentPeriod.ExpectedIncome.Any())
+                    {
+                        <div class="divide-y divide-gray-700/50">
+                            @foreach(var inc in CurrentPeriod.ExpectedIncome.OrderBy(x => x.Date))
+                            {
+                                <div class="flex justify-between items-center p-2 hover:bg-white/5 transition">
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-6 h-6 rounded bg-green-900/30 text-green-500 flex items-center justify-center text-[10px] font-bold border border-green-800">
+                                            @inc.Date.Day
+                                        </div>
+                                        <div>
+                                            <div class="text-xs font-bold text-gray-200">@GetSourceName(inc.SourceStringId)</div>
+                                            <div class="text-[10px] text-gray-500">Exp: @inc.Date.ToString("ddd, MM/dd")</div>
+                                        </div>
+                                    </div>
+                                    <span class="font-mono text-green-400 font-bold text-sm">@inc.Amount.ToString("N2")</span>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else { <div class="p-3 text-xs text-gray-500 italic text-center">No income expected.</div> }
+                </div>
+
+                <div class="bg-[#282b30] rounded-lg overflow-hidden border border-orange-900/50 shadow-lg">
+                    <div class="bg-[#e67e22] px-3 py-2 flex justify-between items-center"> <span class="font-bold text-white text-xs uppercase tracking-wider">Expected Expenses</span>
+                        <span class="text-xs font-mono font-bold text-white bg-[#d35400] px-2 py-0.5 rounded">
+                            @((CurrentPeriod.WatchList ?? new()).Sum(x => x.Amount).ToString("C0"))
+                        </span>
+                    </div>
+                    @if(CurrentPeriod.WatchList != null && CurrentPeriod.WatchList.Any())
+                    {
+                        <div class="divide-y divide-gray-700/50">
+                            @foreach(var item in CurrentPeriod.WatchList.OrderBy(x => x.DueDate ?? DateTime.MaxValue))
+                            {
+                                <div class="flex justify-between items-center p-2 hover:bg-white/5 transition">
+                                    <div class="flex items-center gap-3">
+                                        @if(!string.IsNullOrEmpty(item.ImgUrl)) 
+                                        { 
+                                            <img src="@item.ImgUrl" class="w-6 h-6 rounded object-cover bg-black/40" /> 
+                                        }
+                                        else
+                                        {
+                                            <div class="w-6 h-6 rounded bg-orange-900/30 text-orange-500 flex items-center justify-center text-[10px]">?</div>
+                                        }
+                                        <div class="overflow-hidden">
+                                            <div class="text-xs font-bold text-gray-200 truncate w-32">@item.Description</div>
+                                            <div class="text-[10px] font-mono @(item.DueDate == null ? "text-orange-400" : "text-gray-500")">
+                                                Due: @(item.DueDate.HasValue ? item.DueDate.Value.ToString("MM/dd") : "TBD")
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <span class="font-mono text-gray-300 font-bold text-sm">@item.Amount.ToString("N0")</span>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else { <div class="p-3 text-xs text-gray-500 italic text-center">No watch items.</div> }
+                </div>
+
             </div>
-        }
+        </div>
     }
 </div>
 
@@ -218,6 +237,30 @@
     private bool isLoading = true;
     private List<BudgetPeriod> periods = new();
     private List<BudgetIncomeSource> incomeSources = new();
+    
+    // --- NAVIGATION STATE ---
+    private int currentIndex = 0;
+    private BudgetPeriod? CurrentPeriod => periods.Count > 0 && currentIndex >= 0 && currentIndex < periods.Count 
+        ? periods[currentIndex] 
+        : null;
+
+    private bool CanGoBack => currentIndex < periods.Count - 1; // Since we sort Descending (Newest First), "Back" means higher index (older date)
+    private bool CanGoNext => currentIndex > 0; // "Next" means lower index (newer date)
+
+    private decimal CurrentBalance
+    {
+        get
+        {
+            if (CurrentPeriod == null) return 0;
+            return CurrentPeriod.InitialBankBalance + CurrentPeriod.Transactions.Sum(t => t.Amount);
+        }
+    }
+
+    private string GetBalanceColor(decimal bal) => bal >= 0 ? "text-green-400 font-bold" : "text-red-400 font-bold";
+
+    // Navigation Methods
+    private void NextPeriod() { if (CanGoNext) currentIndex--; } // Lower index = Newer
+    private void PrevPeriod() { if (CanGoBack) currentIndex++; } // Higher index = Older
 
     private string GetSourceName(string sourceId) 
     { 
@@ -246,7 +289,7 @@
                     }
                 }
             }
-            catch (Exception) { /* Handle error gracefully */ }
+            catch (Exception) { /* Log error */ }
             finally { isLoading = false; StateHasChanged(); }
         }
     }
@@ -255,12 +298,14 @@
     {
         if (userId == 0) return;
         
-        // 1. Load Global Definitions
         incomeSources = await Db.BudgetIncomeSources
             .Where(x => x.UserId == userId || x.UserId == 0)
             .ToListAsync();
 
-        // 2. Load Data via Service
+        // Get All Periods
         periods = await BudgetService.GetPeriods(userId);
+        
+        // Default to newest (Index 0 because service sorts Descending)
+        if (periods.Any()) currentIndex = 0;
     }
 }
