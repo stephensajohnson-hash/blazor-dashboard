@@ -116,7 +116,7 @@
                                     <span class="font-bold text-gray-800 text-sm uppercase tracking-wider block">@cycle.Label</span>
                                     <span class="text-[10px] text-gray-500">Cycle #@cycle.CycleNumber</span>
                                 </div>
-                                <button class="bg-white hover:bg-gray-200 text-gray-600 border border-gray-300 rounded p-1 transition">
+                                <button class="bg-white hover:bg-gray-200 text-gray-600 border border-gray-300 rounded p-1 transition" title="Add item">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
                                 </button>
                             </div>
@@ -125,10 +125,12 @@
                                 @foreach (var item in cycle.Items)
                                 {
                                     decimal spent = GetSpentForBudgetItem(item.Id);
-                                    decimal remaining = item.PlannedAmount - spent;
-                                    double percent = item.PlannedAmount > 0 ? (double)(spent / item.PlannedAmount) * 100 : 0;
                                     
-                                    // Visual Logic
+                                    // Total Available = Planned + Carried Over
+                                    decimal totalAvailable = item.PlannedAmount + item.CarriedOver;
+                                    decimal remaining = totalAvailable - spent;
+                                    double percent = totalAvailable > 0 ? (double)(spent / totalAvailable) * 100 : 0;
+                                    
                                     string barColor = remaining < 0 ? "bg-red-500" : "bg-blue-500";
                                     string textColor = remaining < 0 ? "text-red-600 font-bold" : "text-green-600 font-bold";
                                     bool isExpanded = ExpandedItemId == item.Id;
@@ -141,8 +143,7 @@
                                                 <div class="flex items-center gap-2">
                                                     @if(!string.IsNullOrEmpty(item.ImgUrl)) 
                                                     { 
-                                                        <img src="@item.ImgUrl" class="w-5 h-5 rounded-full object-cover" 
-                                                             onerror="this.style.display='none'" /> 
+                                                        <img src="@item.ImgUrl" class="w-5 h-5 rounded-full object-cover" onerror="this.style.display='none'" /> 
                                                     }
                                                     <span class="font-bold text-sm text-gray-800">@item.Name</span>
                                                 </div>
@@ -163,7 +164,8 @@
                                             </div>
 
                                             <div class="flex justify-end text-[10px] text-gray-400">
-                                                of $@item.PlannedAmount.ToString("N2")
+                                                of $@totalAvailable.ToString("N2") 
+                                                @if(item.CarriedOver != 0) { <span class="ml-1 text-orange-400">(incl. $@item.CarriedOver carry)</span> }
                                             </div>
                                         </div>
                                     </div>
@@ -185,11 +187,13 @@
                                                     <tbody class="divide-y divide-gray-200">
                                                         @foreach(var d in details)
                                                         {
+                                                            // Spend (Positive in calculation) -> Red text in history
+                                                            // Credit (Negative in calculation) -> Green text in history
                                                             <tr class="hover:bg-gray-50">
                                                                 <td class="py-1 text-gray-500 font-mono">@d.Date.ToString("MM/dd")</td>
                                                                 <td class="py-1 text-gray-800 truncate max-w-[120px]" title="@d.Desc">@d.Desc</td>
                                                                 <td class="py-1 text-right font-bold @(d.Amount < 0 ? "text-green-600" : "text-red-600")">
-                                                                    $@d.Amount.ToString("N2")
+                                                                    $@Math.Abs(d.Amount).ToString("N2")
                                                                 </td>
                                                             </tr>
                                                         }
@@ -276,25 +280,46 @@
 
     @if (EditingItem != null)
     {
-        <div class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-            <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-[fadeIn_0.2s_ease-out]">
+        <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-[fadeIn_0.2s_ease-out] border border-gray-200">
                 <div class="bg-gray-100 px-4 py-3 border-b border-gray-200 font-bold text-gray-700 flex justify-between items-center">
                     <span>Edit Budget Item</span>
-                    <button @onclick="CloseEditModal" class="text-gray-400 hover:text-gray-600">&times;</button>
+                    <button @onclick="CloseEditModal" class="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
                 </div>
-                <div class="p-4 space-y-4">
+                
+                <div class="p-5 space-y-4">
                     <div>
-                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Item Name</label>
-                        <input @bind="EditingItem.Name" class="w-full bg-gray-50 border border-gray-300 rounded p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none text-gray-800" />
+                        <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1 tracking-wider">Item Name</label>
+                        <input @bind="EditingItem.Name" class="w-full bg-gray-50 border border-gray-300 rounded p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none text-gray-800 transition" />
                     </div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1 tracking-wider">Planned ($)</label>
+                            <input type="number" @bind="EditingItem.PlannedAmount" step="0.01" class="w-full bg-gray-50 border border-gray-300 rounded p-2 text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none text-gray-800" />
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1 tracking-wider">Carried Over ($)</label>
+                            <input type="number" @bind="EditingItem.CarriedOver" step="0.01" class="w-full bg-gray-50 border border-gray-300 rounded p-2 text-sm font-mono focus:ring-2 focus:ring-orange-500 outline-none text-gray-800" />
+                        </div>
+                    </div>
+
                     <div>
-                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Planned Amount ($)</label>
-                        <input type="number" @bind="EditingItem.PlannedAmount" step="0.01" class="w-full bg-gray-50 border border-gray-300 rounded p-2 text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none text-gray-800" />
+                        <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1 tracking-wider">Image URL</label>
+                        <input @bind="EditingItem.ImgUrl" class="w-full bg-gray-50 border border-gray-300 rounded p-2 text-xs focus:ring-2 focus:ring-blue-500 outline-none text-gray-600 font-mono" placeholder="https://..." />
+                        @if(!string.IsNullOrEmpty(EditingItem.ImgUrl))
+                        {
+                            <div class="mt-2 flex items-center gap-2 text-xs text-gray-400">
+                                <span>Preview:</span>
+                                <img src="@EditingItem.ImgUrl" class="w-6 h-6 rounded-full object-cover border border-gray-300" />
+                            </div>
+                        }
                     </div>
                 </div>
+
                 <div class="bg-gray-50 px-4 py-3 border-t border-gray-200 flex justify-end gap-2">
-                    <button @onclick="CloseEditModal" class="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-200 rounded transition">Cancel</button>
-                    <button @onclick="SaveEditItem" class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded transition font-bold shadow">Save Changes</button>
+                    <button @onclick="CloseEditModal" class="px-4 py-2 text-xs font-bold text-gray-600 hover:bg-gray-200 rounded transition uppercase">Cancel</button>
+                    <button @onclick="SaveEditItem" class="px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white rounded transition shadow uppercase tracking-wide">Save Changes</button>
                 </div>
             </div>
         </div>
@@ -307,10 +332,9 @@
     private List<BudgetPeriod> periods = new();
     private List<BudgetIncomeSource> incomeSources = new();
     
-    // Navigation & UI State
     private int currentIndex = 0;
     private int? ExpandedItemId = null;
-    private BudgetItem? EditingItem = null; // Holds the item currently being edited
+    private BudgetItem? EditingItem = null; 
 
     private BudgetPeriod? CurrentPeriod => periods.Count > 0 && currentIndex >= 0 && currentIndex < periods.Count ? periods[currentIndex] : null;
     private bool CanGoBack => currentIndex < periods.Count - 1; 
@@ -318,12 +342,10 @@
     private decimal CurrentBalance => CurrentPeriod == null ? 0 : CurrentPeriod.InitialBankBalance + CurrentPeriod.Transactions.Sum(t => t.Amount);
     private string GetBalanceColor(decimal bal) => bal >= 0 ? "text-green-400 font-bold" : "text-red-400 font-bold";
 
-    // Actions
     private void NextPeriod() { if (CanGoNext) { currentIndex--; ExpandedItemId = null; } } 
     private void PrevPeriod() { if (CanGoBack) { currentIndex++; ExpandedItemId = null; } } 
     private void ToggleExpand(int itemId) { ExpandedItemId = ExpandedItemId == itemId ? null : itemId; }
 
-    // Modal Logic
     private void OpenEditModal(BudgetItem item) { EditingItem = item; }
     private void CloseEditModal() { EditingItem = null; }
     private async Task SaveEditItem()
@@ -332,32 +354,29 @@
         {
             Db.BudgetItems.Update(EditingItem);
             await Db.SaveChangesAsync();
-            EditingItem = null; // Close modal
+            EditingItem = null; 
         }
     }
 
-    // --- FIX 1: CALCULATION LOGIC ---
+    // --- FIX 1: FIXED SPLIT LOGIC ---
     private decimal GetSpentForBudgetItem(int itemId)
     {
         if (CurrentPeriod == null) return 0;
         
-        // Sum transactions * -1. 
-        // Example: Expense (-100) * -1 = 100 Spent. 
-        // Example: Refund (+20) * -1 = -20 Spent (Credit).
-        
+        // Direct
         var direct = CurrentPeriod.Transactions
             .Where(t => t.ResolvedBudgetItemId == itemId)
-            .Sum(t => t.Amount * -1);
+            .Sum(t => t.Amount * -1); // Normal logic: Expense(-100) -> 100 Spent
 
+        // Splits - Check PARENT Sign
+        // If Parent is Negative (Expense), Split counts as Spend (Positive)
+        // If Parent is Positive (Refund), Split counts as Credit (Negative)
         var splits = CurrentPeriod.Transactions
-            .SelectMany(t => t.Splits)
-            .Where(s => s.ResolvedBudgetItemId == itemId)
-            .Sum(s => s.Amount); // Split amounts usually stored positive, need verification? 
-                                 // Assuming Split amounts are positive portions of the transaction.
-                                 // Actually, splits usually inherit the sign logic or are absolute.
-                                 // Let's assume standard behavior: Sum(Abs) was wrong. 
-                                 // Let's stick to Abs for splits for now unless we know they are signed.
-                                 // Actually, if a split is part of a negative transaction, it contributes to spend.
+            .SelectMany(t => t.Splits.Select(s => new { Parent = t, Split = s }))
+            .Where(x => x.Split.ResolvedBudgetItemId == itemId)
+            .Sum(x => x.Parent.Amount < 0 
+                ? Math.Abs(x.Split.Amount)       // Expense -> Positive Spend
+                : -Math.Abs(x.Split.Amount));    // Refund  -> Negative Spend (Credit)
             
         // Transfers Logic
         var transfersOut = CurrentPeriod.Transfers.Where(tr => tr.ResolvedFromId == itemId).Sum(tr => tr.Amount);
@@ -372,22 +391,31 @@
         var list = new List<(DateTime, string, decimal)>();
         if (CurrentPeriod == null) return list;
 
-        // Transactions: Expenses = Positive Spent, Credits = Negative Spent
+        // Transactions
         var direct = CurrentPeriod.Transactions.Where(t => t.ResolvedBudgetItemId == itemId);
         foreach(var t in direct) list.Add((t.Date, t.Description, t.Amount * -1));
 
+        // Splits (Check Parent Sign)
         var splits = CurrentPeriod.Transactions
             .SelectMany(t => t.Splits.Select(s => new { Parent = t, Split = s }))
             .Where(x => x.Split.ResolvedBudgetItemId == itemId);
-        foreach(var x in splits) list.Add((x.Parent.Date, $"{x.Parent.Description} (Split)", x.Split.Amount));
+            
+        foreach(var x in splits) 
+        {
+            decimal amt = x.Parent.Amount < 0 
+                ? Math.Abs(x.Split.Amount)      // Expense
+                : -Math.Abs(x.Split.Amount);    // Credit
+            
+            list.Add((x.Parent.Date, $"{x.Parent.Description} (Split)", amt));
+        }
 
         var trOut = CurrentPeriod.Transfers.Where(tr => tr.ResolvedFromId == itemId);
         foreach(var tr in trOut) list.Add((tr.Date, $"Transfer to {tr.ToStringId}", tr.Amount));
 
         var trIn = CurrentPeriod.Transfers.Where(tr => tr.ResolvedToId == itemId);
-        foreach(var tr in trIn) list.Add((tr.Date, $"Transfer from {tr.FromStringId}", -tr.Amount)); // Credit
+        foreach(var tr in trIn) list.Add((tr.Date, $"Transfer from {tr.FromStringId}", -tr.Amount)); 
 
-        return list.OrderBy(x => x.Item1).ToList(); // ASCENDING
+        return list.OrderBy(x => x.Item1).ToList(); // ASCENDING: Oldest -> Newest
     }
 
     private string GetSourceName(string sourceId) 
