@@ -24,16 +24,14 @@
             <h3 class="text-xs font-black text-blue-400 uppercase tracking-widest">Diagnostic Console</h3>
             <div class="flex flex-wrap gap-2">
                 <button @onclick="CopyLogsToClipboard" class="bg-gray-700 hover:bg-gray-600 text-white text-[10px] font-bold px-3 py-1 rounded transition">📋 Copy Logs</button>
-                <button @onclick="FixWatchTableStructure" class="bg-red-900 hover:bg-red-800 text-white text-[10px] font-bold px-3 py-1 rounded transition border border-red-700">🔨 1. Reset Table</button>
-                <button @onclick="RepairWatchLinks" class="bg-blue-900 hover:bg-blue-800 text-white text-[10px] font-bold px-3 py-1 rounded transition border border-blue-700">🔗 2. Link Items</button>
-                <button @onclick="ClaimOrphanedData" class="bg-yellow-900 hover:bg-yellow-800 text-white text-[10px] font-bold px-3 py-1 rounded transition border border-yellow-700">⚠️ 3. Claim Periods</button>
-                <button @onclick="RestoreFromJsonFiles" class="bg-green-700 hover:bg-green-600 text-white text-[10px] font-bold px-3 py-1 rounded transition border border-green-500 shadow-[0_0_15px_rgba(34,197,94,0.4)]">🛟 5. Restore JSON (Full Path Fix)</button>
+                <button @onclick="RepairWatchLinks" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold px-3 py-1 rounded transition border border-blue-400">🔗 2. Run Auditor & Link</button>
+                <button @onclick="RestoreFromJsonFiles" class="bg-green-700 hover:bg-green-600 text-white text-[10px] font-bold px-3 py-1 rounded transition border border-green-500">🛟 5. Restore JSON</button>
                 <button @onclick="() => debugLogs.Clear()" class="text-gray-500 hover:text-gray-300 text-[10px] font-bold px-2">Clear</button>
             </div>
         </div>
         <div id="debug-log-container" class="bg-[#0c0c0c] rounded border border-gray-900 h-40 overflow-y-auto p-3 font-mono text-[10px] leading-relaxed flex flex-col-reverse">
             @foreach (var log in ((IEnumerable<string>)debugLogs).Reverse()) {
-                <div class="border-b border-gray-900 py-1 @(log.Contains("FAIL") || log.Contains("Error") ? "text-red-400" : (log.Contains("Success") ? "text-green-400" : (log.Contains(">>") ? "text-blue-300" : "text-gray-400")))">@log</div>
+                <div class="border-b border-gray-900 py-1 @(log.Contains("SUCCESS") ? "text-green-400" : (log.Contains("FAIL") || log.Contains("⚠️") ? "text-red-400" : (log.Contains(">>") ? "text-blue-300" : "text-gray-400")))">@log</div>
             }
         </div>
     </div>
@@ -42,22 +40,22 @@
     {
         <div class="flex flex-col items-center justify-center h-[40vh]">
             <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-            <div class="text-gray-400 mt-4 animate-pulse font-bold uppercase tracking-widest text-xs">Establish Data Link...</div>
+            <div class="text-gray-400 mt-4 animate-pulse font-bold uppercase tracking-widest text-xs">Auditing Relationships...</div>
         </div>
     }
     else if (CurrentPeriod == null)
     {
         <div class="flex flex-col items-center justify-center h-[40vh] border-2 border-dashed border-gray-700 rounded-xl bg-gray-800/30 p-10 text-center text-white">
-            <p class="text-red-400 text-xl mb-2 font-bold font-mono">SYNC_INTERRUPTED</p>
-            <button @onclick="RefreshData" class="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded text-xs font-bold uppercase shadow-xl">🔄 Force Re-Sync</button>
+            <p class="text-red-400 text-xl mb-2 font-bold font-mono">CONNECTION_ERROR</p>
+            <button @onclick="RefreshData" class="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded text-xs font-bold uppercase">🔄 Retry</button>
         </div>
     }
     else
     {
         <div class="bg-[#282b30] p-4 rounded-t-xl border-b border-gray-700 shadow-lg mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
-            <div class="text-sm font-mono text-gray-400 flex gap-4">
+            <div class="text-sm font-mono text-gray-400 flex gap-4 uppercase font-bold">
                 <span>Start: <span class="text-white font-bold">$@CurrentPeriod.InitialBankBalance.ToString("N2")</span></span>
-                <span>Current: <span class="@GetBalanceColor(CurrentBalance)">$@CurrentBalance.ToString("N2")</span></span>
+                <span>Actual: <span class="@GetBalanceColor(CurrentBalance)">$@CurrentBalance.ToString("N2")</span></span>
             </div>
             <div class="flex items-center gap-6 text-white">
                 <button @onclick="PrevPeriod" class="p-2 hover:bg-gray-700 rounded-full transition" disabled="@(!CanGoBack)">
@@ -68,7 +66,7 @@
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
                 </button>
             </div>
-            <button class="bg-green-600 hover:bg-green-500 text-white text-sm font-bold py-2 px-4 rounded shadow transition uppercase" @onclick="() => OpenTransactionModal()">+ Add Transaction</button>
+            <button class="bg-green-600 hover:bg-green-500 text-white text-sm font-bold py-2 px-4 rounded shadow transition uppercase" @onclick="() => OpenTransactionModal()">+ Add Trans</button>
         </div>
 
         <div class="grid lg:grid-cols-[60%_40%] gap-6">
@@ -89,7 +87,7 @@
                                 <div class="truncate flex items-center gap-2">@t.Description @if(t.Splits.Any()){ <span class="text-xs">🔀</span> }</div>
                                 <div class="text-right font-mono font-bold @(t.Amount >= 0 ? "text-green-600" : "text-red-600")">$@t.Amount.ToString("N2")</div>
                                 <div class="text-right pr-2 font-mono text-gray-400">$@runningBalance.ToString("N2")</div>
-                                <button class="text-gray-400 hover:text-blue-600 transition" @onclick="() => OpenTransactionModal(t)"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
+                                <button class="text-gray-300 hover:text-blue-600 transition" @onclick="() => OpenTransactionModal(t)"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
                             </div>
                         }
                     }
@@ -129,7 +127,7 @@
                                     <div class="w-8 h-8 rounded-full bg-white border overflow-hidden flex items-center justify-center">
                                         @{ string watchImg = GetBudgetItemImage(item.ResolvedBudgetItemId); }
                                         @if(!string.IsNullOrEmpty(watchImg)){<img src="@watchImg" class="w-full h-full object-cover" />}
-                                        else { <span class="text-[10px]">🔍</span> }
+                                        else { <span class="text-[12px] text-red-500" title="Relationship Broken">⚠️</span> }
                                     </div>
                                     <div><div class="text-xs font-bold truncate w-32">@item.Description</div><div class="text-[10px] text-gray-500 font-bold uppercase">Due: @(item.DueDate?.ToString("MM/dd") ?? "TBD")</div></div>
                                 </div>
@@ -144,8 +142,6 @@
             </div>
         </div>
     }
-
-    @* Includes Transaction, Budget, and Watch Modals from previous working versions *@
 </div>
 
 @code {
@@ -177,31 +173,59 @@
                 else {
                     using var doc = JsonDocument.Parse(json);
                     if (doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("id", out p)) {
-                        userId = p.GetInt32(); Log($"Session Linked: User {userId}");
+                        userId = p.GetInt32(); Log($"Connected: User {userId}");
                         await DiagnoseDatabase(); await LoadData();
                     }
                 }
-            } catch (Exception ex) { Log($"INIT FAIL: {ex.Message}"); }
+            } catch (Exception ex) { Log($"INIT CRASH: {ex.Message}"); }
             finally { isLoading = false; StateHasChanged(); }
         }
     }
 
     private async Task LoadData() {
-        Log("Refreshing view...");
+        Log("Refreshing DB View...");
         try {
             periods = await BudgetService.GetPeriods(userId);
             incomeSources = await Db.BudgetIncomeSources.Where(x => x.UserId == userId || x.UserId == 0).ToListAsync();
             RefreshFlatList();
             Log($"Success: Loaded {periods.Count} periods.");
-        } catch (Exception ex) { Log($"DB_LOAD_FAIL: {ex.Message}"); }
+        } catch (Exception ex) { Log($"DB_QUERY_FAIL: {ex.Message}"); }
     }
 
     private async Task DiagnoseDatabase() {
         totalDbCount = await Db.BudgetPeriods.CountAsync();
-        Log($"Global Status: {totalDbCount} periods exist in DB.");
+        Log($"Global Scan: Found {totalDbCount} records in DB.");
     }
 
-    // --- JSON RESCUE (PATH-DRILLING EDITION) ---
+    // --- AUDITOR & LINKER (The "Handshake" Logic) ---
+    private async Task RepairWatchLinks() {
+        if (CurrentPeriod == null) { Log("FAIL: No period selected."); return; }
+        Log("Running Relationship Auditor...");
+        try {
+            // Get all Category IDs for this month
+            var cycleIds = await Db.BudgetCycles.Where(c => c.BudgetPeriodId == CurrentPeriod.Id).Select(c => c.Id).ToListAsync();
+            var budgetItems = await Db.BudgetItems.Where(i => cycleIds.Contains(i.BudgetCycleId)).ToListAsync();
+            
+            // Get all Watch Items for this month
+            var watchItems = await Db.BudgetWatchItems.Where(w => w.BudgetPeriodId == CurrentPeriod.Id).ToListAsync();
+            int successCount = 0;
+
+            foreach(var w in watchItems) { 
+                var match = budgetItems.FirstOrDefault(i => string.Equals(i.Name, w.Description, StringComparison.OrdinalIgnoreCase)); 
+                if(match != null) {
+                    w.ResolvedBudgetItemId = match.Id;
+                    Log($">> Link SUCCESS: '{w.Description}' -> BudgetItem ID {match.Id}");
+                    successCount++;
+                } else {
+                    Log($">> Link ⚠️ FAIL: No category matches '{w.Description}'. Icon will stay 🔍.");
+                }
+            }
+            await Db.SaveChangesAsync();
+            Log($"AUDIT COMPLETE: Linked {successCount} out of {watchItems.Count} items.");
+            await LoadData();
+        } catch (Exception ex) { Log($"AUDITOR CRASH: {ex.Message}"); }
+    }
+
     private async Task RestoreFromJsonFiles() {
         Log("Starting JSON DRILL-DOWN Restoration...");
         try {
@@ -215,74 +239,44 @@
                 var json = await File.ReadAllTextAsync(path);
                 using var doc = JsonDocument.Parse(json);
                 
-                // Navigate to 'periods' array
-                if (!doc.RootElement.TryGetProperty("periods", out var periodsArray) || periodsArray.ValueKind != JsonValueKind.Array) {
-                    Log($"FAIL: 'periods' array not found in '{fileName}'. Structure mismatch.");
-                    continue;
-                }
+                if (doc.RootElement.TryGetProperty("periods", out var periodsArray)) {
+                    foreach (var periodEl in periodsArray.EnumerateArray()) {
+                        string jsonDisplayName = periodEl.GetProperty("displayName").GetString() ?? "";
+                        var dbPeriod = periods.FirstOrDefault(p => string.Equals(p.DisplayName, jsonDisplayName, StringComparison.OrdinalIgnoreCase));
+                        
+                        if (dbPeriod != null && periodEl.TryGetProperty("watchList", out var watchList)) {
+                            // Wipe old records for this month to avoid duplicates during rescue
+                            var old = await Db.BudgetWatchItems.Where(w => w.BudgetPeriodId == dbPeriod.Id).ToListAsync();
+                            Db.BudgetWatchItems.RemoveRange(old);
 
-                Log($">> Found {periodsArray.GetArrayLength()} periods in JSON file '{fileName}'.");
-
-                foreach (var periodEl in periodsArray.EnumerateArray()) {
-                    string jsonDisplayName = periodEl.TryGetProperty("displayName", out var dn) ? dn.GetString() : "";
-                    
-                    // Match to DB period by Name
-                    var dbPeriod = periods.FirstOrDefault(p => string.Equals(p.DisplayName, jsonDisplayName, StringComparison.OrdinalIgnoreCase));
-                    
-                    if (dbPeriod == null) {
-                        Log($">> Skip: JSON period '{jsonDisplayName}' has no match in DB.");
-                        continue;
-                    }
-
-                    // Look for watchList
-                    if (periodEl.TryGetProperty("watchList", out var watchList) && watchList.ValueKind == JsonValueKind.Array) {
-                        // Clear existing for this month to prevent duplicates
-                        var existing = await Db.BudgetWatchItems.Where(w => w.BudgetPeriodId == dbPeriod.Id).ToListAsync();
-                        if(existing.Any()) Db.BudgetWatchItems.RemoveRange(existing);
-
-                        int monthCount = 0;
-                        foreach (var item in watchList.EnumerateArray()) {
-                            var watch = new BudgetWatchItem {
-                                BudgetPeriodId = dbPeriod.Id,
-                                Description = GetJsonString(item, "description"),
-                                Amount = GetJsonDecimal(item, "amount"),
-                                DueDate = GetJsonDateTimeWithTBDFix(item, "dueDate")
-                            };
-                            Db.BudgetWatchItems.Add(watch);
-                            monthCount++;
+                            int count = 0;
+                            foreach (var item in watchList.EnumerateArray()) {
+                                Db.BudgetWatchItems.Add(new BudgetWatchItem {
+                                    BudgetPeriodId = dbPeriod.Id,
+                                    Description = GetJsonString(item, "description"),
+                                    Amount = GetJsonDecimal(item, "amount"),
+                                    DueDate = GetJsonDateTimeWithTBDFix(item, "dueDate")
+                                });
+                                count++;
+                            }
+                            totalItemsRestored += count;
+                            Log($">> Success: Prepared {count} items for {jsonDisplayName}.");
                         }
-                        Log($">> Success: Prepared {monthCount} items for '{dbPeriod.DisplayName}'.");
-                        totalItemsRestored += monthCount;
                     }
                 }
             }
-            
-            if(totalItemsRestored > 0) {
-                await Db.SaveChangesAsync();
-                Log($"FINAL SUCCESS: Restored {totalItemsRestored} total watch items.");
-                await LoadData();
-            } else {
-                Log("Rescue finished: No matching periods or items found.");
-            }
-        } catch (Exception ex) { Log($"RESCUE Error: {ex.Message}"); }
+            await Db.SaveChangesAsync();
+            Log($"RESCUE SUCCESS: {totalItemsRestored} items restored. Now click 'Link Items'.");
+            await LoadData();
+        } catch (Exception ex) { Log($"RESCUE FAIL: {ex.Message}"); }
     }
 
-    private string GetJsonString(JsonElement el, string name) {
-        foreach(var prop in el.EnumerateObject()) if(string.Equals(prop.Name, name, StringComparison.OrdinalIgnoreCase)) return prop.Value.GetString() ?? "";
-        return "";
-    }
-    private decimal GetJsonDecimal(JsonElement el, string name) {
-        foreach(var prop in el.EnumerateObject()) if(string.Equals(prop.Name, name, StringComparison.OrdinalIgnoreCase)) return prop.Value.GetDecimal();
-        return 0;
-    }
+    // JSON Case-Insensitive Helpers
+    private string GetJsonString(JsonElement el, string name) { foreach(var p in el.EnumerateObject()) if(string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) return p.Value.GetString() ?? ""; return ""; }
+    private decimal GetJsonDecimal(JsonElement el, string name) { foreach(var p in el.EnumerateObject()) if(string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) return p.Value.GetDecimal(); return 0; }
     private DateTime? GetJsonDateTimeWithTBDFix(JsonElement el, string name) {
-        foreach(var prop in el.EnumerateObject()) {
-            if(string.Equals(prop.Name, name, StringComparison.OrdinalIgnoreCase)) {
-                if (prop.Value.ValueKind == JsonValueKind.Null) return null;
-                string val = prop.Value.GetString() ?? "";
-                if (string.Equals(val, "TBD", StringComparison.OrdinalIgnoreCase)) return null;
-                if (DateTime.TryParse(val, out DateTime r)) return r;
-            }
+        foreach(var p in el.EnumerateObject()) if(string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) {
+            string v = p.Value.GetString() ?? ""; if(v == "TBD" || string.IsNullOrEmpty(v)) return null; if(DateTime.TryParse(v, out DateTime r)) return r;
         }
         return null;
     }
@@ -305,15 +299,12 @@
     private void OpenEditModal(BudgetItem item) => EditingItem = item;
     private void CloseEditModal() => EditingItem = null;
     private void OpenTransactionModal(BudgetTransaction? t = null) { RefreshFlatList(); EditingTransaction = t ?? new BudgetTransaction { BudgetPeriodId = CurrentPeriod?.Id ?? 0, Date = DateTime.Today, Amount = 0 }; }
-    private void OpenIncomeModal(BudgetExpectedIncome? i = null) => EditingIncome = i ?? new BudgetExpectedIncome { BudgetPeriodId = CurrentPeriod?.Id ?? 0, Date = DateTime.Today };
     private void OpenWatchModal(BudgetWatchItem? w = null) { RefreshFlatList(); EditingWatch = w ?? new BudgetWatchItem { BudgetPeriodId = CurrentPeriod?.Id ?? 0 }; }
 
-    private void AddSplit() { if (EditingTransaction == null) return; if (!EditingTransaction.Splits.Any() && EditingTransaction.ResolvedBudgetItemId.HasValue) { EditingTransaction.Splits.Add(new BudgetTransactionSplit { ResolvedBudgetItemId = EditingTransaction.ResolvedBudgetItemId.Value, Amount = Math.Abs(EditingTransaction.Amount) }); EditingTransaction.ResolvedBudgetItemId = null; } EditingTransaction.Splits.Add(new BudgetTransactionSplit { Amount = 0 }); }
-    
+    private void AddSplit() { if (EditingTransaction == null) return; EditingTransaction.Splits.Add(new BudgetTransactionSplit { Amount = 0 }); }
     private async Task SaveEditItem() { if(EditingItem != null) { Db.BudgetItems.Update(EditingItem); await Db.SaveChangesAsync(); EditingItem = null; await LoadData(); } }
-    private async Task SaveIncome() { if(EditingIncome != null) { if(EditingIncome.Id == 0) Db.BudgetExpectedIncome.Add(EditingIncome); else Db.BudgetExpectedIncome.Update(EditingIncome); await Db.SaveChangesAsync(); EditingIncome = null; await LoadData(); } }
+    private async Task SaveTransaction() { if(EditingTransaction != null) { if(EditingTransaction.Id == 0) Db.BudgetTransactions.Add(EditingTransaction); else Db.BudgetTransactions.Update(EditingTransaction); await Db.SaveChangesAsync(); EditingTransaction = null; await LoadData(); } }
     private async Task SaveWatchItem() { if(EditingWatch != null) { if(EditingWatch.Id == 0) Db.BudgetWatchItems.Add(EditingWatch); else Db.BudgetWatchItems.Update(EditingWatch); await Db.SaveChangesAsync(); EditingWatch = null; await LoadData(); } }
-    private async Task SaveTransaction() { if(EditingTransaction != null) { if(EditingTransaction.Splits.Any()) EditingTransaction.ResolvedBudgetItemId = null; if(EditingTransaction.Id == 0) Db.BudgetTransactions.Add(EditingTransaction); else Db.BudgetTransactions.Update(EditingTransaction); await Db.SaveChangesAsync(); EditingTransaction = null; await LoadData(); } }
     private async Task HandleFileUpload(InputFileChangeEventArgs e) { if (EditingItem == null) return; using var ms = new MemoryStream(); await e.File.OpenReadStream(5*1024*1024).CopyToAsync(ms); EditingItem.ImgUrl = await BulletBase.SaveImageAsync(ms.ToArray(), e.File.ContentType); }
 
     private async Task FixWatchTableStructure() {
@@ -323,22 +314,11 @@
         } catch (Exception ex) { Log($"FAIL: {ex.Message}"); }
     }
 
-    private async Task RepairWatchLinks() {
-        if (CurrentPeriod == null) return;
-        try {
-            var cycleIds = await Db.BudgetCycles.Where(c => c.BudgetPeriodId == CurrentPeriod.Id).Select(c => c.Id).ToListAsync();
-            var items = await Db.BudgetItems.Where(i => cycleIds.Contains(i.BudgetCycleId)).ToListAsync();
-            var watchItems = await Db.BudgetWatchItems.Where(w => w.BudgetPeriodId == CurrentPeriod.Id).ToListAsync();
-            foreach(var w in watchItems) { var match = items.FirstOrDefault(i => string.Equals(i.Name, w.Description, StringComparison.OrdinalIgnoreCase)); if(match != null) w.ResolvedBudgetItemId = match.Id; }
-            await Db.SaveChangesAsync(); Log($"Linked {watchItems.Count(x => x.ResolvedBudgetItemId != null)} Items."); await LoadData();
-        } catch (Exception ex) { Log($"Repair FAIL: {ex.Message}"); }
-    }
-
     private async Task ClaimOrphanedData() {
         try {
             var all = await Db.BudgetPeriods.ToListAsync(); foreach(var p in all) p.UserId = userId;
-            await Db.SaveChangesAsync(); Log($"Claimed {all.Count} months."); await LoadData();
-        } catch (Exception ex) { Log($"Claim FAIL: {ex.Message}"); }
+            await Db.SaveChangesAsync(); Log("Periods Reclaimed."); await LoadData();
+        } catch (Exception ex) { Log($"FAIL: {ex.Message}"); }
     }
 
     private string GetTransactionImage(BudgetTransaction t) {
