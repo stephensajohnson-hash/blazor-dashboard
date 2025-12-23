@@ -20,7 +20,7 @@
 <div class="min-h-screen bg-gray-900 text-white p-6">
     <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
         <h1 class="text-3xl font-bold flex items-center gap-3">
-            <span>💵</span> Budget Tracker <span class="text-xs font-normal text-gray-500 self-end mb-1">v3.0 (Smart Inference)</span>
+            <span>💵</span> Budget Tracker <span class="text-xs font-normal text-gray-500 self-end mb-1">v3.1 (Nested Periods)</span>
         </h1>
         
         <div class="flex gap-3">
@@ -304,7 +304,7 @@
         }
     }
 
-    // --- REVISED: SMART IMPORT LOGIC ---
+    // --- NESTED PERIODS IMPORT LOGIC ---
     private async Task ImportExpectedIncomeManual(string json)
     {
         try 
@@ -313,101 +313,53 @@
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            // DEBUG: Log keys so we know what we are dealing with
-            var keys = string.Join(", ", root.EnumerateObject().Select(p => p.Name));
-            Log($"JSON Keys found: {keys}", "info");
+            // 1. Find "periods" array (Case Insensitive)
+            JsonElement periodsArray = default;
+            bool foundPeriods = root.TryGetProperty("periods", out periodsArray) || 
+                                root.TryGetProperty("Periods", out periodsArray);
 
-            DateTime targetDate = DateTime.MinValue;
-
-            // STRATEGY 1: Explicit Property (Case Insensitive)
-            if(root.TryGetProperty("startDate", out var d) || 
-               root.TryGetProperty("StartDate", out d) || 
-               root.TryGetProperty("date", out d))
+            if (!foundPeriods || periodsArray.ValueKind != JsonValueKind.Array)
             {
-                if(DateTime.TryParse(d.GetString(), out var explicitDate)) 
-                {
-                    targetDate = explicitDate;
-                    Log($"Strategy 1: Found Explicit StartDate {targetDate:MM/yyyy}", "success");
-                }
-            }
-
-            // STRATEGY 2: Infer from Income Items
-            JsonElement incomeArray = default;
-            bool foundArray = root.TryGetProperty("expectedIncome", out incomeArray) ||
-                              root.TryGetProperty("ExpectedIncome", out incomeArray);
-
-            if(!foundArray || incomeArray.ValueKind != JsonValueKind.Array)
-            {
-                Log("Manual Import: 'expectedIncome' array missing. Skipping.", "info");
+                Log("Manual Import Aborted: 'periods' array not found or empty.", "error");
+                // Fallback: Check if root IS the period (legacy format)
+                await ImportSinglePeriod(root);
                 return;
             }
 
-            if(targetDate == DateTime.MinValue)
+            int totalAdded = 0;
+
+            // 2. Loop through each period in JSON
+            foreach(var periodJson in periodsArray.EnumerateArray())
             {
-                foreach(var item in incomeArray.EnumerateArray())
+                // A. Find Date for this specific period
+                if(!periodJson.TryGetProperty("startDate", out var dateElem)) continue;
+                if(!DateTime.TryParse(dateElem.GetString(), out var startDate)) continue;
+
+                // B. Find Matching Period in DB
+                var dbPeriod = await Db.BudgetPeriods
+                    .Where(p => p.UserId == userId && p.StartDate.Year == startDate.Year && p.StartDate.Month == startDate.Month)
+                    .OrderByDescending(p => p.Id)
+                    .FirstOrDefaultAsync();
+
+                if(dbPeriod == null) continue;
+
+                // C. Find "expectedIncome" inside THIS period
+                if(periodJson.TryGetProperty("expectedIncome", out var incomeArray) && incomeArray.ValueKind == JsonValueKind.Array)
                 {
-                    if((item.TryGetProperty("date", out var id) || item.TryGetProperty("Date", out id)) 
-                        && DateTime.TryParse(id.GetString(), out var inferred))
-                    {
-                        targetDate = new DateTime(inferred.Year, inferred.Month, 1);
-                        Log($"Strategy 2: Inferred date {targetDate:MM/yyyy} from items.", "success");
-                        break;
-                    }
+                    int periodAdded = await InsertIncomeItems(dbPeriod.Id, incomeArray);
+                    totalAdded += periodAdded;
+                    if(periodAdded > 0) Log($"  -> Added {periodAdded} items for {startDate:MM/yyyy}", "info");
                 }
             }
 
-            if(targetDate == DateTime.MinValue)
-            {
-                Log("Manual Import Failed: Could not determine budget month.", "error");
-                return;
-            }
-
-            // 3. Find Parent Period in DB
-            var period = await Db.BudgetPeriods
-                .Where(p => p.UserId == userId && p.StartDate.Year == targetDate.Year && p.StartDate.Month == targetDate.Month)
-                .OrderByDescending(p => p.Id)
-                .FirstOrDefaultAsync();
-
-            if(period == null) 
-            {
-                Log($"Manual Import Aborted: BudgetPeriod for {targetDate:MM/yyyy} not found in DB.", "error");
-                return;
-            }
-
-            // 4. Insert Items
-            int count = 0;
-            foreach(var item in incomeArray.EnumerateArray())
-            {
-                string sourceStringId = "";
-                if(item.TryGetProperty("sourceId", out var sid)) sourceStringId = sid.GetString();
-                else if(item.TryGetProperty("SourceId", out sid)) sourceStringId = sid.GetString();
-
-                var exists = await Db.BudgetExpectedIncome.AnyAsync(x => x.BudgetPeriodId == period.Id && x.SourceStringId == sourceStringId);
-                if(exists) continue;
-
-                var newInc = new BudgetExpectedIncome
-                {
-                    BudgetPeriodId = period.Id,
-                    SourceStringId = sourceStringId,
-                    Amount = 0,
-                    Date = targetDate
-                };
-
-                if(item.TryGetProperty("amount", out var amt)) newInc.Amount = amt.GetDecimal();
-                if((item.TryGetProperty("date", out var d2) || item.TryGetProperty("Date", out d2)) 
-                    && DateTime.TryParse(d2.GetString(), out var idate)) 
-                {
-                    newInc.Date = idate;
-                }
-
-                Db.BudgetExpectedIncome.Add(newInc);
-                count++;
-            }
-            
-            if(count > 0)
+            if(totalAdded > 0)
             {
                 await Db.SaveChangesAsync();
-                Log($"Manual Import: Added {count} records.", "success");
+                Log($"Manual Import Complete: Added {totalAdded} records total.", "success");
+            }
+            else
+            {
+                Log("Manual Import: No new Expected Income records found to add.", "info");
             }
         }
         catch(Exception ex)
@@ -416,6 +368,64 @@
         }
     }
 
+    private async Task ImportSinglePeriod(JsonElement root)
+    {
+         // Legacy support for flat JSONs
+         if(!root.TryGetProperty("startDate", out var dateElem)) return;
+         if(!DateTime.TryParse(dateElem.GetString(), out var startDate)) return;
+
+         var dbPeriod = await Db.BudgetPeriods
+            .Where(p => p.UserId == userId && p.StartDate.Year == startDate.Year && p.StartDate.Month == startDate.Month)
+            .OrderByDescending(p => p.Id)
+            .FirstOrDefaultAsync();
+        
+         if(dbPeriod == null) return;
+
+         if(root.TryGetProperty("expectedIncome", out var incomeArray) && incomeArray.ValueKind == JsonValueKind.Array)
+         {
+             int count = await InsertIncomeItems(dbPeriod.Id, incomeArray);
+             if(count > 0)
+             {
+                 await Db.SaveChangesAsync();
+                 Log($"Manual Import (Single): Added {count} records.", "success");
+             }
+         }
+    }
+
+    private async Task<int> InsertIncomeItems(int periodId, JsonElement incomeArray)
+    {
+        int count = 0;
+        foreach(var item in incomeArray.EnumerateArray())
+        {
+            string sourceStringId = "";
+            if(item.TryGetProperty("sourceId", out var sid)) sourceStringId = sid.GetString();
+            else if(item.TryGetProperty("SourceId", out sid)) sourceStringId = sid.GetString();
+
+            var exists = await Db.BudgetExpectedIncome.AnyAsync(x => x.BudgetPeriodId == periodId && x.SourceStringId == sourceStringId);
+            if(exists) continue;
+
+            var newInc = new BudgetExpectedIncome
+            {
+                BudgetPeriodId = periodId,
+                SourceStringId = sourceStringId,
+                Amount = 0,
+                Date = DateTime.MinValue
+            };
+
+            if(item.TryGetProperty("amount", out var amt)) newInc.Amount = amt.GetDecimal();
+            if((item.TryGetProperty("date", out var d2) || item.TryGetProperty("Date", out d2)) 
+                && DateTime.TryParse(d2.GetString(), out var idate)) 
+            {
+                newInc.Date = idate;
+            }
+
+            Db.BudgetExpectedIncome.Add(newInc);
+            count++;
+        }
+        return count;
+    }
+
+    // --- STANDARD METHODS ---
     private async Task ForceCreateTablesSQL()
     {
         Log("Button Clicked: Starting RAW SQL Creation...", "info");
@@ -485,6 +495,10 @@
                     
                     successCount++;
                 }
+                else 
+                {
+                    Log($"File not found: {path}", "error");
+                }
             }
             Log($"Import finished. {successCount} files processed.", "success");
             await LoadData();
@@ -492,6 +506,7 @@
         catch (Exception ex)
         {
             Log($"Import Error: {ex.Message}", "error");
+            if(ex.InnerException != null) Log($" >> {ex.InnerException.Message}", "error");
         }
         finally
         {
@@ -512,6 +527,7 @@
             using var reader = new StreamReader(file.OpenReadStream(2 * 1024 * 1024)); 
             var json = await reader.ReadToEndAsync();
             json = PatchJsonDates(json);
+            Log("Patched Dates in uploaded file.", "info");
 
             await BudgetService.ImportBudgetJson(userId, json);
             await ImportExpectedIncomeManual(json);
@@ -522,6 +538,7 @@
         catch (Exception ex)
         {
             Log($"Upload Failed: {ex.Message}", "error");
+            if(ex.InnerException != null) Log($" >> {ex.InnerException.Message}", "error");
         }
         finally
         {
