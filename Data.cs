@@ -55,6 +55,7 @@ public class AppDbContext : DbContext
     public DbSet<BudgetTransactionSplit> BudgetTransactionSplits { get; set; }
     public DbSet<BudgetTransfer> BudgetTransfers { get; set; }
     public DbSet<BudgetIncomeSource> BudgetIncomeSources { get; set; }
+    public DbSet<BudgetExpectedIncome> BudgetExpectedIncome { get; set; }
 }
 
 // ... (Keep existing Bullet classes) ...
@@ -149,6 +150,7 @@ public class BudgetPeriod
     public List<BudgetCycle> Cycles { get; set; } = new();
     public List<BudgetTransaction> Transactions { get; set; } = new();
     public List<BudgetTransfer> Transfers { get; set; } = new();
+    public List<BudgetExpectedIncome> ExpectedIncome { get; set; } = new();
 }
 
 public class BudgetCycle
@@ -222,4 +224,16 @@ public class BudgetIncomeSource
     public string StringId { get; set; } = ""; // "inc176..."
     public string Name { get; set; } = "";
     public string ImgUrl { get; set; } = "";
+}
+
+public class BudgetExpectedIncome
+{
+    public int Id { get; set; }
+    public int BudgetPeriodId { get; set; } // Foreign Key to the Month
+    
+    // Links to the "definitions" in BudgetIncomeSources
+    public string SourceStringId { get; set; } = ""; 
+    
+    public decimal Amount { get; set; }
+    public DateTime Date { get; set; }
 }
