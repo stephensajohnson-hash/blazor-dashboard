@@ -20,7 +20,7 @@
 <div class="min-h-screen bg-gray-900 text-white p-6">
     <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
         <h1 class="text-3xl font-bold flex items-center gap-3">
-            <span>💵</span> Budget Tracker <span class="text-xs font-normal text-gray-500 self-end mb-1">v5.1 (Fixed Imports)</span>
+            <span>💵</span> Budget Tracker <span class="text-xs font-normal text-gray-500 self-end mb-1">v5.2 (Debug Mode)</span>
         </h1>
         
         <div class="flex gap-3">
@@ -33,6 +33,31 @@
                     <span>📂 Upload JSON</span>
                     <InputFile OnChange="LoadJsonFile" class="hidden" />
                 </label>
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-8">
+        <div class="relative bg-black border border-gray-700 rounded-xl p-4 font-mono text-xs h-48 overflow-hidden shadow-inner flex flex-col">
+            <button class="absolute top-2 right-2 bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded border border-gray-600 text-[10px] z-10 transition" 
+                    @onclick="CopyLogs">
+                📋 Copy Log
+            </button>
+            <div class="overflow-y-auto flex flex-col-reverse h-full pt-6">
+                @if (debugLogs.Count == 0)
+                {
+                    <div class="text-gray-600 italic">Waiting for logs...</div>
+                }
+                else
+                {
+                    @foreach (var log in ((IEnumerable<string>)debugLogs).Reverse())
+                    {
+                        <div class="border-b border-gray-900 py-0.5 whitespace-pre-wrap break-all">
+                            <span class="text-gray-500 select-none">@log.Split('|')[0]</span> 
+                            <span class="@GetLogColor(log)">@log.Split('|')[1]</span>
+                        </div>
+                    }
+                }
             </div>
         </div>
     </div>
@@ -61,6 +86,7 @@
                         <h2 class="text-xl font-bold text-white flex items-center gap-2">
                             @period.DisplayName
                             @if(period.StringId.Contains("2026")) { <span class="text-xs bg-blue-900 text-blue-200 px-2 py-0.5 rounded border border-blue-700">Future</span> }
+                            <span class="text-[10px] bg-gray-700 text-gray-300 px-2 py-0.5 rounded font-mono">ID: @period.StringId</span>
                         </h2>
                         <div class="text-xs text-gray-400 mt-1">Start: @period.StartDate.ToShortDateString() | Opening: <span class="text-white font-mono">@period.InitialBankBalance.ToString("C")</span></div>
                     </div>
@@ -217,24 +243,19 @@
     private bool isLoading = true;
     private List<BudgetPeriod> periods = new();
     private List<BudgetIncomeSource> incomeSources = new();
+    private List<string> debugLogs = new();
 
-    // Helper: Resolve ID -> Name
-    private string GetSourceName(string sourceId) 
-    { 
-        var src = incomeSources.FirstOrDefault(s => s.StringId == sourceId); 
-        return src != null ? src.Name : sourceId; 
-    }
-
-    // Safety: Patch Date formats in JSON before sending to C# parser
-    private string PatchJsonDates(string json) 
-    { 
-        return Regex.Replace(json, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?!"")(?![.Z])", "$1Z"); 
-    }
+    private void Log(string msg, string type = "info") { debugLogs.Add($"{DateTime.Now:HH:mm:ss}|{msg}|{type}"); StateHasChanged(); }
+    private string GetLogColor(string log) { if(log.Contains("|error")) return "text-red-400 font-bold"; if(log.Contains("|success")) return "text-green-400 font-bold"; return "text-gray-300"; }
+    private string GetSourceName(string sourceId) { var src = incomeSources.FirstOrDefault(s => s.StringId == sourceId); return src != null ? src.Name : sourceId; }
+    private string PatchJsonDates(string json) { return Regex.Replace(json, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?!"")(?![.Z])", "$1Z"); }
+    private async Task CopyLogs() { var text = string.Join("\n", debugLogs.Select(l => l.Replace("|", " : "))); await JS.InvokeVoidAsync("navigator.clipboard.writeText", text); Log("Logs copied to clipboard.", "success"); }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
+            Log("Page initializing...");
             try
             {
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
@@ -247,12 +268,14 @@
                             doc.RootElement.TryGetProperty("id", out p))
                         {
                             userId = p.GetInt32();
+                            Log($"User Identified: ID {userId}", "success");
                             await LoadData();
                         }
                     }
                 }
+                else { Log("No user session found.", "error"); }
             }
-            catch (Exception) { /* Handle or log silently */ }
+            catch (Exception ex) { Log($"Initialization Error: {ex.Message}", "error"); }
             finally { isLoading = false; StateHasChanged(); }
         }
     }
@@ -261,13 +284,17 @@
     {
         if (userId == 0) return;
         
-        // 1. Load Global Definitions
         incomeSources = await Db.BudgetIncomeSources
             .Where(x => x.UserId == userId || x.UserId == 0)
             .ToListAsync();
 
-        // 2. Load Periods via Service (which now handles all Includes)
         periods = await BudgetService.GetPeriods(userId);
+        
+        Log($"Query Complete: Loaded {periods.Count} periods from DB.", "success");
+        foreach(var p in periods)
+        {
+            Log($" > DB contains: {p.DisplayName} (ID: {p.StringId})", "info");
+        }
     }
 
     private async Task LoadServerDefaults()
@@ -278,7 +305,6 @@
 
         try
         {
-            // MERGE STRATEGY: Combine files into one JSON to prevent overwriting
             var webRoot = Env.WebRootPath;
             var files = new[] { "budget_dec25.json", "budget_jan26.json" };
             
@@ -289,16 +315,21 @@
             foreach(var fileName in files)
             {
                 var path = Path.Combine(webRoot, fileName);
+                Log($"Scanning file: {fileName}...", "info");
+                
                 if(File.Exists(path))
                 {
                     var rawJson = await File.ReadAllTextAsync(path);
                     var doc = JsonDocument.Parse(rawJson);
                     
-                    // Extract periods if array, or wrapping if object
                     if(doc.RootElement.TryGetProperty("periods", out var arr))
                     {
                         foreach(var p in arr.EnumerateArray()) {
                             if(!first) combinedJson.Append(",");
+                            
+                            // Debug ID collision
+                            if(p.TryGetProperty("id", out var pid)) Log($"  > Found Period ID: {pid.GetString()}", "info");
+                            
                             combinedJson.Append(p.GetRawText());
                             first = false;
                         }
@@ -306,24 +337,36 @@
                     else
                     {
                         if(!first) combinedJson.Append(",");
+                        
+                        // Debug ID collision
+                        if(doc.RootElement.TryGetProperty("id", out var pid)) Log($"  > Found Period ID: {pid.GetString()}", "info");
+                        
                         combinedJson.Append(doc.RootElement.GetRawText());
                         first = false;
                     }
                 }
+                else { Log($"File NOT found: {path}", "error"); }
             }
             combinedJson.Append("] }");
             
-            // Import the Master merged file
+            Log("Starting Merge & Import...", "info");
             var finalJson = PatchJsonDates(combinedJson.ToString());
             await BudgetService.ImportBudgetJson(userId, finalJson);
+            
+            Log("Import complete. Reloading view...", "success");
             await LoadData();
         }
-        catch (Exception) { /* Log error */ }
+        catch (Exception ex) 
+        { 
+            Log($"Import Error: {ex.Message}", "error"); 
+            if(ex.InnerException != null) Log($" >> {ex.InnerException.Message}", "error");
+        }
         finally { isLoading = false; StateHasChanged(); }
     }
 
     private async Task LoadJsonFile(InputFileChangeEventArgs e)
     {
+        // Simple manual upload (no merge logic here, just basic import)
         if (userId == 0) return;
         isLoading = true;
         StateHasChanged();
@@ -334,10 +377,12 @@
             var json = await reader.ReadToEndAsync();
             json = PatchJsonDates(json);
 
+            Log("Manual upload started...", "info");
             await BudgetService.ImportBudgetJson(userId, json);
             await LoadData();
+            Log("Upload successful.", "success");
         }
-        catch (Exception) { }
+        catch (Exception ex) { Log($"Upload Failed: {ex.Message}", "error"); }
         finally { isLoading = false; StateHasChanged(); }
     }
 }
