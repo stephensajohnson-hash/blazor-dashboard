@@ -5,14 +5,11 @@
 @using Dashboard.Components.Bullet
 @using System.IO
 @using Microsoft.EntityFrameworkCore
-@using System.Text.Json
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.JSInterop
 @using System.Text.RegularExpressions
-@using System.Text
-@inject IJSRuntime JSRuntime
-@inject BudgetService BudgetService
 @inject IJSRuntime JS
+@inject BudgetService BudgetService
 @inject AppDbContext Db
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env 
 
@@ -21,12 +18,12 @@
 <div class="min-h-screen bg-gray-900 text-white p-6">
     <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
         <h1 class="text-3xl font-bold flex items-center gap-3">
-            <span>💵</span> Budget Tracker <span class="text-xs font-normal text-gray-500 self-end mb-1">v4.2 (Auto-Load & Merge)</span>
+            <span>💵</span> Budget Tracker <span class="text-xs font-normal text-gray-500 self-end mb-1">v5.0 (Clean Architecture)</span>
         </h1>
         
         <div class="flex gap-3">
             <button @onclick="LoadServerDefaults" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded transition shadow-lg flex items-center gap-2 border border-gray-600">
-                <span>⚡ Load Server Data</span>
+                <span>⚡ Reload Server Data</span>
             </button>
 
             <div class="relative">
@@ -38,56 +35,18 @@
         </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        <div class="p-4 border-2 border-dashed border-red-500 bg-red-900/20 rounded-xl">
-            <div class="flex flex-col gap-4">
-                <div>
-                    <h3 class="font-bold text-red-400 text-lg">⚠️ Database Repair</h3>
-                    <p class="text-sm text-gray-400">Click below only if you see "Relation does not exist" errors.</p>
-                </div>
-                <button class="bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-6 rounded shadow-lg transition w-full" 
-                        @onclick="ForceCreateTablesSQL">
-                    🔨 Force Create & Fix Columns
-                </button>
-            </div>
-        </div>
-
-        <div class="relative bg-black border border-gray-700 rounded-xl p-4 font-mono text-xs h-48 overflow-hidden shadow-inner flex flex-col">
-            <button class="absolute top-2 right-2 bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded border border-gray-600 text-[10px] z-10 transition" 
-                    @onclick="CopyLogs">
-                📋 Copy Log
-            </button>
-            <div class="overflow-y-auto flex flex-col-reverse h-full pt-6">
-                @if (debugLogs.Count == 0)
-                {
-                    <div class="text-gray-600 italic">Waiting for logs...</div>
-                }
-                else
-                {
-                    @foreach (var log in ((IEnumerable<string>)debugLogs).Reverse())
-                    {
-                        <div class="border-b border-gray-900 py-0.5 whitespace-pre-wrap break-all">
-                            <span class="text-gray-500 select-none">@log.Split('|')[0]</span> 
-                            <span class="@GetLogColor(log)">@log.Split('|')[1]</span>
-                        </div>
-                    }
-                }
-            </div>
-        </div>
-    </div>
-
     @if (isLoading)
     {
         <div class="flex flex-col items-center justify-center py-20 space-y-4">
             <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-            <div class="text-gray-400 animate-pulse">Processing... check console above</div>
+            <div class="text-gray-400 animate-pulse">Loading data...</div>
         </div>
     }
     else if (!periods.Any())
     {
         <div class="text-center py-20 border-2 border-dashed border-gray-700 rounded-xl bg-gray-800/30">
             <p class="text-gray-500 text-xl mb-2">No Budget Data Found.</p>
-            <p class="text-sm text-gray-600">Click "Load Server Data" to import December & January.</p>
+            <p class="text-sm text-gray-600">Click "Reload Server Data" to import.</p>
         </div>
     }
     else
@@ -153,26 +112,21 @@
                     </div>
 
                     <div>
-                        <div class="mb-6 bg-gray-800/30 border border-blue-700/30 rounded-lg overflow-hidden">
-                            <h3 class="text-sm font-bold text-blue-400 uppercase tracking-widest p-2 bg-blue-900/20 border-b border-blue-700/30">
-                                Income Sources
-                            </h3>
-                            @if(incomeSources.Any())
-                            {
-                                <div class="flex flex-wrap gap-2 p-2">
+                        @if(incomeSources.Any())
+                        {
+                            <div class="mb-4">
+                                <h3 class="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-2">Sources</h3>
+                                <div class="flex flex-wrap gap-2">
                                     @foreach(var src in incomeSources)
                                     {
-                                        <div class="flex items-center gap-2 bg-gray-700/50 rounded-full px-3 py-1 text-xs border border-gray-600">
-                                             @if(!string.IsNullOrEmpty(src.ImgUrl)) 
-                                             { 
-                                                 <img src="@src.ImgUrl" class="w-4 h-4 rounded-full" /> 
-                                             }
-                                            <span class="text-gray-200 font-bold">@src.Name</span>
+                                        <div class="flex items-center gap-2 bg-gray-800 rounded px-2 py-1 text-[10px] border border-gray-700 text-gray-400">
+                                             @if(!string.IsNullOrEmpty(src.ImgUrl)) { <img src="@src.ImgUrl" class="w-3 h-3 rounded-full" /> }
+                                            <span>@src.Name</span>
                                         </div>
                                     }
                                 </div>
-                            }
-                        </div>
+                            </div>
+                        }
 
                         <div class="mb-6 bg-gray-800/30 border border-yellow-700/30 rounded-lg overflow-hidden">
                             <h3 class="text-sm font-bold text-yellow-400 uppercase tracking-widest p-2 bg-yellow-900/20 border-b border-yellow-700/30 flex justify-between">
@@ -199,7 +153,7 @@
 
                         <div class="mb-6 bg-gray-800/30 border border-red-700/30 rounded-lg overflow-hidden">
                             <h3 class="text-sm font-bold text-red-400 uppercase tracking-widest p-2 bg-red-900/20 border-b border-red-700/30 flex justify-between">
-                                <span>Watch List (Expenses)</span>
+                                <span>Watch List</span>
                                 <span>@((period.WatchList ?? new List<BudgetWatchItem>()).Sum(x => x.Amount).ToString("C0"))</span>
                             </h3>
                             @if(period.WatchList != null && period.WatchList.Any())
@@ -227,7 +181,7 @@
                                     }
                                 </div>
                             }
-                            else { <div class="p-2 text-xs text-gray-500 italic text-center">No watch items.</div> }
+                            else { <div class="p-2 text-xs text-gray-500 italic text-center">No items.</div> }
                         </div>
 
                         <h3 class="text-sm font-bold text-purple-400 uppercase tracking-widest border-b border-gray-700 pb-2 mb-4">Transactions (@period.Transactions.Count)</h3>
@@ -261,18 +215,24 @@
     private bool isLoading = true;
     private List<BudgetPeriod> periods = new();
     private List<BudgetIncomeSource> incomeSources = new();
-    private List<string> debugLogs = new();
 
-    private void Log(string msg, string type = "info") { debugLogs.Add($"{DateTime.Now:HH:mm:ss}|{msg}|{type}"); StateHasChanged(); }
-    private string GetLogColor(string log) { if(log.Contains("|error")) return "text-red-400 font-bold"; if(log.Contains("|success")) return "text-green-400 font-bold"; return "text-gray-300"; }
-    private string GetSourceName(string sourceId) { var src = incomeSources.FirstOrDefault(s => s.StringId == sourceId); return src != null ? src.Name : sourceId; }
-    private async Task CopyLogs() { var text = string.Join("\n", debugLogs.Select(l => l.Replace("|", " : "))); await JS.InvokeVoidAsync("navigator.clipboard.writeText", text); Log("Logs copied to clipboard.", "success"); }
+    // Helper: Resolve ID -> Name
+    private string GetSourceName(string sourceId) 
+    { 
+        var src = incomeSources.FirstOrDefault(s => s.StringId == sourceId); 
+        return src != null ? src.Name : sourceId; 
+    }
+
+    // Safety: Patch Date formats in JSON before sending to C# parser
+    private string PatchJsonDates(string json) 
+    { 
+        return Regex.Replace(json, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?!"")(?![.Z])", "$1Z"); 
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            Log("Page initializing...");
             try
             {
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
@@ -280,48 +240,34 @@
                 {
                     using (var doc = JsonDocument.Parse(json))
                     {
-                        if (doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p) || doc.RootElement.TryGetProperty("id", out p))
+                        if (doc.RootElement.TryGetProperty("UserId", out var p) || 
+                            doc.RootElement.TryGetProperty("userId", out p) || 
+                            doc.RootElement.TryGetProperty("id", out p))
                         {
                             userId = p.GetInt32();
-                            Log($"User Identified: ID {userId}", "success");
-                            
-                            // FIX: AUTO-LOAD DATA ONCE USER IS IDENTIFIED
                             await LoadData();
                         }
                     }
                 }
-                if (userId == 0) Log("No user found in local storage.", "error");
             }
-            catch (Exception ex) { Log($"Initialization Error: {ex.Message}", "error"); }
+            catch (Exception) { /* Handle or log silently */ }
             finally { isLoading = false; StateHasChanged(); }
         }
     }
 
     private async Task LoadData()
     {
-        Log("Querying Database for periods...");
-        try 
-        {
-            incomeSources = await Db.BudgetIncomeSources.Where(x => x.UserId == userId || x.UserId == 0).ToListAsync();
-            
-            // NOTE: This relies on the Database being populated.
-            periods = await BudgetService.GetPeriods(userId);
-            
-            // MANUAL ATTACH: Expected Income & Watch List
-            if(periods != null)
-            {
-                foreach(var p in periods)
-                {
-                    p.ExpectedIncome = await Db.BudgetExpectedIncome.Where(x => x.BudgetPeriodId == p.Id).ToListAsync();
-                    p.WatchList = await Db.BudgetWatchItems.Where(x => x.BudgetPeriodId == p.Id).ToListAsync();
-                }
-                Log($"Loaded {periods.Count} periods from DB.", "success");
-            }
-        }
-        catch(Exception ex) { Log($"LoadData Error: {ex.Message}", "error"); }
+        if (userId == 0) return;
+        
+        // 1. Load Global Definitions
+        incomeSources = await Db.BudgetIncomeSources
+            .Where(x => x.UserId == userId || x.UserId == 0)
+            .ToListAsync();
+
+        // 2. Load Periods via Service (which now handles all Includes)
+        periods = await BudgetService.GetPeriods(userId);
     }
 
-    // --- MERGE IMPORT STRATEGY ---
     private async Task LoadServerDefaults()
     {
         if (userId == 0) return;
@@ -330,15 +276,13 @@
 
         try
         {
+            // MERGE STRATEGY: Combine files into one JSON to prevent overwriting
             var webRoot = Env.WebRootPath;
             var files = new[] { "budget_dec25.json", "budget_jan26.json" };
             
-            // 1. Merge ALL periods from all files into one list
-            var mergedPeriods = new List<string>();
-            var combinedJson = new StringBuilder();
+            var combinedJson = new System.Text.StringBuilder();
             combinedJson.Append("{ \"periods\": [");
-
-            bool firstPeriod = true;
+            bool first = true;
 
             foreach(var fileName in files)
             {
@@ -348,184 +292,33 @@
                     var rawJson = await File.ReadAllTextAsync(path);
                     var doc = JsonDocument.Parse(rawJson);
                     
-                    // Extract periods array content
+                    // Extract periods if array, or wrapping if object
                     if(doc.RootElement.TryGetProperty("periods", out var arr))
                     {
-                        foreach(var p in arr.EnumerateArray())
-                        {
-                            if(!firstPeriod) combinedJson.Append(",");
+                        foreach(var p in arr.EnumerateArray()) {
+                            if(!first) combinedJson.Append(",");
                             combinedJson.Append(p.GetRawText());
-                            firstPeriod = false;
+                            first = false;
                         }
                     }
                     else
                     {
-                        // Fallback: If root IS the period
-                        if(!firstPeriod) combinedJson.Append(",");
+                        if(!first) combinedJson.Append(",");
                         combinedJson.Append(doc.RootElement.GetRawText());
-                        firstPeriod = false;
+                        first = false;
                     }
                 }
             }
             combinedJson.Append("] }");
             
+            // Import the Master merged file
             var finalJson = PatchJsonDates(combinedJson.ToString());
-            Log("Merged JSON files into one master payload.", "info");
-
-            // 2. Perform ONE Single Import (Prevents wiping)
             await BudgetService.ImportBudgetJson(userId, finalJson);
-            
-            // 3. Perform Manual Data Patch on the Combined Data
-            await ImportManualData(finalJson);
-            
-            Log("Import complete.", "success");
             await LoadData();
         }
-        catch (Exception ex) { Log($"Import Error: {ex.Message}", "error"); }
+        catch (Exception) { /* Log error */ }
         finally { isLoading = false; StateHasChanged(); }
     }
-
-    private async Task ImportManualData(string json)
-    {
-        try 
-        {
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-            JsonElement periodsArray = default;
-            
-            if (!(root.TryGetProperty("periods", out periodsArray)))
-            {
-                await ImportSinglePeriod(root);
-                return;
-            }
-
-            int incomeAdded = 0;
-            int watchAdded = 0;
-
-            foreach(var periodJson in periodsArray.EnumerateArray())
-            {
-                if(!periodJson.TryGetProperty("startDate", out var dateElem)) continue;
-                if(!DateTime.TryParse(dateElem.GetString(), out var startDate)) continue;
-
-                if(periodJson.TryGetProperty("incomeSources", out var sourceArr)) await ImportSources(sourceArr);
-
-                var dbPeriod = await Db.BudgetPeriods.Where(p => p.UserId == userId && p.StartDate.Year == startDate.Year && p.StartDate.Month == startDate.Month).OrderByDescending(p => p.Id).FirstOrDefaultAsync();
-                if(dbPeriod == null) continue;
-
-                if(periodJson.TryGetProperty("expectedIncome", out var incomeArray)) 
-                    incomeAdded += await InsertIncomeItems(dbPeriod.Id, incomeArray, startDate);
-
-                if(periodJson.TryGetProperty("watchList", out var watchArray))
-                    watchAdded += await InsertWatchItems(dbPeriod.Id, watchArray);
-            }
-
-            if(incomeAdded > 0 || watchAdded > 0)
-            {
-                await Db.SaveChangesAsync();
-                Log($"Manual Import: +{incomeAdded} Inc, +{watchAdded} Watch.", "success");
-            }
-        }
-        catch(Exception ex) { Log($"Manual Import Error: {ex.Message}", "error"); }
-    }
-
-    private async Task ImportSinglePeriod(JsonElement root)
-    {
-         // Same logic as before for flat structure (omitted for brevity in loop, but kept for legacy)
-    }
-
-    private async Task ImportSources(JsonElement sourceArr)
-    {
-        if(sourceArr.ValueKind != JsonValueKind.Array) return;
-        foreach(var src in sourceArr.EnumerateArray())
-        {
-            var sid = src.GetProperty("id").GetString();
-            if(!await Db.BudgetIncomeSources.AnyAsync(x => x.StringId == sid))
-            {
-                Db.BudgetIncomeSources.Add(new BudgetIncomeSource { UserId = userId, StringId = sid, Name = src.GetProperty("name").GetString(), ImgUrl = src.TryGetProperty("imgUrl", out var img) ? img.GetString() : "" });
-            }
-        }
-        await Db.SaveChangesAsync();
-    }
-
-    private async Task<int> InsertIncomeItems(int periodId, JsonElement incomeArray, DateTime defaultDate)
-    {
-        if(incomeArray.ValueKind != JsonValueKind.Array) return 0;
-        int count = 0;
-        foreach(var item in incomeArray.EnumerateArray())
-        {
-            string sid = item.TryGetProperty("sourceId", out var s) ? s.GetString() : "";
-            if(await Db.BudgetExpectedIncome.AnyAsync(x => x.BudgetPeriodId == periodId && x.SourceStringId == sid)) continue;
-
-            var newInc = new BudgetExpectedIncome { BudgetPeriodId = periodId, SourceStringId = sid, Amount = 0, Date = defaultDate };
-            if(item.TryGetProperty("amount", out var amt)) newInc.Amount = amt.GetDecimal();
-            if((item.TryGetProperty("date", out var d2) || item.TryGetProperty("Date", out d2)) && DateTime.TryParse(d2.GetString(), out var idate)) newInc.Date = idate;
-            
-            Db.BudgetExpectedIncome.Add(newInc);
-            count++;
-        }
-        return count;
-    }
-
-    private async Task<int> InsertWatchItems(int periodId, JsonElement watchArray)
-    {
-        if(watchArray.ValueKind != JsonValueKind.Array) return 0;
-        int count = 0;
-        foreach(var item in watchArray.EnumerateArray())
-        {
-            string desc = item.GetProperty("description").GetString();
-            if(await Db.BudgetWatchItems.AnyAsync(x => x.BudgetPeriodId == periodId && x.Description == desc)) continue;
-
-            var newItem = new BudgetWatchItem 
-            { 
-                BudgetPeriodId = periodId, 
-                Description = desc,
-                Amount = item.GetProperty("amount").GetDecimal(),
-                DueDate = item.TryGetProperty("dueDate", out var dd) ? dd.GetString() : "",
-                ImgUrl = item.TryGetProperty("image", out var img) ? img.GetString() : ""
-            };
-            Db.BudgetWatchItems.Add(newItem);
-            count++;
-        }
-        return count;
-    }
-
-    private async Task ForceCreateTablesSQL()
-    {
-        Log("Button Clicked: Starting RAW SQL Creation...", "info");
-        try
-        {
-            // Same SQL as v4.1 - kept for safety
-            var sql = @"
-                CREATE TABLE IF NOT EXISTS ""BudgetPeriods"" ( ""Id"" integer GENERATED BY DEFAULT AS IDENTITY, ""UserId"" integer NOT NULL, ""StringId"" text, ""DisplayName"" text, ""StartDate"" timestamp with time zone NOT NULL, ""InitialBankBalance"" numeric NOT NULL, CONSTRAINT ""PK_BudgetPeriods"" PRIMARY KEY (""Id"") );
-                CREATE TABLE IF NOT EXISTS ""BudgetCycles"" ( ""Id"" integer GENERATED BY DEFAULT AS IDENTITY, ""BudgetPeriodId"" integer NOT NULL, ""CycleNumber"" integer NOT NULL, ""Label"" text, CONSTRAINT ""PK_BudgetCycles"" PRIMARY KEY (""Id""), CONSTRAINT ""FK_BudgetCycles_BudgetPeriods_BudgetPeriodId"" FOREIGN KEY (""BudgetPeriodId"" ) REFERENCES ""BudgetPeriods"" (""Id"") ON DELETE CASCADE );
-                CREATE TABLE IF NOT EXISTS ""BudgetItems"" ( ""Id"" integer GENERATED BY DEFAULT AS IDENTITY, ""BudgetCycleId"" integer NOT NULL, ""StringId"" text, ""Name"" text, ""PlannedAmount"" numeric NOT NULL, ""CarriedOver"" numeric NOT NULL, ""ImgUrl"" text, CONSTRAINT ""PK_BudgetItems"" PRIMARY KEY (""Id""), CONSTRAINT ""FK_BudgetItems_BudgetCycles_BudgetCycleId"" FOREIGN KEY (""BudgetCycleId"") REFERENCES ""BudgetCycles"" (""Id"") ON DELETE CASCADE );
-                CREATE TABLE IF NOT EXISTS ""BudgetTransactions"" ( ""Id"" integer GENERATED BY DEFAULT AS IDENTITY, ""BudgetPeriodId"" integer NOT NULL, ""StringId"" text, ""Date"" timestamp with time zone NOT NULL, ""Description"" text, ""Amount"" numeric NOT NULL, ""Type"" text NOT NULL, ""LinkedBudgetItemStringId"" text, ""SourceStringId"" text, ""ResolvedBudgetItemId"" integer, CONSTRAINT ""PK_BudgetTransactions"" PRIMARY KEY (""Id""), CONSTRAINT ""FK_BudgetTransactions_BudgetPeriods_BudgetPeriodId"" FOREIGN KEY (""BudgetPeriodId"") REFERENCES ""BudgetPeriods"" (""Id"") ON DELETE CASCADE );
-                CREATE TABLE IF NOT EXISTS ""BudgetTransactionSplits"" ( ""Id"" integer GENERATED BY DEFAULT AS IDENTITY, ""BudgetTransactionId"" integer NOT NULL, ""Amount"" numeric NOT NULL, ""Note"" text, ""LinkedBudgetItemStringId"" text, ""ResolvedBudgetItemId"" integer, CONSTRAINT ""PK_BudgetTransactionSplits"" PRIMARY KEY (""Id""), CONSTRAINT ""FK_BudgetTransactionSplits_BudgetTransactions_BudgetTransactionId"" FOREIGN KEY (""BudgetTransactionId"") REFERENCES ""BudgetTransactions"" (""Id"") ON DELETE CASCADE );
-                CREATE TABLE IF NOT EXISTS ""BudgetTransfers"" ( ""Id"" integer GENERATED BY DEFAULT AS IDENTITY, ""BudgetPeriodId"" integer NOT NULL, ""Date"" timestamp with time zone NOT NULL, ""Amount"" numeric NOT NULL, ""Note"" text, ""FromStringId"" text, ""ToStringId"" text, ""ResolvedFromId"" integer, ""ResolvedToId"" integer, CONSTRAINT ""PK_BudgetTransfers"" PRIMARY KEY (""Id""), CONSTRAINT ""FK_BudgetTransfers_BudgetPeriods_BudgetPeriodId"" FOREIGN KEY (""BudgetPeriodId"") REFERENCES ""BudgetPeriods"" (""Id"") ON DELETE CASCADE );
-                CREATE TABLE IF NOT EXISTS ""BudgetIncomeSources"" ( ""Id"" integer GENERATED BY DEFAULT AS IDENTITY, ""UserId"" integer NOT NULL, ""StringId"" text, ""Name"" text, ""Amount"" numeric NOT NULL, CONSTRAINT ""PK_BudgetIncomeSources"" PRIMARY KEY (""Id"") );
-                CREATE TABLE IF NOT EXISTS ""BudgetExpectedIncome"" ( ""Id"" integer GENERATED BY DEFAULT AS IDENTITY, ""BudgetPeriodId"" integer NOT NULL, ""SourceStringId"" text, ""Amount"" numeric NOT NULL, ""Date"" timestamp with time zone NOT NULL, CONSTRAINT ""PK_BudgetExpectedIncome"" PRIMARY KEY (""Id""), CONSTRAINT ""FK_BudgetExpectedIncome_BudgetPeriods"" FOREIGN KEY (""BudgetPeriodId"") REFERENCES ""BudgetPeriods"" (""Id"") ON DELETE CASCADE );
-                CREATE TABLE IF NOT EXISTS ""BudgetWatchItems"" ( ""Id"" integer GENERATED BY DEFAULT AS IDENTITY, ""BudgetPeriodId"" integer NOT NULL, ""Description"" text, ""Amount"" numeric NOT NULL, ""DueDate"" text, ""ImgUrl"" text, CONSTRAINT ""PK_BudgetWatchItems"" PRIMARY KEY (""Id""), CONSTRAINT ""FK_BudgetWatchItems_BudgetPeriods"" FOREIGN KEY (""BudgetPeriodId"") REFERENCES ""BudgetPeriods"" (""Id"") ON DELETE CASCADE );
-
-                ALTER TABLE ""BudgetItems"" ADD COLUMN IF NOT EXISTS ""ImgUrl"" text;
-                ALTER TABLE ""BudgetIncomeSources"" ADD COLUMN IF NOT EXISTS ""ImgUrl"" text;
-                ALTER TABLE ""BudgetIncomeSources"" ADD COLUMN IF NOT EXISTS ""UserId"" integer NOT NULL DEFAULT 0;
-                ALTER TABLE ""BudgetIncomeSources"" ALTER COLUMN ""Amount"" DROP NOT NULL;
-                ALTER TABLE ""BudgetIncomeSources"" ALTER COLUMN ""BudgetPeriodId"" DROP NOT NULL;
-                ALTER TABLE ""BudgetIncomeSources"" ALTER COLUMN ""UserId"" DROP NOT NULL;
-                ALTER TABLE ""BudgetTransactions"" ALTER COLUMN ""Type"" TYPE text;
-            ";
-
-            await Db.Database.ExecuteSqlRawAsync(sql);
-            Log("✅ SQL Executed Successfully!", "success");
-            Log("Tables should now exist. Click 'Load Server Data'.", "info");
-        }
-        catch (Exception ex)
-        {
-            Log($"❌ SQL ERROR: {ex.Message}", "error");
-        }
-    }
-
-    private string PatchJsonDates(string json) { return Regex.Replace(json, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?!"")(?![.Z])", "$1Z"); }
 
     private async Task LoadJsonFile(InputFileChangeEventArgs e)
     {
@@ -538,14 +331,11 @@
             using var reader = new StreamReader(file.OpenReadStream(2 * 1024 * 1024)); 
             var json = await reader.ReadToEndAsync();
             json = PatchJsonDates(json);
-            Log("Patched Dates in uploaded file.", "info");
 
             await BudgetService.ImportBudgetJson(userId, json);
-            await ImportManualData(json);
             await LoadData();
-            Log("Upload successful.", "success");
         }
-        catch (Exception ex) { Log($"Upload Failed: {ex.Message}", "error"); }
+        catch (Exception) { }
         finally { isLoading = false; StateHasChanged(); }
     }
 }

@@ -20,6 +20,10 @@ public class BudgetService
             .Include(p => p.Cycles).ThenInclude(c => c.Items)
             .Include(p => p.Transactions).ThenInclude(t => t.Splits)
             .Include(p => p.Transfers)
+            // --- NEW INCLUDES ---
+            .Include(p => p.ExpectedIncome)
+            .Include(p => p.WatchList)
+            // --------------------
             .OrderByDescending(p => p.StartDate)
             .ToListAsync();
     }
@@ -29,9 +33,26 @@ public class BudgetService
         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
         var root = JsonSerializer.Deserialize<RootDto>(json, options);
 
-        if (root == null || root.Periods == null) return;
+        // Handle case where root IS the period (flat structure) vs root contains "periods" array
+        List<PeriodDto> periodsToImport = new();
+        
+        if (root?.Periods != null)
+        {
+            periodsToImport = root.Periods;
+        }
+        else 
+        {
+            // Try deserializing as a single period
+            var singlePeriod = JsonSerializer.Deserialize<PeriodDto>(json, options);
+            if(singlePeriod != null && !string.IsNullOrEmpty(singlePeriod.Id))
+            {
+                periodsToImport.Add(singlePeriod);
+            }
+        }
 
-        foreach (var pDto in root.Periods)
+        if (!periodsToImport.Any()) return;
+
+        foreach (var pDto in periodsToImport)
         {
             // 1. Check if Period Exists (Delete old to allow re-importing fixes)
             var existing = await _db.BudgetPeriods
@@ -45,18 +66,22 @@ public class BudgetService
             }
 
             // 2. Create Period
+            // Fallback for StartDate parsing
+            DateTime startDate = DateTime.UtcNow;
+            if(DateTime.TryParse(pDto.StartDate, out var d)) startDate = d;
+
             var period = new BudgetPeriod
             {
                 UserId = userId,
                 StringId = pDto.Id,
                 DisplayName = pDto.DisplayName,
-                StartDate = DateTime.Parse(pDto.StartDate),
+                StartDate = startDate,
                 InitialBankBalance = pDto.InitialBankBalance
             };
             _db.BudgetPeriods.Add(period);
             await _db.SaveChangesAsync();
 
-            // 3. Import Income Sources (Global check)
+            // 3. Import Income Sources (Definitions)
             if (pDto.IncomeSources != null)
             {
                 foreach (var inc in pDto.IncomeSources)
@@ -64,49 +89,99 @@ public class BudgetService
                     var existInc = await _db.BudgetIncomeSources.FirstOrDefaultAsync(x => x.UserId == userId && x.StringId == inc.Id);
                     if (existInc == null)
                     {
-                        _db.BudgetIncomeSources.Add(new BudgetIncomeSource { UserId = userId, StringId = inc.Id, Name = inc.Name, ImgUrl = inc.Image });
+                        _db.BudgetIncomeSources.Add(new BudgetIncomeSource 
+                        { 
+                            UserId = userId, 
+                            StringId = inc.Id, 
+                            Name = inc.Name, 
+                            ImgUrl = inc.Image ?? inc.ImgUrl // Handle both names
+                        });
                     }
                 }
                 await _db.SaveChangesAsync();
             }
 
-            // 4. Cycles & Items (Build Mapping Dictionary)
+            // 4. Expected Income (Projections) - NEW
+            if (pDto.ExpectedIncome != null)
+            {
+                foreach(var exInc in pDto.ExpectedIncome)
+                {
+                    DateTime exDate = startDate; // Default
+                    if(DateTime.TryParse(exInc.Date, out var ed)) exDate = ed;
+
+                    var newExpected = new BudgetExpectedIncome
+                    {
+                        BudgetPeriodId = period.Id,
+                        SourceStringId = exInc.SourceId,
+                        Amount = exInc.Amount,
+                        Date = exDate
+                    };
+                    _db.BudgetExpectedIncome.Add(newExpected);
+                }
+                await _db.SaveChangesAsync();
+            }
+
+            // 5. Watch List (Expected Expenses) - NEW
+            if (pDto.WatchList != null)
+            {
+                foreach(var w in pDto.WatchList)
+                {
+                    var newWatch = new BudgetWatchItem
+                    {
+                        BudgetPeriodId = period.Id,
+                        Description = w.Description,
+                        Amount = w.Amount,
+                        DueDate = w.DueDate,
+                        ImgUrl = w.Image
+                    };
+                    _db.BudgetWatchItems.Add(newWatch);
+                }
+                await _db.SaveChangesAsync();
+            }
+
+            // 6. Cycles & Items
             var itemMap = new Dictionary<string, int>();
 
-            foreach (var cDto in pDto.PaycheckCycles)
+            if(pDto.PaycheckCycles != null)
             {
-                var cycle = new BudgetCycle { BudgetPeriodId = period.Id, CycleNumber = cDto.CycleId, Label = cDto.Label };
-                _db.BudgetCycles.Add(cycle);
-                await _db.SaveChangesAsync();
-
-                foreach (var iDto in cDto.BudgetItems)
+                foreach (var cDto in pDto.PaycheckCycles)
                 {
-                    var item = new BudgetItem
-                    {
-                        BudgetCycleId = cycle.Id,
-                        StringId = iDto.Id,
-                        Name = iDto.Name,
-                        PlannedAmount = iDto.PlannedAmount,
-                        CarriedOver = iDto.CarriedOver,
-                        ImgUrl = iDto.Image
-                    };
-                    _db.BudgetItems.Add(item);
+                    var cycle = new BudgetCycle { BudgetPeriodId = period.Id, CycleNumber = cDto.CycleId, Label = cDto.Label };
+                    _db.BudgetCycles.Add(cycle);
                     await _db.SaveChangesAsync();
-                    
-                    if (!string.IsNullOrEmpty(item.StringId)) itemMap[item.StringId] = item.Id;
+
+                    foreach (var iDto in cDto.BudgetItems)
+                    {
+                        var item = new BudgetItem
+                        {
+                            BudgetCycleId = cycle.Id,
+                            StringId = iDto.Id,
+                            Name = iDto.Name,
+                            PlannedAmount = iDto.PlannedAmount,
+                            CarriedOver = iDto.CarriedOver,
+                            ImgUrl = iDto.Image
+                        };
+                        _db.BudgetItems.Add(item);
+                        await _db.SaveChangesAsync();
+                        
+                        if (!string.IsNullOrEmpty(item.StringId)) itemMap[item.StringId] = item.Id;
+                    }
                 }
             }
 
-            // 5. Ledger Transactions
+            // 7. Ledger Transactions
             if (pDto.Ledger != null)
             {
                 foreach (var tDto in pDto.Ledger)
                 {
+                    DateTime transDate = startDate;
+                    if(DateTime.TryParse(tDto.Date, out var td)) transDate = td;
+
                     var trans = new BudgetTransaction
                     {
                         BudgetPeriodId = period.Id,
                         StringId = tDto.Id,
-                        Date = DateTime.Parse(tDto.Date),
+                        Date = transDate,
                         Description = tDto.Description,
                         Amount = tDto.Amount,
                         Type = tDto.Type,
@@ -144,18 +219,21 @@ public class BudgetService
                 }
             }
 
-            // 6. Transfers
+            // 8. Transfers
             if (pDto.Transfers != null)
             {
                 foreach (var trDto in pDto.Transfers)
                 {
                     string fromKey = !string.IsNullOrEmpty(trDto.FromBudgetId) ? trDto.FromBudgetId : trDto.FromId;
                     string toKey = !string.IsNullOrEmpty(trDto.ToBudgetId) ? trDto.ToBudgetId : trDto.ToId;
+                    
+                    DateTime transferDate = startDate;
+                    if(DateTime.TryParse(trDto.Date, out var td)) transferDate = td;
 
                     var transfer = new BudgetTransfer
                     {
                         BudgetPeriodId = period.Id,
-                        Date = DateTime.Parse(trDto.Date),
+                        Date = transferDate,
                         Amount = trDto.Amount,
                         Note = trDto.Note,
                         FromStringId = fromKey,
@@ -175,6 +253,7 @@ public class BudgetService
 
     // --- DTO CLASSES ---
     private class RootDto { public List<PeriodDto> Periods { get; set; } }
+    
     private class PeriodDto { 
         public string Id { get; set; } 
         public string DisplayName { get; set; }
@@ -184,15 +263,27 @@ public class BudgetService
         public List<LedgerDto> Ledger { get; set; }
         public List<TransferDto> Transfers { get; set; }
         public List<IncomeDto> IncomeSources { get; set; }
+        
+        // NEW DTO PROPERTIES
+        public List<ExpectedIncomeDto> ExpectedIncome { get; set; }
+        public List<WatchListDto> WatchList { get; set; }
     }
+
     private class CycleDto { public int CycleId { get; set; } public string Label { get; set; } public List<ItemDto> BudgetItems { get; set; } }
     private class ItemDto { public string Id { get; set; } public string Name { get; set; } public decimal PlannedAmount { get; set; } public decimal CarriedOver { get; set; } public string Image { get; set; } }
+    
     private class LedgerDto { public string Id { get; set; } public string Date { get; set; } public string Description { get; set; } public decimal Amount { get; set; } public string Type { get; set; } public string SourceId { get; set; } public string LinkedBudgetItemId { get; set; } public List<SplitDto> Splits { get; set; } }
     private class SplitDto { public string LinkedBudgetItemId { get; set; } public decimal? Amount { get; set; } public string Note { get; set; } }
+    
     private class TransferDto { 
         public string Id { get; set; } public string Date { get; set; } public decimal Amount { get; set; } public string Note { get; set; } 
         public string FromBudgetId { get; set; } public string ToBudgetId { get; set; }
         public string FromId { get; set; } public string ToId { get; set; }
     }
-    private class IncomeDto { public string Id { get; set; } public string Name { get; set; } public string Image { get; set; } }
+    
+    private class IncomeDto { public string Id { get; set; } public string Name { get; set; } public string Image { get; set; } public string ImgUrl { get; set; } }
+
+    // NEW DTO CLASSES
+    private class ExpectedIncomeDto { public string SourceId { get; set; } public decimal Amount { get; set; } public string Date { get; set; } }
+    private class WatchListDto { public string Description { get; set; } public decimal Amount { get; set; } public string DueDate { get; set; } public string Image { get; set; } }
 }
