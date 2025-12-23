@@ -48,6 +48,7 @@ public class AppDbContext : DbContext
     public DbSet<Team> Teams { get; set; } // NEW
     public DbSet<BulletGameDetail> BulletGameDetails { get; set; }
 
+    // BUDGET
     public DbSet<BudgetPeriod> BudgetPeriods { get; set; }
     public DbSet<BudgetCycle> BudgetCycles { get; set; }
     public DbSet<BudgetItem> BudgetItems { get; set; }
@@ -136,8 +137,8 @@ public class BulletGameDetail
     public int HomeScore { get; set; }
     public int AwayScore { get; set; }
     
-    public bool IsComplete { get; set; } // "status": "completed"
-    public DateTime? StartTime { get; set; } // Just the time component usually, combined with Item.Date
+    public bool IsComplete { get; set; } 
+    public DateTime? StartTime { get; set; } 
     public string TvChannel { get; set; } = "";
 }
 
@@ -145,7 +146,7 @@ public class BudgetPeriod
 {
     public int Id { get; set; }
     public int UserId { get; set; }
-    public string StringId { get; set; } = ""; // "2025-12"
+    public string StringId { get; set; } = ""; 
     public string DisplayName { get; set; } = "";
     public DateTime StartDate { get; set; }
     public decimal InitialBankBalance { get; set; }
@@ -153,14 +154,16 @@ public class BudgetPeriod
     public List<BudgetTransaction> Transactions { get; set; } = new();
     public List<BudgetTransfer> Transfers { get; set; } = new();
     public List<BudgetExpectedIncome> ExpectedIncome { get; set; } = new();
-    public List<BudgetWatchItem> BudgetWatchItems { get; set; } = new();    
+    
+    // FIX: Renamed from 'BudgetWatchItems' to 'WatchList' to match UI code
+    public List<BudgetWatchItem> WatchList { get; set; } = new();    
 }
 
 public class BudgetCycle
 {
     public int Id { get; set; }
     public int BudgetPeriodId { get; set; }
-    public int CycleNumber { get; set; } // 1 or 2
+    public int CycleNumber { get; set; } 
     public string Label { get; set; } = "";
     public List<BudgetItem> Items { get; set; } = new();
 }
@@ -169,7 +172,7 @@ public class BudgetItem
 {
     public int Id { get; set; }
     public int BudgetCycleId { get; set; }
-    public string StringId { get; set; } = ""; // "b1", "b176..."
+    public string StringId { get; set; } = ""; 
     public string Name { get; set; } = "";
     public decimal PlannedAmount { get; set; }
     public decimal CarriedOver { get; set; }
@@ -183,14 +186,12 @@ public class BudgetTransaction
     public string StringId { get; set; } = "";
     public DateTime Date { get; set; }
     public string Description { get; set; } = "";
-    public decimal Amount { get; set; } // Positive = Income, Negative = Expense
-    public string Type { get; set; } = "expense"; // "income" or "expense"
+    public decimal Amount { get; set; } 
+    public string Type { get; set; } = "expense"; 
     
-    // Relationships
-    public string? SourceStringId { get; set; } // For Income
-    public string? LinkedBudgetItemStringId { get; set; } // "b1"
+    public string? SourceStringId { get; set; } 
+    public string? LinkedBudgetItemStringId { get; set; } 
     
-    // We store the resolved DB ID after import
     public int? ResolvedBudgetItemId { get; set; } 
     
     public List<BudgetTransactionSplit> Splits { get; set; } = new();
@@ -224,19 +225,19 @@ public class BudgetIncomeSource
 {
     public int Id { get; set; }
     public int UserId { get; set; }
-    public string StringId { get; set; } = ""; // "inc176..."
+    public string StringId { get; set; } = ""; 
     public string Name { get; set; } = "";
     public string ImgUrl { get; set; } = "";
+    
+    // FIX: Added to match database schema, Nullable to allow flexible imports
+    public decimal? Amount { get; set; }
 }
 
 public class BudgetExpectedIncome
 {
     public int Id { get; set; }
-    public int BudgetPeriodId { get; set; } // Foreign Key to the Month
-    
-    // Links to the "definitions" in BudgetIncomeSources
+    public int BudgetPeriodId { get; set; } 
     public string SourceStringId { get; set; } = ""; 
-    
     public decimal Amount { get; set; }
     public DateTime Date { get; set; }
 }
@@ -244,9 +245,9 @@ public class BudgetExpectedIncome
 public class BudgetWatchItem
 {
     public int Id { get; set; }
-    public int BudgetPeriodId { get; set; } // Link to the Month
+    public int BudgetPeriodId { get; set; } 
     public string Description { get; set; } = "";
     public decimal Amount { get; set; }
-    public string DueDate { get; set; } = ""; // String to handle "TBD"
+    public string DueDate { get; set; } = ""; 
     public string ImgUrl { get; set; } = "";
 }
