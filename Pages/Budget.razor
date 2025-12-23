@@ -9,7 +9,6 @@
 @using System.Text.Json 
 @using System.IO 
 @using Microsoft.AspNetCore.Components.Forms 
-@* ^^^ FIXED: Added missing namespace ^^^ *@
 @inject IJSRuntime JS
 @inject BudgetService BudgetService
 @inject BulletBaseService BulletBase
@@ -70,13 +69,12 @@
         <div class="grid lg:grid-cols-[60%_40%] gap-6">
             
             <div class="bg-white rounded-xl shadow-xl overflow-hidden flex flex-col h-[calc(100vh-180px)] border border-gray-300">
-                <div class="p-3 bg-gray-100 border-b border-gray-300 font-bold text-gray-600 text-xs uppercase tracking-widest flex justify-between">
-                    <span>Date</span>
-                    <div class="grid grid-cols-3 gap-8 w-3/4 text-right pr-4">
-                        <span>Description</span>
-                        <span>Amount</span>
-                        <span>Balance</span>
-                    </div>
+                
+                <div class="p-3 bg-gray-100 border-b border-gray-300 font-bold text-gray-600 text-xs uppercase tracking-widest grid grid-cols-[110px_1fr_100px_100px] gap-4 items-center">
+                    <span class="pl-2">Date</span>
+                    <span>Description</span>
+                    <span class="text-right">Amount</span>
+                    <span class="text-right pr-2">Balance</span>
                 </div>
                 
                 <div class="overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-gray-100">
@@ -94,8 +92,9 @@
                             runningBalance += t.Amount;
                             string imgUrl = GetTransactionImage(t);
 
-                            <div class="flex justify-between items-center p-3 border-b border-gray-200 hover:bg-blue-50 transition group text-sm">
-                                <div class="flex items-center gap-3 w-1/4">
+                            <div class="grid grid-cols-[110px_1fr_100px_100px] gap-4 items-center p-3 border-b border-gray-200 hover:bg-blue-50 transition group text-sm">
+                                
+                                <div class="flex items-center gap-3 pl-2">
                                     <div class="w-8 h-8 flex-shrink-0">
                                         @if(!string.IsNullOrEmpty(imgUrl))
                                         {
@@ -111,22 +110,20 @@
                                     <div class="text-gray-500 font-mono text-xs">@t.Date.ToString("MMM dd")</div>
                                 </div>
                                 
-                                <div class="flex-1 grid grid-cols-3 gap-8 items-center text-right">
-                                    <div class="text-left text-gray-800 font-medium truncate flex items-center gap-2">
-                                        @t.Description
-                                        @if(t.Splits.Any()) 
-                                        { 
-                                            <span class="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded border border-blue-200" title="Split Transaction">🔀</span> 
-                                        }
-                                    </div>
-                                    
-                                    <div class="font-mono font-bold @(t.Amount >= 0 ? "text-green-600" : "text-red-600")">
-                                        $@t.Amount.ToString("N2")
-                                    </div>
-                                    
-                                    <div class="font-mono text-gray-400">
-                                        $@runningBalance.ToString("N2")
-                                    </div>
+                                <div class="text-gray-800 font-medium truncate flex items-center gap-2">
+                                    @t.Description
+                                    @if(t.Splits.Any()) 
+                                    { 
+                                        <span class="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded border border-blue-200" title="Split Transaction">🔀</span> 
+                                    }
+                                </div>
+                                
+                                <div class="text-right font-mono font-bold @(t.Amount >= 0 ? "text-green-600" : "text-red-600")">
+                                    $@t.Amount.ToString("N2")
+                                </div>
+                                
+                                <div class="text-right pr-2 font-mono text-gray-400">
+                                    $@runningBalance.ToString("N2")
                                 </div>
                             </div>
                         }
@@ -153,11 +150,22 @@
                             <div class="divide-y divide-gray-100 p-0">
                                 @foreach (var item in cycle.Items)
                                 {
-                                    decimal spent = GetSpentForBudgetItem(item.Id);
-                                    decimal totalAvailable = item.PlannedAmount + item.CarriedOver;
-                                    decimal remaining = totalAvailable - spent;
-                                    double percent = totalAvailable > 0 ? (double)(spent / totalAvailable) * 100 : 0;
+                                    // LOGIC FIX: Handle Refunds/Credits properly
+                                    // rawNetSpent: Positive = Money Spent. Negative = Money Refunded/Added.
+                                    decimal rawNetSpent = GetSpentForBudgetItem(item.Id);
                                     
+                                    // If rawNetSpent is negative (e.g. -0.01), it acts as a Credit (Available += 0.01)
+                                    decimal credits = rawNetSpent < 0 ? Math.Abs(rawNetSpent) : 0;
+                                    decimal actualSpending = rawNetSpent > 0 ? rawNetSpent : 0;
+
+                                    decimal totalBase = item.PlannedAmount + item.CarriedOver;
+                                    decimal totalAvailable = totalBase + credits; // e.g. 58.02 + 0.01 = 58.03
+                                    decimal remaining = totalAvailable - actualSpending;
+
+                                    // Bar Percentage
+                                    double percent = totalAvailable > 0 ? (double)(actualSpending / totalAvailable) * 100 : 0;
+                                    
+                                    // Visuals
                                     string barColor = remaining < 0 ? "bg-red-500" : "bg-blue-500";
                                     string textColor = remaining < 0 ? "text-red-600 font-bold" : "text-green-600 font-bold";
                                     bool isExpanded = ExpandedItemId == item.Id;
@@ -218,7 +226,7 @@
                                                                 <td class="py-1 text-gray-500 font-mono">@d.Date.ToString("MM/dd")</td>
                                                                 <td class="py-1 text-gray-800 truncate max-w-[120px]" title="@d.Desc">@d.Desc</td>
                                                                 <td class="py-1 text-right font-bold @(d.Amount < 0 ? "text-green-600" : "text-red-600")">
-                                                                    $@d.Amount.ToString("N2")
+                                                                    $@Math.Abs(d.Amount).ToString("N2")
                                                                 </td>
                                                             </tr>
                                                         }
@@ -332,14 +340,14 @@
                     <div>
                         <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1 tracking-wider">Image</label>
                         <div class="flex gap-4">
-                            <div class="w-20 h-20 bg-black rounded-lg flex-shrink-0 overflow-hidden border border-gray-300 flex items-center justify-center">
+                            <div class="w-20 h-20 bg-white rounded-lg flex-shrink-0 overflow-hidden border border-gray-300 flex items-center justify-center shadow-sm">
                                 @if(!string.IsNullOrEmpty(EditingItem.ImgUrl))
                                 {
                                     <img src="@EditingItem.ImgUrl" class="w-full h-full object-cover" />
                                 }
                                 else
                                 {
-                                    <span class="text-xs text-gray-500 font-mono">No Img</span>
+                                    <span class="text-xs text-gray-400 font-mono">No Img</span>
                                 }
                             </div>
 
@@ -410,17 +418,10 @@
             using var stream = file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
             using var ms = new MemoryStream();
             await stream.CopyToAsync(ms);
-            
-            // SAVE TO DB via BulletBaseService
             var url = await BulletBase.SaveImageAsync(ms.ToArray(), file.ContentType);
-            
-            // Assign DB URL
             EditingItem.ImgUrl = url;
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Upload Error: {ex.Message}");
-        }
+        catch (Exception ex) { Console.WriteLine($"Upload Error: {ex.Message}"); }
     }
 
     // --- HELPER: GET TRANSACTION IMAGE ---
@@ -431,21 +432,12 @@
             var src = incomeSources.FirstOrDefault(x => x.StringId == t.SourceStringId);
             if(src != null && !string.IsNullOrEmpty(src.ImgUrl)) return src.ImgUrl;
         }
-
-        if(t.ResolvedBudgetItemId.HasValue)
-        {
-            return GetBudgetItemImage(t.ResolvedBudgetItemId.Value);
-        }
-
+        if(t.ResolvedBudgetItemId.HasValue) return GetBudgetItemImage(t.ResolvedBudgetItemId.Value);
         if(t.Splits.Any())
         {
             var firstSplit = t.Splits.FirstOrDefault();
-            if(firstSplit != null && firstSplit.ResolvedBudgetItemId.HasValue)
-            {
-                return GetBudgetItemImage(firstSplit.ResolvedBudgetItemId.Value);
-            }
+            if(firstSplit != null && firstSplit.ResolvedBudgetItemId.HasValue) return GetBudgetItemImage(firstSplit.ResolvedBudgetItemId.Value);
         }
-
         return "";
     }
 
@@ -461,20 +453,15 @@
     {
         if (CurrentPeriod == null) return 0;
         
-        // Direct
-        var direct = CurrentPeriod.Transactions
-            .Where(t => t.ResolvedBudgetItemId == itemId)
-            .Sum(t => t.Amount * -1); 
+        var direct = CurrentPeriod.Transactions.Where(t => t.ResolvedBudgetItemId == itemId).Sum(t => t.Amount * -1); 
 
-        // Splits - Check PARENT Sign
         var splits = CurrentPeriod.Transactions
             .SelectMany(t => t.Splits.Select(s => new { Parent = t, Split = s }))
             .Where(x => x.Split.ResolvedBudgetItemId == itemId)
             .Sum(x => x.Parent.Amount < 0 
-                ? Math.Abs(x.Split.Amount)       // Expense -> Positive Spend
-                : -Math.Abs(x.Split.Amount));    // Refund  -> Negative Spend (Credit)
+                ? Math.Abs(x.Split.Amount)       
+                : -Math.Abs(x.Split.Amount));    
             
-        // Transfers Logic
         var transfersOut = CurrentPeriod.Transfers.Where(tr => tr.ResolvedFromId == itemId).Sum(tr => tr.Amount);
         var transfersIn = CurrentPeriod.Transfers.Where(tr => tr.ResolvedToId == itemId).Sum(tr => tr.Amount);
 
@@ -496,10 +483,7 @@
             
         foreach(var x in splits) 
         {
-            decimal amt = x.Parent.Amount < 0 
-                ? Math.Abs(x.Split.Amount)      // Expense
-                : -Math.Abs(x.Split.Amount);    // Credit
-            
+            decimal amt = x.Parent.Amount < 0 ? Math.Abs(x.Split.Amount) : -Math.Abs(x.Split.Amount);
             list.Add((x.Parent.Date, $"{x.Parent.Description} (Split)", amt));
         }
 
