@@ -3,75 +3,22 @@
 @rendermode RenderMode.InteractiveServer
 @using Dashboard
 @using Dashboard.Components.Bullet
-@using System.IO
 @using Microsoft.EntityFrameworkCore
-@using Microsoft.AspNetCore.Components.Forms
-@using Microsoft.JSInterop
-@using System.Text.RegularExpressions
 @using System.Text.Json
-@using System.Text
 @inject IJSRuntime JS
 @inject BudgetService BudgetService
 @inject AppDbContext Db
-@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env 
 
 <BulletHeader />
 
 <div class="min-h-screen bg-gray-900 text-white p-6">
-    <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+    <div class="flex justify-between items-center mb-8">
         <h1 class="text-3xl font-bold flex items-center gap-3">
-            <span>💵</span> Budget Tracker <span class="text-xs font-normal text-gray-500 self-end mb-1">v6.1 (Diagnostics)</span>
+            <span class="text-green-400">💵</span> Budget Tracker
         </h1>
         
-        <div class="flex gap-3">
-            <button @onclick="LoadServerDefaults" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded transition shadow-lg flex items-center gap-2 border border-gray-600">
-                <span>⚡ Reload Server Data</span>
-            </button>
-
-            <div class="relative">
-                <label class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded cursor-pointer transition shadow-lg flex items-center gap-2">
-                    <span>📂 Upload JSON</span>
-                    <InputFile OnChange="LoadJsonFile" class="hidden" />
-                </label>
-            </div>
-        </div>
-    </div>
-
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        <div class="p-4 border-2 border-dashed border-red-500 bg-red-900/20 rounded-xl">
-            <div class="flex flex-col gap-4">
-                <div>
-                    <h3 class="font-bold text-red-400 text-lg">⚠️ Database Repair</h3>
-                    <p class="text-xs text-gray-400">Run this if you suspect tables are missing.</p>
-                </div>
-                <button class="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded shadow-lg w-full" 
-                        @onclick="ForceCreateTablesSQL">
-                    🔨 Force Create ALL Tables
-                </button>
-            </div>
-        </div>
-
-        <div class="relative bg-black border border-gray-700 rounded-xl p-4 font-mono text-xs h-48 overflow-hidden shadow-inner flex flex-col">
-            <button class="absolute top-2 right-2 bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded border border-gray-600 text-[10px] z-10 transition" 
-                    @onclick="CopyLogs">
-                📋 Copy Log
-            </button>
-            <div class="overflow-y-auto flex flex-col-reverse h-full pt-6">
-                @if (debugLogs.Count == 0)
-                {
-                    <div class="text-gray-600 italic">Waiting for logs...</div>
-                }
-                else
-                {
-                    @foreach (var log in ((IEnumerable<string>)debugLogs).Reverse())
-                    {
-                        <div class="border-b border-gray-900 py-0.5 whitespace-pre-wrap break-all">
-                            <span class="text-gray-500 select-none">@log.Split('|')[0]</span> 
-                            <span class="@GetLogColor(log)">@log.Split('|')[1]</span>
-                        </div>
-                    }
-                }
-            </div>
+        <div class="text-xs text-gray-500 font-mono">
+            @(periods.Count) Period(s) Loaded
         </div>
     </div>
 
@@ -79,64 +26,75 @@
     {
         <div class="flex flex-col items-center justify-center py-20 space-y-4">
             <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-            <div class="text-gray-400 animate-pulse">Processing...</div>
+            <div class="text-gray-400 animate-pulse">Loading Budget...</div>
         </div>
     }
     else if (!periods.Any())
     {
         <div class="text-center py-20 border-2 border-dashed border-gray-700 rounded-xl bg-gray-800/30">
             <p class="text-gray-500 text-xl mb-2">No Budget Data Found.</p>
-            <p class="text-sm text-gray-600">Click "Reload Server Data" to import.</p>
+            <p class="text-sm text-gray-600">Start by adding a new Budget Period.</p>
         </div>
     }
     else
     {
         @foreach (var period in periods)
         {
-            <div class="bg-gray-800 border border-gray-700 rounded-xl mb-8 overflow-hidden shadow-2xl">
-                <div class="bg-gray-900 p-4 border-b border-gray-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div class="bg-gray-800 border border-gray-700 rounded-xl mb-12 overflow-hidden shadow-2xl">
+                <div class="bg-gray-900 p-6 border-b border-gray-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                     <div>
-                        <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                        <h2 class="text-2xl font-bold text-white flex items-center gap-3">
                             @period.DisplayName
-                            @if(period.StartDate > DateTime.UtcNow) { <span class="text-xs bg-blue-900 text-blue-200 px-2 py-0.5 rounded border border-blue-700">Future</span> }
+                            @if(period.StartDate > DateTime.UtcNow) 
+                            { 
+                                <span class="text-xs bg-blue-900 text-blue-200 px-2 py-0.5 rounded border border-blue-700 uppercase tracking-wider font-bold">Future</span> 
+                            }
                         </h2>
-                        <div class="text-xs text-gray-400 mt-1">
-                            Start: @period.StartDate.ToShortDateString() | 
-                            Internal ID: <span class="font-mono text-gray-500">@period.Id</span>
+                        <div class="text-sm text-gray-400 mt-1 flex gap-4">
+                            <span>Start: <span class="text-gray-200 font-mono">@period.StartDate.ToShortDateString()</span></span>
+                            <span>Opening: <span class="text-white font-mono">@period.InitialBankBalance.ToString("C")</span></span>
                         </div>
                     </div>
-                    <div class="flex gap-6 text-sm font-bold bg-black/20 p-2 rounded-lg border border-gray-700/50">
+                    
+                    <div class="flex gap-8 text-base font-bold bg-black/40 px-6 py-3 rounded-lg border border-gray-700/50 shadow-inner">
                         <div class="text-green-400 flex flex-col items-end leading-tight">
-                            <span class="text-[10px] text-gray-500 uppercase">Income</span>
+                            <span class="text-[10px] text-gray-500 uppercase tracking-widest mb-1">Income</span>
                             @period.Transactions.Where(t => t.Amount > 0).Sum(t => t.Amount).ToString("C0")
                         </div>
                         <div class="w-px bg-gray-700"></div>
                         <div class="text-red-400 flex flex-col items-end leading-tight">
-                            <span class="text-[10px] text-gray-500 uppercase">Expenses</span>
+                            <span class="text-[10px] text-gray-500 uppercase tracking-widest mb-1">Expenses</span>
                             @Math.Abs(period.Transactions.Where(t => t.Amount < 0).Sum(t => t.Amount)).ToString("C0")
                         </div>
                     </div>
                 </div>
 
-                <div class="p-4 grid lg:grid-cols-2 gap-6">
-                    <div class="space-y-4">
+                <div class="p-6 grid lg:grid-cols-2 gap-8">
+                    <div class="space-y-6">
+                        <h3 class="text-sm font-bold text-blue-400 uppercase tracking-widest border-b border-gray-700 pb-2">Budget Cycles</h3>
                         @foreach (var cycle in period.Cycles.OrderBy(c => c.CycleNumber))
                         {
                             <div class="bg-gray-800/50 border border-gray-700 rounded-lg overflow-hidden">
-                                <div class="bg-gray-900/50 p-2 border-b border-gray-700 flex justify-between items-center">
-                                    <span class="font-bold text-gray-300 text-xs uppercase">@cycle.Label</span>
-                                    <span class="text-[10px] text-gray-500">Cycle ID: @cycle.Id</span>
+                                <div class="bg-gray-900/50 px-4 py-2 border-b border-gray-700 flex justify-between items-center">
+                                    <span class="font-bold text-gray-300 text-xs uppercase tracking-wider">@cycle.Label</span>
+                                    <span class="text-[10px] text-gray-500">@cycle.Items.Count items</span>
                                 </div>
                                 <div class="divide-y divide-gray-700/50">
                                     @foreach (var item in cycle.Items)
                                     {
-                                        <div class="flex items-center justify-between p-2 hover:bg-gray-700/30 transition">
+                                        <div class="flex items-center justify-between p-3 hover:bg-gray-700/30 transition group">
                                             <div class="flex items-center gap-3">
-                                                @if(!string.IsNullOrEmpty(item.ImgUrl)) { <img src="@item.ImgUrl" class="w-8 h-8 rounded object-cover bg-black/40" /> }
-                                                else { <div class="w-8 h-8 rounded bg-gray-700 flex items-center justify-center text-xs">💰</div> }
+                                                @if(!string.IsNullOrEmpty(item.ImgUrl)) 
+                                                { 
+                                                    <img src="@item.ImgUrl" class="w-8 h-8 rounded object-cover bg-black/40 ring-1 ring-gray-700" /> 
+                                                }
+                                                else
+                                                {
+                                                    <div class="w-8 h-8 rounded bg-gray-700 flex items-center justify-center text-xs text-gray-400">💰</div>
+                                                }
                                                 <div>
-                                                    <div class="font-bold text-sm text-gray-200">@item.Name</div>
-                                                    <div class="text-[10px] text-gray-600">DB_ID: @item.Id</div>
+                                                    <div class="font-bold text-sm text-gray-200 group-hover:text-white transition">@item.Name</div>
+                                                    @if(item.CarriedOver > 0) { <div class="text-[10px] text-yellow-500">Carry: @item.CarriedOver.ToString("C0")</div> }
                                                 </div>
                                             </div>
                                             <div class="font-mono font-bold text-gray-300">@item.PlannedAmount.ToString("C0")</div>
@@ -147,87 +105,103 @@
                         }
                     </div>
 
-                    <div>
-                        <div class="mb-6 bg-gray-800/30 border border-yellow-700/30 rounded-lg overflow-hidden">
-                            <h3 class="text-sm font-bold text-yellow-400 uppercase tracking-widest p-2 bg-yellow-900/20 border-b border-yellow-700/30 flex justify-between">
+                    <div class="space-y-8">
+                        
+                        <div class="bg-gray-800/30 border border-yellow-700/30 rounded-lg overflow-hidden">
+                            <h3 class="text-sm font-bold text-yellow-400 uppercase tracking-widest px-4 py-2 bg-yellow-900/20 border-b border-yellow-700/30 flex justify-between items-center">
                                 <span>Expected Income</span>
-                                <span>@((period.ExpectedIncome ?? new List<BudgetExpectedIncome>()).Sum(x => x.Amount).ToString("C0"))</span>
+                                <span class="bg-yellow-900/40 text-yellow-200 px-2 py-0.5 rounded text-xs">
+                                    @((period.ExpectedIncome ?? new List<BudgetExpectedIncome>()).Sum(x => x.Amount).ToString("C0"))
+                                </span>
                             </h3>
                             @if(period.ExpectedIncome != null && period.ExpectedIncome.Any())
                             {
                                 <div class="divide-y divide-gray-700/50">
                                     @foreach(var inc in period.ExpectedIncome.OrderBy(x => x.Date))
                                     {
-                                        <div class="flex justify-between items-center p-2 text-sm hover:bg-white/5 transition">
-                                            <div class="flex items-center gap-2">
-                                                <span class="text-gray-500 text-xs font-mono">@inc.Date.ToString("MMM dd")</span>
+                                        <div class="flex justify-between items-center p-3 text-sm hover:bg-white/5 transition">
+                                            <div class="flex items-center gap-3">
+                                                <div class="flex flex-col items-center justify-center bg-gray-800 w-10 h-10 rounded border border-gray-700">
+                                                    <span class="text-[8px] text-gray-500 uppercase">@inc.Date.ToString("MMM")</span>
+                                                    <span class="text-sm font-bold text-gray-200 leading-none">@inc.Date.Day</span>
+                                                </div>
                                                 <span class="text-gray-200 font-bold">@GetSourceName(inc.SourceStringId)</span> 
                                             </div>
-                                            <span class="font-mono text-yellow-200">@inc.Amount.ToString("C")</span>
+                                            <span class="font-mono text-yellow-200 font-bold">@inc.Amount.ToString("C0")</span>
                                         </div>
                                     }
                                 </div>
                             }
-                            else 
-                            { 
-                                <div class="p-2 text-xs text-gray-500 italic text-center text-red-400">
-                                    No Data found in View Model. 
-                                    (Debug: Count = @(period.ExpectedIncome?.Count ?? -1))
-                                </div> 
-                            }
+                            else { <div class="p-4 text-xs text-gray-500 italic text-center">No expected income.</div> }
                         </div>
 
-                        <div class="mb-6 bg-gray-800/30 border border-red-700/30 rounded-lg overflow-hidden">
-                            <h3 class="text-sm font-bold text-red-400 uppercase tracking-widest p-2 bg-red-900/20 border-b border-red-700/30 flex justify-between">
+                        <div class="bg-gray-800/30 border border-red-700/30 rounded-lg overflow-hidden">
+                            <h3 class="text-sm font-bold text-red-400 uppercase tracking-widest px-4 py-2 bg-red-900/20 border-b border-red-700/30 flex justify-between items-center">
                                 <span>Watch List</span>
-                                <span>@((period.WatchList ?? new List<BudgetWatchItem>()).Sum(x => x.Amount).ToString("C0"))</span>
+                                <span class="bg-red-900/40 text-red-200 px-2 py-0.5 rounded text-xs">
+                                    @((period.WatchList ?? new List<BudgetWatchItem>()).Sum(x => x.Amount).ToString("C0"))
+                                </span>
                             </h3>
                             @if(period.WatchList != null && period.WatchList.Any())
                             {
                                 <div class="divide-y divide-gray-700/50">
                                     @foreach(var item in period.WatchList.OrderBy(x => x.DueDate ?? DateTime.MaxValue))
                                     {
-                                        <div class="flex justify-between items-center p-2 text-sm hover:bg-white/5 transition">
+                                        <div class="flex justify-between items-center p-3 text-sm hover:bg-white/5 transition">
                                             <div class="flex items-center gap-3">
-                                                @if(!string.IsNullOrEmpty(item.ImgUrl)) { <img src="@item.ImgUrl" class="w-8 h-8 rounded object-cover bg-black/40" /> }
-                                                else { <div class="w-8 h-8 rounded bg-red-900/50 border border-red-700 flex items-center justify-center text-[10px]">💸</div> }
+                                                <div class="flex flex-col items-center justify-center w-10 h-10 rounded border border-gray-700 @(item.DueDate == null ? "bg-gray-800" : "bg-red-900/20 border-red-800")">
+                                                    @if(item.DueDate.HasValue)
+                                                    {
+                                                        <span class="text-[8px] text-gray-500 uppercase">@item.DueDate.Value.ToString("MMM")</span>
+                                                        <span class="text-sm font-bold text-gray-200 leading-none">@item.DueDate.Value.Day</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="text-[9px] font-bold text-gray-500">TBD</span>
+                                                    }
+                                                </div>
+
                                                 <div>
                                                     <div class="text-gray-200 font-bold">@item.Description</div>
-                                                    
-                                                    <div class="text-[10px] font-mono @(item.DueDate == null ? "text-yellow-500" : "text-gray-500")">
-                                                        Due: @(item.DueDate.HasValue ? item.DueDate.Value.ToString("MMM dd") : "TBD")
-                                                    </div>
                                                 </div>
                                             </div>
-                                            <span class="font-mono text-red-200">@item.Amount.ToString("C0")</span>
+                                            <span class="font-mono text-red-200 font-bold">@item.Amount.ToString("C0")</span>
                                         </div>
                                     }
                                 </div>
                             }
-                            else { <div class="p-2 text-xs text-gray-500 italic text-center">No items.</div> }
+                            else { <div class="p-4 text-xs text-gray-500 italic text-center">All clear.</div> }
                         </div>
 
-                        <h3 class="text-sm font-bold text-purple-400 uppercase tracking-widest border-b border-gray-700 pb-2 mb-4">Transactions</h3>
-                        <div class="space-y-1 max-h-[400px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
-                            @foreach (var t in period.Transactions.OrderByDescending(x => x.Date))
-                            {
-                                <div class="flex justify-between items-start p-3 rounded bg-gray-800 hover:bg-gray-700 transition border border-gray-700/50 text-sm group">
-                                    <div class="flex-1">
-                                        <div class="text-gray-200 font-bold group-hover:text-white transition">@t.Description</div>
-                                        <div class="text-xs text-gray-500">@t.Date.ToString("MMM dd")</div>
-                                        @if(t.ResolvedBudgetItemId.HasValue) 
-                                        { 
-                                            <div class="text-[9px] text-green-500 mt-0.5">✔ Linked (ID: @t.ResolvedBudgetItemId)</div> 
-                                        }
-                                        else if(!string.IsNullOrEmpty(t.LinkedBudgetItemStringId))
-                                        {
-                                            <div class="text-[9px] text-red-500 mt-0.5">⚠ Unresolved Link (@t.LinkedBudgetItemStringId)</div>
-                                        }
+                        <div>
+                            <h3 class="text-sm font-bold text-purple-400 uppercase tracking-widest border-b border-gray-700 pb-2 mb-4">Transactions</h3>
+                            <div class="space-y-1 max-h-[500px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
+                                @foreach (var t in period.Transactions.OrderByDescending(x => x.Date))
+                                {
+                                    <div class="flex justify-between items-start p-3 rounded bg-gray-800 hover:bg-gray-700 transition border border-gray-700/50 text-sm group">
+                                        <div class="flex-1">
+                                            <div class="text-gray-200 font-bold group-hover:text-white transition">@t.Description</div>
+                                            <div class="text-xs text-gray-500">@t.Date.ToString("MMM dd")</div>
+                                            @if(t.Splits.Any()) 
+                                            { 
+                                                <div class="mt-1 space-y-1">
+                                                    @foreach(var s in t.Splits) 
+                                                    { 
+                                                        <div class="text-[10px] text-gray-400 flex gap-2 pl-2 border-l-2 border-gray-600">
+                                                            <span>↳</span>
+                                                            <span class="font-mono">@s.Amount.ToString("C")</span>
+                                                            <span class="italic">@s.Note</span>
+                                                        </div> 
+                                                    }
+                                                </div> 
+                                            }
+                                        </div>
+                                        <div class="font-mono font-bold @(t.Amount >= 0 ? "text-green-400" : "text-white")">@t.Amount.ToString("C")</div>
                                     </div>
-                                    <div class="font-mono font-bold @(t.Amount >= 0 ? "text-green-400" : "text-white")">@t.Amount.ToString("C")</div>
-                                </div>
-                            }
+                                }
+                            </div>
                         </div>
+
                     </div>
                 </div>
             </div>
@@ -240,19 +214,17 @@
     private bool isLoading = true;
     private List<BudgetPeriod> periods = new();
     private List<BudgetIncomeSource> incomeSources = new();
-    private List<string> debugLogs = new();
 
-    private void Log(string msg, string type = "info") { debugLogs.Add($"{DateTime.Now:HH:mm:ss}|{msg}|{type}"); StateHasChanged(); }
-    private string GetLogColor(string log) { if(log.Contains("|error")) return "text-red-400 font-bold"; if(log.Contains("|success")) return "text-green-400 font-bold"; return "text-gray-300"; }
-    private string GetSourceName(string sourceId) { var src = incomeSources.FirstOrDefault(s => s.StringId == sourceId); return src != null ? src.Name : sourceId; }
-    private string PatchJsonDates(string json) { return Regex.Replace(json, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?!"")(?![.Z])", "$1Z"); }
-    private async Task CopyLogs() { var text = string.Join("\n", debugLogs.Select(l => l.Replace("|", " : "))); await JS.InvokeVoidAsync("navigator.clipboard.writeText", text); Log("Logs copied to clipboard.", "success"); }
+    private string GetSourceName(string sourceId) 
+    { 
+        var src = incomeSources.FirstOrDefault(s => s.StringId == sourceId); 
+        return src != null ? src.Name : sourceId; 
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            Log("Page initializing...");
             try
             {
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
@@ -265,155 +237,26 @@
                             doc.RootElement.TryGetProperty("id", out p))
                         {
                             userId = p.GetInt32();
-                            Log($"User Identified: ID {userId}", "success");
                             await LoadData();
                         }
                     }
                 }
             }
-            catch (Exception ex) { Log($"Init Error: {ex.Message}", "error"); }
+            catch (Exception) { /* Handle error gracefully */ }
             finally { isLoading = false; StateHasChanged(); }
         }
     }
 
     private async Task LoadData()
     {
-        Log("Querying Database...", "info");
-        try 
-        {
-            incomeSources = await Db.BudgetIncomeSources.Where(x => x.UserId == userId || x.UserId == 0).ToListAsync();
-            
-            // Bypass Service for detailed diagnostics
-            periods = await Db.BudgetPeriods
-                .Where(p => p.UserId == userId)
-                .Include(p => p.Cycles).ThenInclude(c => c.Items)
-                .Include(p => p.Transactions).ThenInclude(t => t.Splits)
-                .Include(p => p.ExpectedIncome)
-                .Include(p => p.WatchList)
-                .OrderBy(p => p.StartDate)
-                .ToListAsync();
-
-            Log($"Loaded {periods.Count} periods.", "success");
-            foreach(var p in periods)
-            {
-                Log($" > Period: {p.DisplayName}", "info");
-                Log($"   - Expected Income Items: {p.ExpectedIncome?.Count ?? 0}", p.ExpectedIncome?.Any() == true ? "success" : "error");
-                Log($"   - Watch List Items: {p.WatchList?.Count ?? 0}", p.WatchList?.Any() == true ? "success" : "error");
-            }
-        }
-        catch(Exception ex) { Log($"LoadData Error: {ex.Message}", "error"); }
-    }
-
-    private async Task LoadServerDefaults()
-    {
         if (userId == 0) return;
-        isLoading = true;
-        StateHasChanged();
+        
+        // Load Global Definitions
+        incomeSources = await Db.BudgetIncomeSources
+            .Where(x => x.UserId == userId || x.UserId == 0)
+            .ToListAsync();
 
-        try
-        {
-            var webRoot = Env.WebRootPath;
-            var files = new[] { "budget_dec25.json", "budget_jan26.json" };
-            
-            var combinedJson = new StringBuilder();
-            combinedJson.Append("{ \"periods\": [");
-            bool first = true;
-
-            foreach(var fileName in files)
-            {
-                var path = Path.Combine(webRoot, fileName);
-                if(File.Exists(path))
-                {
-                    var rawJson = await File.ReadAllTextAsync(path);
-                    var doc = JsonDocument.Parse(rawJson);
-                    
-                    if(doc.RootElement.TryGetProperty("periods", out var arr))
-                    {
-                        foreach(var p in arr.EnumerateArray()) {
-                            if(!first) combinedJson.Append(",");
-                            combinedJson.Append(p.GetRawText());
-                            first = false;
-                        }
-                    }
-                    else
-                    {
-                        if(!first) combinedJson.Append(",");
-                        combinedJson.Append(doc.RootElement.GetRawText());
-                        first = false;
-                    }
-                }
-            }
-            combinedJson.Append("] }");
-            
-            var finalJson = PatchJsonDates(combinedJson.ToString());
-            await BudgetService.ImportBudgetJson(userId, finalJson);
-            await LoadData();
-        }
-        catch (Exception ex) { Log($"Import Error: {ex.Message}", "error"); }
-        finally { isLoading = false; StateHasChanged(); }
-    }
-
-    private async Task ForceCreateTablesSQL()
-    {
-        Log("Recreating Database Tables...", "info");
-        try
-        {
-            var sql = @"
-                -- Safe Drop (Cascades will handle relationships)
-                DROP TABLE IF EXISTS ""BudgetWatchItems"";
-                DROP TABLE IF EXISTS ""BudgetExpectedIncome"";
-                DROP TABLE IF EXISTS ""BudgetIncomeSources"";
-                -- We only drop the new stuff to avoid losing Transactions if you had real data
-                
-                -- Create Tables
-                CREATE TABLE IF NOT EXISTS ""BudgetIncomeSources"" ( ""Id"" integer GENERATED BY DEFAULT AS IDENTITY, ""UserId"" integer NOT NULL, ""StringId"" text, ""Name"" text, ""Amount"" numeric, ""ImgUrl"" text, CONSTRAINT ""PK_BudgetIncomeSources"" PRIMARY KEY (""Id"") );
-                
-                CREATE TABLE IF NOT EXISTS ""BudgetExpectedIncome"" ( 
-                    ""Id"" integer GENERATED BY DEFAULT AS IDENTITY, 
-                    ""BudgetPeriodId"" integer NOT NULL, 
-                    ""SourceStringId"" text, 
-                    ""Amount"" numeric NOT NULL, 
-                    ""Date"" timestamp with time zone NOT NULL, 
-                    CONSTRAINT ""PK_BudgetExpectedIncome"" PRIMARY KEY (""Id""), 
-                    CONSTRAINT ""FK_BudgetExpectedIncome_BudgetPeriods"" FOREIGN KEY (""BudgetPeriodId"") REFERENCES ""BudgetPeriods"" (""Id"") ON DELETE CASCADE 
-                );
-                
-                CREATE TABLE IF NOT EXISTS ""BudgetWatchItems"" ( 
-                    ""Id"" integer GENERATED BY DEFAULT AS IDENTITY, 
-                    ""BudgetPeriodId"" integer NOT NULL, 
-                    ""Description"" text, 
-                    ""Amount"" numeric NOT NULL, 
-                    ""DueDate"" timestamp with time zone, 
-                    ""ImgUrl"" text, 
-                    CONSTRAINT ""PK_BudgetWatchItems"" PRIMARY KEY (""Id""), 
-                    CONSTRAINT ""FK_BudgetWatchItems_BudgetPeriods"" FOREIGN KEY (""BudgetPeriodId"") REFERENCES ""BudgetPeriods"" (""Id"") ON DELETE CASCADE 
-                );
-            ";
-            await Db.Database.ExecuteSqlRawAsync(sql);
-            Log("✅ SQL Executed Successfully!", "success");
-        }
-        catch (Exception ex)
-        {
-            Log($"❌ SQL ERROR: {ex.Message}", "error");
-        }
-    }
-
-    private async Task LoadJsonFile(InputFileChangeEventArgs e)
-    {
-        if (userId == 0) return;
-        isLoading = true;
-        StateHasChanged();
-        try
-        {
-            var file = e.File;
-            using var reader = new StreamReader(file.OpenReadStream(2 * 1024 * 1024)); 
-            var json = await reader.ReadToEndAsync();
-            json = PatchJsonDates(json);
-
-            await BudgetService.ImportBudgetJson(userId, json);
-            await LoadData();
-        }
-        catch (Exception) { }
-        finally { isLoading = false; StateHasChanged(); }
+        // Load Data via Service
+        periods = await BudgetService.GetPeriods(userId);
     }
 }
