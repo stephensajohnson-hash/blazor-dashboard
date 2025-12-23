@@ -15,25 +15,31 @@ public class BudgetService
 
     public async Task<List<BudgetPeriod>> GetPeriods(int userId)
     {
+        // CLEAR MEMORY: Ensure we aren't holding onto stale data from previous operations
+        _db.ChangeTracker.Clear();
+
         return await _db.BudgetPeriods
             .Where(p => p.UserId == userId)
             .Include(p => p.Cycles).ThenInclude(c => c.Items)
             .Include(p => p.Transactions).ThenInclude(t => t.Splits)
             .Include(p => p.Transfers)
-            // --- NEW INCLUDES ---
             .Include(p => p.ExpectedIncome)
             .Include(p => p.WatchList)
-            // --------------------
             .OrderByDescending(p => p.StartDate)
             .ToListAsync();
     }
 
     public async Task ImportBudgetJson(int userId, string json)
     {
+        // ---------------------------------------------------------
+        // CRITICAL FIX: Clear EF Core's memory before doing bulk work.
+        // This prevents "Concurrency" errors if tables were modified by SQL scripts.
+        _db.ChangeTracker.Clear();
+        // ---------------------------------------------------------
+
         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
         var root = JsonSerializer.Deserialize<RootDto>(json, options);
 
-        // Handle case where root IS the period (flat structure) vs root contains "periods" array
         List<PeriodDto> periodsToImport = new();
         
         if (root?.Periods != null)
@@ -42,7 +48,6 @@ public class BudgetService
         }
         else 
         {
-            // Try deserializing as a single period
             var singlePeriod = JsonSerializer.Deserialize<PeriodDto>(json, options);
             if(singlePeriod != null && !string.IsNullOrEmpty(singlePeriod.Id))
             {
@@ -63,10 +68,12 @@ public class BudgetService
             {
                 _db.BudgetPeriods.Remove(existing);
                 await _db.SaveChangesAsync();
+                
+                // Detach to prevent conflict if we re-add immediately
+                _db.Entry(existing).State = EntityState.Detached; 
             }
 
             // 2. Create Period
-            // Fallback for StartDate parsing
             DateTime startDate = DateTime.UtcNow;
             if(DateTime.TryParse(pDto.StartDate, out var d)) startDate = d;
 
@@ -81,12 +88,15 @@ public class BudgetService
             _db.BudgetPeriods.Add(period);
             await _db.SaveChangesAsync();
 
-            // 3. Import Income Sources (Definitions)
+            // 3. Import Income Sources
             if (pDto.IncomeSources != null)
             {
                 foreach (var inc in pDto.IncomeSources)
                 {
-                    var existInc = await _db.BudgetIncomeSources.FirstOrDefaultAsync(x => x.UserId == userId && x.StringId == inc.Id);
+                    var existInc = await _db.BudgetIncomeSources
+                        .AsNoTracking() // Optimization
+                        .FirstOrDefaultAsync(x => x.UserId == userId && x.StringId == inc.Id);
+                        
                     if (existInc == null)
                     {
                         _db.BudgetIncomeSources.Add(new BudgetIncomeSource 
@@ -94,19 +104,19 @@ public class BudgetService
                             UserId = userId, 
                             StringId = inc.Id, 
                             Name = inc.Name, 
-                            ImgUrl = inc.Image ?? inc.ImgUrl // Handle both names
+                            ImgUrl = inc.Image ?? inc.ImgUrl 
                         });
                     }
                 }
                 await _db.SaveChangesAsync();
             }
 
-            // 4. Expected Income (Projections) - NEW
+            // 4. Expected Income
             if (pDto.ExpectedIncome != null)
             {
                 foreach(var exInc in pDto.ExpectedIncome)
                 {
-                    DateTime exDate = startDate; // Default
+                    DateTime exDate = startDate;
                     if(DateTime.TryParse(exInc.Date, out var ed)) exDate = ed;
 
                     var newExpected = new BudgetExpectedIncome
@@ -121,14 +131,12 @@ public class BudgetService
                 await _db.SaveChangesAsync();
             }
 
-            // 5. Watch List (Expected Expenses) - NORMALIZED
+            // 5. Watch List (Strict Date Handling)
             if (pDto.WatchList != null)
             {
                 foreach(var w in pDto.WatchList)
                 {
                     DateTime? finalDate = null;
-
-                    // Logic: If it's NOT "TBD" and parses correctly, use the date. Else null.
                     if (!string.Equals(w.DueDate, "TBD", StringComparison.OrdinalIgnoreCase) 
                         && DateTime.TryParse(w.DueDate, out var parsedDate))
                     {
@@ -140,7 +148,7 @@ public class BudgetService
                         BudgetPeriodId = period.Id,
                         Description = w.Description,
                         Amount = w.Amount,
-                        DueDate = finalDate, // Now stores strictly as Date or Null
+                        DueDate = finalDate,
                         ImgUrl = w.Image
                     };
                     _db.BudgetWatchItems.Add(newWatch);
@@ -272,27 +280,16 @@ public class BudgetService
         public List<LedgerDto> Ledger { get; set; }
         public List<TransferDto> Transfers { get; set; }
         public List<IncomeDto> IncomeSources { get; set; }
-        
-        // NEW DTO PROPERTIES
         public List<ExpectedIncomeDto> ExpectedIncome { get; set; }
         public List<WatchListDto> WatchList { get; set; }
     }
 
     private class CycleDto { public int CycleId { get; set; } public string Label { get; set; } public List<ItemDto> BudgetItems { get; set; } }
     private class ItemDto { public string Id { get; set; } public string Name { get; set; } public decimal PlannedAmount { get; set; } public decimal CarriedOver { get; set; } public string Image { get; set; } }
-    
     private class LedgerDto { public string Id { get; set; } public string Date { get; set; } public string Description { get; set; } public decimal Amount { get; set; } public string Type { get; set; } public string SourceId { get; set; } public string LinkedBudgetItemId { get; set; } public List<SplitDto> Splits { get; set; } }
     private class SplitDto { public string LinkedBudgetItemId { get; set; } public decimal? Amount { get; set; } public string Note { get; set; } }
-    
-    private class TransferDto { 
-        public string Id { get; set; } public string Date { get; set; } public decimal Amount { get; set; } public string Note { get; set; } 
-        public string FromBudgetId { get; set; } public string ToBudgetId { get; set; }
-        public string FromId { get; set; } public string ToId { get; set; }
-    }
-    
+    private class TransferDto { public string Id { get; set; } public string Date { get; set; } public decimal Amount { get; set; } public string Note { get; set; } public string FromBudgetId { get; set; } public string ToBudgetId { get; set; } public string FromId { get; set; } public string ToId { get; set; } }
     private class IncomeDto { public string Id { get; set; } public string Name { get; set; } public string Image { get; set; } public string ImgUrl { get; set; } }
-
-    // NEW DTO CLASSES
     private class ExpectedIncomeDto { public string SourceId { get; set; } public decimal Amount { get; set; } public string Date { get; set; } }
     private class WatchListDto { public string Description { get; set; } public decimal Amount { get; set; } public string DueDate { get; set; } public string Image { get; set; } }
 }
