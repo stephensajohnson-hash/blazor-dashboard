@@ -62,12 +62,12 @@
             </div>
         </div>
 
-        <div class="grid lg:grid-cols-[1fr_380px] gap-6">
+        <div class="grid lg:grid-cols-[60%_40%] gap-6">
             
             <div class="bg-white rounded-xl shadow-xl overflow-hidden flex flex-col h-[calc(100vh-180px)] border border-gray-300">
                 <div class="p-3 bg-gray-100 border-b border-gray-300 font-bold text-gray-600 text-xs uppercase tracking-widest flex justify-between">
                     <span>Date</span>
-                    <div class="grid grid-cols-3 gap-8 w-1/2 text-right pr-4">
+                    <div class="grid grid-cols-3 gap-8 w-3/4 text-right pr-4">
                         <span>Description</span>
                         <span>Amount</span>
                         <span>Balance</span>
@@ -84,7 +84,6 @@
                         decimal runningBalance = CurrentPeriod.InitialBankBalance;
                         var sortedTrans = CurrentPeriod.Transactions.OrderBy(t => t.Date).ToList();
                         
-                        // We render in chronological order (Oldest -> Newest at bottom)
                         foreach(var t in sortedTrans)
                         {
                             runningBalance += t.Amount;
@@ -115,48 +114,61 @@
                 </div>
             </div>
 
-            <div class="space-y-6 h-[calc(100vh-180px)] overflow-y-auto scrollbar-hide pb-20">
+            <div class="space-y-6 h-[calc(100vh-180px)] overflow-y-auto scrollbar-hide pb-20 pr-2">
                 
-                <div class="space-y-4">
+                <div class="space-y-6">
                     @foreach (var cycle in CurrentPeriod.Cycles.OrderBy(c => c.CycleNumber))
                     {
                         <div class="bg-white rounded-lg overflow-hidden border border-gray-300 shadow-md">
-                            <div class="bg-gray-100 px-3 py-2 border-b border-gray-300 flex justify-between items-center">
-                                <span class="font-bold text-gray-700 text-xs uppercase tracking-wider">@cycle.Label</span>
-                                <span class="text-[10px] text-gray-500">@cycle.Items.Count items</span>
+                            <div class="bg-gray-100 px-4 py-3 border-b border-gray-300 flex justify-between items-center">
+                                <div>
+                                    <span class="font-bold text-gray-800 text-sm uppercase tracking-wider block">@cycle.Label</span>
+                                    <span class="text-[10px] text-gray-500">Cycle #@cycle.CycleNumber</span>
+                                </div>
+                                <button class="bg-white hover:bg-gray-200 text-gray-600 border border-gray-300 rounded p-1 transition" title="Add item to @cycle.Label">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                                </button>
                             </div>
-                            <div class="divide-y divide-gray-100">
+
+                            <div class="divide-y divide-gray-100 p-4 space-y-4">
                                 @foreach (var item in cycle.Items)
                                 {
-                                    <div class="flex items-center justify-between p-2 hover:bg-gray-50 transition group">
-                                        <div class="flex items-center gap-3">
-                                            @if(!string.IsNullOrEmpty(item.ImgUrl)) 
-                                            { 
-                                                <img src="@item.ImgUrl" class="w-8 h-8 rounded object-cover bg-gray-200 ring-1 ring-gray-300" /> 
-                                            }
-                                            else
-                                            {
-                                                <div class="w-8 h-8 rounded bg-gray-200 flex items-center justify-center text-xs text-gray-500">💰</div>
-                                            }
-                                            <div>
-                                                <div class="font-bold text-sm text-gray-800">@item.Name</div>
-                                                @if(item.CarriedOver > 0) { <div class="text-[10px] text-orange-500">Carry: $@item.CarriedOver.ToString("N2")</div> }
+                                    // Calculate Logic
+                                    decimal spent = GetSpentForBudgetItem(item.Id);
+                                    decimal remaining = item.PlannedAmount - spent;
+                                    double percent = item.PlannedAmount > 0 ? (double)(spent / item.PlannedAmount) * 100 : 0;
+                                    string barColor = remaining < 0 ? "bg-red-500" : "bg-blue-500";
+                                    string textColor = remaining < 0 ? "text-red-600 font-bold" : "text-green-600 font-bold";
+
+                                    <div class="flex flex-col gap-1">
+                                        <div class="flex justify-between items-end">
+                                            <div class="flex items-center gap-2">
+                                                @if(!string.IsNullOrEmpty(item.ImgUrl)) { <img src="@item.ImgUrl" class="w-5 h-5 rounded-full object-cover" /> }
+                                                <span class="font-bold text-sm text-gray-800">@item.Name</span>
                                             </div>
+                                            <span class="@textColor text-sm">$@remaining.ToString("N2")</span>
                                         </div>
-                                        <div class="text-right">
-                                            <div class="font-mono font-bold text-gray-600 text-sm">$@item.PlannedAmount.ToString("N0")</div>
-                                            <div class="w-16 h-1 bg-gray-200 rounded-full mt-1 ml-auto overflow-hidden">
-                                                <div class="bg-blue-500 h-full w-1/3"></div>
-                                            </div>
+
+                                        <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                                            <div class="@barColor h-full transition-all duration-500" style="width: @Math.Min(percent, 100)%"></div>
+                                        </div>
+
+                                        <div class="flex justify-end text-[10px] text-gray-400">
+                                            of $@item.PlannedAmount.ToString("N2")
                                         </div>
                                     </div>
                                 }
                             </div>
                         </div>
                     }
+
+                    <button class="w-full py-3 border-2 border-dashed border-gray-600 hover:border-gray-400 text-gray-500 hover:text-gray-300 rounded-lg transition font-bold uppercase tracking-wider text-xs flex justify-center items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                        Add Budget Cycle
+                    </button>
                 </div>
 
-                <div class="bg-white rounded-lg overflow-hidden border border-green-200 shadow-md">
+                <div class="bg-white rounded-lg overflow-hidden border border-green-200 shadow-md mt-8">
                     <div class="bg-green-600 px-3 py-2 flex justify-between items-center">
                         <span class="font-bold text-white text-xs uppercase tracking-wider">Expected Income</span>
                         <span class="text-xs font-mono font-bold text-green-800 bg-white/90 px-2 py-0.5 rounded shadow-sm">
@@ -175,7 +187,7 @@
                                         </div>
                                         <div>
                                             <div class="text-xs font-bold text-gray-800">@GetSourceName(inc.SourceStringId)</div>
-                                            <div class="text-[10px] text-gray-500">Exp: @inc.Date.ToString("ddd, MM/dd")</div>
+                                            <div class="text-[10px] text-gray-500">@inc.Date.ToString("ddd, MM/dd")</div>
                                         </div>
                                     </div>
                                     <span class="font-mono text-green-600 font-bold text-sm">+$@inc.Amount.ToString("N2")</span>
@@ -183,7 +195,6 @@
                             }
                         </div>
                     }
-                    else { <div class="p-3 text-xs text-gray-400 italic text-center">No income expected.</div> }
                 </div>
 
                 <div class="bg-white rounded-lg overflow-hidden border border-orange-200 shadow-md">
@@ -220,7 +231,6 @@
                             }
                         </div>
                     }
-                    else { <div class="p-3 text-xs text-gray-400 italic text-center">No watch items.</div> }
                 </div>
 
             </div>
@@ -257,6 +267,25 @@
     // Navigation Methods
     private void NextPeriod() { if (CanGoNext) currentIndex--; } 
     private void PrevPeriod() { if (CanGoBack) currentIndex++; } 
+
+    // --- LOGIC FOR SPEND TRACKING ---
+    private decimal GetSpentForBudgetItem(int itemId)
+    {
+        if (CurrentPeriod == null) return 0;
+        
+        // 1. Direct Links
+        var direct = CurrentPeriod.Transactions
+            .Where(t => t.ResolvedBudgetItemId == itemId)
+            .Sum(t => Math.Abs(t.Amount)); // Use Abs so expenses count as positive usage
+
+        // 2. Split Links
+        var splits = CurrentPeriod.Transactions
+            .SelectMany(t => t.Splits)
+            .Where(s => s.ResolvedBudgetItemId == itemId)
+            .Sum(s => Math.Abs(s.Amount));
+
+        return direct + splits;
+    }
 
     private string GetSourceName(string sourceId) 
     { 
