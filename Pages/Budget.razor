@@ -1,5 +1,4 @@
 @page "/budget-tracker"
-@* --- FIX: Use 'RenderMode.InteractiveServer' instead of just 'InteractiveServer' --- *@
 @using Microsoft.AspNetCore.Components.Web
 @rendermode RenderMode.InteractiveServer
 @using Dashboard
@@ -9,6 +8,7 @@
 @using System.Text.Json
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.JSInterop
+@using System.Text.RegularExpressions
 @inject IJSRuntime JSRuntime
 @inject BudgetService BudgetService
 @inject IJSRuntime JS
@@ -20,7 +20,7 @@
 <div class="min-h-screen bg-gray-900 text-white p-6">
     <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
         <h1 class="text-3xl font-bold flex items-center gap-3">
-            <span>💵</span> Budget Tracker <span class="text-xs font-normal text-gray-500 self-end mb-1">v1.8 (Copy & Date Fix)</span>
+            <span>💵</span> Budget Tracker <span class="text-xs font-normal text-gray-500 self-end mb-1">v1.9 (JSON Patch)</span>
         </h1>
         
         <div class="flex gap-3">
@@ -206,7 +206,6 @@
         return "text-gray-300";
     }
 
-    // --- NEW: COPY TO CLIPBOARD ---
     private async Task CopyLogs()
     {
         var text = string.Join("\n", debugLogs.Select(l => l.Replace("|", " : ")));
@@ -237,10 +236,7 @@
                     }
                 }
                 
-                if (userId == 0) 
-                {
-                    Log("No user found in local storage.", "error");
-                }
+                if (userId == 0) Log("No user found in local storage.", "error");
             }
             catch (Exception ex)
             {
@@ -264,7 +260,6 @@
     private async Task ForceCreateTablesSQL()
     {
         Log("Button Clicked: Starting RAW SQL Creation...", "info");
-        
         try
         {
             var sql = @"
@@ -340,7 +335,6 @@
                 );
             ";
 
-            Log("Executing SQL...", "info");
             await Db.Database.ExecuteSqlRawAsync(sql);
             Log("✅ SQL Executed Successfully!", "success");
             Log("Tables should now exist. Click 'Load Server Data'.", "info");
@@ -349,6 +343,14 @@
         {
             Log($"❌ SQL ERROR: {ex.Message}", "error");
         }
+    }
+
+    // --- HELPER TO FIX JSON DATES ---
+    private string PatchJsonDates(string json)
+    {
+        // Finds ISO dates (e.g. "2025-12-01T12:00:00") and appends "Z" if missing
+        // This forces them to be treated as UTC by the deserializer.
+        return Regex.Replace(json, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?!"")(?![.Z])", "$1Z");
     }
 
     private async Task LoadServerDefaults()
@@ -365,12 +367,6 @@
 
         try
         {
-            // --- FIX FOR POSTGRES DATETIME ERROR ---
-            // This forces Npgsql to accept dates without TimeZone info (legacy mode)
-            AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
-            Log("Applied Legacy Timestamp Fix.", "info");
-            // ---------------------------------------
-
             var webRoot = Env.WebRootPath;
             var files = new[] { "budget_dec25.json", "budget_jan26.json" };
             int successCount = 0;
@@ -383,7 +379,12 @@
                 if(File.Exists(path))
                 {
                     var json = await File.ReadAllTextAsync(path);
-                    Log($"Importing {fileName}...", "info");
+                    
+                    // --- APPLY PATCH ---
+                    json = PatchJsonDates(json);
+                    Log($"Patched Dates in {fileName}.", "info");
+                    // -------------------
+
                     await BudgetService.ImportBudgetJson(userId, json);
                     successCount++;
                 }
@@ -422,14 +423,15 @@
 
         try
         {
-            // --- FIX FOR POSTGRES DATETIME ERROR ---
-            AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
-            // ---------------------------------------
-
             var file = e.File;
             using var reader = new StreamReader(file.OpenReadStream(2 * 1024 * 1024)); 
             var json = await reader.ReadToEndAsync();
             
+            // --- APPLY PATCH ---
+            json = PatchJsonDates(json);
+            Log("Patched Dates in uploaded file.", "info");
+            // -------------------
+
             await BudgetService.ImportBudgetJson(userId, json);
             await LoadData();
             Log("Upload successful.", "success");

@@ -13,6 +13,9 @@ using System.Linq;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Inside Program.cs, at the very top
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 // =========================================================
 // 1. SERVICES
 // =========================================================
