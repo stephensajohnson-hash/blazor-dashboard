@@ -20,7 +20,7 @@
 <div class="min-h-screen bg-gray-900 text-white p-6">
     <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
         <h1 class="text-3xl font-bold flex items-center gap-3">
-            <span>💵</span> Budget Tracker <span class="text-xs font-normal text-gray-500 self-end mb-1">v3.1 (Nested Periods)</span>
+            <span>💵</span> Budget Tracker <span class="text-xs font-normal text-gray-500 self-end mb-1">v3.2 (Source Linking)</span>
         </h1>
         
         <div class="flex gap-3">
@@ -152,6 +152,38 @@
                     </div>
 
                     <div>
+                         <div class="mb-6 bg-gray-800/30 border border-blue-700/30 rounded-lg overflow-hidden">
+                            <h3 class="text-sm font-bold text-blue-400 uppercase tracking-widest p-2 bg-blue-900/20 border-b border-blue-700/30">
+                                Income Sources (Definitions)
+                            </h3>
+                            @if(incomeSources.Any())
+                            {
+                                <div class="divide-y divide-gray-700/50">
+                                    @foreach(var src in incomeSources)
+                                    {
+                                        <div class="flex justify-between items-center p-2 text-sm hover:bg-white/5 transition">
+                                            <div class="flex items-center gap-2">
+                                                 @if(!string.IsNullOrEmpty(src.ImgUrl)) 
+                                                 { 
+                                                     <img src="@src.ImgUrl" class="w-6 h-6 rounded-full bg-black/40" /> 
+                                                 }
+                                                 else
+                                                 {
+                                                     <div class="w-6 h-6 rounded-full bg-blue-900/50 border border-blue-700 flex items-center justify-center text-[10px]">🏢</div>
+                                                 }
+                                                <span class="text-gray-200 font-bold">@src.Name</span>
+                                            </div>
+                                            <span class="text-xs text-gray-500 font-mono">@src.StringId</span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="p-2 text-xs text-gray-500 italic text-center">No definitions found.</div>
+                            }
+                        </div>
+
                         <div class="mb-6 bg-gray-800/30 border border-yellow-700/30 rounded-lg overflow-hidden">
                             <h3 class="text-sm font-bold text-yellow-400 uppercase tracking-widest p-2 bg-yellow-900/20 border-b border-yellow-700/30 flex justify-between">
                                 <span>Expected Income</span>
@@ -165,7 +197,7 @@
                                         <div class="flex justify-between items-center p-2 text-sm hover:bg-white/5 transition">
                                             <div class="flex items-center gap-2">
                                                 <span class="text-gray-500 text-xs font-mono">@inc.Date.ToString("MMM dd")</span>
-                                                <span class="text-gray-200">@inc.SourceStringId</span> 
+                                                <span class="text-gray-200 font-bold">@GetSourceName(inc.SourceStringId)</span> 
                                             </div>
                                             <span class="font-mono text-yellow-200">@inc.Amount.ToString("C")</span>
                                         </div>
@@ -217,6 +249,7 @@
     private int userId = 0;
     private bool isLoading = true;
     private List<BudgetPeriod> periods = new();
+    private List<BudgetIncomeSource> incomeSources = new();
     private List<string> debugLogs = new();
 
     private void Log(string msg, string type = "info") 
@@ -229,6 +262,12 @@
         if(log.Contains("|error")) return "text-red-400 font-bold";
         if(log.Contains("|success")) return "text-green-400 font-bold";
         return "text-gray-300";
+    }
+
+    private string GetSourceName(string sourceId)
+    {
+        var src = incomeSources.FirstOrDefault(s => s.StringId == sourceId);
+        return src != null ? src.Name : sourceId; // Fallback to ID if not found
     }
 
     private async Task CopyLogs()
@@ -279,6 +318,10 @@
         Log("Querying Database for periods...");
         try 
         {
+            // 1. Fetch Definitions (Sources)
+            incomeSources = await Db.BudgetIncomeSources.Where(x => x.UserId == userId || x.UserId == 0).ToListAsync();
+            Log($"Found {incomeSources.Count} Income Sources definitions.", "info");
+
             var expIncomeCount = await Db.BudgetExpectedIncome.CountAsync();
             Log($"DEBUG: Found {expIncomeCount} Expected Income records in DB.", "info");
 
@@ -304,38 +347,53 @@
         }
     }
 
-    // --- NESTED PERIODS IMPORT LOGIC ---
     private async Task ImportExpectedIncomeManual(string json)
     {
         try 
         {
-            Log("Manual Import: Parsing JSON...", "info");
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-
-            // 1. Find "periods" array (Case Insensitive)
             JsonElement periodsArray = default;
-            bool foundPeriods = root.TryGetProperty("periods", out periodsArray) || 
-                                root.TryGetProperty("Periods", out periodsArray);
-
-            if (!foundPeriods || periodsArray.ValueKind != JsonValueKind.Array)
+            
+            // Try to find "periods" array
+            if (!(root.TryGetProperty("periods", out periodsArray) || root.TryGetProperty("Periods", out periodsArray)))
             {
-                Log("Manual Import Aborted: 'periods' array not found or empty.", "error");
-                // Fallback: Check if root IS the period (legacy format)
+                // Fallback for flat JSON
                 await ImportSinglePeriod(root);
                 return;
             }
 
             int totalAdded = 0;
+            int sourcesAdded = 0;
 
-            // 2. Loop through each period in JSON
             foreach(var periodJson in periodsArray.EnumerateArray())
             {
-                // A. Find Date for this specific period
                 if(!periodJson.TryGetProperty("startDate", out var dateElem)) continue;
                 if(!DateTime.TryParse(dateElem.GetString(), out var startDate)) continue;
 
-                // B. Find Matching Period in DB
+                // --- NEW: Scan for Income Sources (Definitions) in this period ---
+                if(periodJson.TryGetProperty("incomeSources", out var sourceArr) && sourceArr.ValueKind == JsonValueKind.Array)
+                {
+                    foreach(var src in sourceArr.EnumerateArray())
+                    {
+                        var sid = src.GetProperty("id").GetString();
+                        if(!await Db.BudgetIncomeSources.AnyAsync(x => x.StringId == sid))
+                        {
+                            var newSrc = new BudgetIncomeSource
+                            {
+                                UserId = userId,
+                                StringId = sid,
+                                Name = src.GetProperty("name").GetString(),
+                                ImgUrl = src.TryGetProperty("imgUrl", out var img) ? img.GetString() : ""
+                            };
+                            Db.BudgetIncomeSources.Add(newSrc);
+                            sourcesAdded++;
+                        }
+                    }
+                }
+                // ----------------------------------------------------------------
+
+                // Find Period in DB
                 var dbPeriod = await Db.BudgetPeriods
                     .Where(p => p.UserId == userId && p.StartDate.Year == startDate.Year && p.StartDate.Month == startDate.Month)
                     .OrderByDescending(p => p.Id)
@@ -343,23 +401,17 @@
 
                 if(dbPeriod == null) continue;
 
-                // C. Find "expectedIncome" inside THIS period
+                // Import Expected Income Items
                 if(periodJson.TryGetProperty("expectedIncome", out var incomeArray) && incomeArray.ValueKind == JsonValueKind.Array)
                 {
-                    int periodAdded = await InsertIncomeItems(dbPeriod.Id, incomeArray);
-                    totalAdded += periodAdded;
-                    if(periodAdded > 0) Log($"  -> Added {periodAdded} items for {startDate:MM/yyyy}", "info");
+                    totalAdded += await InsertIncomeItems(dbPeriod.Id, incomeArray);
                 }
             }
 
-            if(totalAdded > 0)
+            if(totalAdded > 0 || sourcesAdded > 0)
             {
                 await Db.SaveChangesAsync();
-                Log($"Manual Import Complete: Added {totalAdded} records total.", "success");
-            }
-            else
-            {
-                Log("Manual Import: No new Expected Income records found to add.", "info");
+                Log($"Manual Import: Added {totalAdded} Expected Items and {sourcesAdded} Sources.", "success");
             }
         }
         catch(Exception ex)
@@ -370,9 +422,29 @@
 
     private async Task ImportSinglePeriod(JsonElement root)
     {
-         // Legacy support for flat JSONs
          if(!root.TryGetProperty("startDate", out var dateElem)) return;
          if(!DateTime.TryParse(dateElem.GetString(), out var startDate)) return;
+
+         // Check for Sources (Flat JSON)
+         if(root.TryGetProperty("incomeSources", out var sourceArr) && sourceArr.ValueKind == JsonValueKind.Array)
+         {
+             foreach(var src in sourceArr.EnumerateArray())
+             {
+                 var sid = src.GetProperty("id").GetString();
+                 if(!await Db.BudgetIncomeSources.AnyAsync(x => x.StringId == sid))
+                 {
+                     var newSrc = new BudgetIncomeSource
+                     {
+                         UserId = userId,
+                         StringId = sid,
+                         Name = src.GetProperty("name").GetString(),
+                         ImgUrl = src.TryGetProperty("imgUrl", out var img) ? img.GetString() : ""
+                     };
+                     Db.BudgetIncomeSources.Add(newSrc);
+                 }
+             }
+             await Db.SaveChangesAsync();
+         }
 
          var dbPeriod = await Db.BudgetPeriods
             .Where(p => p.UserId == userId && p.StartDate.Year == startDate.Year && p.StartDate.Month == startDate.Month)
@@ -425,7 +497,6 @@
         return count;
     }
 
-    // --- STANDARD METHODS ---
     private async Task ForceCreateTablesSQL()
     {
         Log("Button Clicked: Starting RAW SQL Creation...", "info");
@@ -480,24 +551,14 @@
             foreach(var fileName in files)
             {
                 var path = Path.Combine(webRoot, fileName);
-                Log($"Looking for {fileName}...", "info");
-                
                 if(File.Exists(path))
                 {
                     var json = await File.ReadAllTextAsync(path);
                     json = PatchJsonDates(json);
                     
-                    // 1. Regular Import
                     await BudgetService.ImportBudgetJson(userId, json);
-                    
-                    // 2. Manual Data Patch for Expected Income
                     await ImportExpectedIncomeManual(json);
-                    
                     successCount++;
-                }
-                else 
-                {
-                    Log($"File not found: {path}", "error");
                 }
             }
             Log($"Import finished. {successCount} files processed.", "success");
@@ -506,7 +567,6 @@
         catch (Exception ex)
         {
             Log($"Import Error: {ex.Message}", "error");
-            if(ex.InnerException != null) Log($" >> {ex.InnerException.Message}", "error");
         }
         finally
         {
@@ -527,7 +587,6 @@
             using var reader = new StreamReader(file.OpenReadStream(2 * 1024 * 1024)); 
             var json = await reader.ReadToEndAsync();
             json = PatchJsonDates(json);
-            Log("Patched Dates in uploaded file.", "info");
 
             await BudgetService.ImportBudgetJson(userId, json);
             await ImportExpectedIncomeManual(json);
@@ -538,7 +597,6 @@
         catch (Exception ex)
         {
             Log($"Upload Failed: {ex.Message}", "error");
-            if(ex.InnerException != null) Log($" >> {ex.InnerException.Message}", "error");
         }
         finally
         {
