@@ -56,6 +56,8 @@ public class AppDbContext : DbContext
     public DbSet<BudgetTransfer> BudgetTransfers { get; set; }
     public DbSet<BudgetIncomeSource> BudgetIncomeSources { get; set; }
     public DbSet<BudgetExpectedIncome> BudgetExpectedIncome { get; set; }
+    public DbSet<BudgetWatchItem> BudgetWatchItems { get; set; }
+    
 }
 
 // ... (Keep existing Bullet classes) ...
@@ -151,6 +153,7 @@ public class BudgetPeriod
     public List<BudgetTransaction> Transactions { get; set; } = new();
     public List<BudgetTransfer> Transfers { get; set; } = new();
     public List<BudgetExpectedIncome> ExpectedIncome { get; set; } = new();
+    public List<BudgetWatchItem> BudgetWatchItems { get; set; } = new();    
 }
 
 public class BudgetCycle
@@ -236,4 +239,14 @@ public class BudgetExpectedIncome
     
     public decimal Amount { get; set; }
     public DateTime Date { get; set; }
+}
+
+public class BudgetWatchItem
+{
+    public int Id { get; set; }
+    public int BudgetPeriodId { get; set; } // Link to the Month
+    public string Description { get; set; } = "";
+    public decimal Amount { get; set; }
+    public string DueDate { get; set; } = ""; // String to handle "TBD"
+    public string ImgUrl { get; set; } = "";
 }
