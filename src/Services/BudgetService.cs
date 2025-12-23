@@ -121,17 +121,26 @@ public class BudgetService
                 await _db.SaveChangesAsync();
             }
 
-            // 5. Watch List (Expected Expenses) - NEW
+            // 5. Watch List (Expected Expenses) - NORMALIZED
             if (pDto.WatchList != null)
             {
                 foreach(var w in pDto.WatchList)
                 {
+                    DateTime? finalDate = null;
+
+                    // Logic: If it's NOT "TBD" and parses correctly, use the date. Else null.
+                    if (!string.Equals(w.DueDate, "TBD", StringComparison.OrdinalIgnoreCase) 
+                        && DateTime.TryParse(w.DueDate, out var parsedDate))
+                    {
+                        finalDate = parsedDate;
+                    }
+
                     var newWatch = new BudgetWatchItem
                     {
                         BudgetPeriodId = period.Id,
                         Description = w.Description,
                         Amount = w.Amount,
-                        DueDate = w.DueDate,
+                        DueDate = finalDate, // Now stores strictly as Date or Null
                         ImgUrl = w.Image
                     };
                     _db.BudgetWatchItems.Add(newWatch);
