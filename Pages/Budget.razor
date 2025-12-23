@@ -8,10 +8,13 @@
 @using Microsoft.JSInterop 
 @using System.Text.Json 
 @using System.IO 
+@using Microsoft.AspNetCore.Components.Forms 
+@* ^^^ FIXED: Added missing namespace ^^^ *@
 @inject IJSRuntime JS
 @inject BudgetService BudgetService
 @inject BulletBaseService BulletBase
 @inject AppDbContext Db
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
 
 <BulletHeader />
 
@@ -458,11 +461,12 @@
     {
         if (CurrentPeriod == null) return 0;
         
+        // Direct
         var direct = CurrentPeriod.Transactions
             .Where(t => t.ResolvedBudgetItemId == itemId)
             .Sum(t => t.Amount * -1); 
 
-        // PARENT SIGN CHECK
+        // Splits - Check PARENT Sign
         var splits = CurrentPeriod.Transactions
             .SelectMany(t => t.Splits.Select(s => new { Parent = t, Split = s }))
             .Where(x => x.Split.ResolvedBudgetItemId == itemId)
@@ -470,6 +474,7 @@
                 ? Math.Abs(x.Split.Amount)       // Expense -> Positive Spend
                 : -Math.Abs(x.Split.Amount));    // Refund  -> Negative Spend (Credit)
             
+        // Transfers Logic
         var transfersOut = CurrentPeriod.Transfers.Where(tr => tr.ResolvedFromId == itemId).Sum(tr => tr.Amount);
         var transfersIn = CurrentPeriod.Transfers.Where(tr => tr.ResolvedToId == itemId).Sum(tr => tr.Amount);
 
