@@ -248,9 +248,10 @@ public class BudgetWatchItem
     public int BudgetPeriodId { get; set; } 
     public string Description { get; set; } = "";
     public decimal Amount { get; set; }
-    
-    // CHANGED: From string to Nullable DateTime
     public DateTime? DueDate { get; set; } 
     
-    public string ImgUrl { get; set; } = "";
+    // NEW: Link to the specific budget item
+    public int? ResolvedBudgetItemId { get; set; }
+    
+    // REMOVED: ImgUrl (we will fetch this from the linked BudgetItem)
 }
