@@ -87,26 +87,17 @@
                         foreach(var t in sortedTrans)
                         {
                             runningBalance += t.Amount;
-                            
                             <div class="flex justify-between items-center p-3 border-b border-gray-200 hover:bg-blue-50 transition group text-sm">
                                 <div class="text-gray-500 font-mono w-24">@t.Date.ToString("MMM dd")</div>
-                                
                                 <div class="flex-1 grid grid-cols-3 gap-8 items-center text-right">
                                     <div class="text-left text-gray-800 font-medium truncate">
                                         @t.Description
-                                        @if(t.Splits.Any()) 
-                                        { 
-                                            <span class="text-[10px] text-gray-400 ml-2">(Split)</span> 
-                                        }
+                                        @if(t.Splits.Any()) { <span class="text-[10px] text-gray-400 ml-2">(Split)</span> }
                                     </div>
-                                    
                                     <div class="font-mono font-bold @(t.Amount >= 0 ? "text-green-600" : "text-red-600")">
                                         $@t.Amount.ToString("N2")
                                     </div>
-                                    
-                                    <div class="font-mono text-gray-400">
-                                        $@runningBalance.ToString("N2")
-                                    </div>
+                                    <div class="font-mono text-gray-400">$@runningBalance.ToString("N2")</div>
                                 </div>
                             </div>
                         }
@@ -125,46 +116,93 @@
                                     <span class="font-bold text-gray-800 text-sm uppercase tracking-wider block">@cycle.Label</span>
                                     <span class="text-[10px] text-gray-500">Cycle #@cycle.CycleNumber</span>
                                 </div>
-                                <button class="bg-white hover:bg-gray-200 text-gray-600 border border-gray-300 rounded p-1 transition" title="Add item to @cycle.Label">
+                                <button class="bg-white hover:bg-gray-200 text-gray-600 border border-gray-300 rounded p-1 transition" title="Add item">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
                                 </button>
                             </div>
 
-                            <div class="divide-y divide-gray-100 p-4 space-y-4">
+                            <div class="divide-y divide-gray-100 p-0">
                                 @foreach (var item in cycle.Items)
                                 {
-                                    // Calculate Logic
                                     decimal spent = GetSpentForBudgetItem(item.Id);
                                     decimal remaining = item.PlannedAmount - spent;
                                     double percent = item.PlannedAmount > 0 ? (double)(spent / item.PlannedAmount) * 100 : 0;
                                     string barColor = remaining < 0 ? "bg-red-500" : "bg-blue-500";
                                     string textColor = remaining < 0 ? "text-red-600 font-bold" : "text-green-600 font-bold";
+                                    bool isExpanded = ExpandedItemId == item.Id;
 
-                                    <div class="flex flex-col gap-1">
-                                        <div class="flex justify-between items-end">
-                                            <div class="flex items-center gap-2">
-                                                @if(!string.IsNullOrEmpty(item.ImgUrl)) { <img src="@item.ImgUrl" class="w-5 h-5 rounded-full object-cover" /> }
-                                                <span class="font-bold text-sm text-gray-800">@item.Name</span>
+                                    <div class="p-4 hover:bg-gray-50 transition cursor-pointer select-none border-l-4 @(isExpanded ? "border-blue-500 bg-blue-50" : "border-transparent")" 
+                                         @onclick="() => ToggleExpand(item.Id)">
+                                        
+                                        <div class="flex flex-col gap-1">
+                                            <div class="flex justify-between items-end">
+                                                <div class="flex items-center gap-2">
+                                                    @if(!string.IsNullOrEmpty(item.ImgUrl)) { <img src="@item.ImgUrl" class="w-5 h-5 rounded-full object-cover" /> }
+                                                    <span class="font-bold text-sm text-gray-800">@item.Name</span>
+                                                </div>
+                                                <div class="flex items-center gap-3">
+                                                    <span class="@textColor text-sm">$@remaining.ToString("N2")</span>
+                                                    <button class="text-gray-400 hover:text-blue-600 transition p-1" 
+                                                            @onclick:stopPropagation="true" 
+                                                            @onclick="() => EditBudgetItem(item)">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
                                             </div>
-                                            <span class="@textColor text-sm">$@remaining.ToString("N2")</span>
-                                        </div>
 
-                                        <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-                                            <div class="@barColor h-full transition-all duration-500" style="width: @Math.Min(percent, 100)%"></div>
-                                        </div>
+                                            <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                                                <div class="@barColor h-full transition-all duration-500" style="width: @Math.Min(percent, 100)%"></div>
+                                            </div>
 
-                                        <div class="flex justify-end text-[10px] text-gray-400">
-                                            of $@item.PlannedAmount.ToString("N2")
+                                            <div class="flex justify-end text-[10px] text-gray-400">
+                                                of $@item.PlannedAmount.ToString("N2")
+                                            </div>
                                         </div>
                                     </div>
+
+                                    @if(isExpanded)
+                                    {
+                                        var details = GetItemHistory(item.Id);
+                                        <div class="bg-gray-100 border-y border-gray-200 p-3 shadow-inner">
+                                            @if(details.Any())
+                                            {
+                                                <table class="w-full text-xs">
+                                                    <thead>
+                                                        <tr class="text-gray-500 uppercase tracking-wide text-left border-b border-gray-300">
+                                                            <th class="pb-1">Date</th>
+                                                            <th class="pb-1">Desc</th>
+                                                            <th class="pb-1 text-right">Amt</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody class="divide-y divide-gray-200">
+                                                        @foreach(var d in details)
+                                                        {
+                                                            <tr class="hover:bg-gray-50">
+                                                                <td class="py-1 text-gray-500 font-mono">@d.Date.ToString("MM/dd")</td>
+                                                                <td class="py-1 text-gray-800 truncate max-w-[120px]" title="@d.Desc">@d.Desc</td>
+                                                                <td class="py-1 text-right font-bold @(d.Amount < 0 ? "text-green-600" : "text-red-600")">
+                                                                    $@Math.Abs(d.Amount).ToString("N2")
+                                                                </td>
+                                                            </tr>
+                                                        }
+                                                    </tbody>
+                                                </table>
+                                            }
+                                            else
+                                            {
+                                                <div class="text-center text-xs text-gray-400 italic py-2">No linked transactions found.</div>
+                                            }
+                                        </div>
+                                    }
                                 }
                             </div>
                         </div>
                     }
 
                     <button class="w-full py-3 border-2 border-dashed border-gray-600 hover:border-gray-400 text-gray-500 hover:text-gray-300 rounded-lg transition font-bold uppercase tracking-wider text-xs flex justify-center items-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-                        Add Budget Cycle
+                        + Add Budget Cycle
                     </button>
                 </div>
 
@@ -244,8 +282,10 @@
     private List<BudgetPeriod> periods = new();
     private List<BudgetIncomeSource> incomeSources = new();
     
-    // --- NAVIGATION STATE ---
+    // --- STATE ---
     private int currentIndex = 0;
+    private int? ExpandedItemId = null; // Tracks which budget row is expanded
+
     private BudgetPeriod? CurrentPeriod => periods.Count > 0 && currentIndex >= 0 && currentIndex < periods.Count 
         ? periods[currentIndex] 
         : null;
@@ -264,27 +304,73 @@
 
     private string GetBalanceColor(decimal bal) => bal >= 0 ? "text-green-400 font-bold" : "text-red-400 font-bold";
 
-    // Navigation Methods
-    private void NextPeriod() { if (CanGoNext) currentIndex--; } 
-    private void PrevPeriod() { if (CanGoBack) currentIndex++; } 
+    // --- ACTIONS ---
+    private void NextPeriod() { if (CanGoNext) { currentIndex--; ExpandedItemId = null; } } 
+    private void PrevPeriod() { if (CanGoBack) { currentIndex++; ExpandedItemId = null; } } 
+    
+    private void ToggleExpand(int itemId)
+    {
+        ExpandedItemId = ExpandedItemId == itemId ? null : itemId;
+    }
 
-    // --- LOGIC FOR SPEND TRACKING ---
+    private void EditBudgetItem(BudgetItem item)
+    {
+        // TODO: Open Edit Modal
+        Console.WriteLine($"Edit Clicked: {item.Name}");
+    }
+
+    // --- CALCULATION LOGIC ---
     private decimal GetSpentForBudgetItem(int itemId)
     {
         if (CurrentPeriod == null) return 0;
         
-        // 1. Direct Links
         var direct = CurrentPeriod.Transactions
             .Where(t => t.ResolvedBudgetItemId == itemId)
-            .Sum(t => Math.Abs(t.Amount)); // Use Abs so expenses count as positive usage
+            .Sum(t => Math.Abs(t.Amount));
 
-        // 2. Split Links
         var splits = CurrentPeriod.Transactions
             .SelectMany(t => t.Splits)
             .Where(s => s.ResolvedBudgetItemId == itemId)
             .Sum(s => Math.Abs(s.Amount));
+            
+        // Transfers: Outflow = Spent
+        var transfersOut = CurrentPeriod.Transfers
+            .Where(tr => tr.ResolvedFromId == itemId)
+            .Sum(tr => tr.Amount);
 
-        return direct + splits;
+        // Transfers In reduce "Spent" (act like refunds/credits to the budget category)
+        var transfersIn = CurrentPeriod.Transfers
+            .Where(tr => tr.ResolvedToId == itemId)
+            .Sum(tr => tr.Amount);
+
+        return (direct + splits + transfersOut) - transfersIn;
+    }
+
+    // Returns a flattened list of everything affecting this budget item
+    private List<(DateTime Date, string Desc, decimal Amount)> GetItemHistory(int itemId)
+    {
+        var list = new List<(DateTime, string, decimal)>();
+        if (CurrentPeriod == null) return list;
+
+        // 1. Direct Transactions
+        var direct = CurrentPeriod.Transactions.Where(t => t.ResolvedBudgetItemId == itemId);
+        foreach(var t in direct) list.Add((t.Date, t.Description, Math.Abs(t.Amount)));
+
+        // 2. Splits
+        var splits = CurrentPeriod.Transactions
+            .SelectMany(t => t.Splits.Select(s => new { Parent = t, Split = s }))
+            .Where(x => x.Split.ResolvedBudgetItemId == itemId);
+        foreach(var x in splits) list.Add((x.Parent.Date, $"{x.Parent.Description} (Split)", Math.Abs(x.Split.Amount)));
+
+        // 3. Transfers Out (Spent)
+        var trOut = CurrentPeriod.Transfers.Where(tr => tr.ResolvedFromId == itemId);
+        foreach(var tr in trOut) list.Add((tr.Date, $"Transfer to {tr.ToStringId}", tr.Amount));
+
+        // 4. Transfers In (Credit) - Show as negative amount to indicate "money back"
+        var trIn = CurrentPeriod.Transfers.Where(tr => tr.ResolvedToId == itemId);
+        foreach(var tr in trIn) list.Add((tr.Date, $"Transfer from {tr.FromStringId}", -tr.Amount));
+
+        return list.OrderByDescending(x => x.Item1).ToList();
     }
 
     private string GetSourceName(string sourceId) 
@@ -314,7 +400,7 @@
                     }
                 }
             }
-            catch (Exception) { /* Log error */ }
+            catch (Exception) { }
             finally { isLoading = false; StateHasChanged(); }
         }
     }
@@ -322,15 +408,8 @@
     private async Task LoadData()
     {
         if (userId == 0) return;
-        
-        incomeSources = await Db.BudgetIncomeSources
-            .Where(x => x.UserId == userId || x.UserId == 0)
-            .ToListAsync();
-
-        // Get All Periods
+        incomeSources = await Db.BudgetIncomeSources.Where(x => x.UserId == userId || x.UserId == 0).ToListAsync();
         periods = await BudgetService.GetPeriods(userId);
-        
-        // Default to newest (Index 0 because service sorts Descending)
         if (periods.Any()) currentIndex = 0;
     }
 }
