@@ -24,7 +24,7 @@
             <h3 class="text-xs font-black text-blue-400 uppercase tracking-widest">Diagnostic Console</h3>
             <div class="flex flex-wrap gap-2">
                 <button @onclick="CopyLogsToClipboard" class="bg-gray-700 hover:bg-gray-600 text-white text-[10px] font-bold px-3 py-1 rounded transition">📋 Copy Logs</button>
-                <button @onclick="FixWatchTableStructure" class="bg-red-900 hover:bg-red-800 text-white text-[10px] font-bold px-3 py-1 rounded transition border border-red-700">🔨 1. Fix DB Table</button>
+                <button @onclick="FixWatchTableStructure" class="bg-red-900 hover:bg-red-800 text-white text-[10px] font-bold px-3 py-1 rounded transition border border-red-700">🔨 1. Reset Watch Table</button>
                 <button @onclick="RepairWatchLinks" class="bg-blue-900 hover:bg-blue-800 text-white text-[10px] font-bold px-3 py-1 rounded transition border border-blue-700">🔗 2. Link Watch Items</button>
                 <button @onclick="ClaimOrphanedData" class="bg-yellow-900 hover:bg-yellow-800 text-white text-[10px] font-bold px-3 py-1 rounded transition border border-yellow-700">⚠️ 3. Claim Periods</button>
                 <button @onclick="ClaimIncomeSources" class="bg-purple-900 hover:bg-purple-800 text-white text-[10px] font-bold px-3 py-1 rounded transition border border-purple-700">💰 4. Claim Income Sources</button>
@@ -42,15 +42,15 @@
     {
         <div class="flex flex-col items-center justify-center h-[40vh]">
             <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-            <div class="text-gray-400 mt-4 animate-pulse font-bold uppercase tracking-widest text-xs">Loading Data Stream...</div>
+            <div class="text-gray-400 mt-4 animate-pulse font-bold uppercase tracking-widest text-xs">Syncing Database...</div>
         </div>
     }
     else if (CurrentPeriod == null)
     {
         <div class="flex flex-col items-center justify-center h-[40vh] border-2 border-dashed border-gray-700 rounded-xl bg-gray-800/30 p-10 text-center">
-            <p class="text-gray-400 text-xl mb-2 font-bold font-mono text-red-400">NO_DATA_SYNCED</p>
-            <p class="text-sm text-gray-500 mb-4 uppercase tracking-tighter">Current User ID: @userId | DB Record Count: @totalDbCount</p>
-            <button @onclick="RefreshData" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded text-xs font-bold uppercase shadow-xl">🔄 Force Re-Sync</button>
+            <p class="text-gray-400 text-xl mb-2 font-bold font-mono text-red-400">SESSION_ISOLATED</p>
+            <p class="text-sm text-gray-500 mb-4 uppercase tracking-tighter">UserId: @userId | DB Count: @totalDbCount</p>
+            <button @onclick="RefreshData" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded text-xs font-bold uppercase shadow-xl">🔄 Retry Sync</button>
         </div>
     }
     else
@@ -140,9 +140,9 @@
                     <div class="bg-green-600 px-3 py-2 flex justify-between items-center text-white text-xs font-bold uppercase"><span>Expected Income</span><button @onclick="() => OpenIncomeModal()">+</button></div>
                     <div class="divide-y divide-gray-100">
                         @foreach(var inc in (CurrentPeriod.ExpectedIncome ?? new()).OrderBy(x => x.Date)) {
-                            <div class="p-3 flex justify-between items-center hover:bg-green-50 transition">
-                                <div class="flex items-center gap-2"><img src="@GetSourceImage(inc.SourceStringId)" class="w-8 h-8 rounded-full border border-green-200" /><div><div class="text-xs font-bold">@GetSourceName(inc.SourceStringId)</div><div class="text-[10px] text-gray-500">@inc.Date.ToString("MM/dd")</div></div></div>
-                                <div class="flex items-center gap-3"><span class="text-green-600 font-bold text-sm">+$@inc.Amount.ToString("N2")</span><button @onclick="() => OpenIncomeModal(inc)" class="text-gray-300 hover:text-green-600 transition"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button></div>
+                            <div class="p-3 flex justify-between items-center hover:bg-green-50 transition text-gray-800">
+                                <div class="flex items-center gap-2"><img src="@GetSourceImage(inc.SourceStringId)" class="w-8 h-8 rounded-full border" /><div><div class="text-xs font-bold">@GetSourceName(inc.SourceStringId)</div><div class="text-[10px] text-gray-500">@inc.Date.ToString("MM/dd")</div></div></div>
+                                <div class="flex items-center gap-3"><span class="text-green-600 font-bold">+$@inc.Amount.ToString("N2")</span><button @onclick="() => OpenIncomeModal(inc)" class="text-gray-300 hover:text-green-600 transition"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button></div>
                             </div>
                         }
                     </div>
@@ -152,14 +152,18 @@
                     <div class="bg-[#e67e22] px-3 py-2 flex justify-between items-center text-white text-xs font-bold uppercase"><span>Expected Expenses</span><button @onclick="() => OpenWatchModal()">+</button></div>
                     <div class="divide-y divide-gray-100">
                         @foreach(var item in (CurrentPeriod.WatchList ?? new()).OrderBy(x => x.DueDate ?? DateTime.MaxValue)) {
-                            <div class="p-3 flex justify-between items-center hover:bg-orange-50 transition text-sm">
+                            <div class="p-3 flex justify-between items-center hover:bg-orange-50 transition text-sm text-gray-800">
                                 <div class="flex items-center gap-3">
-                                    <div class="w-8 h-8 rounded-full bg-white overflow-hidden border border-gray-200 shadow-sm"><img src="@GetBudgetItemImage(item.ResolvedBudgetItemId)" class="w-full h-full object-cover" /></div>
-                                    <div><div class="text-xs font-bold text-gray-800 truncate w-32">@item.Description</div><div class="text-[10px] text-gray-500">Due: @(item.DueDate?.ToString("MM/dd") ?? "TBD")</div></div>
+                                    <div class="w-8 h-8 rounded-full bg-white border overflow-hidden flex items-center justify-center">
+                                        @{ string watchImg = GetBudgetItemImage(item.ResolvedBudgetItemId); }
+                                        @if(!string.IsNullOrEmpty(watchImg)){<img src="@watchImg" class="w-full h-full object-cover" />}
+                                        else { <span class="text-[10px]">🔍</span> }
+                                    </div>
+                                    <div><div class="text-xs font-bold truncate w-32">@item.Description</div><div class="text-[10px] text-gray-500">Due: @(item.DueDate?.ToString("MM/dd") ?? "TBD")</div></div>
                                 </div>
-                                <div class="flex items-center gap-3 text-right">
-                                    <span class="font-mono font-bold text-sm text-gray-700">$@item.Amount.ToString("N2")</span>
-                                    <button class="text-gray-400 hover:text-orange-600 transition" @onclick="() => OpenWatchModal(item)"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
+                                <div class="flex items-center gap-3">
+                                    <span class="font-mono font-bold">$@item.Amount.ToString("N2")</span>
+                                    <button class="text-gray-300 hover:text-orange-600 transition" @onclick="() => OpenWatchModal(item)"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
                                 </div>
                             </div>
                         }
@@ -174,37 +178,50 @@
         <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm text-gray-800">
             <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden border border-gray-200">
                 <div class="bg-gray-100 px-4 py-3 border-b font-bold text-gray-700 flex justify-between items-center"><span>@(EditingTransaction.Id == 0 ? "Add Transaction" : "Edit Transaction")</span><button @onclick="() => EditingTransaction = null" class="text-gray-400 text-xl font-bold">&times;</button></div>
-                <div class="p-5 space-y-6 text-sm">
+                <div class="p-5 space-y-6 text-sm text-gray-800">
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4"><div><label class="block text-[10px] font-bold text-gray-500 uppercase">Date</label><input type="date" @bind="EditingTransaction.Date" class="w-full border rounded p-2" /></div><div class="md:col-span-2"><label class="block text-[10px] font-bold text-gray-500 uppercase">Description</label><input @bind="EditingTransaction.Description" class="w-full border rounded p-2" /></div></div>
                     <div><label class="block text-[10px] font-bold text-gray-500 uppercase">Amount</label><input type="number" @bind="EditingTransaction.Amount" step="0.01" class="w-full border rounded p-2 text-lg font-mono font-bold @(EditingTransaction.Amount >= 0 ? "text-green-700" : "text-red-700")" /></div>
+                    @if (EditingTransaction.Amount > 0) { <div class="bg-green-50 p-3 rounded border border-green-200"><label class="block text-[10px] font-bold text-green-700 uppercase mb-1">Income Source</label><select @bind="EditingTransaction.SourceStringId" class="w-full border rounded p-2 text-sm">@foreach(var src in incomeSources){<option value="@src.StringId">@src.Name</option>}</select></div> }
                     <div class="border-t pt-4">
                         <div class="flex justify-between items-center mb-2"><label class="block text-[10px] font-bold uppercase text-gray-500">Allocation</label><button class="text-xs text-blue-600 hover:underline" @onclick="AddSplit">🔀 Split this Transaction</button></div>
-                        @if (!EditingTransaction.Splits.Any()) { <select @bind="EditingTransaction.ResolvedBudgetItemId" class="w-full border rounded p-2 text-sm"><option value="">-- Unallocated --</option>@foreach(var item in FlatBudgetList){<option value="@item.Id">@item.Name</option>}</select> }
+                        @if (!EditingTransaction.Splits.Any()) { <select @bind="EditingTransaction.ResolvedBudgetItemId" class="w-full border rounded p-2 text-sm">@foreach(var item in FlatBudgetList){<option value="@item.Id">@item.Name</option>}</select> }
                         else { 
-                            <div class="space-y-2 max-h-40 overflow-y-auto pr-1">
-                                @foreach (var split in EditingTransaction.Splits) { <div class="flex gap-2 items-center"><select @bind="split.ResolvedBudgetItemId" class="flex-1 border rounded p-2 text-sm">@foreach(var item in FlatBudgetList){<option value="@item.Id">@item.Name</option>}</select><input type="number" @bind="split.Amount" step="0.01" class="w-24 border rounded p-2 text-sm font-mono text-right" /><button class="text-red-400 px-2" @onclick="() => EditingTransaction.Splits.Remove(split)">&times;</button></div> }
-                            </div>
+                            @foreach (var split in EditingTransaction.Splits) { <div class="flex gap-2 items-center mb-2"><select @bind="split.ResolvedBudgetItemId" class="flex-1 border rounded p-2 text-sm">@foreach(var item in FlatBudgetList){<option value="@item.Id">@item.Name</option>}</select><input type="number" @bind="split.Amount" step="0.01" class="w-24 border rounded p-2 text-sm font-mono text-right" /><button class="text-red-400 px-2" @onclick="() => EditingTransaction.Splits.Remove(split)">&times;</button></div> }
                             <button class="mt-2 text-xs bg-gray-200 px-2 py-1 rounded font-bold" @onclick="AddSplit">+ Add Row</button>
                         }
                     </div>
                 </div>
-                <div class="bg-gray-50 px-4 py-3 flex justify-end gap-2 border-t"><button @onclick="() => EditingTransaction = null" class="px-4 py-2 text-xs font-bold text-gray-600 uppercase">Cancel</button><button @onclick="SaveTransaction" class="px-4 py-2 text-xs bg-blue-600 text-white rounded font-bold uppercase shadow">Save</button></div>
+                <div class="bg-gray-50 px-4 py-3 flex justify-end gap-2 border-t"><button @onclick="() => EditingTransaction = null" class="px-4 py-2 text-xs font-bold text-gray-600 uppercase">Cancel</button><button @onclick="SaveTransaction" class="px-4 py-2 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded font-bold uppercase shadow">Save</button></div>
             </div>
         </div>
     }
 
     @if (EditingItem != null) {
         <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm text-gray-800">
-            <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-200">
-                <div class="bg-gray-100 px-4 py-3 border-b font-bold text-gray-700 flex justify-between items-center"><span>Edit Budget Category</span><button @onclick="CloseEditModal" class="text-gray-400 text-xl font-bold">&times;</button></div>
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-200 text-gray-800">
+                <div class="bg-gray-100 px-4 py-3 border-b font-bold text-gray-700 flex justify-between items-center"><span>Edit Budget Item</span><button @onclick="CloseEditModal" class="text-gray-400 text-xl font-bold">&times;</button></div>
                 <div class="p-5 space-y-4">
                     <div><label class="block text-[10px] font-bold uppercase mb-1">Name</label><input @bind="EditingItem.Name" class="w-full border rounded p-2 text-sm" /></div>
                     <div class="grid grid-cols-2 gap-4"><div><label class="block text-[10px] font-bold uppercase mb-1">Planned ($)</label><input type="number" @bind="EditingItem.PlannedAmount" step="0.01" class="w-full border rounded p-2 text-sm font-mono" /></div><div><label class="block text-[10px] font-bold uppercase mb-1">Carry ($)</label><input type="number" @bind="EditingItem.CarriedOver" step="0.01" class="w-full border rounded p-2 text-sm font-mono" /></div></div>
-                    <div><label class="block text-[10px] font-bold uppercase mb-1 text-gray-500">Image</label>
-                        <div class="flex gap-4"><div class="w-20 h-20 bg-white rounded border flex items-center justify-center shadow-sm">@if(!string.IsNullOrEmpty(EditingItem.ImgUrl)){<img src="@EditingItem.ImgUrl" class="w-full h-full object-cover" />}</div><div class="flex-1 flex flex-col gap-2"><input @bind="EditingItem.ImgUrl" class="w-full border rounded p-2 text-xs font-mono" placeholder="Paste URL..." /><label class="w-full bg-gray-200 hover:bg-gray-300 text-gray-600 text-[10px] font-bold py-2 rounded cursor-pointer text-center uppercase transition">📁 Upload from PC<InputFile OnChange="HandleFileUpload" class="hidden" accept="image/*" /></label></div></div>
+                    <div><label class="block text-[10px] font-bold uppercase mb-1 text-gray-500 text-gray-800">Image</label>
+                        <div class="flex gap-4"><div class="w-20 h-20 bg-white rounded border flex items-center justify-center shadow-sm">@if(!string.IsNullOrEmpty(EditingItem.ImgUrl)){<img src="@EditingItem.ImgUrl" class="w-full h-full object-cover" />}</div><div class="flex-1 flex flex-col gap-2"><input @bind="EditingItem.ImgUrl" class="w-full border rounded p-2 text-xs font-mono" placeholder="Paste URL..." /><label class="w-full bg-gray-200 hover:bg-gray-300 text-gray-600 text-[10px] font-bold py-2 rounded cursor-pointer text-center uppercase transition">📁 Upload PC<InputFile OnChange="HandleFileUpload" class="hidden" accept="image/*" /></label></div></div>
                     </div>
                 </div>
                 <div class="bg-gray-50 px-4 py-3 flex justify-end border-t gap-2"><button @onclick="CloseEditModal" class="px-4 py-2 text-xs font-bold text-gray-600 uppercase">Cancel</button><button @onclick="SaveEditItem" class="px-4 py-2 text-xs font-bold bg-blue-600 text-white rounded shadow uppercase">Save</button></div>
+            </div>
+        </div>
+    }
+
+    @if (EditingWatch != null) {
+        <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm text-gray-800">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-200">
+                <div class="bg-gray-100 px-4 py-3 border-b font-bold text-gray-700 flex justify-between items-center"><span>Edit Expected Expense</span><button @onclick="() => EditingWatch = null" class="text-gray-400 font-bold">&times;</button></div>
+                <div class="p-5 space-y-4">
+                    <div><label class="block text-[10px] font-bold uppercase mb-1">Description</label><input @bind="EditingWatch.Description" class="w-full border rounded p-2 text-sm" /></div>
+                    <div><label class="block text-[10px] font-bold uppercase mb-1">Link Category (For Image)</label><select @bind="EditingWatch.ResolvedBudgetItemId" class="w-full border rounded p-2 text-sm">@foreach(var item in FlatBudgetList){<option value="@item.Id">@item.Name</option>}</select></div>
+                    <div class="grid grid-cols-2 gap-4"><div><label class="block text-[10px] font-bold uppercase mb-1">Amount ($)</label><input type="number" @bind="EditingWatch.Amount" step="0.01" class="w-full border rounded p-2 text-sm text-red-600 font-bold font-mono" /></div><div><label class="block text-[10px] font-bold uppercase mb-1">Due Date</label><input type="date" @bind="EditingWatch.DueDate" class="w-full border rounded p-2 text-sm" /></div></div>
+                </div>
+                <div class="bg-gray-50 px-4 py-3 flex justify-end border-t gap-2"><button @onclick="() => EditingWatch = null" class="px-4 py-2 text-xs font-bold text-gray-600 uppercase">Cancel</button><button @onclick="SaveWatchItem" class="bg-orange-600 text-white px-6 py-2 rounded text-xs font-bold uppercase shadow-lg transition">Save Expense</button></div>
             </div>
         </div>
     }
@@ -222,20 +239,6 @@
             </div>
         </div>
     }
-
-    @if (EditingWatch != null) {
-        <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm text-gray-800">
-            <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-200">
-                <div class="bg-gray-100 px-4 py-3 border-b font-bold text-gray-700 flex justify-between items-center"><span>Edit Expected Expense</span><button @onclick="() => EditingWatch = null" class="text-gray-400 font-bold">&times;</button></div>
-                <div class="p-5 space-y-4">
-                    <div><label class="block text-[10px] font-bold uppercase mb-1">Description</label><input @bind="EditingWatch.Description" class="w-full border rounded p-2 text-sm" /></div>
-                    <div><label class="block text-[10px] font-bold uppercase mb-1">Link to Category (For Image)</label><select @bind="EditingWatch.ResolvedBudgetItemId" class="w-full border rounded p-2 text-sm">@foreach(var item in FlatBudgetList){<option value="@item.Id">@item.Name</option>}</select></div>
-                    <div class="grid grid-cols-2 gap-4"><div><label class="block text-[10px] font-bold uppercase mb-1">Amount ($)</label><input type="number" @bind="EditingWatch.Amount" step="0.01" class="w-full border rounded p-2 text-sm text-red-600 font-bold font-mono" /></div><div><label class="block text-[10px] font-bold uppercase mb-1">Due Date</label><input type="date" @bind="EditingWatch.DueDate" class="w-full border rounded p-2 text-sm" /></div></div>
-                </div>
-                <div class="bg-gray-50 px-4 py-3 flex justify-end border-t"><button @onclick="SaveWatchItem" class="bg-orange-600 text-white px-6 py-2 rounded text-xs font-bold uppercase shadow-lg transition">Save Expense</button></div>
-            </div>
-        </div>
-    }
 </div>
 
 @code {
@@ -249,7 +252,6 @@
     private int currentIndex = 0;
     private int? ExpandedItemId = null;
     
-    // Modal Entities
     private BudgetItem? EditingItem = null; 
     private BudgetExpectedIncome? EditingIncome = null;
     private BudgetWatchItem? EditingWatch = null;
@@ -264,11 +266,11 @@
         if (firstRender) {
             try {
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
-                if (string.IsNullOrEmpty(json)) { Log("FAIL: Session LocalStorage empty."); }
+                if (string.IsNullOrEmpty(json)) { Log("FAIL: Session empty."); }
                 else {
                     using var doc = JsonDocument.Parse(json);
                     if (doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("id", out p)) {
-                        userId = p.GetInt32(); Log($"Verified User: {userId}");
+                        userId = p.GetInt32(); Log($"Session: User {userId}");
                         await DiagnoseDatabase(); await LoadData();
                     }
                 }
@@ -278,66 +280,28 @@
     }
 
     private async Task LoadData() {
-        Log("Querying Database Service...");
+        Log("Querying Service...");
         try {
             periods = await BudgetService.GetPeriods(userId);
             incomeSources = await Db.BudgetIncomeSources.Where(x => x.UserId == userId || x.UserId == 0).ToListAsync();
             RefreshFlatList();
-            Log($"Success: {periods.Count} periods & {incomeSources.Count} income sources returned.");
-        } catch (Exception ex) { Log($"DB_QUERY_FAIL: {ex.Message}"); }
+            if(CurrentPeriod != null) Log($"Loaded {CurrentPeriod.WatchList?.Count ?? 0} Watch Items.");
+            Log($"Success: {periods.Count} periods returned.");
+        } catch (Exception ex) { Log($"DB FAIL: {ex.Message}"); }
     }
 
     private async Task DiagnoseDatabase() {
         totalDbCount = await Db.BudgetPeriods.CountAsync();
-        Log($"DB Check: Total {totalDbCount} budget periods exist for all users.");
+        Log($"Global Check: {totalDbCount} periods in DB total.");
     }
 
     private async Task CopyLogsToClipboard() {
         var sb = new System.Text.StringBuilder();
         foreach(var l in debugLogs) sb.AppendLine(l);
         await JS.InvokeVoidAsync("navigator.clipboard.writeText", sb.ToString());
-        await JS.InvokeVoidAsync("alert", "Logs copied to clipboard.");
+        await JS.InvokeVoidAsync("alert", "Logs copied.");
     }
 
-    // --- REPAIR TOOLS ---
-    private async Task FixWatchTableStructure() {
-        try {
-            var sql = @"DROP TABLE IF EXISTS ""BudgetWatchItems""; CREATE TABLE ""BudgetWatchItems"" (""Id"" SERIAL PRIMARY KEY, ""BudgetPeriodId"" INTEGER NOT NULL, ""Description"" TEXT NOT NULL DEFAULT '', ""Amount"" NUMERIC NOT NULL DEFAULT 0, ""DueDate"" TIMESTAMP NULL, ""ResolvedBudgetItemId"" INTEGER NULL, CONSTRAINT ""FK_Watch_Periods"" FOREIGN KEY (""BudgetPeriodId"") REFERENCES ""BudgetPeriods""(""Id"") ON DELETE CASCADE);";
-            await Db.Database.ExecuteSqlRawAsync(sql); Log("Watch Table Recreated."); await LoadData();
-        } catch (Exception ex) { Log($"FAIL: {ex.Message}"); }
-    }
-
-    private async Task RepairWatchLinks() {
-        if (CurrentPeriod == null) return;
-        try {
-            var cycleIds = await Db.BudgetCycles.Where(c => c.BudgetPeriodId == CurrentPeriod.Id).Select(c => c.Id).ToListAsync();
-            var items = await Db.BudgetItems.Where(i => cycleIds.Contains(i.BudgetCycleId)).ToListAsync();
-            var watchItems = await Db.BudgetWatchItems.Where(w => w.BudgetPeriodId == CurrentPeriod.Id).ToListAsync();
-            foreach(var w in watchItems) { 
-                var match = items.FirstOrDefault(i => string.Equals(i.Name, w.Description, StringComparison.OrdinalIgnoreCase)); 
-                if(match != null) w.ResolvedBudgetItemId = match.Id; 
-            }
-            await Db.SaveChangesAsync(); Log("Repaired Watch Links."); await LoadData();
-        } catch (Exception ex) { Log($"FAIL: {ex.Message}"); }
-    }
-
-    private async Task ClaimOrphanedData() {
-        try {
-            var all = await Db.BudgetPeriods.ToListAsync();
-            foreach(var p in all) p.UserId = userId;
-            await Db.SaveChangesAsync(); Log($"Success: Claimed {all.Count} periods."); await LoadData();
-        } catch (Exception ex) { Log($"FAIL: {ex.Message}"); }
-    }
-
-    private async Task ClaimIncomeSources() {
-        try {
-            var all = await Db.BudgetIncomeSources.ToListAsync();
-            foreach(var s in all) s.UserId = userId;
-            await Db.SaveChangesAsync(); Log($"Success: Claimed {all.Count} income sources."); await LoadData();
-        } catch (Exception ex) { Log($"FAIL: {ex.Message}"); }
-    }
-
-    // --- NAVIGATION ---
     private void RefreshFlatList() { FlatBudgetList.Clear(); if(CurrentPeriod != null) foreach(var c in CurrentPeriod.Cycles) FlatBudgetList.AddRange(c.Items); }
     private async Task RefreshData() { await LoadData(); StateHasChanged(); }
     private void ToggleExpand(int id) => ExpandedItemId = (ExpandedItemId == id) ? null : id;
@@ -347,7 +311,7 @@
     private void NextPeriod() { if (CanGoNext) currentIndex--; RefreshFlatList(); }
     private void PrevPeriod() { if (CanGoBack) currentIndex++; RefreshFlatList(); }
 
-    // --- MODAL CONTROLS ---
+    // --- MODALS ---
     private void OpenEditModal(BudgetItem item) => EditingItem = item;
     private void CloseEditModal() => EditingItem = null;
     private void OpenTransactionModal(BudgetTransaction? t = null) { RefreshFlatList(); EditingTransaction = t ?? new BudgetTransaction { BudgetPeriodId = CurrentPeriod?.Id ?? 0, Date = DateTime.Today, Amount = -0.00m }; }
@@ -355,24 +319,57 @@
     private void OpenWatchModal(BudgetWatchItem? w = null) { RefreshFlatList(); EditingWatch = w ?? new BudgetWatchItem { BudgetPeriodId = CurrentPeriod?.Id ?? 0 }; }
 
     private void AddSplit() { if (EditingTransaction == null) return; if (!EditingTransaction.Splits.Any() && EditingTransaction.ResolvedBudgetItemId.HasValue) { EditingTransaction.Splits.Add(new BudgetTransactionSplit { ResolvedBudgetItemId = EditingTransaction.ResolvedBudgetItemId.Value, Amount = Math.Abs(EditingTransaction.Amount) }); EditingTransaction.ResolvedBudgetItemId = null; } EditingTransaction.Splits.Add(new BudgetTransactionSplit { Amount = 0 }); }
-    
-    // --- DB OPERATIONS ---
     private async Task SaveEditItem() { if(EditingItem != null) { Db.BudgetItems.Update(EditingItem); await Db.SaveChangesAsync(); EditingItem = null; await LoadData(); } }
     private async Task SaveIncome() { if(EditingIncome != null) { if(EditingIncome.Id == 0) Db.BudgetExpectedIncome.Add(EditingIncome); else Db.BudgetExpectedIncome.Update(EditingIncome); await Db.SaveChangesAsync(); EditingIncome = null; await LoadData(); } }
     private async Task SaveWatchItem() { if(EditingWatch != null) { if(EditingWatch.Id == 0) Db.BudgetWatchItems.Add(EditingWatch); else Db.BudgetWatchItems.Update(EditingWatch); await Db.SaveChangesAsync(); EditingWatch = null; await LoadData(); } }
     private async Task SaveTransaction() { if(EditingTransaction != null) { if(EditingTransaction.Splits.Any()) EditingTransaction.ResolvedBudgetItemId = null; if(EditingTransaction.Id == 0) Db.BudgetTransactions.Add(EditingTransaction); else Db.BudgetTransactions.Update(EditingTransaction); await Db.SaveChangesAsync(); EditingTransaction = null; await LoadData(); } }
     private async Task HandleFileUpload(InputFileChangeEventArgs e) { if (EditingItem == null) return; using var ms = new MemoryStream(); await e.File.OpenReadStream(5*1024*1024).CopyToAsync(ms); EditingItem.ImgUrl = await BulletBase.SaveImageAsync(ms.ToArray(), e.File.ContentType); }
 
-    // --- LOGIC HELPERS ---
+    // --- REPAIR ---
+    private async Task FixWatchTableStructure() {
+        try {
+            await Db.Database.ExecuteSqlRawAsync(@"DROP TABLE IF EXISTS ""BudgetWatchItems""; CREATE TABLE ""BudgetWatchItems"" (""Id"" SERIAL PRIMARY KEY, ""BudgetPeriodId"" INTEGER NOT NULL, ""Description"" TEXT NOT NULL DEFAULT '', ""Amount"" NUMERIC NOT NULL DEFAULT 0, ""DueDate"" TIMESTAMP NULL, ""ResolvedBudgetItemId"" INTEGER NULL);");
+            Log("Watch Table Reset Successfully."); await LoadData();
+        } catch (Exception ex) { Log($"FAIL: {ex.Message}"); }
+    }
+
+    private async Task RepairWatchLinks() {
+        if (CurrentPeriod == null) return;
+        try {
+            var cycleIds = await Db.BudgetCycles.Where(c => c.BudgetPeriodId == CurrentPeriod.Id).Select(c => c.Id).ToListAsync();
+            var items = await Db.BudgetItems.Where(i => cycleIds.Contains(i.BudgetCycleId)).ToListAsync();
+            var watchItems = await Db.BudgetWatchItems.Where(w => w.BudgetPeriodId == CurrentPeriod.Id).ToListAsync();
+            foreach(var w in watchItems) { var match = items.FirstOrDefault(i => string.Equals(i.Name, w.Description, StringComparison.OrdinalIgnoreCase)); if(match != null) w.ResolvedBudgetItemId = match.Id; }
+            await Db.SaveChangesAsync(); Log($"Success: Linked {watchItems.Count(x => x.ResolvedBudgetItemId != null)} watch items."); await LoadData();
+        } catch (Exception ex) { Log($"Repair FAIL: {ex.Message}"); }
+    }
+
+    private async Task ClaimOrphanedData() {
+        try {
+            var all = await Db.BudgetPeriods.ToListAsync();
+            foreach(var p in all) p.UserId = userId;
+            await Db.SaveChangesAsync(); Log($"Claimed {all.Count} periods."); await LoadData();
+        } catch (Exception ex) { Log($"FAIL: {ex.Message}"); }
+    }
+
+    private async Task ClaimIncomeSources() {
+        try {
+            var all = await Db.BudgetIncomeSources.ToListAsync();
+            foreach(var s in all) s.UserId = userId;
+            await Db.SaveChangesAsync(); Log($"Claimed {all.Count} income sources."); await LoadData();
+        } catch (Exception ex) { Log($"FAIL: {ex.Message}"); }
+    }
+
+    // --- HELPERS ---
     private string GetTransactionImage(BudgetTransaction t) {
         if(!string.IsNullOrEmpty(t.SourceStringId)) return incomeSources.FirstOrDefault(s => s.StringId == t.SourceStringId)?.ImgUrl ?? "";
-        if(t.ResolvedBudgetItemId != null) return GetBudgetItemImage(t.ResolvedBudgetItemId.Value);
+        if(t.ResolvedBudgetItemId != null) return GetBudgetItemImage(t.ResolvedBudgetItemId);
         var first = t.Splits.FirstOrDefault(); if(first != null) return GetBudgetItemImage(first.ResolvedBudgetItemId);
         return "";
     }
     private string GetSourceImage(string sid) => incomeSources.FirstOrDefault(s => s.StringId == sid)?.ImgUrl ?? "";
     private string GetSourceName(string sid) => incomeSources.FirstOrDefault(s => s.StringId == sid)?.Name ?? sid;
-    private string GetBudgetItemImage(int? id) { if (id == null) return ""; return FlatBudgetList.FirstOrDefault(i => i.Id == id)?.ImgUrl ?? ""; }
+    private string GetBudgetItemImage(int? id) => FlatBudgetList.FirstOrDefault(i => i.Id == id)?.ImgUrl ?? "";
 
     private decimal GetSpentForBudgetItem(int itemId) {
         if (CurrentPeriod == null) return 0;
@@ -388,8 +385,8 @@
         if (CurrentPeriod == null) return list;
         foreach(var t in CurrentPeriod.Transactions.Where(t => t.ResolvedBudgetItemId == itemId)) list.Add((t.Date, t.Description, t.Amount * -1));
         foreach(var x in CurrentPeriod.Transactions.SelectMany(t => t.Splits.Select(s => new { P = t, S = s })).Where(x => x.S.ResolvedBudgetItemId == itemId)) { decimal a = x.P.Amount < 0 ? Math.Abs(x.S.Amount) : -Math.Abs(x.S.Amount); list.Add((x.P.Date, $"{x.P.Description} (Split)", a)); }
-        foreach(var tr in CurrentPeriod.Transfers.Where(tr => tr.ResolvedFromId == itemId)) list.Add((tr.Date, $"Transfer to {tr.ToStringId}", tr.Amount));
-        foreach(var tr in CurrentPeriod.Transfers.Where(tr => tr.ResolvedToId == itemId)) list.Add((tr.Date, $"Transfer from {tr.FromStringId}", -tr.Amount)); 
+        foreach(var tr in CurrentPeriod.Transfers.Where(tr => tr.ResolvedFromId == itemId)) list.Add((tr.Date, $"To {tr.ToStringId}", tr.Amount));
+        foreach(var tr in CurrentPeriod.Transfers.Where(tr => tr.ResolvedToId == itemId)) list.Add((tr.Date, $"From {tr.FromStringId}", -tr.Amount)); 
         return list.OrderBy(x => x.Item1).ToList(); 
     }
 }
