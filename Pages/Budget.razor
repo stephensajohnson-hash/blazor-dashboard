@@ -20,7 +20,7 @@
 <div class="min-h-screen bg-gray-900 text-white p-6">
     <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
         <h1 class="text-3xl font-bold flex items-center gap-3">
-            <span>💵</span> Budget Tracker <span class="text-xs font-normal text-gray-500 self-end mb-1">v2.9 (Debug Import)</span>
+            <span>💵</span> Budget Tracker <span class="text-xs font-normal text-gray-500 self-end mb-1">v3.0 (Smart Inference)</span>
         </h1>
         
         <div class="flex gap-3">
@@ -304,7 +304,7 @@
         }
     }
 
-    // --- ROBUST MANUAL IMPORT ---
+    // --- REVISED: SMART IMPORT LOGIC ---
     private async Task ImportExpectedIncomeManual(string json)
     {
         try 
@@ -312,48 +312,65 @@
             Log("Manual Import: Parsing JSON...", "info");
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            
-            // 1. Find Date (Case Insensitive)
-            JsonElement dateElem = default;
-            bool foundDate = root.TryGetProperty("startDate", out dateElem) || 
-                             root.TryGetProperty("StartDate", out dateElem) ||
-                             root.TryGetProperty("date", out dateElem);
 
-            if(!foundDate)
+            // DEBUG: Log keys so we know what we are dealing with
+            var keys = string.Join(", ", root.EnumerateObject().Select(p => p.Name));
+            Log($"JSON Keys found: {keys}", "info");
+
+            DateTime targetDate = DateTime.MinValue;
+
+            // STRATEGY 1: Explicit Property (Case Insensitive)
+            if(root.TryGetProperty("startDate", out var d) || 
+               root.TryGetProperty("StartDate", out d) || 
+               root.TryGetProperty("date", out d))
             {
-                Log("Manual Import Aborted: 'startDate' property missing in JSON.", "error");
-                return;
+                if(DateTime.TryParse(d.GetString(), out var explicitDate)) 
+                {
+                    targetDate = explicitDate;
+                    Log($"Strategy 1: Found Explicit StartDate {targetDate:MM/yyyy}", "success");
+                }
             }
 
-            var startDateRaw = dateElem.GetString();
-            if(!DateTime.TryParse(startDateRaw, out var startDate)) 
-            {
-                Log($"Manual Import Aborted: Cannot parse date '{startDateRaw}'", "error");
-                return;
-            }
-            
-            Log($"Manual Import: Target Date is {startDate:MM/yyyy}", "info");
-
-            // 2. Find Parent Period
-            var period = await Db.BudgetPeriods
-                .Where(p => p.UserId == userId && p.StartDate.Year == startDate.Year && p.StartDate.Month == startDate.Month)
-                .OrderByDescending(p => p.Id)
-                .FirstOrDefaultAsync();
-
-            if(period == null) 
-            {
-                Log($"Manual Import Aborted: No matching BudgetPeriod found in DB for {startDate:MM/yyyy}", "error");
-                return;
-            }
-
-            // 3. Find Array (Case Insensitive)
+            // STRATEGY 2: Infer from Income Items
             JsonElement incomeArray = default;
             bool foundArray = root.TryGetProperty("expectedIncome", out incomeArray) ||
                               root.TryGetProperty("ExpectedIncome", out incomeArray);
 
             if(!foundArray || incomeArray.ValueKind != JsonValueKind.Array)
             {
-                Log("Manual Import: 'expectedIncome' array missing or empty.", "info");
+                Log("Manual Import: 'expectedIncome' array missing. Skipping.", "info");
+                return;
+            }
+
+            if(targetDate == DateTime.MinValue)
+            {
+                foreach(var item in incomeArray.EnumerateArray())
+                {
+                    if((item.TryGetProperty("date", out var id) || item.TryGetProperty("Date", out id)) 
+                        && DateTime.TryParse(id.GetString(), out var inferred))
+                    {
+                        targetDate = new DateTime(inferred.Year, inferred.Month, 1);
+                        Log($"Strategy 2: Inferred date {targetDate:MM/yyyy} from items.", "success");
+                        break;
+                    }
+                }
+            }
+
+            if(targetDate == DateTime.MinValue)
+            {
+                Log("Manual Import Failed: Could not determine budget month.", "error");
+                return;
+            }
+
+            // 3. Find Parent Period in DB
+            var period = await Db.BudgetPeriods
+                .Where(p => p.UserId == userId && p.StartDate.Year == targetDate.Year && p.StartDate.Month == targetDate.Month)
+                .OrderByDescending(p => p.Id)
+                .FirstOrDefaultAsync();
+
+            if(period == null) 
+            {
+                Log($"Manual Import Aborted: BudgetPeriod for {targetDate:MM/yyyy} not found in DB.", "error");
                 return;
             }
 
@@ -365,7 +382,6 @@
                 if(item.TryGetProperty("sourceId", out var sid)) sourceStringId = sid.GetString();
                 else if(item.TryGetProperty("SourceId", out sid)) sourceStringId = sid.GetString();
 
-                // Check Duplicates
                 var exists = await Db.BudgetExpectedIncome.AnyAsync(x => x.BudgetPeriodId == period.Id && x.SourceStringId == sourceStringId);
                 if(exists) continue;
 
@@ -374,11 +390,15 @@
                     BudgetPeriodId = period.Id,
                     SourceStringId = sourceStringId,
                     Amount = 0,
-                    Date = startDate
+                    Date = targetDate
                 };
 
                 if(item.TryGetProperty("amount", out var amt)) newInc.Amount = amt.GetDecimal();
-                if(item.TryGetProperty("date", out var d) && DateTime.TryParse(d.GetString(), out var idate)) newInc.Date = idate;
+                if((item.TryGetProperty("date", out var d2) || item.TryGetProperty("Date", out d2)) 
+                    && DateTime.TryParse(d2.GetString(), out var idate)) 
+                {
+                    newInc.Date = idate;
+                }
 
                 Db.BudgetExpectedIncome.Add(newInc);
                 count++;
@@ -387,21 +407,15 @@
             if(count > 0)
             {
                 await Db.SaveChangesAsync();
-                Log($"Manual Import: Successfully saved {count} Expected Income records.", "success");
-            }
-            else
-            {
-                Log("Manual Import: No new records to save (duplicates or empty).", "info");
+                Log($"Manual Import: Added {count} records.", "success");
             }
         }
         catch(Exception ex)
         {
             Log($"Manual Import Critical Fail: {ex.Message}", "error");
-            if(ex.InnerException != null) Log($" >> {ex.InnerException.Message}", "error");
         }
     }
 
-    // --- STANDARD METHODS ---
     private async Task ForceCreateTablesSQL()
     {
         Log("Button Clicked: Starting RAW SQL Creation...", "info");
@@ -462,18 +476,14 @@
                 {
                     var json = await File.ReadAllTextAsync(path);
                     json = PatchJsonDates(json);
-                    Log($"Patched Dates in {fileName}.", "info");
-
+                    
+                    // 1. Regular Import
                     await BudgetService.ImportBudgetJson(userId, json);
                     
-                    // --- CALL ROBUST MANUAL IMPORT ---
+                    // 2. Manual Data Patch for Expected Income
                     await ImportExpectedIncomeManual(json);
                     
                     successCount++;
-                }
-                else 
-                {
-                    Log($"File not found: {path}", "error");
                 }
             }
             Log($"Import finished. {successCount} files processed.", "success");
@@ -482,7 +492,6 @@
         catch (Exception ex)
         {
             Log($"Import Error: {ex.Message}", "error");
-            if(ex.InnerException != null) Log($" >> {ex.InnerException.Message}", "error");
         }
         finally
         {
@@ -503,7 +512,6 @@
             using var reader = new StreamReader(file.OpenReadStream(2 * 1024 * 1024)); 
             var json = await reader.ReadToEndAsync();
             json = PatchJsonDates(json);
-            Log("Patched Dates in uploaded file.", "info");
 
             await BudgetService.ImportBudgetJson(userId, json);
             await ImportExpectedIncomeManual(json);
@@ -514,7 +522,6 @@
         catch (Exception ex)
         {
             Log($"Upload Failed: {ex.Message}", "error");
-            if(ex.InnerException != null) Log($" >> {ex.InnerException.Message}", "error");
         }
         finally
         {
