@@ -22,16 +22,15 @@
     <div class="bg-black border border-gray-700 rounded-xl p-4 mb-6 shadow-2xl overflow-hidden text-white">
         <div class="flex justify-between items-center mb-3">
             <h3 class="text-xs font-black text-blue-400 uppercase tracking-widest">Diagnostic Console</h3>
-            <div class="flex flex-wrap gap-2">
-                <button @onclick="CopyLogsToClipboard" class="bg-gray-700 hover:bg-gray-600 text-white text-[10px] font-bold px-3 py-1 rounded transition">📋 Copy Logs</button>
-                <button @onclick="RepairWatchLinks" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold px-3 py-1 rounded transition border border-blue-400">🔗 2. Run Auditor & Link</button>
+            <div class="flex gap-2">
+                <button @onclick="RepairWatchLinks" class="bg-blue-900 hover:bg-blue-800 text-white text-[10px] font-bold px-3 py-1 rounded transition border border-blue-400">🔗 2. Run Auditor & Link</button>
                 <button @onclick="RestoreFromJsonFiles" class="bg-green-700 hover:bg-green-600 text-white text-[10px] font-bold px-3 py-1 rounded transition border border-green-500">🛟 5. Restore JSON</button>
                 <button @onclick="() => debugLogs.Clear()" class="text-gray-500 hover:text-gray-300 text-[10px] font-bold px-2">Clear</button>
             </div>
         </div>
-        <div id="debug-log-container" class="bg-[#0c0c0c] rounded border border-gray-900 h-40 overflow-y-auto p-3 font-mono text-[10px] leading-relaxed flex flex-col-reverse">
+        <div class="bg-[#0c0c0c] rounded border border-gray-900 h-24 overflow-y-auto p-3 font-mono text-[10px] leading-relaxed flex flex-col-reverse">
             @foreach (var log in ((IEnumerable<string>)debugLogs).Reverse()) {
-                <div class="border-b border-gray-900 py-1 @(log.Contains("SUCCESS") ? "text-green-400" : (log.Contains("FAIL") || log.Contains("⚠️") ? "text-red-400" : (log.Contains(">>") ? "text-blue-300" : "text-gray-400")))">@log</div>
+                <div class="border-b border-gray-900 py-1 @(log.Contains("SUCCESS") ? "text-green-400" : (log.Contains("FAIL") ? "text-red-400" : "text-gray-400"))">@log</div>
             }
         </div>
     </div>
@@ -40,37 +39,72 @@
     {
         <div class="flex flex-col items-center justify-center h-[40vh]">
             <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-            <div class="text-gray-400 mt-4 animate-pulse font-bold uppercase tracking-widest text-xs">Auditing Relationships...</div>
+            <div class="text-gray-400 mt-4 animate-pulse font-bold uppercase tracking-widest text-xs">Calculating Totals...</div>
         </div>
     }
     else if (CurrentPeriod == null)
     {
         <div class="flex flex-col items-center justify-center h-[40vh] border-2 border-dashed border-gray-700 rounded-xl bg-gray-800/30 p-10 text-center text-white">
-            <p class="text-red-400 text-xl mb-2 font-bold font-mono">CONNECTION_ERROR</p>
-            <button @onclick="RefreshData" class="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded text-xs font-bold uppercase">🔄 Retry</button>
+            <p class="text-red-400 text-xl mb-2 font-bold font-mono">NO_PERIOD_LOADED</p>
+            <button @onclick="RefreshData" class="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded text-xs font-bold uppercase">🔄 Force Re-Sync</button>
         </div>
     }
     else
     {
-        <div class="bg-[#282b30] p-4 rounded-t-xl border-b border-gray-700 shadow-lg mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
-            <div class="text-sm font-mono text-gray-400 flex gap-4 uppercase font-bold">
-                <span>Start: <span class="text-white font-bold">$@CurrentPeriod.InitialBankBalance.ToString("N2")</span></span>
-                <span>Actual: <span class="@GetBalanceColor(CurrentBalance)">$@CurrentBalance.ToString("N2")</span></span>
+        <div class="bg-[#282b30] rounded-xl border border-gray-700 shadow-2xl mb-6 overflow-hidden">
+            <div class="p-4 border-b border-gray-700 flex flex-col md:flex-row justify-between items-center gap-4">
+                <div class="flex items-center gap-4 text-white">
+                    <button @onclick="PrevPeriod" class="p-2 hover:bg-gray-700 rounded-full transition" disabled="@(!CanGoBack)">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+                    </button>
+                    <h1 class="text-xl font-bold tracking-wide">@CurrentPeriod.DisplayName</h1>
+                    <button @onclick="NextPeriod" class="p-2 hover:bg-gray-700 rounded-full transition" disabled="@(!CanGoNext)">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+                    </button>
+                </div>
+                <button class="bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-2 px-4 rounded shadow transition uppercase tracking-widest" @onclick="() => OpenTransactionModal()">+ New Transaction</button>
             </div>
-            <div class="flex items-center gap-6 text-white">
-                <button @onclick="PrevPeriod" class="p-2 hover:bg-gray-700 rounded-full transition" disabled="@(!CanGoBack)">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
-                </button>
-                <h1 class="text-xl font-bold tracking-wide">@CurrentPeriod.DisplayName</h1>
-                <button @onclick="NextPeriod" class="p-2 hover:bg-gray-700 rounded-full transition" disabled="@(!CanGoNext)">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
-                </button>
+
+            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 divide-x divide-y md:divide-y-0 divide-gray-700 bg-[#2c2f33]">
+                <div class="p-3 text-center">
+                    <div class="text-[10px] text-gray-500 font-black uppercase tracking-tighter mb-1">Start</div>
+                    <div class="text-sm font-mono text-white">$@CurrentPeriod.InitialBankBalance.ToString("N2")</div>
+                </div>
+                <div class="p-3 text-center">
+                    <div class="text-[10px] text-green-500/70 font-black uppercase tracking-tighter mb-1">Income</div>
+                    <div class="text-sm font-mono text-green-400">+$@ActualIncome.ToString("N2")</div>
+                </div>
+                <div class="p-3 text-center">
+                    <div class="text-[10px] text-red-500/70 font-black uppercase tracking-tighter mb-1">Expenses</div>
+                    <div class="text-sm font-mono text-red-400">-$@ActualExpenses.ToString("N2")</div>
+                </div>
+                <div class="p-3 text-center">
+                    <div class="text-[10px] text-green-500/50 font-black uppercase tracking-tighter mb-1">Exp. Income</div>
+                    <div class="text-sm font-mono text-green-600">$@ExpectedIncomeTotal.ToString("N2")</div>
+                </div>
+                <div class="p-3 text-center">
+                    <div class="text-[10px] text-red-500/50 font-black uppercase tracking-tighter mb-1">Exp. Expenses</div>
+                    <div class="text-sm font-mono text-red-600">$@ExpectedExpensesTotal.ToString("N2")</div>
+                </div>
+                <div class="p-3 text-center">
+                    <div class="text-[10px] text-blue-400 font-black uppercase tracking-tighter mb-1">Bank Balance</div>
+                    <div class="text-sm font-mono text-blue-300 font-bold">$@CurrentBalance.ToString("N2")</div>
+                </div>
+                <div class="p-3 text-center bg-blue-900/10">
+                    <div class="text-[10px] text-blue-200 font-black uppercase tracking-tighter mb-1">Available Funds</div>
+                    <div class="text-sm font-mono text-blue-400 font-bold">$@AvailableFunds.ToString("N2")</div>
+                </div>
+                <div class="p-3 text-center @(Unaccounted == 0 ? "bg-green-900/20" : "bg-red-900/10")">
+                    <div class="text-[10px] text-gray-500 font-black uppercase tracking-tighter mb-1">Unaccounted</div>
+                    <div class="text-sm font-mono font-bold @(Unaccounted == 0 ? "text-green-400" : "text-red-400")">
+                        @(Unaccounted == 0 ? "Balanced" : "$" + Unaccounted.ToString("N2"))
+                    </div>
+                </div>
             </div>
-            <button class="bg-green-600 hover:bg-green-500 text-white text-sm font-bold py-2 px-4 rounded shadow transition uppercase" @onclick="() => OpenTransactionModal()">+ Add Trans</button>
         </div>
 
         <div class="grid lg:grid-cols-[60%_40%] gap-6">
-            <div class="bg-white rounded-xl shadow-xl overflow-hidden flex flex-col h-[calc(100vh-280px)] border border-gray-300 text-gray-800">
+            <div class="bg-white rounded-xl shadow-xl overflow-hidden flex flex-col h-[calc(100vh-380px)] border border-gray-300 text-gray-800">
                 <div class="p-3 bg-gray-100 border-b border-gray-300 font-bold text-gray-600 text-[10px] uppercase grid grid-cols-[110px_1fr_100px_100px_30px] gap-4 items-center">
                     <span class="pl-2">Date</span><span>Description</span><span class="text-right">Amount</span><span class="text-right pr-2">Balance</span><span></span>
                 </div>
@@ -94,7 +128,7 @@
                 </div>
             </div>
 
-            <div class="space-y-6 h-[calc(100vh-280px)] overflow-y-auto pr-2 scrollbar-hide pb-20">
+            <div class="space-y-6 h-[calc(100vh-380px)] overflow-y-auto pr-2 scrollbar-hide pb-20">
                 @foreach (var cycle in CurrentPeriod.Cycles.OrderBy(c => c.CycleNumber)) {
                     <div class="bg-white rounded-lg border border-gray-300 shadow-md overflow-hidden">
                         <div class="bg-gray-100 px-4 py-3 border-b flex justify-between items-center text-gray-700 uppercase font-bold text-xs"><span>@cycle.Label</span></div>
@@ -104,12 +138,10 @@
                                 decimal total = item.PlannedAmount + item.CarriedOver + (rawSpent < 0 ? Math.Abs(rawSpent) : 0);
                                 decimal spending = rawSpent > 0 ? rawSpent : 0;
                                 decimal rem = total - spending;
-                                bool isEx = ExpandedItemId == item.Id;
-
-                                <div class="p-4 hover:bg-gray-50 cursor-pointer border-l-4 @(isEx ? "border-blue-500 bg-blue-50" : "border-transparent") text-gray-800" @onclick="() => ToggleExpand(item.Id)">
+                                <div class="p-4 hover:bg-gray-50 cursor-pointer border-l-4 @(ExpandedItemId == item.Id ? "border-blue-500 bg-blue-50" : "border-transparent") text-gray-800" @onclick="() => ToggleExpand(item.Id)">
                                     <div class="flex justify-between items-end mb-1">
                                         <div class="flex items-center gap-2"><img src="@item.ImgUrl" class="w-5 h-5 rounded-full object-cover" onerror="this.style.display='none'" /><span class="font-bold text-sm">@item.Name</span></div>
-                                        <div class="flex items-center gap-3 font-bold">$@rem.ToString("N2")</div>
+                                        <span class="text-sm font-bold @(rem < 0 ? "text-red-600" : "text-green-600")">$@rem.ToString("N2")</span>
                                     </div>
                                     <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden"><div class="bg-blue-500 h-full transition-all duration-500" style="width: @(total > 0 ? Math.Min((double)(spending/total)*100, 100) : 0)%"></div></div>
                                 </div>
@@ -117,28 +149,27 @@
                         </div>
                     </div>
                 }
+            </div>
+        </div>
+    }
 
-                <div class="bg-white rounded-lg border border-orange-200 shadow-md">
-                    <div class="bg-[#e67e22] px-3 py-2 flex justify-between items-center text-white text-xs font-bold uppercase"><span>Expected Expenses</span><button @onclick="() => OpenWatchModal()">+</button></div>
-                    <div class="divide-y divide-gray-100 font-medium">
-                        @foreach(var item in (CurrentPeriod.WatchList ?? new()).OrderBy(x => x.DueDate ?? DateTime.MaxValue)) {
-                            <div class="p-3 flex justify-between items-center hover:bg-orange-50 transition text-sm text-gray-800">
-                                <div class="flex items-center gap-3">
-                                    <div class="w-8 h-8 rounded-full bg-white border overflow-hidden flex items-center justify-center">
-                                        @{ string watchImg = GetBudgetItemImage(item.ResolvedBudgetItemId); }
-                                        @if(!string.IsNullOrEmpty(watchImg)){<img src="@watchImg" class="w-full h-full object-cover" />}
-                                        else { <span class="text-[12px] text-red-500" title="Relationship Broken">⚠️</span> }
-                                    </div>
-                                    <div><div class="text-xs font-bold truncate w-32">@item.Description</div><div class="text-[10px] text-gray-500 font-bold uppercase">Due: @(item.DueDate?.ToString("MM/dd") ?? "TBD")</div></div>
-                                </div>
-                                <div class="flex items-center gap-3 text-right">
-                                    <span class="font-mono font-bold">$@item.Amount.ToString("N2")</span>
-                                    <button class="text-gray-300 hover:text-orange-600 transition" @onclick="() => OpenWatchModal(item)"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
-                                </div>
-                            </div>
+    @if (EditingTransaction != null) {
+        <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm text-gray-800 font-medium">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden border border-gray-200">
+                <div class="bg-gray-100 px-4 py-3 border-b font-bold text-gray-700 flex justify-between items-center text-sm uppercase"><span>Transaction Details</span><button @onclick="() => EditingTransaction = null" class="text-gray-400 text-xl font-bold">&times;</button></div>
+                <div class="p-5 space-y-4">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4"><div><label class="block text-[10px] font-bold text-gray-500 uppercase">Date</label><input type="date" @bind="EditingTransaction.Date" class="w-full border rounded p-2 text-sm" /></div><div class="md:col-span-2"><label class="block text-[10px] font-bold text-gray-500 uppercase">Description</label><input @bind="EditingTransaction.Description" class="w-full border rounded p-2 text-sm" /></div></div>
+                    <div><label class="block text-[10px] font-bold text-gray-500 uppercase">Amount</label><input type="number" @bind="EditingTransaction.Amount" step="0.01" class="w-full border rounded p-2 text-lg font-mono font-bold @(EditingTransaction.Amount >= 0 ? "text-green-700" : "text-red-700")" /></div>
+                    <div class="border-t pt-4">
+                        <div class="flex justify-between items-center mb-2"><label class="block text-[10px] font-bold uppercase text-gray-500">Allocation / Split</label><button class="text-xs text-blue-600 hover:underline" @onclick="AddSplit">🔀 Add Multi-Budget Split</button></div>
+                        @if (!EditingTransaction.Splits.Any()) { <select @bind="EditingTransaction.ResolvedBudgetItemId" class="w-full border rounded p-2 text-sm text-gray-800">@foreach(var item in FlatBudgetList){<option value="@item.Id">@item.Name</option>}</select> }
+                        else { 
+                            @foreach (var split in EditingTransaction.Splits) { <div class="flex gap-2 items-center mb-2 text-gray-800"><select @bind="split.ResolvedBudgetItemId" class="flex-1 border rounded p-2 text-sm">@foreach(var item in FlatBudgetList){<option value="@item.Id">@item.Name</option>}</select><input type="number" @bind="split.Amount" step="0.01" class="w-24 border rounded p-2 text-sm font-mono text-right" /><button class="text-red-400 px-2" @onclick="() => EditingTransaction.Splits.Remove(split)">&times;</button></div> }
+                            <button class="mt-2 text-xs bg-gray-200 px-2 py-1 rounded font-bold text-gray-600 uppercase" @onclick="AddSplit">+ Add Category</button>
                         }
                     </div>
                 </div>
+                <div class="bg-gray-50 px-4 py-3 flex justify-end gap-2 border-t font-bold uppercase"><button @onclick="() => EditingTransaction = null" class="px-4 py-2 text-xs text-gray-600">Cancel</button><button @onclick="SaveTransaction" class="px-4 py-2 text-xs bg-blue-600 text-white rounded shadow uppercase">Save</button></div>
             </div>
         </div>
     }
@@ -161,7 +192,31 @@
     private BudgetTransaction? EditingTransaction = null;
 
     private BudgetPeriod? CurrentPeriod => periods.Count > 0 && currentIndex < periods.Count ? periods[currentIndex] : null;
+
+    // --- FINANCIAL TOTALS ---
     private decimal CurrentBalance => CurrentPeriod == null ? 0 : CurrentPeriod.InitialBankBalance + CurrentPeriod.Transactions.Sum(t => t.Amount);
+    private decimal ActualIncome => CurrentPeriod?.Transactions.Where(t => t.Amount > 0).Sum(t => t.Amount) ?? 0;
+    private decimal ActualExpenses => CurrentPeriod?.Transactions.Where(t => t.Amount < 0).Sum(Math.Abs(t.Amount)) ?? 0;
+    private decimal ExpectedIncomeTotal => CurrentPeriod?.ExpectedIncome.Sum(i => i.Amount) ?? 0;
+    private decimal ExpectedExpensesTotal => CurrentPeriod?.WatchList.Sum(e => e.Amount) ?? 0;
+    
+    private decimal AvailableFunds => CurrentPeriod == null ? 0 : 
+        (CurrentPeriod.InitialBankBalance + ActualIncome + ExpectedIncomeTotal) - (ActualExpenses + ExpectedExpensesTotal);
+
+    private decimal Unaccounted {
+        get {
+            if (CurrentPeriod == null) return 0;
+            decimal totalBucketRemaining = 0;
+            foreach(var item in FlatBudgetList) {
+                decimal rawSpent = GetSpentForBudgetItem(item.Id);
+                decimal totalAvailable = item.PlannedAmount + item.CarriedOver + (rawSpent < 0 ? Math.Abs(rawSpent) : 0);
+                decimal spending = rawSpent > 0 ? rawSpent : 0;
+                totalBucketRemaining += (totalAvailable - spending);
+            }
+            // Bank Balance + Money coming in + What we've already set aside/left in buckets
+            return Math.Round(CurrentBalance + ExpectedIncomeTotal - totalBucketRemaining, 2);
+        }
+    }
 
     private void Log(string msg) { debugLogs.Add($"[{DateTime.Now:HH:mm:ss}] {msg}"); StateHasChanged(); }
 
@@ -169,61 +224,38 @@
         if (firstRender) {
             try {
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
-                if (string.IsNullOrEmpty(json)) { Log("FAIL: Session empty."); }
-                else {
+                if (!string.IsNullOrEmpty(json)) {
                     using var doc = JsonDocument.Parse(json);
                     if (doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("id", out p)) {
-                        userId = p.GetInt32(); Log($"Connected: User {userId}");
-                        await DiagnoseDatabase(); await LoadData();
+                        userId = p.GetInt32(); await LoadData();
                     }
                 }
-            } catch (Exception ex) { Log($"INIT CRASH: {ex.Message}"); }
-            finally { isLoading = false; StateHasChanged(); }
+            } catch { } finally { isLoading = false; StateHasChanged(); }
         }
     }
 
     private async Task LoadData() {
-        Log("Refreshing DB View...");
         try {
             periods = await BudgetService.GetPeriods(userId);
             incomeSources = await Db.BudgetIncomeSources.Where(x => x.UserId == userId || x.UserId == 0).ToListAsync();
             RefreshFlatList();
-            Log($"Success: Loaded {periods.Count} periods.");
-        } catch (Exception ex) { Log($"DB_QUERY_FAIL: {ex.Message}"); }
+        } catch { }
     }
 
-    private async Task DiagnoseDatabase() {
-        totalDbCount = await Db.BudgetPeriods.CountAsync();
-        Log($"Global Scan: Found {totalDbCount} records in DB.");
-    }
+    private async Task DiagnoseDatabase() { totalDbCount = await Db.BudgetPeriods.CountAsync(); }
 
-    // --- AUDITOR & LINKER (The "Handshake" Logic) ---
     private async Task RepairWatchLinks() {
-        if (CurrentPeriod == null) { Log("FAIL: No period selected."); return; }
-        Log("Running Relationship Auditor...");
+        if (CurrentPeriod == null) return;
         try {
-            // Get all Category IDs for this month
             var cycleIds = await Db.BudgetCycles.Where(c => c.BudgetPeriodId == CurrentPeriod.Id).Select(c => c.Id).ToListAsync();
             var budgetItems = await Db.BudgetItems.Where(i => cycleIds.Contains(i.BudgetCycleId)).ToListAsync();
-            
-            // Get all Watch Items for this month
             var watchItems = await Db.BudgetWatchItems.Where(w => w.BudgetPeriodId == CurrentPeriod.Id).ToListAsync();
-            int successCount = 0;
-
             foreach(var w in watchItems) { 
                 var match = budgetItems.FirstOrDefault(i => string.Equals(i.Name, w.Description, StringComparison.OrdinalIgnoreCase)); 
-                if(match != null) {
-                    w.ResolvedBudgetItemId = match.Id;
-                    Log($">> Link SUCCESS: '{w.Description}' -> BudgetItem ID {match.Id}");
-                    successCount++;
-                } else {
-                    Log($">> Link ⚠️ FAIL: No category matches '{w.Description}'. Icon will stay 🔍.");
-                }
+                if(match != null) w.ResolvedBudgetItemId = match.Id;
             }
-            await Db.SaveChangesAsync();
-            Log($"AUDIT COMPLETE: Linked {successCount} out of {watchItems.Count} items.");
-            await LoadData();
-        } catch (Exception ex) { Log($"AUDITOR CRASH: {ex.Message}"); }
+            await Db.SaveChangesAsync(); await LoadData(); Log("Linked watch items to category IDs.");
+        } catch { }
     }
 
     private async Task RestoreFromJsonFiles() {
@@ -231,25 +263,18 @@
         try {
             string[] files = { "budget_dec25.json", "budget_jan26.json" };
             int totalItemsRestored = 0;
-
             foreach (var fileName in files) {
                 var path = Path.Combine(Env.WebRootPath, fileName);
-                if (!File.Exists(path)) { Log($"Error: File '{fileName}' not found."); continue; }
-                
+                if (!File.Exists(path)) continue;
                 var json = await File.ReadAllTextAsync(path);
                 using var doc = JsonDocument.Parse(json);
-                
                 if (doc.RootElement.TryGetProperty("periods", out var periodsArray)) {
                     foreach (var periodEl in periodsArray.EnumerateArray()) {
                         string jsonDisplayName = periodEl.GetProperty("displayName").GetString() ?? "";
                         var dbPeriod = periods.FirstOrDefault(p => string.Equals(p.DisplayName, jsonDisplayName, StringComparison.OrdinalIgnoreCase));
-                        
                         if (dbPeriod != null && periodEl.TryGetProperty("watchList", out var watchList)) {
-                            // Wipe old records for this month to avoid duplicates during rescue
                             var old = await Db.BudgetWatchItems.Where(w => w.BudgetPeriodId == dbPeriod.Id).ToListAsync();
                             Db.BudgetWatchItems.RemoveRange(old);
-
-                            int count = 0;
                             foreach (var item in watchList.EnumerateArray()) {
                                 Db.BudgetWatchItems.Add(new BudgetWatchItem {
                                     BudgetPeriodId = dbPeriod.Id,
@@ -257,21 +282,15 @@
                                     Amount = GetJsonDecimal(item, "amount"),
                                     DueDate = GetJsonDateTimeWithTBDFix(item, "dueDate")
                                 });
-                                count++;
                             }
-                            totalItemsRestored += count;
-                            Log($">> Success: Prepared {count} items for {jsonDisplayName}.");
                         }
                     }
                 }
             }
-            await Db.SaveChangesAsync();
-            Log($"RESCUE SUCCESS: {totalItemsRestored} items restored. Now click 'Link Items'.");
-            await LoadData();
-        } catch (Exception ex) { Log($"RESCUE FAIL: {ex.Message}"); }
+            await Db.SaveChangesAsync(); await LoadData(); Log("JSON Rescue Complete.");
+        } catch { }
     }
 
-    // JSON Case-Insensitive Helpers
     private string GetJsonString(JsonElement el, string name) { foreach(var p in el.EnumerateObject()) if(string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) return p.Value.GetString() ?? ""; return ""; }
     private decimal GetJsonDecimal(JsonElement el, string name) { foreach(var p in el.EnumerateObject()) if(string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) return p.Value.GetDecimal(); return 0; }
     private DateTime? GetJsonDateTimeWithTBDFix(JsonElement el, string name) {
@@ -279,12 +298,6 @@
             string v = p.Value.GetString() ?? ""; if(v == "TBD" || string.IsNullOrEmpty(v)) return null; if(DateTime.TryParse(v, out DateTime r)) return r;
         }
         return null;
-    }
-
-    private async Task CopyLogsToClipboard() {
-        var sb = new System.Text.StringBuilder(); foreach(var l in debugLogs) sb.AppendLine(l);
-        await JS.InvokeVoidAsync("navigator.clipboard.writeText", sb.ToString());
-        await JS.InvokeVoidAsync("alert", "Logs copied.");
     }
 
     private void RefreshFlatList() { FlatBudgetList.Clear(); if(CurrentPeriod != null) foreach(var c in CurrentPeriod.Cycles) FlatBudgetList.AddRange(c.Items); }
@@ -299,26 +312,26 @@
     private void OpenEditModal(BudgetItem item) => EditingItem = item;
     private void CloseEditModal() => EditingItem = null;
     private void OpenTransactionModal(BudgetTransaction? t = null) { RefreshFlatList(); EditingTransaction = t ?? new BudgetTransaction { BudgetPeriodId = CurrentPeriod?.Id ?? 0, Date = DateTime.Today, Amount = 0 }; }
+    private void OpenIncomeModal(BudgetExpectedIncome? i = null) => EditingIncome = i ?? new BudgetExpectedIncome { BudgetPeriodId = CurrentPeriod?.Id ?? 0, Date = DateTime.Today };
     private void OpenWatchModal(BudgetWatchItem? w = null) { RefreshFlatList(); EditingWatch = w ?? new BudgetWatchItem { BudgetPeriodId = CurrentPeriod?.Id ?? 0 }; }
 
     private void AddSplit() { if (EditingTransaction == null) return; EditingTransaction.Splits.Add(new BudgetTransactionSplit { Amount = 0 }); }
     private async Task SaveEditItem() { if(EditingItem != null) { Db.BudgetItems.Update(EditingItem); await Db.SaveChangesAsync(); EditingItem = null; await LoadData(); } }
     private async Task SaveTransaction() { if(EditingTransaction != null) { if(EditingTransaction.Id == 0) Db.BudgetTransactions.Add(EditingTransaction); else Db.BudgetTransactions.Update(EditingTransaction); await Db.SaveChangesAsync(); EditingTransaction = null; await LoadData(); } }
-    private async Task SaveWatchItem() { if(EditingWatch != null) { if(EditingWatch.Id == 0) Db.BudgetWatchItems.Add(EditingWatch); else Db.BudgetWatchItems.Update(EditingWatch); await Db.SaveChangesAsync(); EditingWatch = null; await LoadData(); } }
     private async Task HandleFileUpload(InputFileChangeEventArgs e) { if (EditingItem == null) return; using var ms = new MemoryStream(); await e.File.OpenReadStream(5*1024*1024).CopyToAsync(ms); EditingItem.ImgUrl = await BulletBase.SaveImageAsync(ms.ToArray(), e.File.ContentType); }
 
     private async Task FixWatchTableStructure() {
         try {
             await Db.Database.ExecuteSqlRawAsync(@"DROP TABLE IF EXISTS ""BudgetWatchItems""; CREATE TABLE ""BudgetWatchItems"" (""Id"" SERIAL PRIMARY KEY, ""BudgetPeriodId"" INTEGER NOT NULL, ""Description"" TEXT NOT NULL DEFAULT '', ""Amount"" NUMERIC NOT NULL DEFAULT 0, ""DueDate"" TIMESTAMP NULL, ""ResolvedBudgetItemId"" INTEGER NULL);");
-            Log("Table Reset Success."); await LoadData();
-        } catch (Exception ex) { Log($"FAIL: {ex.Message}"); }
+            await LoadData(); Log("Database Reset Success.");
+        } catch { }
     }
 
     private async Task ClaimOrphanedData() {
         try {
             var all = await Db.BudgetPeriods.ToListAsync(); foreach(var p in all) p.UserId = userId;
-            await Db.SaveChangesAsync(); Log("Periods Reclaimed."); await LoadData();
-        } catch (Exception ex) { Log($"FAIL: {ex.Message}"); }
+            await Db.SaveChangesAsync(); await LoadData(); Log("Periods Claimed.");
+        } catch { }
     }
 
     private string GetTransactionImage(BudgetTransaction t) {
@@ -344,5 +357,10 @@
         foreach(var t in CurrentPeriod.Transactions.Where(t => t.ResolvedBudgetItemId == itemId)) list.Add((t.Date, t.Description, t.Amount * -1));
         foreach(var x in CurrentPeriod.Transactions.SelectMany(t => t.Splits.Select(s => new { P = t, S = s })).Where(x => x.S.ResolvedBudgetItemId == itemId)) { decimal a = x.P.Amount < 0 ? Math.Abs(x.S.Amount) : -Math.Abs(x.S.Amount); list.Add((x.P.Date, $"{x.P.Description} (Split)", a)); }
         return list.OrderBy(x => x.Item1).ToList(); 
+    }
+
+    private async Task CopyLogsToClipboard() {
+        var sb = new System.Text.StringBuilder(); foreach(var l in debugLogs) sb.AppendLine(l);
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", sb.ToString());
     }
 }
