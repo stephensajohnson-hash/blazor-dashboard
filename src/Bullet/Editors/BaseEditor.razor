@@ -2,14 +2,16 @@
 @using Dashboard
 @using Dashboard.Components.Bullet.Editors 
 @using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.EntityFrameworkCore
 @using System.IO
 @inject IJSRuntime JS
 @inject BulletBaseService BaseService
+@inject AppDbContext Db
 
 @if (Item != null)
 {
     <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
-        <div class="bg-gray-800 border border-gray-700 w-full max-w-2xl rounded-xl shadow-2xl flex flex-col my-auto relative">
+        <div class="bg-gray-800 border border-gray-700 w-full max-w-2xl rounded-xl shadow-2xl flex flex-col my-auto relative text-white">
             
             <div class="p-3 border-b border-gray-700 bg-gray-900/50 flex flex-wrap gap-2 justify-center sticky top-0 z-10 backdrop-blur-md rounded-t-xl">
                 @foreach(var type in new[] { "task", "meeting", "habit", "media", "holiday", "birthday", "anniversary", "vacation", "health", "sports" })
@@ -64,7 +66,7 @@
                             </div>
                             <div class="flex-1 space-y-2">
                                 <input @bind="Item.ImgUrl" class="w-full bg-black/30 border border-gray-600 rounded px-2 py-1 text-xs text-gray-300 outline-none" placeholder="Paste Image URL..." />
-                                <label class="cursor-pointer inline-block bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded text-xs transition">
+                                <label class="cursor-pointer inline-block bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded text-xs transition font-bold">
                                     📂 Upload <InputFile OnChange="UploadCoverImage" class="hidden" />
                                 </label>
                             </div>
@@ -80,7 +82,15 @@
                         case "task": <EditorTask Detail="TaskDetail" /> break;
                         case "meeting": <EditorMeeting Detail="MeetingDetail" /> break;
                         case "habit": <EditorHabit Detail="HabitDetail" /> break;
-                        case "sports": <EditorSports Detail="SportsDetail" UserId="Item.UserId" /> break;
+                        
+                        // INJECTED SPORTS DATA HERE
+                        case "sports": 
+                            <EditorSports Detail="SportsDetail" 
+                                          Leagues="allLeagues" 
+                                          Seasons="allSeasons" 
+                                          Teams="allTeams" /> 
+                            break;
+
                         case "vacation": <EditorVacation Detail="VacationDetail" @bind-EndDate="Item.EndDate" /> break;
                         case "birthday": <EditorBirthday Detail="BirthdayDetail" /> break;
                         case "anniversary": <EditorAnniversary Detail="AnniversaryDetail" /> break;
@@ -94,13 +104,13 @@
                 <div>
                     <div class="flex justify-between items-center mb-4">
                         <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider">🗒️ Notes & Attachments</h3>
-                        <button @onclick="AddNote" class="bg-gray-700 hover:bg-gray-600 text-white text-xs px-3 py-1 rounded transition">＋ Add Note</button>
+                        <button @onclick="AddNote" class="bg-gray-700 hover:bg-gray-600 text-white text-xs px-3 py-1 rounded transition font-bold">＋ Add Note</button>
                     </div>
                     <div class="space-y-6">
                         @foreach(var note in Notes)
                         {
                             <div class="bg-black/40 border border-gray-600 rounded-lg p-4 relative group hover:border-gray-500">
-                                <button @onclick="() => Notes.Remove(note)" class="absolute top-2 right-2 text-gray-600 hover:text-red-500 p-1">✕</button>
+                                <button @onclick="() => Notes.Remove(note)" class="absolute top-2 right-2 text-gray-600 hover:text-red-500 p-1 font-bold">✕</button>
                                 <div class="space-y-4">
                                     <div>
                                         <label class="block text-[9px] font-bold text-gray-500 uppercase mb-1">📝 Note Text</label>
@@ -116,7 +126,7 @@
                                                 </div>
                                                 <div class="flex-1 space-y-1">
                                                     <input @bind="note.ImgUrl" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-[10px] text-gray-300 outline-none" placeholder="Image URL..." />
-                                                    <label class="cursor-pointer block bg-gray-700 hover:bg-gray-600 text-center text-white rounded py-1 text-[10px]">
+                                                    <label class="cursor-pointer block bg-gray-700 hover:bg-gray-600 text-center text-white rounded py-1 text-[10px] font-bold">
                                                         📂 Upload <InputFile OnChange="@(e => UploadNoteImage(e, note))" class="hidden" />
                                                     </label>
                                                 </div>
@@ -126,7 +136,7 @@
                                             <label class="block text-[9px] font-bold text-gray-500 uppercase mb-1">🔗 External Link</label>
                                             <div class="flex items-center gap-2 bg-gray-900 border border-gray-700 rounded px-2 py-1 h-[38px]">
                                                 <span class="text-lg">🔗</span>
-                                                <input @bind="note.LinkUrl" class="w-full bg-transparent text-xs text-blue-400 outline-none placeholder-gray-600" placeholder="https://..." />
+                                                <input @bind="note.LinkUrl" class="w-full bg-transparent text-xs text-blue-400 outline-none placeholder-gray-600 font-mono" placeholder="https://..." />
                                             </div>
                                         </div>
                                     </div>
@@ -138,10 +148,10 @@
             </div>
 
             <div class="px-6 py-4 bg-gray-900 border-t border-gray-700 flex justify-between items-center rounded-b-xl sticky bottom-0 z-20">
-                <button @onclick="HandleDelete" class="text-red-500 hover:text-red-400 text-xs font-bold uppercase tracking-wider transition px-3 py-2 rounded hover:bg-red-900/20">🗑️ Delete</button>
+                <button @onclick="HandleDelete" class="text-red-500 hover:text-red-400 text-xs font-bold uppercase tracking-wider transition px-3 py-2 rounded hover:bg-red-900/20 font-black">🗑️ Delete</button>
                 <div class="flex gap-3">
                     <button @onclick="HandleCancel" class="px-5 py-2 rounded-lg text-sm font-bold text-gray-400 hover:text-white hover:bg-gray-800 transition">Cancel</button>
-                    <button @onclick="HandleSave" class="px-8 py-2 rounded-lg text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg transition transform hover:scale-105 active:scale-95">Save Changes</button>
+                    <button @onclick="HandleSave" class="px-8 py-2 rounded-lg text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg transition transform hover:scale-105 active:scale-95 uppercase tracking-widest">Save Changes</button>
                 </div>
             </div>
         </div>
@@ -168,6 +178,23 @@
     [Parameter] public EventCallback OnSave { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
     [Parameter] public EventCallback OnDelete { get; set; }
+
+    // --- NEW: Sports Data Cache ---
+    private List<League> allLeagues = new();
+    private List<Season> allSeasons = new();
+    private List<Team> allTeams = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Pre-load lookup data for the Sports Editor
+        try {
+            allLeagues = await Db.Leagues.OrderBy(x => x.Name).ToListAsync();
+            allSeasons = await Db.Seasons.ToListAsync();
+            allTeams = await Db.Teams.ToListAsync();
+        } catch (Exception ex) {
+            Console.WriteLine($"BaseEditor Init Error: {ex.Message}");
+        }
+    }
 
     private string GetEmoji(string type) => type switch {
         "task" => "📝", "meeting" => "📅", "habit" => "🔥", "sports" => "🏆",
