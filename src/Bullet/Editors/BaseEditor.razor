@@ -2,11 +2,9 @@
 @using Dashboard
 @using Dashboard.Components.Bullet.Editors 
 @using Microsoft.AspNetCore.Components.Forms
-@using Microsoft.EntityFrameworkCore
 @using System.IO
 @inject IJSRuntime JS
 @inject BulletBaseService BaseService
-@inject AppDbContext Db
 
 @if (Item != null)
 {
@@ -57,14 +55,13 @@
                         case "task": <EditorTask Detail="TaskDetail" /> break;
                         case "meeting": <EditorMeeting Detail="MeetingDetail" /> break;
                         case "habit": <EditorHabit Detail="HabitDetail" /> break;
-                        case "sports": <EditorSports Detail="SportsDetail" Leagues="allLeagues" Seasons="allSeasons" Teams="allTeams" /> break;
+                        case "sports": <EditorSports Detail="SportsDetail" Leagues="Leagues" Seasons="Seasons" Teams="Teams" /> break;
                         case "vacation": <EditorVacation Detail="VacationDetail" @bind-EndDate="Item.EndDate" /> break;
                         case "birthday": <EditorBirthday Detail="BirthdayDetail" /> break;
                         case "anniversary": <EditorAnniversary Detail="AnniversaryDetail" /> break;
                         case "holiday": <EditorHoliday Detail="HolidayDetail" /> break;
                         case "media": <EditorMedia Detail="MediaDetail" /> break;
                         case "health": <EditorHealth Detail="HealthDetail" /> break;
-                        default: <div class="text-gray-500 text-xs italic">Generic Item</div> break;
                     }
                 </div>
 
@@ -88,22 +85,20 @@
                                    class="w-full bg-black/30 border border-gray-600 rounded px-3 py-2 text-white text-sm outline-none @(repeatFrequency == "none" ? "opacity-30" : "")" />
                         </div>
                     </div>
-                    <p class="text-[9px] text-gray-500 italic uppercase">Note: This will create separate, independent copies of this item starting from the selected date.</p>
+                    <p class="text-[9px] text-gray-500 italic uppercase">Note: Creates independent copies starting from the selected date.</p>
                 </div>
 
                 <div>
                     <div class="flex justify-between items-center mb-4">
-                        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider">🗒️ Notes & Attachments</h3>
-                        <button @onclick="AddNote" class="bg-gray-700 hover:bg-gray-600 text-white text-xs px-3 py-1 rounded transition font-bold">＋ Add Note</button>
+                        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider">🗒️ Notes</h3>
+                        <button @onclick="AddNote" class="bg-gray-700 hover:bg-gray-600 text-white text-xs px-3 py-1 rounded transition">＋ Add Note</button>
                     </div>
-                    <div class="space-y-6">
+                    <div class="space-y-4">
                         @foreach(var note in Notes)
                         {
-                            <div class="bg-black/40 border border-gray-600 rounded-lg p-4 relative group hover:border-gray-500">
-                                <button @onclick="() => Notes.Remove(note)" class="absolute top-2 right-2 text-gray-600 hover:text-red-500 p-1 font-bold">✕</button>
-                                <div class="space-y-4">
-                                    <textarea @bind="note.Content" rows="2" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 outline-none" placeholder="Note detail..."></textarea>
-                                </div>
+                            <div class="bg-black/40 border border-gray-600 rounded-lg p-3 relative group">
+                                <button @onclick="() => Notes.Remove(note)" class="absolute top-2 right-2 text-gray-600 hover:text-red-500">✕</button>
+                                <textarea @bind="note.Content" rows="2" class="w-full bg-transparent text-sm text-gray-200 outline-none" placeholder="Details..."></textarea>
                             </div>
                         }
                     </div>
@@ -111,10 +106,10 @@
             </div>
 
             <div class="px-6 py-4 bg-gray-900 border-t border-gray-700 flex justify-between items-center rounded-b-xl sticky bottom-0 z-20">
-                <button @onclick="HandleDelete" class="text-red-500 hover:text-red-400 text-xs font-bold uppercase tracking-wider transition px-3 py-2 rounded hover:bg-red-900/20 font-black">🗑️ Delete</button>
+                <button @onclick="HandleDelete" class="text-red-500 hover:text-red-400 text-xs font-bold uppercase transition">🗑️ Delete</button>
                 <div class="flex gap-3">
-                    <button @onclick="HandleCancel" class="px-5 py-2 rounded-lg text-sm font-bold text-gray-400 hover:text-white hover:bg-gray-800 transition">Cancel</button>
-                    <button @onclick="ProcessSave" class="px-8 py-2 rounded-lg text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg transition transform hover:scale-105 active:scale-95 uppercase tracking-widest">Save Changes</button>
+                    <button @onclick="HandleCancel" class="px-5 py-2 rounded-lg text-sm font-bold text-gray-400 hover:text-white transition">Cancel</button>
+                    <button @onclick="HandleSave" class="px-8 py-2 rounded-lg text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg transition transform hover:scale-105 active:scale-95">Save Changes</button>
                 </div>
             </div>
         </div>
@@ -123,7 +118,6 @@
 
 @code {
     [Parameter] public BulletTaskService.TaskDTO? Item { get; set; }
-    
     [Parameter] public BulletTaskDetail TaskDetail { get; set; } = new();
     [Parameter] public BulletMeetingDetail MeetingDetail { get; set; } = new();
     [Parameter] public BulletHabitDetail HabitDetail { get; set; } = new();
@@ -136,24 +130,17 @@
     [Parameter] public BulletGameDetail SportsDetail { get; set; } = new(); 
     [Parameter] public List<BulletItemNote> Notes { get; set; } = new();
 
-    // CUSTOM SAVE EVENT to pass recurrence back to parent
+    // Data lists passed from Parent
+    [Parameter] public List<League> Leagues { get; set; } = new();
+    [Parameter] public List<Season> Seasons { get; set; } = new();
+    [Parameter] public List<Team> Teams { get; set; } = new();
+
     [Parameter] public EventCallback<(string freq, int count)> OnSaveWithRepeat { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
     [Parameter] public EventCallback OnDelete { get; set; }
 
     private string repeatFrequency = "none";
     private int repeatCount = 1;
-
-    private List<League> allLeagues = new();
-    private List<Season> allSeasons = new();
-    private List<Team> allTeams = new();
-
-    protected override async Task OnInitializedAsync()
-    {
-        allLeagues = await Db.Leagues.OrderBy(x => x.Name).ToListAsync();
-        allSeasons = await Db.Seasons.ToListAsync();
-        allTeams = await Db.Teams.ToListAsync();
-    }
 
     private string GetEmoji(string type) => type switch {
         "task" => "📝", "meeting" => "📅", "habit" => "🔥", "sports" => "🏆",
@@ -162,10 +149,7 @@
     };
 
     private void AddNote() => Notes.Add(new BulletItemNote { BulletItemId = Item?.Id ?? 0, Order = Notes.Count });
-    private async Task UploadNoteImage(InputFileChangeEventArgs e, BulletItemNote note) { /* ... keep existing image logic ... */ }
-    private async Task UploadCoverImage(InputFileChangeEventArgs e) { /* ... keep existing image logic ... */ }
-
-    private async Task ProcessSave() => await OnSaveWithRepeat.InvokeAsync((repeatFrequency, repeatCount));
-    private async Task HandleCancel() => await OnCancel.InvokeAsync();
+    private async Task HandleSave() => await OnSaveWithRepeat.InvokeAsync((repeatFrequency, repeatCount));
+    private async Task HandleCancel() { repeatFrequency = "none"; repeatCount = 1; await OnCancel.InvokeAsync(); }
     private async Task HandleDelete() => await OnDelete.InvokeAsync();
 }
