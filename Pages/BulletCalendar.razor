@@ -23,6 +23,7 @@
 @inject BulletSportsService SportsService
 @inject IJSRuntime JS
 @inject NavigationManager Nav
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
 
 <div class="min-h-screen bg-gray-900 text-white overflow-x-hidden pb-40 relative font-sans">
    
@@ -41,18 +42,18 @@
             <div class="grid grid-cols-3 gap-6 h-full">
                 @foreach (var cat in new[] { ("Work", "work", "blue"), ("Personal", "personal", "green"), ("Health", "health", "orange") })
                 {
-                    <div class="bg-gray-800/40 rounded-xl border border-gray-700 flex flex-col h-full overflow-hidden shadow-xl">
+                    <div class="bg-gray-800/40 rounded-xl border border-gray-700 flex flex-col h-full overflow-hidden">
                         <div class="p-3 bg-gray-800/80 border-b border-gray-700 flex justify-between items-center sticky top-0 backdrop-blur z-10">
-                            <span class="font-black text-@cat.Item3-400 uppercase tracking-widest text-xs">@cat.Item1</span>
+                            <span class="font-bold text-@cat.Item3-400 uppercase tracking-wider text-sm font-sans">@cat.Item1</span>
                             <button @onclick='async () => await OpenEditor(cat.Item2, cat.Item2 == "health" ? "health" : "task", viewDate)' 
-                                    class="text-[10px] bg-gray-700 hover:bg-white hover:text-black px-3 py-1 rounded transition font-black uppercase tracking-widest">
+                                    class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition font-bold uppercase tracking-widest">
                                 ＋ Add
                             </button>
                         </div>
                         <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide">
                             @if(isLoading)
                             {
-                                <div class="text-center text-gray-500 text-[10px] font-black uppercase mt-10 animate-pulse tracking-widest">Accessing Node...</div>
+                                <div class="text-center text-gray-500 text-xs italic mt-4 animate-pulse uppercase font-bold tracking-widest">Synchronizing...</div>
                             }
                             else
                             {
@@ -72,7 +73,7 @@
                                         else { <TaskCard Item="item" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteTask" /> }
                                     </div>
                                 }
-                                @if(!colItems.Any()) { <div class="text-center text-gray-600 text-[10px] uppercase font-black mt-8 tracking-widest opacity-20">No entries</div> }
+                                @if(!colItems.Any()) { <div class="text-center text-gray-600 text-[10px] uppercase font-bold mt-4 tracking-widest opacity-30">No entries</div> }
                             }
                         </div>
                     </div>
@@ -81,7 +82,7 @@
         }
         else if (currentView == "week")
         {
-            <div class="grid grid-cols-7 gap-2 h-full">
+            <div class="grid grid-cols-7 gap-2 h-full font-sans">
                 @for(int i=0; i<7; i++) {
                     var d = weekStart.AddDays(i);
                     <div class="flex flex-col h-full rounded-xl border overflow-hidden bg-gray-800/40 @GetDayBorderClass(d)">
@@ -125,6 +126,10 @@
                                     @if(item.Type == "meeting") { <MeetingPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
                                     else if (item.Type == "habit") { <HabitPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
                                     else if (item.Type == "media") { <MediaPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
+                                    else if (item.Type == "holiday") { <HolidayPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
+                                    else if (item.Type == "birthday") { <BirthdayPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
+                                    else if (item.Type == "anniversary") { <AnniversaryPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
+                                    else if (item.Type == "vacation") { <VacationPill Item="item" OnClick="OpenVacationEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
                                     else if (item.Type == "health") { <HealthPill Item="item" User="currentUser" OnClick="OpenHealthEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" /> }
                                     else if (item.Type == "sports") { <SportsPill Item="@(GetGame(item.Id))" OnClick="OpenSportsEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" /> }
                                     else { <TaskPill Task="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
@@ -201,7 +206,6 @@
                             try { clientOffset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()"); } catch {}
                             viewDate = DateTime.UtcNow.AddMinutes(-clientOffset);
                             
-                            // SYNCED LOOKUP LOAD
                             allLeagues = await Db.Leagues.OrderBy(x => x.Name).ToListAsync() ?? new();
                             allSeasons = await Db.Seasons.ToListAsync() ?? new();
                             allTeams = await Db.Teams.ToListAsync() ?? new();
@@ -296,7 +300,7 @@
                 if (offsetCount > 365) break; 
             }
         }
-        editingTab = "general"; editingItem = null; await LoadData();
+        editingItem = null; await LoadData();
     }
 
     private async Task CommitItemToDatabase(BulletTaskService.TaskDTO t)
