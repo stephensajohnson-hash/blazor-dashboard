@@ -23,7 +23,6 @@
 @inject BulletSportsService SportsService
 @inject IJSRuntime JS
 @inject NavigationManager Nav
-@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
 
 <div class="min-h-screen bg-gray-900 text-white overflow-x-hidden pb-40 relative font-sans">
    
@@ -42,18 +41,18 @@
             <div class="grid grid-cols-3 gap-6 h-full">
                 @foreach (var cat in new[] { ("Work", "work", "blue"), ("Personal", "personal", "green"), ("Health", "health", "orange") })
                 {
-                    <div class="bg-gray-800/40 rounded-xl border border-gray-700 flex flex-col h-full overflow-hidden">
+                    <div class="bg-gray-800/40 rounded-xl border border-gray-700 flex flex-col h-full overflow-hidden shadow-xl">
                         <div class="p-3 bg-gray-800/80 border-b border-gray-700 flex justify-between items-center sticky top-0 backdrop-blur z-10">
-                            <span class="font-bold text-@cat.Item3-400 uppercase tracking-wider text-sm">@cat.Item1</span>
+                            <span class="font-black text-@cat.Item3-400 uppercase tracking-widest text-xs">@cat.Item1</span>
                             <button @onclick='async () => await OpenEditor(cat.Item2, cat.Item2 == "health" ? "health" : "task", viewDate)' 
-                                    class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition font-bold uppercase tracking-widest">
+                                    class="text-[10px] bg-gray-700 hover:bg-white hover:text-black px-3 py-1 rounded transition font-black uppercase tracking-widest">
                                 ＋ Add
                             </button>
                         </div>
                         <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide">
                             @if(isLoading)
                             {
-                                <div class="text-center text-gray-500 text-xs italic mt-4 animate-pulse uppercase font-bold tracking-widest">Synchronizing...</div>
+                                <div class="text-center text-gray-500 text-[10px] font-black uppercase mt-10 animate-pulse tracking-widest">Accessing Node...</div>
                             }
                             else
                             {
@@ -73,7 +72,7 @@
                                         else { <TaskCard Item="item" OnClick="OpenEdit" OnToggle="ToggleComplete" OnDelete="DeleteTask" /> }
                                     </div>
                                 }
-                                @if(!colItems.Any()) { <div class="text-center text-gray-600 text-[10px] uppercase font-bold mt-4 tracking-widest opacity-30">No entries</div> }
+                                @if(!colItems.Any()) { <div class="text-center text-gray-600 text-[10px] uppercase font-black mt-8 tracking-widest opacity-20">No entries</div> }
                             }
                         </div>
                     </div>
@@ -82,7 +81,7 @@
         }
         else if (currentView == "week")
         {
-            <div class="grid grid-cols-7 gap-2 h-full font-sans">
+            <div class="grid grid-cols-7 gap-2 h-full">
                 @for(int i=0; i<7; i++) {
                     var d = weekStart.AddDays(i);
                     <div class="flex flex-col h-full rounded-xl border overflow-hidden bg-gray-800/40 @GetDayBorderClass(d)">
@@ -126,10 +125,6 @@
                                     @if(item.Type == "meeting") { <MeetingPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
                                     else if (item.Type == "habit") { <HabitPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
                                     else if (item.Type == "media") { <MediaPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
-                                    else if (item.Type == "holiday") { <HolidayPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
-                                    else if (item.Type == "birthday") { <BirthdayPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
-                                    else if (item.Type == "anniversary") { <AnniversaryPill Item="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
-                                    else if (item.Type == "vacation") { <VacationPill Item="item" OnClick="OpenVacationEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
                                     else if (item.Type == "health") { <HealthPill Item="item" User="currentUser" OnClick="OpenHealthEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" /> }
                                     else if (item.Type == "sports") { <SportsPill Item="@(GetGame(item.Id))" OnClick="OpenSportsEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" /> }
                                     else { <TaskPill Task="item" OnClick="OpenEdit" OnMoveUp="MoveItemUp" OnMoveDown="MoveItemDown" ImageWidth="@BulletViewConfig.ImgWidthMonth" /> }
@@ -205,9 +200,12 @@
                         if(currentUser != null) {
                             try { clientOffset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()"); } catch {}
                             viewDate = DateTime.UtcNow.AddMinutes(-clientOffset);
+                            
+                            // SYNCED LOOKUP LOAD
                             allLeagues = await Db.Leagues.OrderBy(x => x.Name).ToListAsync() ?? new();
                             allSeasons = await Db.Seasons.ToListAsync() ?? new();
                             allTeams = await Db.Teams.ToListAsync() ?? new();
+
                             await LoadData();
                         }
                     }
@@ -220,8 +218,10 @@
     {
         if (currentUser == null) return;
         isLoading = true; StateHasChanged();
+
         DateTime start = DateTime.SpecifyKind(viewDate.Date, DateTimeKind.Utc);
         DateTime end = start.AddDays(1).AddSeconds(-1); 
+
         if (currentView == "week") { start = DateTime.SpecifyKind(weekStart, DateTimeKind.Utc); end = start.AddDays(7).AddSeconds(-1); }
         else if (currentView == "month") { start = DateTime.SpecifyKind(new DateTime(viewDate.Year, viewDate.Month, 1), DateTimeKind.Utc); end = start.AddMonths(1).AddSeconds(-1); }
 
@@ -264,15 +264,12 @@
     {
         if (editingItem == null) return;
         
-        // 1. Commit the primary item
         await CommitItemToDatabase(editingItem);
 
-        // 2. Loop and generate independent clones until ThruDate
         if (req.Frequency != "none" && req.ThruDate > editingItem.Date)
         {
             DateTime nextDate = editingItem.Date;
             int offsetCount = 1;
-            
             while (true)
             {
                 nextDate = req.Frequency switch {
@@ -282,33 +279,24 @@
                     "monthly" => nextDate.AddMonths(1),
                     _ => nextDate
                 };
-
                 if (nextDate.Date > req.ThruDate.Date) break;
 
                 var clone = CreateCopy(editingItem);
                 clone.Id = 0; 
                 clone.Date = nextDate;
-                
-                // Vacation logic shift
                 if (editingItem.EndDate.HasValue) {
                     var duration = editingItem.EndDate.Value - editingItem.Date;
                     clone.EndDate = nextDate + duration;
                 }
-                
-                // Habit streak auto-increment
                 if (editingItem.Type == "habit" && req.IncrementHabitStreak && clone.HabitDetail != null) {
                     clone.HabitDetail.StreakCount += offsetCount;
                 }
-
                 await CommitItemToDatabase(clone);
                 offsetCount++;
-                
-                // Safety break to prevent infinite loops if frequency is broken
                 if (offsetCount > 365) break; 
             }
         }
-        editingItem = null;
-        await LoadData();
+        editingTab = "general"; editingItem = null; await LoadData();
     }
 
     private async Task CommitItemToDatabase(BulletTaskService.TaskDTO t)
@@ -368,6 +356,8 @@
         if (t.Detail != null) newItem.Detail = new BulletTaskDetail { DueDate = t.Detail.DueDate, IsCompleted = t.Detail.IsCompleted, Priority = t.Detail.Priority, Status = t.Detail.Status, TicketNumber = t.Detail.TicketNumber, TicketUrl = t.Detail.TicketUrl };
         if (t.MeetingDetail != null) newItem.MeetingDetail = new BulletMeetingDetail { StartTime = t.MeetingDetail.StartTime, DurationMinutes = t.MeetingDetail.DurationMinutes, ActualDurationMinutes = t.MeetingDetail.ActualDurationMinutes, IsCompleted = t.MeetingDetail.IsCompleted };
         if (t.HabitDetail != null) newItem.HabitDetail = new BulletHabitDetail { StreakCount = t.HabitDetail.StreakCount, IsCompleted = t.HabitDetail.IsCompleted };
+        if (t.VacationDetail != null) newItem.VacationDetail = new BulletVacationDetail { VacationGroupId = t.VacationDetail.VacationGroupId };
+        if (t.HealthDetail != null) newItem.HealthDetail = new BulletHealthDetail { WeightLbs = t.HealthDetail.WeightLbs, CalculatedTDEE = t.HealthDetail.CalculatedTDEE };
         if (t.MediaDetail != null) newItem.MediaDetail = new BulletMediaDetail { Rating = t.MediaDetail.Rating, ReleaseYear = t.MediaDetail.ReleaseYear, Tags = t.MediaDetail.Tags };
         if (t.HolidayDetail != null) newItem.HolidayDetail = new BulletHolidayDetail { IsWorkHoliday = t.HolidayDetail.IsWorkHoliday };
         if (t.BirthdayDetail != null) newItem.BirthdayDetail = new BulletBirthdayDetail { DOB_Year = t.BirthdayDetail.DOB_Year };
@@ -376,7 +366,15 @@
         return newItem;
     }
 
-    private async Task OpenEditor(string cat, string type, DateTime date) { editingItem = new BulletTaskService.TaskDTO { UserId = userId, Category = cat, Type = type, Date = date, Detail = new(), MeetingDetail = new(), HabitDetail = new(), MediaDetail = new(), HolidayDetail = new(), BirthdayDetail = new(), AnniversaryDetail = new(), VacationDetail = new(), HealthDetail = new(), SportsDetail = new(), Notes = new(), Meals = new(), Workouts = new() }; }
+    private async Task OpenEditor(string category, string type, DateTime date) { 
+        editingItem = new BulletTaskService.TaskDTO { 
+            UserId = userId, Category = category, Type = type, Date = date,
+            Detail = new(), MeetingDetail = new(), HabitDetail = new(), MediaDetail = new(), 
+            HolidayDetail = new(), BirthdayDetail = new(), AnniversaryDetail = new(), 
+            VacationDetail = new(), HealthDetail = new(), SportsDetail = new(), Notes = new(),
+            Meals = new(), Workouts = new()
+        }; 
+    }
     private void OpenEdit(BulletTaskService.TaskDTO t) { editingItem = CreateCopy(t); editingItem.Id = t.Id; }
     private void OpenHabitEdit(BulletHabitService.HabitDTO h) { editingItem = new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, Description = h.Description, ImgUrl = h.ImgUrl, Notes = h.Notes, HabitDetail = h.Detail, SortOrder = h.SortOrder }; }
     private void OpenMediaEdit(BulletTaskService.TaskDTO t) { editingItem = CreateCopy(t); editingItem.Id = t.Id; }
@@ -388,7 +386,7 @@
     private async Task OpenVacationEdit(BulletTaskService.TaskDTO t) { editingItem = CreateCopy(t); editingItem.Id = t.Id; }
     private List<BulletTaskService.TaskDTO> GetSortedItems(List<BulletTaskService.TaskDTO> items) => items?.OrderBy(t => t.SortOrder).ThenBy(t => GetTypePriority(t.Type)).ThenBy(t => t.MeetingDetail?.StartTime).ThenBy(t => t.Id).ToList() ?? new();
     private int GetTypePriority(string type) => type switch { "health" => -3, "vacation" => -2, "habit" => -1, "holiday" => 0, "meeting" => 1, "task" => 2, "birthday" => 3, "anniversary" => 4, "media" => 5, _ => 6 };
-    private List<BulletTaskService.TaskDTO> GetItemsForColumn(DateTime d, string cat) { var dayItems = loadedItems.Where(t => t.Date.Date == d.Date); if (cat.Equals("personal", StringComparison.OrdinalIgnoreCase)) return dayItems.Where(t => !t.Category.Trim().Equals("work", StringComparison.OrdinalIgnoreCase) && !t.Category.Trim().Equals("health", StringComparison.OrdinalIgnoreCase)).ToList(); return dayItems.Where(t => t.Category.Trim().Equals(cat.Trim(), StringComparison.OrdinalIgnoreCase)).ToList(); }
+    private List<BulletTaskService.TaskDTO> GetItemsForColumn(DateTime d, string category) { var dayItems = loadedItems.Where(t => t.Date.Date == d.Date); if (category.Equals("personal", StringComparison.OrdinalIgnoreCase)) return dayItems.Where(t => !t.Category.Trim().Equals("work", StringComparison.OrdinalIgnoreCase) && !t.Category.Trim().Equals("health", StringComparison.OrdinalIgnoreCase)).ToList(); return dayItems.Where(t => t.Category.Trim().Equals(category.Trim(), StringComparison.OrdinalIgnoreCase)).ToList(); }
     private List<BulletTaskService.TaskDTO> GetItemsForDate(DateTime d) => loadedItems.Where(t => t.Date.Date == d.Date).ToList();
     private BulletHabitService.HabitDTO GetHabit(int id) => loadedHabits.FirstOrDefault(h => h.Id == id) ?? new();
     private BulletSportsService.GameDTO GetGame(int id) => loadedGames.FirstOrDefault(g => g.Id == id) ?? new();
