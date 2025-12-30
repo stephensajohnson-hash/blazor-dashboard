@@ -36,7 +36,7 @@
                             </select>
                         </div>
                         <div>
-                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">📆 Date</label>
+                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">📆 Start Date</label>
                             <input type="date" @bind="Item.Date" class="w-full bg-black/30 border border-gray-600 rounded px-3 py-2 text-white text-sm outline-none" />
                         </div>
                     </div>
@@ -52,7 +52,7 @@
 
                 <div class="space-y-4 border-b border-gray-700 pb-6 bg-purple-900/10 p-4 rounded-lg">
                     <h3 class="text-xs font-black text-purple-400 uppercase tracking-widest">🔄 Batch Creation (Repeat)</h3>
-                    <div class="grid grid-cols-2 gap-4">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                             <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Frequency</label>
                             <select @bind="repeatFrequency" class="w-full bg-black/30 border border-gray-600 rounded px-3 py-2 text-white text-sm outline-none">
@@ -64,12 +64,22 @@
                             </select>
                         </div>
                         <div>
-                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Occurrences</label>
-                            <input type="number" @bind="repeatCount" min="1" max="52" 
+                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Repeat Thru</label>
+                            <input type="date" @bind="thruDate" 
                                    disabled="@(repeatFrequency == "none")"
-                                   class="w-full bg-black/30 border border-gray-600 rounded px-3 py-2 text-white text-sm @(repeatFrequency == "none" ? "opacity-30" : "")" />
+                                   class="w-full bg-black/30 border border-gray-600 rounded px-3 py-2 text-white text-sm outline-none @(repeatFrequency == "none" ? "opacity-30" : "")" />
                         </div>
+                        @if (Item.Type == "habit" && repeatFrequency != "none")
+                        {
+                            <div class="flex items-end pb-1">
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" @bind="incrementStreak" class="w-4 h-4 rounded border-gray-600 bg-black/30" />
+                                    <span class="text-[10px] font-bold uppercase text-purple-300">Auto +1 Streak</span>
+                                </label>
+                            </div>
+                        }
                     </div>
+                    <p class="text-[9px] text-gray-500 italic uppercase font-bold tracking-tight">Independent clones will be generated until the thru date is reached.</p>
                 </div>
 
                 <div class="space-y-4">
@@ -101,7 +111,7 @@
                             @foreach(var note in Notes)
                             {
                                 <div class="bg-black/40 border border-gray-600 rounded-lg p-3 relative group">
-                                    <button @onclick="() => Notes.Remove(note)" class="absolute top-2 right-2 text-gray-600 hover:text-red-500">✕</button>
+                                    <button @onclick="() => Notes.Remove(note)" class="absolute top-2 right-2 text-gray-600 hover:text-red-500 font-bold">✕</button>
                                     <textarea @bind="note.Content" rows="2" class="w-full bg-transparent text-sm text-gray-200 outline-none border-none resize-none" placeholder="Details..."></textarea>
                                 </div>
                             }
@@ -139,12 +149,19 @@
     [Parameter] public List<Team> Teams { get; set; } = new();
     [Parameter] public List<BulletItemNote> Notes { get; set; } = new();
 
-    [Parameter] public EventCallback<(string freq, int count)> OnSaveWithRepeat { get; set; }
+    [Parameter] public EventCallback<RecurrenceRequest> OnSaveRecurring { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
     [Parameter] public EventCallback OnDelete { get; set; }
 
     private string repeatFrequency = "none";
-    private int repeatCount = 1;
+    private DateTime thruDate = DateTime.Today.AddMonths(1);
+    private bool incrementStreak = true;
+
+    public class RecurrenceRequest {
+        public string Frequency { get; set; } = "none";
+        public DateTime ThruDate { get; set; }
+        public bool IncrementHabitStreak { get; set; }
+    }
 
     private string GetEmoji(string type) => type switch {
         "task" => "📝", "meeting" => "📅", "habit" => "🔥", "sports" => "🏆",
@@ -153,5 +170,13 @@
     };
 
     private void AddNote() { if (Notes == null) Notes = new(); Notes.Add(new BulletItemNote { BulletItemId = Item?.Id ?? 0, Order = Notes.Count }); }
-    private async Task HandleInternalSave() { await OnSaveWithRepeat.InvokeAsync((repeatFrequency, repeatCount)); repeatFrequency = "none"; repeatCount = 1; }
+    
+    private async Task HandleInternalSave() { 
+        await OnSaveRecurring.InvokeAsync(new RecurrenceRequest {
+            Frequency = repeatFrequency,
+            ThruDate = thruDate,
+            IncrementHabitStreak = incrementStreak
+        });
+        repeatFrequency = "none"; 
+    }
 }
