@@ -238,6 +238,34 @@
             </div>
         </div>
     }
+
+    @if (EditingWatch != null) {
+        <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm text-gray-800 font-bold">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-200">
+                <div class="bg-gray-100 px-4 py-3 border-b font-black text-gray-700 flex justify-between items-center text-sm uppercase tracking-widest"><span>Expected Expense Editor</span><button @onclick="() => EditingWatch = null" class="text-gray-400 font-bold">&times;</button></div>
+                <div class="p-5 space-y-4 font-medium text-sm text-gray-800">
+                    <div><label class="block text-[10px] font-black uppercase mb-1">Description</label><input @bind="EditingWatch.Description" class="w-full border rounded p-2 text-gray-800 font-bold" /></div>
+                    <div><label class="block text-[10px] font-black uppercase mb-1 text-blue-600 tracking-widest">Category Link</label><select @bind="EditingWatch.ResolvedBudgetItemId" class="w-full border border-blue-100 rounded p-2 text-gray-800 font-black">@foreach(var item in FlatBudgetList){<option value="@item.Id">@item.Name</option>}</select></div>
+                    <div class="grid grid-cols-2 gap-4"><div><label class="block text-[10px] font-black uppercase mb-1">Amount ($)</label><input type="number" @bind="EditingWatch.Amount" step="0.01" class="w-full border rounded p-2 text-red-600 font-black font-mono" /></div><div><label class="block text-[10px] font-black uppercase mb-1">Due Date</label><input type="date" @bind="EditingWatch.DueDate" class="w-full border rounded p-2 text-gray-800 font-bold" /></div></div>
+                </div>
+                <div class="bg-gray-50 px-4 py-3 flex justify-end border-t gap-2 font-black uppercase"><button @onclick="() => EditingWatch = null" class="px-4 py-2 text-xs text-gray-600 font-black">Cancel</button><button @onclick="SaveWatchItem" class="bg-orange-600 text-white px-6 py-2 rounded text-xs shadow uppercase transition font-black tracking-widest">Save Expense</button></div>
+            </div>
+        </div>
+    }
+
+    @if (EditingIncome != null) {
+        <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 text-gray-800 backdrop-blur-sm font-bold">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border border-gray-200 text-gray-800 font-bold">
+                <div class="bg-gray-100 px-4 py-3 border-b font-black text-gray-700 flex justify-between items-center text-sm uppercase"><span>Expected Income Entry</span><button @onclick="() => EditingIncome = null" class="text-gray-400 font-bold">&times;</button></div>
+                <div class="p-5 space-y-4 font-medium text-gray-800">
+                    <div><label class="block text-[10px] font-black uppercase mb-1 tracking-widest">Pay Source</label><select @bind="EditingIncome.SourceStringId" class="w-full border rounded p-2 text-sm text-gray-800 font-black bg-white">@foreach(var src in incomeSources){<option value="@src.StringId">@src.Name</option>}</select></div>
+                    <div><label class="block text-[10px] font-black uppercase mb-1 tracking-widest">Expected Date</label><input type="date" @bind="EditingIncome.Date" class="w-full border rounded p-2 text-sm text-gray-800 font-black bg-white" /></div>
+                    <div><label class="block text-[10px] font-black uppercase mb-1 text-green-600 font-black tracking-widest">Net Net Expected ($)</label><input type="number" @bind="EditingIncome.Amount" step="0.01" class="w-full border rounded p-2 text-sm font-mono text-green-700 font-black font-mono bg-white" /></div>
+                </div>
+                <div class="bg-gray-50 px-4 py-3 flex justify-end border-t gap-2 font-black uppercase tracking-widest"><button @onclick="() => EditingIncome = null" class="px-4 py-2 text-xs text-gray-600 font-bold">Cancel</button><button @onclick="SaveIncome" class="bg-green-600 text-white px-6 py-2 rounded text-xs font-bold uppercase shadow transition font-black tracking-widest">Save Income</button></div>
+            </div>
+        </div>
+    }
 </div>
 
 @code {
@@ -284,7 +312,6 @@
 
     private void Log(string msg) { debugLogs.Add($"[{DateTime.Now:HH:mm:ss}] {msg}"); StateHasChanged(); }
 
-    // === REPLICATING CALENDAR LIFECYCLE EXACTLY ===
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
@@ -319,21 +346,23 @@
         finally { isLoading = false; StateHasChanged(); }
     }
 
-    // --- QUICK ADD WATCH ITEM ---
+    // --- UPDATED: QUICK ADD WATCH ITEM ---
     private void QuickAddWatchItem(BudgetItem item) {
+        // 1. Calculate the actual available amount remaining for this specific bucket
         decimal rawSpent = GetSpentForBudgetItem(item.Id);
         decimal total = item.PlannedAmount + item.CarriedOver + (rawSpent < 0 ? Math.Abs(rawSpent) : 0);
         decimal rem = total - (rawSpent > 0 ? rawSpent : 0);
         
-        var today = DateTime.Today;
-        var lastDayOfCurrentMonth = new DateTime(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month));
-
+        // 2. Refresh the selection list for the modal dropdown
         RefreshFlatList();
+        
+        // 3. Trigger the modal with requested defaults: 
+        // Amount = Balance, Date = Tomorrow (Today + 1)
         EditingWatch = new BudgetWatchItem {
             BudgetPeriodId = CurrentPeriod?.Id ?? 0,
             Description = item.Name,
             Amount = Math.Max(0, rem),
-            DueDate = lastDayOfCurrentMonth,
+            DueDate = DateTime.Today.AddDays(1), 
             ResolvedBudgetItemId = item.Id
         };
     }
@@ -375,13 +404,7 @@
     private async Task SaveIncome() { if(EditingIncome != null) { if(EditingIncome.Id == 0) Db.BudgetExpectedIncome.Add(EditingIncome); else Db.BudgetExpectedIncome.Update(EditingIncome); await Db.SaveChangesAsync(); EditingIncome = null; await LoadData(); } }
 
     private void RefreshFlatList() { FlatBudgetList.Clear(); if(CurrentPeriod != null) foreach(var c in CurrentPeriod.Cycles) FlatBudgetList.AddRange(c.Items); }
-    private async Task RefreshData() { await LoadData(); }
     private void ToggleExpand(int id) => ExpandedItemId = (ExpandedItemId == id) ? null : id;
-    private string GetBalanceColor(decimal bal) => bal >= 0 ? "text-green-400 font-bold" : "text-red-400 font-bold";
-    private bool CanGoBack => currentIndex < (periods?.Count ?? 0) - 1;
-    private bool CanGoNext => currentIndex > 0;
-    private void NextPeriod() { if (CanGoNext) currentIndex--; RefreshFlatList(); }
-    private void PrevPeriod() { if (CanGoBack) currentIndex++; RefreshFlatList(); }
 
     private async Task RepairWatchLinks() {
         if (CurrentPeriod == null) return;
@@ -435,7 +458,6 @@
     }
 
     private void AddSplit() { if (EditingTransaction == null) return; if (!EditingTransaction.Splits.Any() && EditingTransaction.ResolvedBudgetItemId.HasValue) { EditingTransaction.Splits.Add(new BudgetTransactionSplit { ResolvedBudgetItemId = EditingTransaction.ResolvedBudgetItemId.Value, Amount = Math.Abs(uiAmount) }); EditingTransaction.ResolvedBudgetItemId = null; } EditingTransaction.Splits.Add(new BudgetTransactionSplit { Amount = 0 }); }
-    private async Task HandleFileUpload(InputFileChangeEventArgs e) { if (EditingItem == null) return; using var ms = new MemoryStream(); await e.File.OpenReadStream(5*1024*1024).CopyToAsync(ms); EditingItem.ImgUrl = await BulletBase.SaveImageAsync(ms.ToArray(), e.File.ContentType); }
 
     private async Task ClaimOrphanedData() {
         try {
@@ -479,6 +501,11 @@
         await JS.InvokeVoidAsync("navigator.clipboard.writeText", sb.ToString());
         await JS.InvokeVoidAsync("alert", "Logs copied to clipboard.");
     }
+
+    private bool CanGoBack => currentIndex < (periods?.Count ?? 0) - 1;
+    private bool CanGoNext => currentIndex > 0;
+    private void NextPeriod() { if (CanGoNext) currentIndex--; RefreshFlatList(); }
+    private void PrevPeriod() { if (CanGoBack) currentIndex++; RefreshFlatList(); }
 
     public class SessionData { public int UserId { get; set; } public DateTime Expiry { get; set; } }
 }
