@@ -1,18 +1,106 @@
 @namespace Dashboard.Components.Bullet.Editors
 @using Dashboard
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext Db
 
-<div class="grid grid-cols-2 gap-4">
-    <div>
-        <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">📅 Release Year</label>
-        <input type="number" @bind="Detail.ReleaseYear" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" />
+<div class="space-y-4">
+    <div class="grid grid-cols-2 gap-4">
+        <div>
+            <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1 tracking-widest">📅 Release Year</label>
+            <input type="number" @bind="Detail.ReleaseYear" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:border-blue-500 outline-none" />
+        </div>
+        <div>
+            <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1 tracking-widest">⭐ Rating (0-10)</label>
+            <input type="number" @bind="Detail.Rating" step="0.1" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:border-yellow-500 outline-none" />
+        </div>
     </div>
+
     <div>
-        <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">⭐ Rating (0-10)</label>
-        <input type="number" @bind="Detail.Rating" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" />
+        <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1 tracking-widest">🏷️ Genre Tags</label>
+        <input @bind="Detail.Tags" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:border-purple-500 outline-none mb-3" placeholder="Action, Drama, Sci-Fi..." />
+        
+        @if (frequentTags != null && frequentTags.Any())
+        {
+            <div class="bg-black/20 p-3 rounded-lg border border-gray-800">
+                <p class="text-[9px] font-black text-gray-600 uppercase mb-2 tracking-tighter">Most Frequent Tags (Click to Toggle)</p>
+                <div class="flex flex-wrap gap-2">
+                    @foreach (var tag in frequentTags)
+                    {
+                        bool isActive = IsTagActive(tag);
+                        <button type="button" @onclick="() => ToggleTag(tag)"
+                                class="px-2 py-1 rounded text-[10px] font-bold uppercase transition-all border 
+                                @(isActive 
+                                    ? "bg-purple-600 text-white border-purple-400 shadow-lg scale-105" 
+                                    : "bg-gray-800 text-gray-400 border-gray-700 hover:border-gray-500 hover:text-gray-200")">
+                            @tag
+                        </button>
+                    }
+                </div>
+            </div>
+        }
     </div>
 </div>
-<div class="mt-4">
-    <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">🏷️ Tags</label>
-    <input @bind="Detail.Tags" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Movie, Book, etc." />
-</div>
-@code { [Parameter] public BulletMediaDetail Detail { get; set; } = new(); }
+
+@code {
+    [Parameter] public BulletMediaDetail Detail { get; set; } = new();
+    
+    private List<string> frequentTags = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadFrequentTags();
+    }
+
+    private async Task LoadFrequentTags()
+    {
+        try 
+        {
+            // Fetch all tags from all media entries
+            var allTagsStrings = await Db.BulletMediaDetails
+                .Where(m => !string.IsNullOrEmpty(m.Tags))
+                .Select(m => m.Tags)
+                .ToListAsync();
+
+            // Split, clean, and group by frequency
+            frequentTags = allTagsStrings
+                .SelectMany(s => s.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                .Select(t => t.Trim())
+                .GroupBy(t => t)
+                .OrderByDescending(g => g.Count())
+                .Take(15) // Top 15 tags
+                .Select(g => g.Key)
+                .ToList();
+        }
+        catch { /* Fallback to empty list if DB query fails */ }
+    }
+
+    private bool IsTagActive(string tag)
+    {
+        if (string.IsNullOrWhiteSpace(Detail.Tags)) return false;
+        var current = Detail.Tags.Split(',').Select(t => t.Trim().ToLower());
+        return current.Contains(tag.ToLower());
+    }
+
+    private void ToggleTag(string tag)
+    {
+        var tagList = (Detail.Tags ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(t => t.Trim())
+            .ToList();
+
+        // Check if tag exists (case insensitive)
+        var existing = tagList.FirstOrDefault(t => string.Equals(t, tag, StringComparison.OrdinalIgnoreCase));
+
+        if (existing != null)
+        {
+            tagList.Remove(existing);
+        }
+        else
+        {
+            tagList.Add(tag);
+        }
+
+        // Re-join with clean formatting
+        Detail.Tags = string.Join(", ", tagList);
+    }
+}
