@@ -1,5 +1,6 @@
 @page "/"
 @using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Forms
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Dashboard
 @using Dashboard.Components.Bullet
@@ -15,6 +16,7 @@
 @inject HttpClient Http
 @inject IJSRuntime JS
 @inject NavigationManager Nav
+@inject BulletBaseService BaseService
 
 <BulletHeader />
 
@@ -44,7 +46,7 @@
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-12">
                 @foreach (var group in Groups)
                 {
-                    <div id="@group.Id" class="group/card relative bg-gray-800/40 rounded-xl p-5 border border-gray-700/50 hover:border-gray-600 transition">
+                    <div id="@group.Id" class="group/card relative bg-gray-800/40 rounded-xl p-5 border border-gray-700/50 hover:border-gray-600 transition shadow-xl">
                         <div class="flex justify-between items-center mb-4 pb-2 border-b border-gray-700">
                             <h3 class="text-lg font-bold text-white flex items-center gap-2">
                                 <span class="w-2 h-2 rounded-full shadow-[0_0_10px_currentColor]" style="color: @group.Color; background-color: @group.Color"></span>
@@ -95,7 +97,7 @@
                                         {
                                             <img src="@link.Img" class="w-16 h-16 rounded object-cover opacity-80 group-hover:opacity-100 transition shadow-sm" />
                                         }
-                                        <span class="text-gray-400 group-hover:text-white transition text-xs truncate w-full">@link.Name</span>
+                                        <span class="text-gray-400 group-hover:text-white transition text-xs truncate w-full font-medium">@link.Name</span>
                                     </a>
                                 </div>
                             }
@@ -114,15 +116,15 @@
                     {
                         var calc = GetCountdownLogic(c.TargetDate);
                         <div class="group relative h-32 bg-gray-800 rounded-xl flex items-center border border-gray-700 shadow-lg shrink-0 overflow-hidden hover:border-gray-500 transition pr-6">
-                            <div class="absolute top-2 right-2 flex gap-1 bg-black/80 rounded px-1 opacity-0 group-hover:opacity-100 z-20 transition">
+                            <div class="absolute top-2 right-2 flex gap-1 bg-black/80 rounded px-1 opacity-0 group-hover:opacity-100 z-20 transition shadow-md">
                                 <button type="button" @onclick="() => MoveCountdown(c, -1)" class="text-[10px] text-gray-300 hover:text-white p-1">←</button>
                                 <button type="button" @onclick="() => MoveCountdown(c, 1)" class="text-[10px] text-gray-300 hover:text-white p-1">→</button>
                                 <div class="w-px h-3 bg-gray-700 my-auto"></div>
                                 <button type="button" @onclick="() => OpenEditCountdownModal(c)" class="text-[10px] text-gray-300 hover:text-white p-1">✏️</button>
                                 <button type="button" @onclick="() => DeleteCountdown(c)" class="text-[10px] text-gray-300 hover:text-red-400 p-1 font-bold">✕</button>
                             </div>
-                            <div class="h-full w-auto shrink-0 bg-gray-900">
-                                @if (!string.IsNullOrEmpty(c.Img)) { <img src="@c.Img" class="h-full w-auto object-cover opacity-90 group-hover:opacity-100 transition" /> }
+                            <div class="h-full w-auto shrink-0 bg-gray-900 overflow-hidden">
+                                @if (!string.IsNullOrEmpty(c.Img)) { <img src="@c.Img" class="h-full w-auto object-cover opacity-90 group-hover:opacity-100 transition duration-500 transform group-hover:scale-110" /> }
                             </div>
                             <div class="p-4 flex flex-col justify-center min-w-[140px]">
                                 <div class="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">@c.Name</div>
@@ -161,8 +163,8 @@
                                 <button type="button" @onclick="() => DeleteStock(stock)" class="text-[10px] text-gray-400 hover:text-red-400 p-1 font-bold">✕</button>
                             </div>
                             <a href="@(string.IsNullOrEmpty(stock.LinkUrl) ? "#" : stock.LinkUrl)" target="_blank" class="flex items-center h-full w-full">
-                                <div class="h-full w-auto shrink-0 bg-gray-900 flex items-center justify-center">
-                                    @if (!string.IsNullOrEmpty(stock.ImgUrl)) { <img src="@stock.ImgUrl" class="h-full w-auto object-cover opacity-90 group-hover:opacity-100 transition" /> }
+                                <div class="h-full w-auto shrink-0 bg-gray-900 flex items-center justify-center overflow-hidden">
+                                    @if (!string.IsNullOrEmpty(stock.ImgUrl)) { <img src="@stock.ImgUrl" class="h-full w-auto object-cover opacity-90 group-hover:opacity-100 transition duration-500 transform group-hover:scale-110" /> }
                                     else { <div class="h-full w-24 bg-gray-700 flex items-center justify-center text-xs font-bold text-gray-400 border-r border-gray-600">@stock.Symbol.Substring(0, Math.Min(3, stock.Symbol.Length))</div> }
                                 </div>
                                 <div class="p-4 flex flex-col justify-center min-w-[140px]">
@@ -216,24 +218,64 @@
     }
 </div>
 
-@if (editingStock != null) { <div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" @onclick="() => editingStock = null"><div class="bg-gray-800 border border-gray-600 p-6 rounded-xl shadow-2xl w-full max-w-sm" @onclick:stopPropagation="true"><h3 class="text-lg font-bold text-white mb-6">@(editingStock.Id == 0 ? "Add Stock" : "Edit Stock")</h3><div class="space-y-4"><input @bind="editingStock.Symbol" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm uppercase" placeholder="Symbol (e.g. TSLA)" /><input @bind="editingStock.Shares" type="number" step="0.001" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Shares" /><input @bind="editingStock.ImgUrl" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Image URL" /><input @bind="editingStock.LinkUrl" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Link URL" /></div><div class="mt-8 flex justify-end gap-3"><button type="button" @onclick="() => editingStock = null" class="px-4 py-2 text-gray-400 hover:text-white text-xs font-bold uppercase">Cancel</button><button type="button" @onclick="SaveStock" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold uppercase shadow-lg">Save</button></div></div></div> }
+@if (editingStock != null) 
+{ 
+    <div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" @onclick="() => editingStock = null">
+        <div class="bg-gray-800 border border-gray-600 p-6 rounded-xl shadow-2xl w-full max-w-sm" @onclick:stopPropagation="true">
+            <h3 class="text-lg font-bold text-white mb-6">@(editingStock.Id == 0 ? "Add Stock" : "Edit Stock")</h3>
+            <div class="space-y-4">
+                <div class="flex items-center gap-4 mb-2">
+                    <div class="w-16 h-16 bg-black rounded border border-gray-700 overflow-hidden flex items-center justify-center shrink-0">
+                        @if (!string.IsNullOrEmpty(editingStock.ImgUrl)) { <img src="@editingStock.ImgUrl" class="w-full h-full object-cover" /> }
+                        else { <span class="text-gray-600 text-[10px] font-bold">LOGO</span> }
+                    </div>
+                    <div class="flex-1">
+                        <label class="cursor-pointer block bg-gray-700 hover:bg-gray-600 text-white text-center px-4 py-2 rounded text-[10px] font-black uppercase tracking-widest transition">
+                            📂 Upload Icon
+                            <InputFile OnChange="@(e => HandleUpload(e, "stock"))" class="hidden" />
+                        </label>
+                    </div>
+                </div>
+                <input @bind="editingStock.Symbol" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm uppercase" placeholder="Symbol (e.g. TSLA)" />
+                <input @bind="editingStock.Shares" type="number" step="0.001" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Shares" />
+                <input @bind="editingStock.ImgUrl" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-xs font-mono" placeholder="OR Paste Image URL" />
+                <input @bind="editingStock.LinkUrl" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Link URL" />
+            </div>
+            <div class="mt-8 flex justify-end gap-3">
+                <button type="button" @onclick="() => editingStock = null" class="px-4 py-2 text-gray-400 hover:text-white text-xs font-bold uppercase">Cancel</button>
+                <button type="button" @onclick="SaveStock" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold uppercase shadow-lg">Save</button>
+            </div>
+        </div>
+    </div> 
+}
+
 @if (editingGroup != null) { <div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" @onclick="() => editingGroup = null"><div class="bg-gray-800 border border-gray-600 p-6 rounded-xl shadow-2xl w-full max-w-sm" @onclick:stopPropagation="true"><h3 class="text-lg font-bold text-white mb-6">@(editingGroup.Id == 0 ? "Add Group" : "Edit Group")</h3><div class="space-y-4"><input @bind="editingGroup.Name" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Group Name" /><select @bind="editingGroup.Color" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm appearance-none">@foreach(var color in ColorOptions) { <option value="@color.Key">@color.Value @color.Key</option> }</select></div><div class="mt-8 flex justify-end gap-3"><button type="button" @onclick="() => editingGroup = null" class="px-4 py-2 text-gray-400 hover:text-white text-xs font-bold uppercase">Cancel</button><button type="button" @onclick="SaveGroup" class="px-6 py-2 bg-green-600 hover:bg-green-500 text-white rounded text-xs font-bold uppercase shadow-lg">Save</button></div></div></div> }
 
-@if (editingLink != null) { 
+@if (editingLink != null) 
+{ 
     <div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" @onclick="() => editingLink = null">
         <div class="bg-gray-800 border border-gray-600 p-6 rounded-xl shadow-2xl w-full max-w-sm" @onclick:stopPropagation="true">
             <h3 class="text-lg font-bold text-white mb-6">@(editingLink.Id == 0 ? "Add Link" : "Edit Link")</h3>
             <div class="space-y-4">
+                <div class="flex items-center gap-4 mb-2">
+                    <div class="w-16 h-16 bg-black rounded border border-gray-700 overflow-hidden flex items-center justify-center shrink-0 font-black">
+                        @if (!string.IsNullOrEmpty(editingLink.Img)) { <img src="@editingLink.Img" class="w-full h-full object-cover" /> }
+                        else { <span class="text-gray-600 text-[10px]">ICON</span> }
+                    </div>
+                    <div class="flex-1">
+                        <label class="cursor-pointer block bg-gray-700 hover:bg-gray-600 text-white text-center px-4 py-2 rounded text-[10px] font-black uppercase tracking-widest transition">
+                            📂 Upload Icon
+                            <InputFile OnChange="@(e => HandleUpload(e, "link"))" class="hidden" />
+                        </label>
+                    </div>
+                </div>
                 <input @bind="editingLink.Name" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Name" />
                 <input @bind="editingLink.Url" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="URL" />
-                <input @bind="editingLink.Img" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Image URL" />
+                <input @bind="editingLink.Img" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-xs font-mono" placeholder="OR Paste Image URL" />
                 <div>
                     <label class="text-xs text-gray-500 uppercase font-bold mb-1 block">Group</label>
                     <select @bind="editingLink.LinkGroupId" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm">
-                        @foreach(var grp in Groups)
-                        {
-                            <option value="@grp.Id">@grp.Name</option>
-                        }
+                        @foreach(var grp in Groups) { <option value="@grp.Id">@grp.Name</option> }
                     </select>
                 </div>
             </div>
@@ -245,7 +287,36 @@
     </div> 
 }
 
-@if (editingCountdown != null) { <div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" @onclick="() => editingCountdown = null"><div class="bg-gray-800 border border-gray-600 p-6 rounded-xl shadow-2xl w-full max-w-sm" @onclick:stopPropagation="true"><h3 class="text-lg font-bold text-white mb-6">@(editingCountdown.Id == 0 ? "Add Countdown" : "Edit Countdown")</h3><div class="space-y-4"><input @bind="editingCountdown.Name" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Event Name" /><input @bind="editingCountdown.TargetDate" type="date" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" /><input @bind="editingCountdown.Img" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Image URL" /><input @bind="editingCountdown.LinkUrl" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Link URL (Optional)" /></div><div class="mt-8 flex justify-end gap-3"><button type="button" @onclick="() => editingCountdown = null" class="px-4 py-2 text-gray-400 hover:text-white text-xs font-bold uppercase">Cancel</button><button type="button" @onclick="SaveCountdown" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold uppercase shadow-lg">Save</button></div></div></div> }
+@if (editingCountdown != null) 
+{ 
+    <div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" @onclick="() => editingCountdown = null">
+        <div class="bg-gray-800 border border-gray-600 p-6 rounded-xl shadow-2xl w-full max-w-sm" @onclick:stopPropagation="true">
+            <h3 class="text-lg font-bold text-white mb-6">@(editingCountdown.Id == 0 ? "Add Countdown" : "Edit Countdown")</h3>
+            <div class="space-y-4">
+                <div class="flex items-center gap-4 mb-2">
+                    <div class="w-16 h-16 bg-black rounded border border-gray-700 overflow-hidden flex items-center justify-center shrink-0 font-black">
+                        @if (!string.IsNullOrEmpty(editingCountdown.Img)) { <img src="@editingCountdown.Img" class="w-full h-full object-cover" /> }
+                        else { <span class="text-gray-600 text-[10px]">EVENT</span> }
+                    </div>
+                    <div class="flex-1">
+                        <label class="cursor-pointer block bg-gray-700 hover:bg-gray-600 text-white text-center px-4 py-2 rounded text-[10px] font-black uppercase tracking-widest transition">
+                            📂 Upload Asset
+                            <InputFile OnChange="@(e => HandleUpload(e, "countdown"))" class="hidden" />
+                        </label>
+                    </div>
+                </div>
+                <input @bind="editingCountdown.Name" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm font-bold" placeholder="Event Name" />
+                <input @bind="editingCountdown.TargetDate" type="date" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" />
+                <input @bind="editingCountdown.Img" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-xs font-mono" placeholder="OR Paste Image URL" />
+                <input @bind="editingCountdown.LinkUrl" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm" placeholder="Link URL (Optional)" />
+            </div>
+            <div class="mt-8 flex justify-end gap-3">
+                <button type="button" @onclick="() => editingCountdown = null" class="px-4 py-2 text-gray-400 hover:text-white text-xs font-bold uppercase">Cancel</button>
+                <button type="button" @onclick="SaveCountdown" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold uppercase shadow-lg">Save</button>
+            </div>
+        </div>
+    </div> 
+}
 
 <script>window.getUserOffset = () => { return new Date().getTimezoneOffset(); };</script>
 
@@ -269,11 +340,9 @@
     private string errorMessage = "";
     private User? currentUser;
 
-    // Menu States
     private int activeGroupMenuId = -1;
     private int activeLinkMenuId = -1;
 
-    // Modals
     private Stock? editingStock = null;
     private LinkGroup? editingGroup = null;
     private Link? editingLink = null;
@@ -290,14 +359,8 @@
         }
         catch (Exception ex)
         {
-            if (ex.Message.Contains("42703") || ex.InnerException?.Message.Contains("42703") == true)
-            {
-                isDbError = true;
-            }
-            else
-            {
-                throw;
-            }
+            if (ex.Message.Contains("42703") || ex.InnerException?.Message.Contains("42703") == true) isDbError = true;
+            else throw;
         }
     }
 
@@ -310,13 +373,10 @@
                 var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
                 if (string.IsNullOrEmpty(json)) { Nav.NavigateTo("/login", forceLoad: true); return; }
                 
-                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                var session = JsonSerializer.Deserialize<SessionData>(json, options);
-                
+                var session = JsonSerializer.Deserialize<SessionData>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 if (session == null || session.Expiry < DateTime.UtcNow) { Nav.NavigateTo("/login", forceLoad: true); return; }
 
                 currentUser = await Db.Users.FindAsync(session.UserId);
-                
                 if (currentUser != null) {
                     await LoadData();
                     _ = FetchPrices();
@@ -329,6 +389,24 @@
             } 
             catch { Nav.NavigateTo("/login", forceLoad: true); }
         }
+    }
+
+    // --- UPLOAD HANDLER ---
+    private async Task HandleUpload(InputFileChangeEventArgs e, string mode)
+    {
+        try
+        {
+            using var ms = new MemoryStream();
+            await e.File.OpenReadStream(5 * 1024 * 1024).CopyToAsync(ms);
+            string url = await BaseService.SaveImageAsync(ms.ToArray(), e.File.ContentType);
+
+            if (mode == "stock" && editingStock != null) editingStock.ImgUrl = url;
+            else if (mode == "link" && editingLink != null) editingLink.Img = url;
+            else if (mode == "countdown" && editingCountdown != null) editingCountdown.Img = url;
+
+            StateHasChanged();
+        }
+        catch (Exception ex) { Console.WriteLine("Upload Error: " + ex.Message); }
     }
 
     private void CloseMenus() { activeGroupMenuId = -1; activeLinkMenuId = -1; }
@@ -363,116 +441,80 @@
     private async Task FetchDerby()
     {
         if (currentUser == null) return;
-        
-        try 
-        {
+        try {
             var derbyFeed = await Db.Feeds.FirstOrDefaultAsync(f => f.Url == "https://shirt.woot.com/derby/rss" && f.UserId == currentUser.Id);
-            if (derbyFeed == null || !derbyFeed.IsEnabled) 
-            {
-                DerbyEntries.Clear();
-                return;
-            }
+            if (derbyFeed == null || !derbyFeed.IsEnabled) { DerbyEntries.Clear(); return; }
         } catch { return; }
 
-        try 
-        {
+        try {
             using var request = new HttpRequestMessage(HttpMethod.Get, "https://shirt.woot.com/derby/rss");
-            request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+            request.Headers.Add("User-Agent", "Mozilla/5.0");
             var response = await Http.SendAsync(request);
             if (!response.IsSuccessStatusCode) return;
-
             var xml = await response.Content.ReadAsStringAsync();
             var doc = XDocument.Parse(xml);
-
             DerbyEntries = doc.Descendants().Where(x => x.Name.LocalName == "item")
                 .Where(item => !item.Elements().Any(e => e.Name.LocalName == "totalvotes" || e.Name.LocalName == "voterank"))
-                .Select(item => {
-                    var desc = item.Elements().FirstOrDefault(x => x.Name.LocalName == "description")?.Value ?? "";
-                    string img = ExtractImage(item);
-                    return new DerbyEntry {
-                        Title = item.Elements().FirstOrDefault(x => x.Name.LocalName == "title")?.Value ?? "",
-                        Link = item.Elements().FirstOrDefault(x => x.Name.LocalName == "link")?.Value ?? "",
-                        ImgUrl = img
-                    };
-                })
-                .Where(x => !string.IsNullOrEmpty(x.ImgUrl))
-                .Take(9)
-                .ToList();
+                .Select(item => new DerbyEntry {
+                    Title = item.Elements().FirstOrDefault(x => x.Name.LocalName == "title")?.Value ?? "",
+                    Link = item.Elements().FirstOrDefault(x => x.Name.LocalName == "link")?.Value ?? "",
+                    ImgUrl = ExtractImage(item)
+                }).Where(x => !string.IsNullOrEmpty(x.ImgUrl)).Take(9).ToList();
             StateHasChanged();
-        }
-        catch {}
+        } catch {}
     }
 
     private async Task FetchRssFeeds()
     {
         if (currentUser == null) return;
-        
-        try
-        {
+        try {
             var feeds = await Db.Feeds.Where(f => f.UserId == currentUser.Id && f.IsEnabled && f.Category != "System").ToListAsync();
-            
-            var tasks = feeds.Select(async f => 
-            {
+            var tasks = feeds.Select(async f => {
                 try {
                     using var request = new HttpRequestMessage(HttpMethod.Get, f.Url);
-                    request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
-                    
+                    request.Headers.Add("User-Agent", "Mozilla/5.0");
                     var response = await Http.SendAsync(request);
                     if (!response.IsSuccessStatusCode) return Enumerable.Empty<RssItem>();
-
                     var xml = await response.Content.ReadAsStringAsync();
                     var doc = XDocument.Parse(xml);
-                    
                     var allItems = doc.Descendants().Where(x => x.Name.LocalName == "item")
-                        .Take(15)
-                        .Select(i => new RssItem {
+                        .Take(15).Select(i => new RssItem {
                             Source = f.Name,
                             Title = i.Elements().FirstOrDefault(x => x.Name.LocalName == "title")?.Value ?? "No Title",
                             Link = i.Elements().FirstOrDefault(x => x.Name.LocalName == "link")?.Value ?? "#",
                             ImgUrl = ExtractImage(i)
-                        })
-                        .ToList();
-
+                        }).ToList();
                     var withImg = allItems.Where(i => !string.IsNullOrEmpty(i.ImgUrl)).ToList();
-                    var withoutImg = allItems.Where(i => string.IsNullOrEmpty(i.ImgUrl)).ToList();
                     var result = withImg.Take(4).ToList();
-                    if (result.Count < 4) result.AddRange(withoutImg.Take(4 - result.Count));
+                    if (result.Count < 4) result.AddRange(allItems.Where(i => string.IsNullOrEmpty(i.ImgUrl)).Take(4 - result.Count));
                     return result;
-
                 } catch { return Enumerable.Empty<RssItem>(); }
             });
-
             var results = await Task.WhenAll(tasks);
             RssItems = results.SelectMany(x => x).ToList();
             StateHasChanged();
-        }
-        catch {}
+        } catch {}
     }
     
     private string ExtractImage(XElement item)
     {
         var enc = item.Elements().FirstOrDefault(x => x.Name.LocalName == "enclosure");
         if (enc != null && enc.Attribute("type")?.Value.Contains("image") == true) return enc.Attribute("url")?.Value ?? "";
-        
         var media = item.Elements().FirstOrDefault(x => x.Name.LocalName == "content" || x.Name.LocalName == "thumbnail");
         if (media != null) return media.Attribute("url")?.Value ?? "";
-        
         var group = item.Elements().FirstOrDefault(x => x.Name.LocalName == "group");
         if (group != null) {
              var subMedia = group.Elements().FirstOrDefault(x => x.Name.LocalName == "content" || x.Name.LocalName == "thumbnail");
              if (subMedia != null) return subMedia.Attribute("url")?.Value ?? "";
         }
-
         var desc = item.Elements().FirstOrDefault(x => x.Name.LocalName == "description" || x.Name.LocalName == "encoded")?.Value ?? "";
-        if (!string.IsNullOrEmpty(desc)) 
-        { 
+        if (!string.IsNullOrEmpty(desc)) { 
             var match = Regex.Match(desc, "src=[\"'](http[^\"']+)[\"']", RegexOptions.IgnoreCase); 
             if (match.Success) return match.Groups[1].Value; 
         }
         return "";
     }
 
-    // --- SORTING ---
     private async Task MoveGroup(LinkGroup g, int d) { CloseMenus(); await MoveItem(Db.LinkGroups, g, d); }
     private async Task MoveLink(Link l, int d) { CloseMenus(); await MoveItem(Db.Links, l, d, x => x.LinkGroupId == l.LinkGroupId); }
     private async Task MoveStock(Stock s, int d) { await MoveItem(Db.Stocks, s, d); }
@@ -487,36 +529,26 @@
         if (userProp != null && currentUser != null) list = list.Where(x => (int)userProp.GetValue(x)! == currentUser.Id).ToList();
         var prop = typeof(T).GetProperty("Order");
         if (prop == null) return;
-        
-        // Re-normalize order
         list = list.OrderBy(x => (int)prop.GetValue(x)!).ThenBy(x => (int)typeof(T).GetProperty("Id")!.GetValue(x)!).ToList();
         for(int i=0; i<list.Count; i++) prop.SetValue(list[i], i);
-        
         var idProp = typeof(T).GetProperty("Id");
         var itemId = (int)idProp!.GetValue(item)!;
         var currentItemInList = list.First(x => (int)idProp.GetValue(x)! == itemId);
         int index = list.IndexOf(currentItemInList);
-        
-        // Handle "Start" and "End" special values
         int newIndex;
         if (direction == -999) newIndex = 0;
         else if (direction == 999) newIndex = list.Count - 1;
         else newIndex = index + direction;
-
         if (newIndex >= 0 && newIndex < list.Count && newIndex != index) {
             list.RemoveAt(index);
             list.Insert(newIndex, currentItemInList);
-            
-            // Re-apply order index
             for(int i=0; i<list.Count; i++) prop.SetValue(list[i], i);
-            
             set.UpdateRange(list);
             await Db.SaveChangesAsync();
             await LoadData();
         }
     }
 
-    // --- CRUD ---
     private void OpenAddGroupModal() { CloseMenus(); editingGroup = new LinkGroup { Color = "Blue", Order = Groups.Count, UserId = currentUser!.Id }; }
     private void OpenEditGroupModal(LinkGroup g) { CloseMenus(); editingGroup = g; }
     private async Task SaveGroup() { if (editingGroup == null) return; if (editingGroup.Id == 0) Db.LinkGroups.Add(editingGroup); else Db.LinkGroups.Update(editingGroup); await Db.SaveChangesAsync(); editingGroup = null; await LoadData(); }
@@ -524,21 +556,7 @@
     
     private void OpenAddLinkModal(int groupId) { CloseMenus(); var g = Groups.FirstOrDefault(x=>x.Id==groupId); editingLink = new Link { LinkGroupId = groupId, Order = g?.Links.Count ?? 0, UserId = currentUser!.Id }; }
     private void OpenEditLinkModal(Link l) { CloseMenus(); editingLink = l; }
-    
-    private void DuplicateLink(Link l) 
-    { 
-        CloseMenus(); 
-        // Create a copy but keep ID 0 so it saves as new
-        editingLink = new Link { 
-            Name = l.Name + " (Copy)", 
-            Url = l.Url, 
-            Img = l.Img, 
-            LinkGroupId = l.LinkGroupId, 
-            UserId = currentUser!.Id,
-            Order = 9999 // Put at end by default
-        }; 
-    }
-
+    private void DuplicateLink(Link l) { CloseMenus(); editingLink = new Link { Name = l.Name + " (Copy)", Url = l.Url, Img = l.Img, LinkGroupId = l.LinkGroupId, UserId = currentUser!.Id, Order = 9999 }; }
     private async Task SaveLink() { if (editingLink == null) return; if (editingLink.Id == 0) Db.Links.Add(editingLink); else Db.Links.Update(editingLink); await Db.SaveChangesAsync(); editingLink = null; await LoadData(); }
     private async Task DeleteLink(Link l) { CloseMenus(); if (await JS.InvokeAsync<bool>("confirm", $"Delete '{l.Name}'?")) { Db.Links.Remove(l); await Db.SaveChangesAsync(); await LoadData(); } }
     
@@ -556,58 +574,42 @@
     {
         var now = DateTime.UtcNow.AddMinutes(-clientOffsetMinutes);
         var diff = target.Date - now.Date;
-        
         if (diff.TotalDays < 0) return ("Done", "");
         if (diff.TotalDays <= 30) { return ($"{(int)diff.TotalDays} Days", ""); }
-        
-        DateTime date = now.Date; 
-        int years = 0, months = 0, days = 0;
-        
+        DateTime date = now.Date; int years = 0, months = 0, days = 0;
         while (date.AddYears(1) <= target) { years++; date = date.AddYears(1); }
         while (date.AddMonths(1) <= target) { months++; date = date.AddMonths(1); }
-        
         days = (target - date).Days;
-        
         string display = ""; 
         if (years > 0) display += $"{years}y "; 
         if (months > 0) display += $"{months}m "; 
         display += $"{days}d";
-        
         return (display.Trim(), $"({(int)diff.TotalDays} total days)");
     }
 
     private async Task FetchPrices() 
     { 
         if (Stocks.Count == 0) return; 
-        isLoadingPrices = true; 
-        StateHasChanged(); 
-        
+        isLoadingPrices = true; StateHasChanged(); 
         using var client = new HttpClient(); 
         client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0"); 
-        
         foreach (var s in Stocks) 
         { 
-            try 
-            { 
+            try { 
                 var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{s.Symbol}?interval=1d"; 
                 var json = await client.GetStringAsync(url); 
-                using (var doc = JsonDocument.Parse(json)) 
-                { 
+                using (var doc = JsonDocument.Parse(json)) { 
                     var meta = doc.RootElement.GetProperty("chart").GetProperty("result")[0].GetProperty("meta"); 
                     decimal price = meta.GetProperty("regularMarketPrice").GetDecimal();
                     decimal prevClose = meta.GetProperty("chartPreviousClose").GetDecimal();
-                    
                     decimal change = price - prevClose;
                     decimal percent = (prevClose != 0) ? (change / prevClose) * 100 : 0;
-
                     PriceCache[s.Symbol] = new StockData(price, change, percent);
                 } 
-            } 
-            catch {} 
+            } catch {} 
             StateHasChanged(); 
         } 
-        isLoadingPrices = false; 
-        StateHasChanged(); 
+        isLoadingPrices = false; StateHasChanged(); 
     }
     
     public class SessionData { public int UserId { get; set; } public DateTime Expiry { get; set; } }
