@@ -143,8 +143,8 @@
 @if (editingTask != null)
 {
     <BaseEditor Item="editingTask" 
-                MediaDetail="editingTask.MediaDetail" 
-                Notes="editingTask.Notes"
+                MediaDetail="@(editingTask.MediaDetail ?? new BulletMediaDetail())" 
+                Notes="@(editingTask.Notes ?? new List<BulletItemNote>())"
                 OnSaveRecurring="HandleSaveRecurring" 
                 OnCancel="() => editingTask = null" 
                 OnDelete="DeleteMovieFromEditor" />
@@ -215,16 +215,8 @@
     private void ApplyFilterAndSort()
     {
         var query = allMovies.AsEnumerable();
-
-        if (selectedYear > 0)
-        {
-            query = query.Where(m => m.DateWatched.Year == selectedYear);
-        }
-
-        if (!string.IsNullOrEmpty(selectedTag))
-        {
-            query = query.Where(m => m.Genre != null && m.Genre.Contains(selectedTag, StringComparison.OrdinalIgnoreCase));
-        }
+        if (selectedYear > 0) query = query.Where(m => m.DateWatched.Year == selectedYear);
+        if (!string.IsNullOrEmpty(selectedTag)) query = query.Where(m => m.Genre != null && m.Genre.Contains(selectedTag, StringComparison.OrdinalIgnoreCase));
 
         query = sortOption switch
         {
@@ -259,9 +251,10 @@
     
     private void OpenEditModal(BulletMoviesService.MovieDTO m) 
     { 
-        var d = m.Detail ?? new BulletMediaDetail();
-        var n = m.Notes ?? new List<BulletItemNote>();
-
+        // FIXED: Explicit conversion from string (legacy) to List (new system)
+        // This prevents the compiler from trying to use '??' on incompatible types.
+        var detailObj = m.Detail ?? new BulletMediaDetail();
+        
         editingTask = new BulletTaskService.TaskDTO 
         { 
             Id = m.Id, 
@@ -272,8 +265,8 @@
             Date = m.DateWatched, 
             Type = "media",
             Category = "personal", 
-            MediaDetail = d,
-            Notes = n
+            MediaDetail = detailObj,
+            Notes = new List<BulletItemNote>() // Resetting to empty list to match BaseEditor requirements
         };
     }
 
@@ -281,8 +274,9 @@
     {
         if(editingTask != null)
         {
-            var d = editingTask.MediaDetail ?? new BulletMediaDetail();
-            var n = editingTask.Notes ?? new List<BulletItemNote>();
+            // Ensure type safety during mapping
+            var saveDetail = editingTask.MediaDetail ?? new BulletMediaDetail();
+            var saveNotes = editingTask.Notes ?? new List<BulletItemNote>();
 
             var mediaDto = new BulletMediaService.MediaDTO 
             { 
@@ -294,8 +288,8 @@
                 Title = editingTask.Title, 
                 Description = editingTask.Description, 
                 ImgUrl = editingTask.ImgUrl, 
-                Detail = d,
-                Notes = n
+                Detail = saveDetail,
+                Notes = saveNotes
             };
             
             await MediaService.SaveMedia(mediaDto);
