@@ -371,13 +371,32 @@
     }
 
     private async Task OpenEditor(string category, string type, DateTime date) { 
-        editingItem = new BulletTaskService.TaskDTO { 
+        var newItem = new BulletTaskService.TaskDTO { 
             UserId = userId, Category = category, Type = type, Date = date,
             Detail = new(), MeetingDetail = new(), HabitDetail = new(), MediaDetail = new(), 
             HolidayDetail = new(), BirthdayDetail = new(), AnniversaryDetail = new(), 
             VacationDetail = new(), HealthDetail = new(), SportsDetail = new(), Notes = new(),
             Meals = new(), Workouts = new()
         }; 
+
+        // SMART LOOKUP: Defaulting weight based on history
+        if (type == "health")
+        {
+            try {
+                var lastHealth = await Db.BulletHealthDetails
+                    .Include(d => d.BulletItem)
+                    .Where(d => d.BulletItem.UserId == userId && d.BulletItem.Type == "health" && d.BulletItem.Date < date)
+                    .OrderByDescending(d => d.BulletItem.Date)
+                    .FirstOrDefaultAsync();
+                
+                if (lastHealth != null && lastHealth.WeightLbs > 0)
+                {
+                    newItem.HealthDetail.WeightLbs = lastHealth.WeightLbs;
+                }
+            } catch { }
+        }
+
+        editingItem = newItem;
     }
     private void OpenEdit(BulletTaskService.TaskDTO t) { editingItem = CreateCopy(t); editingItem.Id = t.Id; }
     private void OpenHabitEdit(BulletHabitService.HabitDTO h) { editingItem = new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, Description = h.Description, ImgUrl = h.ImgUrl, Notes = h.Notes, HabitDetail = h.Detail, SortOrder = h.SortOrder }; }
