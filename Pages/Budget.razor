@@ -443,21 +443,39 @@
         }
     }
 
-    private async Task UpdateChart()
-    {
-        if (CurrentPeriod == null || !FlatBudgetList.Any()) return;
-        var chartData = new List<object>();
+private async Task UpdateChart()
+{
+    if (CurrentPeriod == null || !FlatBudgetList.Any()) return;
+    
+    var chartData = new List<object>();
 
-        foreach (var item in FlatBudgetList) {
-            decimal rawSpent = GetSpentForBudgetItem(item.Id);
-            decimal totalPlanned = item.PlannedAmount + item.CarriedOver;
-            decimal remaining = totalPlanned - rawSpent;
-            if (totalPlanned > 0) chartData.Add(new { label = item.Name, value = (double)totalPlanned, remaining = (double)remaining });
+    foreach (var item in FlatBudgetList) {
+        // Use your specialized spent logic to get accurate remaining funds
+        decimal spent = GetSpentForBudgetItem(item.Id);
+        decimal totalAllocated = item.PlannedAmount + item.CarriedOver;
+        decimal remaining = totalAllocated - spent;
+
+        // Size the box by the Total Allocated ($$)
+        if (totalAllocated != 0) {
+            chartData.Add(new { 
+                label = item.Name, 
+                value = (double)Math.Abs(totalAllocated), 
+                remaining = (double)remaining 
+            });
         }
-
-        if (Unaccounted > 0) chartData.Add(new { label = "Unaccounted", value = (double)Unaccounted, remaining = (double)Unaccounted });
-        await JS.InvokeVoidAsync("renderBudgetTreemap", "budgetTreemap", chartData);
     }
+
+    // Add Unaccounted "Float"
+    if (Unaccounted != 0) {
+        chartData.Add(new { 
+            label = "Unaccounted", 
+            value = (double)Math.Abs(Unaccounted), 
+            remaining = (double)Unaccounted 
+        });
+    }
+
+    await JS.InvokeVoidAsync("renderBudgetTreemap", "budgetTreemap", chartData);
+}
 
     private async Task RefreshAndChart() { RefreshFlatList(); StateHasChanged(); await Task.Delay(100); await UpdateChart(); }
 
