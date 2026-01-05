@@ -444,38 +444,42 @@
     }
 
 private async Task UpdateChart()
-{
-    if (CurrentPeriod == null || !FlatBudgetList.Any()) return;
-    
-    var chartData = new List<object>();
+    {
+        if (CurrentPeriod == null) return;
+        
+        // Ensure the list is fresh before we map it
+        RefreshFlatList();
 
-    foreach (var item in FlatBudgetList) {
-        // Use your specialized spent logic to get accurate remaining funds
-        decimal spent = GetSpentForBudgetItem(item.Id);
-        decimal totalAllocated = item.PlannedAmount + item.CarriedOver;
-        decimal remaining = totalAllocated - spent;
+        var chartData = new List<object>();
 
-        // Size the box by the Total Allocated ($$)
-        if (totalAllocated != 0) {
+        foreach (var item in FlatBudgetList) {
+            decimal spent = GetSpentForBudgetItem(item.Id);
+            decimal totalAllocated = item.PlannedAmount + item.CarriedOver;
+            decimal remaining = totalAllocated - spent;
+
+            // Treemap 'value' (size) MUST be positive
+            double sizeValue = (double)Math.Max(1, Math.Abs(totalAllocated));
+
             chartData.Add(new { 
                 label = item.Name, 
-                value = (double)Math.Abs(totalAllocated), 
+                value = sizeValue, 
                 remaining = (double)remaining 
             });
         }
-    }
 
-    // Add Unaccounted "Float"
-    if (Unaccounted != 0) {
-        chartData.Add(new { 
-            label = "Unaccounted", 
-            value = (double)Math.Abs(Unaccounted), 
-            remaining = (double)Unaccounted 
-        });
-    }
+        // Add Unaccounted "Float"
+        if (Unaccounted != 0) {
+            chartData.Add(new { 
+                label = "Unaccounted", 
+                value = (double)Math.Max(1, Math.Abs(Unaccounted)), 
+                remaining = (double)Unaccounted 
+            });
+        }
 
-    await JS.InvokeVoidAsync("renderBudgetTreemap", "budgetTreemap", chartData);
-}
+        if (chartData.Any()) {
+            await JS.InvokeVoidAsync("renderBudgetTreemap", "budgetTreemap", chartData);
+        }
+    }
 
     private async Task RefreshAndChart() { RefreshFlatList(); StateHasChanged(); await Task.Delay(100); await UpdateChart(); }
 
