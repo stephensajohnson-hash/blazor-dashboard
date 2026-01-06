@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Security.Cryptography;
 using System.Text;
+using System.Linq;
 
 namespace Dashboard;
 
@@ -12,7 +13,6 @@ public class AppDbContext : DbContext
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
-    // ... (Keep Users, LinkGroups, etc.) ...
     public DbSet<User> Users { get; set; }
     public DbSet<LinkGroup> LinkGroups { get; set; }
     public DbSet<Link> Links { get; set; }
@@ -42,13 +42,13 @@ public class AppDbContext : DbContext
     public DbSet<BulletHealthMeal> BulletHealthMeals { get; set; }
     public DbSet<BulletHealthWorkout> BulletHealthWorkouts { get; set; }
 
-    // SPORTS
+    // Sports
     public DbSet<League> Leagues { get; set; }
-    public DbSet<Season> Seasons { get; set; } // NEW
-    public DbSet<Team> Teams { get; set; } // NEW
+    public DbSet<Season> Seasons { get; set; }
+    public DbSet<Team> Teams { get; set; }
     public DbSet<BulletGameDetail> BulletGameDetails { get; set; }
 
-    // BUDGET
+    // Budget
     public DbSet<BudgetPeriod> BudgetPeriods { get; set; }
     public DbSet<BudgetCycle> BudgetCycles { get; set; }
     public DbSet<BudgetItem> BudgetItems { get; set; }
@@ -58,200 +58,475 @@ public class AppDbContext : DbContext
     public DbSet<BudgetIncomeSource> BudgetIncomeSources { get; set; }
     public DbSet<BudgetExpectedIncome> BudgetExpectedIncome { get; set; }
     public DbSet<BudgetWatchItem> BudgetWatchItems { get; set; }
-    
 }
 
-// ... (Keep existing Bullet classes) ...
+public class User 
+{ 
+    public int Id { get; set; } 
+    public string Username { get; set; } = ""; 
+    public string PasswordHash { get; set; } = ""; 
+    public string ZipCode { get; set; } = "75482"; 
+    public string AvatarUrl { get; set; } = ""; 
+    public int Age { get; set; } = 30; 
+    public double HeightInches { get; set; } = 70; 
+    public string Gender { get; set; } = "Male"; 
+    public string ActivityLevel { get; set; } = "Sedentary"; 
+    public int WeeklyCalorieDeficitGoal { get; set; } = 3500; 
+    public int DailyProteinGoal { get; set; } = 150; 
+    public int DailyFatGoal { get; set; } = 70; 
+    public int DailyCarbGoal { get; set; } = 200; 
+}
 
-// UPDATED: League
-public class League
-{
-    public int Id { get; set; }
-    public int UserId { get; set; } // NEW
-    public string Name { get; set; } = "";
+public class BulletItem 
+{ 
+    public int Id { get; set; } 
+    public int UserId { get; set; } 
+    public string Type { get; set; } = "task"; 
+    public string Category { get; set; } = "personal"; 
+    public DateTime Date { get; set; } 
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow; 
+    public DateTime? EndDate { get; set; }
+    public string Title { get; set; } = ""; 
+    public string Description { get; set; } = ""; 
+    public string ImgUrl { get; set; } = ""; 
+    public string LinkUrl { get; set; } = ""; 
+    public string OriginalStringId { get; set; } = ""; 
+    [Column("Order")] 
+    public int SortOrder { get; set; } = 0; 
+
+    // Navigation Properties for SQL Joins
+    [ForeignKey("BulletItemId")] 
+    public virtual BulletTaskDetail? TaskDetail { get; set; }
+
+    [ForeignKey("BulletItemId")] 
+    public virtual BulletMeetingDetail? MeetingDetail { get; set; }
+
+    [ForeignKey("BulletItemId")] 
+    public virtual BulletHabitDetail? HabitDetail { get; set; }
+
+    [ForeignKey("BulletItemId")] 
+    public virtual BulletMediaDetail? MediaDetail { get; set; }
+
+    [ForeignKey("BulletItemId")] 
+    public virtual BulletHolidayDetail? HolidayDetail { get; set; }
+
+    [ForeignKey("BulletItemId")] 
+    public virtual BulletBirthdayDetail? BirthdayDetail { get; set; }
+
+    [ForeignKey("BulletItemId")] 
+    public virtual BulletAnniversaryDetail? AnniversaryDetail { get; set; }
+
+    [ForeignKey("BulletItemId")] 
+    public virtual BulletVacationDetail? VacationDetail { get; set; }
+
+    [ForeignKey("BulletItemId")] 
+    public virtual BulletHealthDetail? HealthDetail { get; set; }
+
+    [ForeignKey("BulletItemId")] 
+    public virtual BulletGameDetail? SportsDetail { get; set; }
+
+    public virtual ICollection<BulletItemNote> Notes { get; set; } = new List<BulletItemNote>();
+    public virtual ICollection<BulletHealthMeal> Meals { get; set; } = new List<BulletHealthMeal>();
+    public virtual ICollection<BulletHealthWorkout> Workouts { get; set; } = new List<BulletHealthWorkout>();
+}
+
+public class BulletItemNote 
+{ 
+    public int Id { get; set; } 
+    public int BulletItemId { get; set; } 
+    public string Content { get; set; } = ""; 
+    public string ImgUrl { get; set; } = ""; 
+    public string LinkUrl { get; set; } = ""; 
+    public int Order { get; set; } = 0; 
+}
+
+public class BulletTaskDetail 
+{ 
+    [Key] 
+    public int BulletItemId { get; set; } 
+    public string Status { get; set; } = "Pending"; 
+    public bool IsCompleted { get; set; } = false; 
+    public string Priority { get; set; } = "Normal"; 
+    public string TicketNumber { get; set; } = ""; 
+    public string TicketUrl { get; set; } = ""; 
+    public DateTime? DueDate { get; set; } 
+}
+
+public class BulletMeetingDetail 
+{ 
+    [Key] 
+    public int BulletItemId { get; set; } 
+    public DateTime? StartTime { get; set; } 
+    public int DurationMinutes { get; set; } 
+    public int ActualDurationMinutes { get; set; } 
+    public bool IsCompleted { get; set; } = false;
+}
+
+public class BulletHabitDetail 
+{ 
+    [Key, ForeignKey("BulletItem")] 
+    public int BulletItemId { get; set; } 
+    public virtual BulletItem BulletItem { get; set; } = null!; 
+    public int StreakCount { get; set; } = 0; 
+    public string Status { get; set; } = "Active"; 
+    public bool IsCompleted { get; set; } = false; 
+}
+
+public class BulletMediaDetail 
+{ 
+    [Key, ForeignKey("BulletItem")] 
+    public int BulletItemId { get; set; } 
+    public virtual BulletItem BulletItem { get; set; } = null!; 
+    public int Rating { get; set; } = 0; 
+    public int ReleaseYear { get; set; } = 0; 
+    public string Tags { get; set; } = ""; 
+}
+
+public class BulletHolidayDetail 
+{ 
+    [Key, ForeignKey("BulletItem")] 
+    public int BulletItemId { get; set; } 
+    public virtual BulletItem BulletItem { get; set; } = null!; 
+    public bool IsWorkHoliday { get; set; } = false; 
+}
+
+public class BulletBirthdayDetail 
+{ 
+    [Key, ForeignKey("BulletItem")] 
+    public int BulletItemId { get; set; } 
+    public virtual BulletItem BulletItem { get; set; } = null!; 
+    public int? DOB_Year { get; set; } 
+}
+
+public class BulletAnniversaryDetail 
+{ 
+    [Key, ForeignKey("BulletItem")] 
+    public int BulletItemId { get; set; } 
+    public virtual BulletItem BulletItem { get; set; } = null!; 
+    public string AnniversaryType { get; set; } = "Other"; 
+    public int? FirstYear { get; set; } 
+}
+
+public class BulletVacationDetail 
+{ 
+    [Key, ForeignKey("BulletItem")] 
+    public int BulletItemId { get; set; } 
+    public virtual BulletItem BulletItem { get; set; } = null!; 
+    public string VacationGroupId { get; set; } = ""; 
+}
+
+public class BulletHealthDetail 
+{ 
+    [Key, ForeignKey("BulletItem")] 
+    public int BulletItemId { get; set; } 
+    public virtual BulletItem BulletItem { get; set; } = null!; 
+    public double WeightLbs { get; set; } 
+    public int CalculatedTDEE { get; set; } 
+}
+
+public class BulletHealthMeal 
+{ 
+    public int Id { get; set; } 
+    public int BulletItemId { get; set; } 
+    public string MealType { get; set; } = "Breakfast"; 
+    public string Name { get; set; } = ""; 
+    public double Calories { get; set; } 
+    public double Protein { get; set; } 
+    public double Carbs { get; set; } 
+    public double Fat { get; set; } 
+    public double Fiber { get; set; } 
+}
+
+public class BulletHealthWorkout 
+{ 
+    public int Id { get; set; } 
+    public int BulletItemId { get; set; } 
+    public string Name { get; set; } = ""; 
+    public double CaloriesBurned { get; set; } 
+    public int TimeSpentMinutes { get; set; } 
+}
+
+public class StoredImage 
+{ 
+    public int Id { get; set; } 
+    public byte[] Data { get; set; } = Array.Empty<byte>(); 
+    public string ContentType { get; set; } = "image/jpeg"; 
+    public string OriginalName { get; set; } = ""; 
+    public DateTime UploadedAt { get; set; } = DateTime.UtcNow; 
+}
+
+public class League 
+{ 
+    public int Id { get; set; } 
+    public int UserId { get; set; } 
+    public string Name { get; set; } = ""; 
     public string ImgUrl { get; set; } = ""; 
     public string LinkUrl { get; set; } = ""; 
 }
 
-// NEW: Season
-public class Season
-{
-    public int Id { get; set; }
-    public int UserId { get; set; }
-    public int LeagueId { get; set; }
-    public string Name { get; set; } = ""; // e.g. "2025-2026"
-    public string ImgUrl { get; set; } = "";
+public class Season 
+{ 
+    public int Id { get; set; } 
+    public int UserId { get; set; } 
+    public int LeagueId { get; set; } 
+    public string Name { get; set; } = ""; 
+    public string ImgUrl { get; set; } = ""; 
 }
 
-// NEW: Team
-public class Team
-{
-    public int Id { get; set; }
-    public int UserId { get; set; }
-    public int LeagueId { get; set; }
-    public string Name { get; set; } = ""; // e.g. "Dallas Cowboys"
-    public string Abbreviation { get; set; } = ""; // e.g. "DAL"
-    public string LogoUrl { get; set; } = "";
-    public bool IsFavorite { get; set; } = false;
+public class Team 
+{ 
+    public int Id { get; set; } 
+    public int UserId { get; set; } 
+    public int LeagueId { get; set; } 
+    public string Name { get; set; } = ""; 
+    public string Abbreviation { get; set; } = ""; 
+    public string LogoUrl { get; set; } = ""; 
+    public bool IsFavorite { get; set; } = false; 
 }
 
-// ... (Keep existing User, BulletItem, and other classes below) ...
-public static class PasswordHelper { public static string HashPassword(string password) { using var sha256 = SHA256.Create(); var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password)); return Convert.ToBase64String(bytes); } public static bool VerifyPassword(string password, string storedHash) => HashPassword(password) == storedHash; }
-public class User { public int Id { get; set; } public string Username { get; set; } = ""; public string PasswordHash { get; set; } = ""; public string ZipCode { get; set; } = "75482"; public string AvatarUrl { get; set; } = ""; public int Age { get; set; } = 30; public double HeightInches { get; set; } = 70; public string Gender { get; set; } = "Male"; public string ActivityLevel { get; set; } = "Sedentary"; public int WeeklyCalorieDeficitGoal { get; set; } = 3500; public int DailyProteinGoal { get; set; } = 150; public int DailyFatGoal { get; set; } = 70; public int DailyCarbGoal { get; set; } = 200; }
-public class BulletItem { public int Id { get; set; } public int UserId { get; set; } public string Type { get; set; } = "task"; public string Category { get; set; } = "personal"; public DateTime Date { get; set; } public DateTime CreatedAt { get; set; } = DateTime.UtcNow; public string Title { get; set; } = ""; public string Description { get; set; } = ""; public string ImgUrl { get; set; } = ""; public string LinkUrl { get; set; } = ""; public string OriginalStringId { get; set; } = ""; [Column("Order")] public int SortOrder { get; set; } = 0; }
-public class BulletItemNote { public int Id { get; set; } public int BulletItemId { get; set; } public string Content { get; set; } = ""; public string ImgUrl { get; set; } = ""; public string LinkUrl { get; set; } = ""; public int Order { get; set; } = 0; }
-public class BulletTaskDetail { [Key] public int BulletItemId { get; set; } public string Status { get; set; } = "Pending"; public bool IsCompleted { get; set; } = false; public string Priority { get; set; } = "Normal"; public string TicketNumber { get; set; } = ""; public string TicketUrl { get; set; } = ""; public DateTime? DueDate { get; set; } }
-public class BulletMeetingDetail { [Key] public int BulletItemId { get; set; } public DateTime? StartTime { get; set; } public int DurationMinutes { get; set; } public int ActualDurationMinutes { get; set; } public bool IsCompleted { get; set; } }
-public class BulletHabitDetail { [Key, ForeignKey("BulletItem")] public int BulletItemId { get; set; } public virtual BulletItem BulletItem { get; set; } = null!; public int StreakCount { get; set; } = 0; public string Status { get; set; } = "Active"; public bool IsCompleted { get; set; } = false; }
-public class BulletMediaDetail { [Key, ForeignKey("BulletItem")] public int BulletItemId { get; set; } public virtual BulletItem BulletItem { get; set; } = null!; public int Rating { get; set; } = 0; public int ReleaseYear { get; set; } = 0; public string Tags { get; set; } = ""; }
-public class BulletHolidayDetail { [Key, ForeignKey("BulletItem")] public int BulletItemId { get; set; } public virtual BulletItem BulletItem { get; set; } = null!; public bool IsWorkHoliday { get; set; } = false; }
-public class BulletBirthdayDetail { [Key, ForeignKey("BulletItem")] public int BulletItemId { get; set; } public virtual BulletItem BulletItem { get; set; } = null!; public int? DOB_Year { get; set; } }
-public class BulletAnniversaryDetail { [Key, ForeignKey("BulletItem")] public int BulletItemId { get; set; } public virtual BulletItem BulletItem { get; set; } = null!; public string AnniversaryType { get; set; } = "Other"; public int? FirstYear { get; set; } }
-public class BulletVacationDetail { [Key, ForeignKey("BulletItem")] public int BulletItemId { get; set; } public virtual BulletItem BulletItem { get; set; } = null!; public string VacationGroupId { get; set; } = ""; }
-public class BulletHealthDetail { [Key, ForeignKey("BulletItem")] public int BulletItemId { get; set; } public virtual BulletItem BulletItem { get; set; } = null!; public double WeightLbs { get; set; } public int CalculatedTDEE { get; set; } }
-public class BulletHealthMeal { public int Id { get; set; } public int BulletItemId { get; set; } public string MealType { get; set; } = "Breakfast"; public string Name { get; set; } = ""; public double Calories { get; set; } public double Protein { get; set; } public double Carbs { get; set; } public double Fat { get; set; } public double Fiber { get; set; } }
-public class BulletHealthWorkout { public int Id { get; set; } public int BulletItemId { get; set; } public string Name { get; set; } = ""; public double CaloriesBurned { get; set; } public int TimeSpentMinutes { get; set; } }
-public class StoredImage { public int Id { get; set; } public byte[] Data { get; set; } = Array.Empty<byte>(); public string ContentType { get; set; } = "image/jpeg"; public string OriginalName { get; set; } = ""; public DateTime UploadedAt { get; set; } = DateTime.UtcNow; }
-public class Recipe { public int Id { get; set; } public int UserId { get; set; } public string Title { get; set; } = ""; public string Description { get; set; } = ""; public string Category { get; set; } = ""; public int Servings { get; set; } public string? ServingSize { get; set; } public string PrepTime { get; set; } = ""; public string CookTime { get; set; } = ""; public string? ImageUrl { get; set; } public int? ImageId { get; set; } public string SourceName { get; set; } = ""; public string SourceUrl { get; set; } = ""; public string TagsJson { get; set; } = "[]"; public List<RecipeIngredient> Ingredients { get; set; } = new(); public List<RecipeInstruction> Instructions { get; set; } = new(); }
-public class RecipeCategory { public int Id { get; set; } public int UserId { get; set; } public string Name { get; set; } = ""; public string? ImageUrl { get; set; } public int? ImageId { get; set; } }
-public class RecipeIngredient { public int Id { get; set; } public int RecipeId { get; set; } public string Section { get; set; } = "Main"; public int SectionOrder { get; set; } public int Order { get; set; } public string Name { get; set; } = ""; public string Quantity { get; set; } = ""; public string Unit { get; set; } = ""; public string Notes { get; set; } = ""; public double Calories { get; set; } public double Protein { get; set; } public double Carbs { get; set; } public double Fat { get; set; } public double Fiber { get; set; } }
-public class RecipeInstruction { public int Id { get; set; } public int RecipeId { get; set; } public string Section { get; set; } = "Directions"; public int SectionOrder { get; set; } public int StepNumber { get; set; } public string Text { get; set; } = ""; }
-public class LinkGroup { public int Id { get; set; } public int UserId { get; set; } public string Name { get; set; } = ""; public string Color { get; set; } = "blue"; public bool IsStatic { get; set; } public int Order { get; set; } public List<Link> Links { get; set; } = new(); }
-public class Link { public int Id { get; set; } public int UserId { get; set; } public int LinkGroupId { get; set; } public string Name { get; set; } = ""; public string Url { get; set; } = ""; public string Img { get; set; } = ""; public int Order { get; set; } }
-public class Countdown { public int Id { get; set; } public int UserId { get; set; } public string Name { get; set; } = ""; public DateTime TargetDate { get; set; } public string LinkUrl { get; set; } = ""; public string Img { get; set; } = ""; public int Order { get; set; } }
-public class Stock { public int Id { get; set; } public int UserId { get; set; } public string Symbol { get; set; } = ""; public string ImgUrl { get; set; } = ""; public string LinkUrl { get; set; } = ""; public double Shares { get; set; } public int Order { get; set; } }
-public class Feed { public int Id { get; set; } public int UserId { get; set; } public string Name { get; set; } = ""; public string Url { get; set; } = ""; public string Category { get; set; } = "General"; public bool IsEnabled { get; set; } = false; }
-public static class BulletViewConfig { public const string ImgWidthDay = "25%"; public const string ImgWidthWeek = "20%"; public const string ImgWidthMonth = "15%"; }
-
-public class BulletGameDetail
-{
-    [Key, ForeignKey("BulletItem")]
-    public int BulletItemId { get; set; }
-    public virtual BulletItem BulletItem { get; set; } = null!;
-
-    public int LeagueId { get; set; }
-    public int SeasonId { get; set; }
-    public int HomeTeamId { get; set; }
-    public int AwayTeamId { get; set; }
-    
-    public int HomeScore { get; set; }
-    public int AwayScore { get; set; }
-    
+public class BulletGameDetail 
+{ 
+    [Key, ForeignKey("BulletItem")] 
+    public int BulletItemId { get; set; } 
+    public virtual BulletItem BulletItem { get; set; } = null!; 
+    public int LeagueId { get; set; } 
+    public int SeasonId { get; set; } 
+    public int HomeTeamId { get; set; } 
+    public int AwayTeamId { get; set; } 
+    public int HomeScore { get; set; } 
+    public int AwayScore { get; set; } 
     public bool IsComplete { get; set; } 
     public DateTime? StartTime { get; set; } 
-    public string TvChannel { get; set; } = "";
+    public string TvChannel { get; set; } = ""; 
 }
 
-public class BudgetPeriod
-{
-    public int Id { get; set; }
-    public int UserId { get; set; }
+public class BudgetPeriod 
+{ 
+    public int Id { get; set; } 
+    public int UserId { get; set; } 
     public string StringId { get; set; } = ""; 
-    public string DisplayName { get; set; } = "";
-    public DateTime StartDate { get; set; }
-    public decimal InitialBankBalance { get; set; }
-    public List<BudgetCycle> Cycles { get; set; } = new();
-    public List<BudgetTransaction> Transactions { get; set; } = new();
-    public List<BudgetTransfer> Transfers { get; set; } = new();
-    public List<BudgetExpectedIncome> ExpectedIncome { get; set; } = new();
-    
-    // FIX: Renamed from 'BudgetWatchItems' to 'WatchList' to match UI code
-    public List<BudgetWatchItem> WatchList { get; set; } = new();    
+    public string DisplayName { get; set; } = ""; 
+    public DateTime StartDate { get; set; } 
+    public decimal InitialBankBalance { get; set; } 
+    public List<BudgetCycle> Cycles { get; set; } = new(); 
+    public List<BudgetTransaction> Transactions { get; set; } = new(); 
+    public List<BudgetTransfer> Transfers { get; set; } = new(); 
+    public List<BudgetExpectedIncome> ExpectedIncome { get; set; } = new(); 
+    public List<BudgetWatchItem> WatchList { get; set; } = new(); 
 }
 
-public class BudgetCycle
-{
-    public int Id { get; set; }
-    public int BudgetPeriodId { get; set; }
+public class BudgetCycle 
+{ 
+    public int Id { get; set; } 
+    public int BudgetPeriodId { get; set; } 
     public int CycleNumber { get; set; } 
-    public string Label { get; set; } = "";
-    public List<BudgetItem> Items { get; set; } = new();
+    public string Label { get; set; } = ""; 
+    public List<BudgetItem> Items { get; set; } = new(); 
 }
 
-public class BudgetItem
-{
-    public int Id { get; set; }
-    public int BudgetCycleId { get; set; }
+public class BudgetItem 
+{ 
+    public int Id { get; set; } 
+    public int BudgetCycleId { get; set; } 
     public string StringId { get; set; } = ""; 
-    public string Name { get; set; } = "";
-    public decimal PlannedAmount { get; set; }
-    public decimal CarriedOver { get; set; }
-    public string ImgUrl { get; set; } = "";
+    public string Name { get; set; } = ""; 
+    public decimal PlannedAmount { get; set; } 
+    public decimal CarriedOver { get; set; } 
+    public string ImgUrl { get; set; } = ""; 
 }
 
-public class BudgetTransaction
-{
-    public int Id { get; set; }
-    public int BudgetPeriodId { get; set; }
-    public string StringId { get; set; } = "";
-    public DateTime Date { get; set; }
-    public string Description { get; set; } = "";
+public class BudgetTransaction 
+{ 
+    public int Id { get; set; } 
+    public int BudgetPeriodId { get; set; } 
+    public string StringId { get; set; } = ""; 
+    public DateTime Date { get; set; } 
+    public string Description { get; set; } = ""; 
     public decimal Amount { get; set; } 
     public string Type { get; set; } = "expense"; 
-    
     public string? SourceStringId { get; set; } 
     public string? LinkedBudgetItemStringId { get; set; } 
-    
     public int? ResolvedBudgetItemId { get; set; } 
-    
-    public List<BudgetTransactionSplit> Splits { get; set; } = new();
+    public List<BudgetTransactionSplit> Splits { get; set; } = new(); 
 }
 
-public class BudgetTransactionSplit
-{
-    public int Id { get; set; }
-    public int BudgetTransactionId { get; set; }
-    public string LinkedBudgetItemStringId { get; set; } = "";
-    public decimal Amount { get; set; }
-    public string Note { get; set; } = "";
-    public int? ResolvedBudgetItemId { get; set; }
+public class BudgetTransactionSplit 
+{ 
+    public int Id { get; set; } 
+    public int BudgetTransactionId { get; set; } 
+    public string LinkedBudgetItemStringId { get; set; } = ""; 
+    public decimal Amount { get; set; } 
+    public string Note { get; set; } = ""; 
+    public int? ResolvedBudgetItemId { get; set; } 
 }
 
-public class BudgetTransfer
-{
-    public int Id { get; set; }
-    public int BudgetPeriodId { get; set; }
-    public DateTime Date { get; set; }
-    public string FromStringId { get; set; } = "";
-    public string ToStringId { get; set; } = "";
-    public decimal Amount { get; set; }
-    public string Note { get; set; } = "";
-    
-    public int? ResolvedFromId { get; set; }
-    public int? ResolvedToId { get; set; }
+public class BudgetTransfer 
+{ 
+    public int Id { get; set; } 
+    public int BudgetPeriodId { get; set; } 
+    public DateTime Date { get; set; } 
+    public string FromStringId { get; set; } = ""; 
+    public string ToStringId { get; set; } = ""; 
+    public decimal Amount { get; set; } 
+    public string Note { get; set; } = ""; 
+    public int? ResolvedFromId { get; set; } 
+    public int? ResolvedToId { get; set; } 
 }
 
-public class BudgetIncomeSource
-{
-    public int Id { get; set; }
-    public int UserId { get; set; }
+public class BudgetIncomeSource 
+{ 
+    public int Id { get; set; } 
+    public int UserId { get; set; } 
     public string StringId { get; set; } = ""; 
-    public string Name { get; set; } = "";
-    public string ImgUrl { get; set; } = "";
-    
-    // FIX: Added to match database schema, Nullable to allow flexible imports
-    public decimal? Amount { get; set; }
+    public string Name { get; set; } = ""; 
+    public string ImgUrl { get; set; } = ""; 
+    public decimal? Amount { get; set; } 
 }
 
-public class BudgetExpectedIncome
-{
-    public int Id { get; set; }
+public class BudgetExpectedIncome 
+{ 
+    public int Id { get; set; } 
     public int BudgetPeriodId { get; set; } 
     public string SourceStringId { get; set; } = ""; 
-    public decimal Amount { get; set; }
-    public DateTime Date { get; set; }
+    public decimal Amount { get; set; } 
+    public DateTime Date { get; set; } 
 }
 
-public class BudgetWatchItem
-{
-    public int Id { get; set; }
+public class BudgetWatchItem 
+{ 
+    public int Id { get; set; } 
     public int BudgetPeriodId { get; set; } 
-    public string Description { get; set; } = "";
-    public decimal Amount { get; set; }
+    public string Description { get; set; } = ""; 
+    public decimal Amount { get; set; } 
     public DateTime? DueDate { get; set; } 
-    
-    // NEW: Link to the specific budget item
-    public int? ResolvedBudgetItemId { get; set; }
-    
-    // REMOVED: ImgUrl (we will fetch this from the linked BudgetItem)
+    public int? ResolvedBudgetItemId { get; set; } 
+}
+
+public class Recipe 
+{ 
+    public int Id { get; set; } 
+    public int UserId { get; set; } 
+    public string Title { get; set; } = ""; 
+    public string Description { get; set; } = ""; 
+    public string Category { get; set; } = ""; 
+    public int Servings { get; set; } 
+    public string? ServingSize { get; set; } 
+    public string PrepTime { get; set; } = ""; 
+    public string CookTime { get; set; } = ""; 
+    public string? ImageUrl { get; set; } 
+    public int? ImageId { get; set; } 
+    public string SourceName { get; set; } = ""; 
+    public string SourceUrl { get; set; } = ""; 
+    public string TagsJson { get; set; } = "[]"; 
+    public List<RecipeIngredient> Ingredients { get; set; } = new(); 
+    public List<RecipeInstruction> Instructions { get; set; } = new(); 
+}
+
+public class RecipeCategory 
+{ 
+    public int Id { get; set; } 
+    public int UserId { get; set; } 
+    public string Name { get; set; } = ""; 
+    public string? ImageUrl { get; set; } 
+    public int? ImageId { get; set; } 
+}
+
+public class RecipeIngredient 
+{ 
+    public int Id { get; set; } 
+    public int RecipeId { get; set; } 
+    public string Section { get; set; } = "Main"; 
+    public int SectionOrder { get; set; } 
+    public int Order { get; set; } 
+    public string Name { get; set; } = ""; 
+    public string Quantity { get; set; } = ""; 
+    public string Unit { get; set; } = ""; 
+    public string Notes { get; set; } = ""; 
+    public double Calories { get; set; } 
+    public double Protein { get; set; } 
+    public double Carbs { get; set; } 
+    public double Fat { get; set; } 
+    public double Fiber { get; set; } 
+}
+
+public class RecipeInstruction 
+{ 
+    public int Id { get; set; } 
+    public int RecipeId { get; set; } 
+    public string Section { get; set; } = "Directions"; 
+    public int SectionOrder { get; set; } 
+    public int StepNumber { get; set; } 
+    public string Text { get; set; } = ""; 
+}
+
+public class LinkGroup 
+{ 
+    public int Id { get; set; } 
+    public int UserId { get; set; } 
+    public string Name { get; set; } = ""; 
+    public string Color { get; set; } = "blue"; 
+    public bool IsStatic { get; set; } 
+    public int Order { get; set; } 
+    public List<Link> Links { get; set; } = new(); 
+}
+
+public class Link 
+{ 
+    public int Id { get; set; } 
+    public int UserId { get; set; } 
+    public int LinkGroupId { get; set; } 
+    public string Name { get; set; } = ""; 
+    public string Url { get; set; } = ""; 
+    public string Img { get; set; } = ""; 
+    public int Order { get; set; } 
+}
+
+public class Countdown 
+{ 
+    public int Id { get; set; } 
+    public int UserId { get; set; } 
+    public string Name { get; set; } = ""; 
+    public DateTime TargetDate { get; set; } 
+    public string LinkUrl { get; set; } = ""; 
+    public string Img { get; set; } = ""; 
+    public int Order { get; set; } 
+}
+
+public class Stock 
+{ 
+    public int Id { get; set; } 
+    public int UserId { get; set; } 
+    public string Symbol { get; set; } = ""; 
+    public string ImgUrl { get; set; } = ""; 
+    public string LinkUrl { get; set; } = ""; 
+    public double Shares { get; set; } 
+    public int Order { get; set; } 
+}
+
+public class Feed 
+{ 
+    public int Id { get; set; } 
+    public int UserId { get; set; } 
+    public string Name { get; set; } = ""; 
+    public string Url { get; set; } = ""; 
+    public string Category { get; set; } = "General"; 
+    public bool IsEnabled { get; set; } = false; 
+}
+
+public static class PasswordHelper 
+{ 
+    public static string HashPassword(string password) 
+    { 
+        using var sha256 = SHA256.Create(); 
+        var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password)); 
+        return Convert.ToBase64String(bytes); 
+    } 
+    public static bool VerifyPassword(string password, string storedHash) => HashPassword(password) == storedHash; 
+}
+
+public static class BulletViewConfig 
+{ 
+    public const string ImgWidthDay = "25%"; 
+    public const string ImgWidthWeek = "20%"; 
+    public const string ImgWidthMonth = "15%"; 
 }
