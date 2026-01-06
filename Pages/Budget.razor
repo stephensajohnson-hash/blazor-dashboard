@@ -459,29 +459,31 @@ private async Task UpdateChart()
     
     RefreshFlatList();
 
-    // Using an explicit double-based anonymous object list
-    var chartData = FlatBudgetList
+    // 1. Build a clean, typed list
+    var dataPoints = FlatBudgetList
         .Where(i => (i.PlannedAmount + i.CarriedOver) != 0)
         .Select(item => {
-            double total = (double)(item.PlannedAmount + item.CarriedOver);
-            double spent = (double)GetSpentForBudgetItem(item.Id);
+            decimal total = item.PlannedAmount + item.CarriedOver;
+            decimal spent = GetSpentForBudgetItem(item.Id);
             return new { 
                 l = item.Name, 
-                v = Math.Max(1.0, Math.Abs(total)), 
-                r = Math.Round(total - spent, 2) 
+                v = (double)Math.Max(1, Math.Abs(total)), 
+                r = (double)Math.Round(total - spent, 2) 
             };
         }).ToList<object>();
 
-    // Add Unaccounted
-    double unacc = (double)Unaccounted;
-    chartData.Add(new { 
+    // 2. Add Unaccounted
+    decimal unacc = Unaccounted;
+    dataPoints.Add(new { 
         l = "Unaccounted", 
-        v = Math.Max(1.0, Math.Abs(unacc)), 
-        r = Math.Round(unacc, 2) 
+        v = (double)Math.Max(1, Math.Abs(unacc)), 
+        r = (double)Math.Round(unacc, 2) 
     });
 
-    if (chartData.Any()) {
-        await JS.InvokeVoidAsync("renderBudgetTreemap", "budgetTreemap", chartData);
+    if (dataPoints.Any()) {
+        // 3. Serialize to a RAW JSON STRING to ensure property names stay 'l', 'v', 'r'
+        var json = System.Text.Json.JsonSerializer.Serialize(dataPoints);
+        await JS.InvokeVoidAsync("renderBudgetTreemap", "budgetTreemap", json);
     }
 }
 
