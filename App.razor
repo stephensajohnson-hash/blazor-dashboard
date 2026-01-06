@@ -27,7 +27,6 @@
     <Routes @rendermode="@(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode(prerender: false))" />
 
     <script src="_framework/blazor.web.js" autostart="false"></script>
-    
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-treemap@3.0.0/dist/chartjs-chart-treemap.min.js"></script>
     
@@ -36,11 +35,7 @@
             circuit: {
                 reconnectionHandler: {
                     onConnectionDown: (options, error) => {
-                        console.warn("Connection lost. Reloading page...");
                         window.location.reload();
-                    },
-                    onConnectionUp: () => {
-                        console.log("Reconnected!");
                     }
                 }
             }
@@ -48,7 +43,6 @@
     </script>
 
     <script>
-        // 1. Local Clock Utility
         window.startLocalClock = function() {
             function update() {
                 const el = document.getElementById('local-clock');
@@ -61,98 +55,76 @@
             update(); 
         };
 
-        // 2. Budget Treemap Visualization Utility (v66.6 - Added Yellow Zero State)
-window.renderBudgetTreemap = (canvasId, rawJsonData) => {
-    let attempts = 0;
-    const maxAttempts = 10;
-
-    const tryRender = () => {
-        const ctx = document.getElementById(canvasId);
-        if (!ctx) {
-            attempts++;
-            if (attempts < maxAttempts) { setTimeout(tryRender, 200); }
-            return;
-        }
-
-        const existingChart = Chart.getChart(canvasId);
-        if (existingChart) existingChart.destroy();
-
-        try {
-            // DIAGNOSTIC 1: Check what actually arrived
-            const chartData = JSON.parse(rawJsonData);
-            console.log("TREEMAP DIAGNOSTIC - Raw Data:", chartData);
-
-            new Chart(ctx, {
-                type: 'treemap',
-                data: {
-                    datasets: [{
-                        tree: chartData,
-                        key: 'v',
-                        groups: ['l'],
-                        spacing: 1,
-                        borderWidth: 2,
-                        borderColor: 'rgba(0,0,0,0.3)',
-                        backgroundColor: (context) => {
-                            if (context.type !== 'data' || !context.raw) return '#4B5563';
-                            
-                            // DIAGNOSTIC 2: Access the data point directly
-                            const dataPoint = context.raw._data || context.raw;
-                            const rem = parseFloat(dataPoint.r);
-                            const label = dataPoint.l;
-
-                            if (label === 'Unaccounted') return '#3B82F6';
-                            if (rem < 0) return '#EF4444';
-                            if (Math.abs(rem) < 0.01) return '#FACC15'; 
-                            return '#10B981';
-                        },
-                        labels: {
-                            display: true,
-                            formatter: (context) => {
-                                const dataPoint = context.raw._data || context.raw;
-                                return dataPoint.v > 50 ? [dataPoint.l, `$${Math.round(dataPoint.v)}`] : [];
-                            },
-                            font: { size: 12, weight: '900' },
-                            color: 'white'
-                        }
-                    }]
-                },
-                options: {
-                    plugins: { 
-                        legend: { display: false },
-                        tooltip: {
-                            enabled: true,
-                            callbacks: {
-                                title: (items) => {
-                                    const d = items[0].raw._data || items[0].raw;
-                                    return d.l;
-                                },
-                                label: (item) => {
-                                    const d = item.raw._data || item.raw;
-                                    const remValue = parseFloat(d.r);
-                                    const valValue = parseFloat(d.v);
-
-                                    // DIAGNOSTIC 3: Log tooltip values if they are NaN
-                                    if (isNaN(remValue)) console.error("NaN detected for label:", d.l, "Data:", d);
-
-                                    let status = remValue < -0.01 ? "Deficit" : (Math.abs(remValue) < 0.01 ? "Balanced" : "Remaining");
-                                    return [
-                                        ` Total Allocated: $${valValue.toLocaleString()}`,
-                                        ` ${status}: $${Math.abs(remValue).toLocaleString()}`
-                                    ];
-                                }
-                            }
-                        }
-                    },
-                    maintainAspectRatio: false,
-                    responsive: true
+        // Treemap Utility (v66.8 - Fixed Tooltip & Color logic)
+        window.renderBudgetTreemap = (canvasId, rawJsonData) => {
+            let attempts = 0;
+            const tryRender = () => {
+                const ctx = document.getElementById(canvasId);
+                if (!ctx) {
+                    if (attempts++ < 10) setTimeout(tryRender, 200);
+                    return;
                 }
-            });
-        } catch (e) {
-            console.error("TREEMAP FATAL ERROR:", e);
-        }
-    };
-    tryRender();
-};
+
+                const existingChart = Chart.getChart(canvasId);
+                if (existingChart) existingChart.destroy();
+
+                try {
+                    const chartData = JSON.parse(rawJsonData);
+                    new Chart(ctx, {
+                        type: 'treemap',
+                        data: {
+                            datasets: [{
+                                tree: chartData,
+                                key: 'v',
+                                groups: ['l'],
+                                spacing: 1,
+                                borderWidth: 2,
+                                borderColor: 'rgba(0,0,0,0.3)',
+                                backgroundColor: (context) => {
+                                    if (context.type !== 'data' || !context.raw) return '#4B5563';
+                                    const d = context.raw._data;
+                                    if (d.l === 'Unaccounted') return '#3B82F6';
+                                    if (d.r < 0) return '#EF4444';
+                                    if (Math.abs(d.r) < 0.01) return '#FACC15'; 
+                                    return '#10B981';
+                                },
+                                labels: {
+                                    display: true,
+                                    formatter: (context) => {
+                                        const d = context.raw._data;
+                                        return d.v > 50 ? [d.l, `$${Math.round(d.v)}`] : [];
+                                    },
+                                    font: { size: 12, weight: '900' },
+                                    color: 'white'
+                                }
+                            }]
+                        },
+                        options: {
+                            plugins: { 
+                                legend: { display: false },
+                                tooltip: {
+                                    callbacks: {
+                                        title: (items) => items[0].raw._data.l,
+                                        label: (item) => {
+                                            const d = item.raw._data;
+                                            const rem = parseFloat(d.r) || 0;
+                                            const val = parseFloat(d.v) || 0;
+                                            let status = rem < -0.01 ? "Deficit" : (Math.abs(rem) < 0.01 ? "Balanced" : "Remaining");
+                                            return [
+                                                ` Total Weight: $${val.toLocaleString()}`,
+                                                ` ${status}: $${Math.abs(rem).toLocaleString()}`
+                                            ];
+                                        }
+                                    }
+                                }
+                            },
+                            maintainAspectRatio: false
+                        }
+                    });
+                } catch (e) { console.error("Treemap Error:", e); }
+            };
+            tryRender();
+        };
     </script>
 </body>
 </html>
