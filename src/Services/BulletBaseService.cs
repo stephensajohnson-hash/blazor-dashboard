@@ -98,11 +98,9 @@ public class BulletBaseService
 
     public async Task<List<BulletTaskService.TaskDTO>> SearchItems(int userId, string query, string type, DateTime start, DateTime end)
 {
-    // Start with the base query filtered by User and Date Range
-    var baseQuery = _db.BulletItems
+    var baseQuery = _db.BulletItems.AsNoTracking()
         .Where(x => x.UserId == userId && x.Date >= start && x.Date <= end);
 
-    // Apply Text Search (Title or Description)
     if (!string.IsNullOrWhiteSpace(query))
     {
         var lowerQuery = query.ToLower();
@@ -111,13 +109,11 @@ public class BulletBaseService
             x.Description.ToLower().Contains(lowerQuery));
     }
 
-    // Apply Type Filter
     if (!string.IsNullOrWhiteSpace(type) && type != "all")
     {
         baseQuery = baseQuery.Where(x => x.Type == type);
     }
 
-    // Include all detail tables to populate the DTO fully
     var items = await baseQuery
         .Include(x => x.Detail)
         .Include(x => x.MeetingDetail)
@@ -135,7 +131,6 @@ public class BulletBaseService
         .OrderByDescending(x => x.Date)
         .ToListAsync();
 
-    // Map to TaskDTO so the frontend cards can render them immediately
     return items.Select(t => new BulletTaskService.TaskDTO
     {
         Id = t.Id,
