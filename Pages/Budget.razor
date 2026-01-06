@@ -459,28 +459,25 @@ private async Task UpdateChart()
     
     RefreshFlatList();
 
-    var chartData = new List<object>();
+    // Using an explicit double-based anonymous object list
+    var chartData = FlatBudgetList
+        .Where(i => (i.PlannedAmount + i.CarriedOver) != 0)
+        .Select(item => {
+            double total = (double)(item.PlannedAmount + item.CarriedOver);
+            double spent = (double)GetSpentForBudgetItem(item.Id);
+            return new { 
+                l = item.Name, 
+                v = Math.Max(1.0, Math.Abs(total)), 
+                r = Math.Round(total - spent, 2) 
+            };
+        }).ToList<object>();
 
-    foreach (var item in FlatBudgetList) {
-        // Calculate the values as decimals first for precision
-        decimal spent = GetSpentForBudgetItem(item.Id);
-        decimal totalAllocated = item.PlannedAmount + item.CarriedOver;
-        decimal remaining = totalAllocated - spent;
-
-        // Force to double for the JSON payload
-        chartData.Add(new { 
-            l = item.Name, 
-            v = (double)Math.Max(1, Math.Abs(totalAllocated)), 
-            r = (double)remaining 
-        });
-    }
-
-    // Add Unaccounted "Float"
-    decimal unaccountedRem = Unaccounted;
+    // Add Unaccounted
+    double unacc = (double)Unaccounted;
     chartData.Add(new { 
         l = "Unaccounted", 
-        v = (double)Math.Max(1, Math.Abs(unaccountedRem)), 
-        r = (double)unaccountedRem 
+        v = Math.Max(1.0, Math.Abs(unacc)), 
+        r = Math.Round(unacc, 2) 
     });
 
     if (chartData.Any()) {
