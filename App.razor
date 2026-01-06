@@ -51,82 +51,82 @@
             update(); 
         };
 
-
     window.renderBudgetTreemap = (canvasId, rawJsonData) => {
-        console.log("JS: Function triggered with data length:", rawJsonData.length);
-        
-        // Show the raw data in the UI debug box
-        const debugBox = document.getElementById('treemap-debug-log');
-        if (debugBox) debugBox.value = rawJsonData;
+        const tryDrawing = () => {
+            const ctx = document.getElementById(canvasId);
+            if (!ctx) return false;
 
-        const ctx = document.getElementById(canvasId);
-        if (!ctx) {
-            console.error("JS: Canvas not found!");
-            return;
-        }
+            const existingChart = Chart.getChart(canvasId);
+            if (existingChart) existingChart.destroy();
 
-        const existingChart = Chart.getChart(canvasId);
-        if (existingChart) existingChart.destroy();
-
-        try {
-            const chartData = JSON.parse(rawJsonData);
-            
-            new Chart(ctx, {
-                type: 'treemap',
-                data: {
-                    datasets: [{
-                        tree: chartData,
-                        key: 'v',
-                        // We are REMOVING 'groups' temporarily to ensure properties stay flat
-                        spacing: 1,
-                        borderWidth: 2,
-                        borderColor: 'rgba(0,0,0,0.5)',
-                        backgroundColor: (context) => {
-                            if (!context.raw) return '#4B5563';
-                            // In non-grouped mode, data is directly in context.raw
-                            const d = context.raw._data || context.raw;
-                            const rem = parseFloat(d.r);
-
-                            if (d.l === 'Unaccounted') return '#3B82F6';
-                            if (rem < -0.01) return '#EF4444';
-                            if (Math.abs(rem) < 0.01) return '#FACC15'; 
-                            return '#10B981';
-                        },
-                        labels: {
-                            display: true,
-                            formatter: (context) => {
+            try {
+                const chartData = JSON.parse(rawJsonData);
+                new Chart(ctx, {
+                    type: 'treemap',
+                    data: {
+                        datasets: [{
+                            tree: chartData,
+                            key: 'v',
+                            spacing: 1,
+                            borderWidth: 2,
+                            borderColor: 'rgba(0,0,0,0.5)',
+                            backgroundColor: (context) => {
+                                if (!context.raw) return '#4B5563';
                                 const d = context.raw._data || context.raw;
-                                return [d.l, `$${Math.round(d.v)}` ];
+                                const rem = parseFloat(d.r);
+                                if (d.l === 'Unaccounted') return '#3B82F6';
+                                if (rem < -0.01) return '#EF4444';
+                                if (Math.abs(rem) < 0.01) return '#FACC15'; // Yellow
+                                return '#10B981';
                             },
-                            font: { size: 11, weight: 'bold' },
-                            color: 'white'
-                        }
-                    }]
-                },
-                options: {
-                    plugins: { 
-                        legend: { display: false },
-                        tooltip: {
-                            callbacks: {
-                                title: (items) => (items[0].raw._data || items[0].raw).l,
-                                label: (item) => {
-                                    const d = item.raw._data || item.raw;
-                                    const rem = parseFloat(d.r);
-                                    const val = parseFloat(d.v);
-                                    let status = rem < -0.01 ? "Deficit" : (Math.abs(rem) < 0.01 ? "Balanced" : "Remaining");
-                                    return [
-                                        ` Budget: $${val.toLocaleString()}`,
-                                        ` ${status}: $${Math.abs(rem).toLocaleString()}`
-                                    ];
+                            labels: {
+                                display: true,
+                                formatter: (context) => {
+                                    const d = context.raw._data || context.raw;
+                                    return [d.l, `$${Math.round(d.v)}` ];
+                                },
+                                font: { size: 11, weight: 'bold' },
+                                // UPDATED: Dark text for yellow blocks, white for others
+                                color: (context) => {
+                                    if (!context.raw) return 'white';
+                                    const d = context.raw._data || context.raw;
+                                    return (Math.abs(parseFloat(d.r)) < 0.01 && d.l !== 'Unaccounted') ? '#1F2937' : 'white';
                                 }
                             }
-                        }
+                        }]
                     },
-                    maintainAspectRatio: false
+                    options: {
+                        plugins: { 
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    title: (items) => (items[0].raw._data || items[0].raw).l,
+                                    label: (item) => {
+                                        const d = item.raw._data || item.raw;
+                                        const rem = parseFloat(d.r);
+                                        const val = parseFloat(d.v);
+                                        let status = rem < -0.01 ? "Deficit" : (Math.abs(rem) < 0.01 ? "Balanced" : "Remaining");
+                                        return [` Budget: $${val.toLocaleString()}`, ` ${status}: $${Math.abs(rem).toLocaleString()}`];
+                                    }
+                                }
+                            }
+                        },
+                        maintainAspectRatio: false
+                    }
+                });
+                return true;
+            } catch (e) { console.error("Chart Error:", e); return true; }
+        };
+
+        // If it can't draw immediately, set up an observer to wait for the element
+        if (!tryDrawing()) {
+            const observer = new MutationObserver((mutations, obs) => {
+                if (document.getElementById(canvasId)) {
+                    tryDrawing();
+                    obs.disconnect(); // Stop looking once we've drawn it
                 }
             });
-        } catch (e) {
-            console.error("JS: Treemap Crash:", e);
+            observer.observe(document.body, { childList: true, subtree: true });
         }
     };
 </script>
