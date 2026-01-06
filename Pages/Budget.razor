@@ -447,42 +447,42 @@
     }
 
 private async Task UpdateChart()
-    {
-        if (CurrentPeriod == null) return;
-        
-        // Ensure the list is fresh before we map it
-        RefreshFlatList();
+{
+    if (CurrentPeriod == null) return;
+    
+    if (!FlatBudgetList.Any()) RefreshFlatList();
 
-        var chartData = new List<object>();
+    var chartData = new List<object>();
 
-        foreach (var item in FlatBudgetList) {
-            decimal spent = GetSpentForBudgetItem(item.Id);
-            decimal totalAllocated = item.PlannedAmount + item.CarriedOver;
-            decimal remaining = totalAllocated - spent;
+    foreach (var item in FlatBudgetList) {
+        decimal spent = GetSpentForBudgetItem(item.Id);
+        decimal totalAllocated = item.PlannedAmount + item.CarriedOver;
+        decimal remaining = totalAllocated - spent;
 
-            // Treemap 'value' (size) MUST be positive
-            double sizeValue = (double)Math.Max(1, Math.Abs(totalAllocated));
+        // Size must be positive. Max(1) prevents crashes on empty buckets.
+        // Explicitly cast to (double) for JS compatibility.
+        double sizeValue = (double)Math.Max(1, Math.Abs(totalAllocated));
+        double remValue = (double)remaining;
 
-            chartData.Add(new { 
-                label = item.Name, 
-                value = sizeValue, 
-                remaining = (double)remaining 
-            });
-        }
-
-        // Add Unaccounted "Float"
-        if (Unaccounted != 0) {
-            chartData.Add(new { 
-                label = "Unaccounted", 
-                value = (double)Math.Max(1, Math.Abs(Unaccounted)), 
-                remaining = (double)Unaccounted 
-            });
-        }
-
-        if (chartData.Any()) {
-            await JS.InvokeVoidAsync("renderBudgetTreemap", "budgetTreemap", chartData);
-        }
+        chartData.Add(new { 
+            label = item.Name, 
+            value = sizeValue, 
+            remaining = remValue 
+        });
     }
+
+    // Add Unaccounted "Float"
+    double unaccountedVal = (double)Unaccounted;
+    chartData.Add(new { 
+        label = "Unaccounted", 
+        value = Math.Max(1, Math.Abs(unaccountedVal)), 
+        remaining = unaccountedVal 
+    });
+
+    if (chartData.Any()) {
+        await JS.InvokeVoidAsync("renderBudgetTreemap", "budgetTreemap", chartData);
+    }
+}
 
     private async Task RefreshAndChart() { RefreshFlatList(); StateHasChanged(); await Task.Delay(100); await UpdateChart(); }
 
