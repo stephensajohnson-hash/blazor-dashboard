@@ -26,7 +26,7 @@ public class BulletBaseService
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletItems"" (""Id"" SERIAL PRIMARY KEY, ""UserId"" INTEGER NOT NULL, ""Type"" TEXT NOT NULL DEFAULT 'task', ""Category"" TEXT NOT NULL DEFAULT 'personal', ""Date"" TIMESTAMP NOT NULL, ""CreatedAt"" TIMESTAMP NOT NULL DEFAULT NOW(), ""Title"" TEXT NOT NULL DEFAULT '', ""Description"" TEXT NOT NULL DEFAULT '', ""ImgUrl"" TEXT NOT NULL DEFAULT '', ""LinkUrl"" TEXT NOT NULL DEFAULT '', ""OriginalStringId"" TEXT NOT NULL DEFAULT '', ""Order"" INTEGER NOT NULL DEFAULT 0);");
         try { await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""BulletItems"" ADD COLUMN IF NOT EXISTS ""Order"" INTEGER NOT NULL DEFAULT 0;"); } catch { }
 
-        // 3. Detail Tables
+        // 3. Detail Tables (Foreign Key linked to BulletItems)
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletItemNotes"" (""Id"" SERIAL PRIMARY KEY, ""BulletItemId"" INTEGER NOT NULL, ""Content"" TEXT NOT NULL DEFAULT '', ""ImgUrl"" TEXT NOT NULL DEFAULT '', ""LinkUrl"" TEXT NOT NULL DEFAULT '', ""Order"" INTEGER NOT NULL DEFAULT 0, CONSTRAINT ""FK_BulletItemNotes_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletTaskDetails"" (""BulletItemId"" INTEGER NOT NULL PRIMARY KEY, ""Status"" TEXT NOT NULL DEFAULT 'Pending', ""IsCompleted"" BOOLEAN NOT NULL DEFAULT FALSE, ""Priority"" TEXT NOT NULL DEFAULT 'Normal', ""TicketNumber"" TEXT NOT NULL DEFAULT '', ""TicketUrl"" TEXT NOT NULL DEFAULT '', ""DueDate"" TIMESTAMP NULL, CONSTRAINT ""FK_BulletTaskDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletMeetingDetails"" (""BulletItemId"" INTEGER NOT NULL PRIMARY KEY, ""StartTime"" TIMESTAMP NULL, ""DurationMinutes"" INTEGER NOT NULL DEFAULT 0, ""ActualDurationMinutes"" INTEGER NOT NULL DEFAULT 0, ""IsCompleted"" BOOLEAN NOT NULL DEFAULT FALSE, CONSTRAINT ""FK_BulletMeetingDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
@@ -54,6 +54,7 @@ public class BulletBaseService
             var baseQuery = _db.BulletItems.AsNoTracking()
                 .Where(x => x.UserId == userId && x.Date >= start && x.Date <= end);
 
+            // Filter by Title or Description
             if (!string.IsNullOrWhiteSpace(query))
             {
                 var lowerQuery = query.ToLower();
@@ -62,11 +63,13 @@ public class BulletBaseService
                     x.Description.ToLower().Contains(lowerQuery));
             }
 
+            // Filter by Type
             if (!string.IsNullOrWhiteSpace(type) && type != "all")
             {
                 baseQuery = baseQuery.Where(x => x.Type == type);
             }
 
+            // JOIN every sub-detail table using corrected Navigation Property names
             var items = await baseQuery
                 .Include(x => x.DbTaskDetail)
                 .Include(x => x.DbMeetingDetail)
@@ -84,6 +87,7 @@ public class BulletBaseService
                 .OrderByDescending(x => x.Date)
                 .ToListAsync();
 
+            // Map Database Entities to TaskDTO for UI Cards
             return items.Select(t => new BulletTaskService.TaskDTO
             {
                 Id = t.Id,
@@ -98,6 +102,7 @@ public class BulletBaseService
                 OriginalStringId = t.OriginalStringId,
                 SortOrder = t.SortOrder,
                 
+                // Navigation Mappings
                 Detail = t.DbTaskDetail ?? new(),
                 MeetingDetail = t.DbMeetingDetail,
                 HabitDetail = t.DbHabitDetail,
@@ -116,7 +121,7 @@ public class BulletBaseService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"SEARCH_SQL_EXCEPTION: {ex.Message}");
+            Console.WriteLine($"SEARCH_SQL_CRASH: {ex.Message}");
             return new List<BulletTaskService.TaskDTO>();
         }
     }
@@ -156,7 +161,13 @@ public class BulletBaseService
 
     public async Task<string> SaveImageAsync(byte[] data, string contentType)
     {
-        var img = new StoredImage { Data = data, ContentType = contentType, UploadedAt = DateTime.UtcNow, OriginalName = "upload.jpg" };
+        var img = new StoredImage 
+        { 
+            Data = data, 
+            ContentType = contentType, 
+            UploadedAt = DateTime.UtcNow, 
+            OriginalName = "upload.jpg" 
+        };
         await _db.StoredImages.AddAsync(img);
         await _db.SaveChangesAsync();
         return $"/db-images/{img.Id}";

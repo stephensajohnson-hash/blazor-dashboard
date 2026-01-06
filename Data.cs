@@ -77,7 +77,7 @@ public class BulletItem
     [Column("Order")] 
     public int SortOrder { get; set; } = 0; 
 
-    // Navigation Properties (Database side)
+    // Navigation Properties (Inverse links for SQL Joins)
     public virtual BulletTaskDetail? DbTaskDetail { get; set; }
     public virtual BulletMeetingDetail? DbMeetingDetail { get; set; }
     public virtual BulletHabitDetail? DbHabitDetail { get; set; }
