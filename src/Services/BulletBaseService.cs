@@ -16,36 +16,34 @@ public class BulletBaseService
 
     public async Task CreateBaseTablesIfMissing()
     {
-        // 1. User Profile Goal Columns
+        // 1. User Goals
         try { await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""WeeklyCalorieDeficitGoal"" INTEGER NOT NULL DEFAULT 3500;"); } catch { }
         try { await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""DailyProteinGoal"" INTEGER NOT NULL DEFAULT 150;"); } catch { }
         try { await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""DailyFatGoal"" INTEGER NOT NULL DEFAULT 70;"); } catch { }
         try { await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""DailyCarbGoal"" INTEGER NOT NULL DEFAULT 200;"); } catch { }
 
-        // 2. Core Bullet Header Table
+        // 2. Core Tables
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletItems"" (""Id"" SERIAL PRIMARY KEY, ""UserId"" INTEGER NOT NULL, ""Type"" TEXT NOT NULL DEFAULT 'task', ""Category"" TEXT NOT NULL DEFAULT 'personal', ""Date"" TIMESTAMP NOT NULL, ""CreatedAt"" TIMESTAMP NOT NULL DEFAULT NOW(), ""Title"" TEXT NOT NULL DEFAULT '', ""Description"" TEXT NOT NULL DEFAULT '', ""ImgUrl"" TEXT NOT NULL DEFAULT '', ""LinkUrl"" TEXT NOT NULL DEFAULT '', ""OriginalStringId"" TEXT NOT NULL DEFAULT '', ""Order"" INTEGER NOT NULL DEFAULT 0);");
-        try { await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""BulletItems"" ADD COLUMN IF NOT EXISTS ""Order"" INTEGER NOT NULL DEFAULT 0;"); } catch { }
-
-        // 3. Bullet Detail Tables
+        
+        // 3. Detail Tables
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletItemNotes"" (""Id"" SERIAL PRIMARY KEY, ""BulletItemId"" INTEGER NOT NULL, ""Content"" TEXT NOT NULL DEFAULT '', ""ImgUrl"" TEXT NOT NULL DEFAULT '', ""LinkUrl"" TEXT NOT NULL DEFAULT '', ""Order"" INTEGER NOT NULL DEFAULT 0, CONSTRAINT ""FK_BulletItemNotes_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletTaskDetails"" (""BulletItemId"" INTEGER NOT NULL PRIMARY KEY, ""Status"" TEXT NOT NULL DEFAULT 'Pending', ""IsCompleted"" BOOLEAN NOT NULL DEFAULT FALSE, ""Priority"" TEXT NOT NULL DEFAULT 'Normal', ""TicketNumber"" TEXT NOT NULL DEFAULT '', ""TicketUrl"" TEXT NOT NULL DEFAULT '', ""DueDate"" TIMESTAMP NULL, CONSTRAINT ""FK_BulletTaskDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletMeetingDetails"" (""BulletItemId"" INTEGER NOT NULL PRIMARY KEY, ""StartTime"" TIMESTAMP NULL, ""DurationMinutes"" INTEGER NOT NULL DEFAULT 0, ""ActualDurationMinutes"" INTEGER NOT NULL DEFAULT 0, ""IsCompleted"" BOOLEAN NOT NULL DEFAULT FALSE, CONSTRAINT ""FK_BulletMeetingDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletHabitDetails"" (""BulletItemId"" INTEGER NOT NULL PRIMARY KEY, ""StreakCount"" INTEGER NOT NULL DEFAULT 0, ""Status"" TEXT NOT NULL DEFAULT 'Active', ""IsCompleted"" BOOLEAN NOT NULL DEFAULT FALSE, CONSTRAINT ""FK_BulletHabitDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletMediaDetails"" (""BulletItemId"" INTEGER NOT NULL PRIMARY KEY, ""Rating"" INTEGER NOT NULL DEFAULT 0, ""ReleaseYear"" INTEGER NOT NULL DEFAULT 0, ""Tags"" TEXT NOT NULL DEFAULT '', CONSTRAINT ""FK_BulletMediaDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
-        await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletHolidayDetails"" (""BulletItemId"" INTEGER NOT NULL PRIMARY KEY, ""IsWorkHoliday"" BOOLEAN NOT NULL DEFAULT FALSE, CONSTRAINT ""FK_BulletHolidayDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
-        await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletBirthdayDetails"" (""BulletItemId"" INTEGER NOT NULL PRIMARY KEY, ""DOB_Year"" INTEGER NULL, CONSTRAINT ""FK_BulletBirthdayDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
-        await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletAnniversaryDetails"" (""BulletItemId"" INTEGER NOT NULL PRIMARY KEY, ""AnniversaryType"" TEXT NOT NULL DEFAULT 'Other', ""FirstYear"" INTEGER NULL, CONSTRAINT ""FK_BulletAnniversaryDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
-        await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletVacationDetails"" (""BulletItemId"" INTEGER NOT NULL PRIMARY KEY, ""VacationGroupId"" TEXT NOT NULL DEFAULT '', CONSTRAINT ""FK_BulletVacationDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
-        await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletHealthDetails"" (""BulletItemId"" INTEGER NOT NULL PRIMARY KEY, ""WeightLbs"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""CalculatedTDEE"" INTEGER NOT NULL DEFAULT 0, CONSTRAINT ""FK_BulletHealthDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
-        await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletHealthMeals"" (""Id"" SERIAL PRIMARY KEY, ""BulletItemId"" INTEGER NOT NULL, ""MealType"" TEXT NOT NULL DEFAULT 'Breakfast', ""Name"" TEXT NOT NULL DEFAULT '', ""Calories"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""Protein"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""Carbs"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""Fat"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""Fiber"" DOUBLE PRECISION NOT NULL DEFAULT 0, CONSTRAINT ""FK_BulletHealthMeals_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
-        await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletHealthWorkouts"" (""Id"" SERIAL PRIMARY KEY, ""BulletItemId"" INTEGER NOT NULL, ""Name"" TEXT NOT NULL DEFAULT '', ""CaloriesBurned"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""TimeSpentMinutes"" INTEGER NOT NULL DEFAULT 0, CONSTRAINT ""FK_BulletHealthWorkouts_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
+        await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletHolidayDetails"" (""BulletItemId"" INTEGER NOT NULL PRIMARY KEY, ""IsWorkHoliday"" BOOLEAN NOT NULL DEFAULT FALSE, CONSTRAINT ""FK_HolidayDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
+        await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletBirthdayDetails"" (""BulletItemId"" INTEGER NOT NULL PRIMARY KEY, ""DOB_Year"" INTEGER NULL, CONSTRAINT ""FK_BirthdayDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
+        await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletAnniversaryDetails"" (""BulletItemId"" INTEGER NOT NULL PRIMARY KEY, ""AnniversaryType"" TEXT NOT NULL DEFAULT 'Other', ""FirstYear"" INTEGER NULL, CONSTRAINT ""FK_AnnivDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
+        await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletVacationDetails"" (""BulletItemId"" INTEGER NOT NULL PRIMARY KEY, ""VacationGroupId"" TEXT NOT NULL DEFAULT '', CONSTRAINT ""FK_VacationDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
+        await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletHealthDetails"" (""BulletItemId"" INTEGER NOT NULL PRIMARY KEY, ""WeightLbs"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""CalculatedTDEE"" INTEGER NOT NULL DEFAULT 0, CONSTRAINT ""FK_HealthDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
+        await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletHealthMeals"" (""Id"" SERIAL PRIMARY KEY, ""BulletItemId"" INTEGER NOT NULL, ""MealType"" TEXT NOT NULL DEFAULT 'Breakfast', ""Name"" TEXT NOT NULL DEFAULT '', ""Calories"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""Protein"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""Carbs"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""Fat"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""Fiber"" DOUBLE PRECISION NOT NULL DEFAULT 0, CONSTRAINT ""FK_HealthMeals_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
+        await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletHealthWorkouts"" (""Id"" SERIAL PRIMARY KEY, ""BulletItemId"" INTEGER NOT NULL, ""Name"" TEXT NOT NULL DEFAULT '', ""CaloriesBurned"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""TimeSpentMinutes"" INTEGER NOT NULL DEFAULT 0, CONSTRAINT ""FK_Workouts_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
 
-        // 4. Sports Data Tables
+        // 4. Sports Tables
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""Leagues"" (""Id"" SERIAL PRIMARY KEY, ""UserId"" INTEGER NOT NULL DEFAULT 0, ""Name"" TEXT NOT NULL DEFAULT '', ""ImgUrl"" TEXT NOT NULL DEFAULT '', ""LinkUrl"" TEXT NOT NULL DEFAULT '');");
-        try { await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""Leagues"" ADD COLUMN IF NOT EXISTS ""UserId"" INTEGER NOT NULL DEFAULT 0;"); } catch { }
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""Seasons"" (""Id"" SERIAL PRIMARY KEY, ""UserId"" INTEGER NOT NULL DEFAULT 0, ""LeagueId"" INTEGER NOT NULL DEFAULT 0, ""Name"" TEXT NOT NULL DEFAULT '', ""ImgUrl"" TEXT NOT NULL DEFAULT '');");
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""Teams"" (""Id"" SERIAL PRIMARY KEY, ""UserId"" INTEGER NOT NULL DEFAULT 0, ""LeagueId"" INTEGER NOT NULL DEFAULT 0, ""Name"" TEXT NOT NULL DEFAULT '', ""Abbreviation"" TEXT NOT NULL DEFAULT '', ""LogoUrl"" TEXT NOT NULL DEFAULT '', ""IsFavorite"" BOOLEAN NOT NULL DEFAULT FALSE);");
-        await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletGameDetails"" (""BulletItemId"" INTEGER NOT NULL PRIMARY KEY, ""LeagueId"" INTEGER NOT NULL DEFAULT 0, ""SeasonId"" INTEGER NOT NULL DEFAULT 0, ""HomeTeamId"" INTEGER NOT NULL DEFAULT 0, ""AwayTeamId"" INTEGER NOT NULL DEFAULT 0, ""HomeScore"" INTEGER NOT NULL DEFAULT 0, ""AwayScore"" INTEGER NOT NULL DEFAULT 0, ""IsComplete"" BOOLEAN NOT NULL DEFAULT FALSE, ""StartTime"" TIMESTAMP NULL, ""TvChannel"" TEXT NOT NULL DEFAULT '', CONSTRAINT ""FK_BulletGameDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
+        await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletGameDetails"" (""BulletItemId"" INTEGER NOT NULL PRIMARY KEY, ""LeagueId"" INTEGER NOT NULL DEFAULT 0, ""SeasonId"" INTEGER NOT NULL DEFAULT 0, ""HomeTeamId"" INTEGER NOT NULL DEFAULT 0, ""AwayTeamId"" INTEGER NOT NULL DEFAULT 0, ""HomeScore"" INTEGER NOT NULL DEFAULT 0, ""AwayScore"" INTEGER NOT NULL DEFAULT 0, ""IsComplete"" BOOLEAN NOT NULL DEFAULT FALSE, ""StartTime"" TIMESTAMP NULL, ""TvChannel"" TEXT NOT NULL DEFAULT '', CONSTRAINT ""FK_GameDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
     }
 
     public async Task<List<BulletTaskService.TaskDTO>> SearchItems(int userId, string query, string type, DateTime start, DateTime end)
@@ -99,8 +97,6 @@ public class BulletBaseService
                 LinkUrl = t.LinkUrl,
                 OriginalStringId = t.OriginalStringId,
                 SortOrder = t.SortOrder,
-                
-                // Map the Db-prefixed properties from BulletItem to the TaskDTO props
                 Detail = t.DbTaskDetail ?? new(),
                 MeetingDetail = t.DbMeetingDetail,
                 HabitDetail = t.DbHabitDetail,
@@ -111,7 +107,6 @@ public class BulletBaseService
                 VacationDetail = t.DbVacationDetail,
                 HealthDetail = t.DbHealthDetail,
                 SportsDetail = t.DbSportsDetail,
-                
                 Notes = t.Notes?.OrderBy(n => n.Order).ToList() ?? new(),
                 Meals = t.Meals?.ToList() ?? new(),
                 Workouts = t.Workouts?.ToList() ?? new()
@@ -119,7 +114,7 @@ public class BulletBaseService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"SEARCH_ERROR: {ex.Message}");
+            Console.WriteLine($"SEARCH_SQL_EXCEPTION: {ex.Message}");
             return new List<BulletTaskService.TaskDTO>();
         }
     }
@@ -159,13 +154,7 @@ public class BulletBaseService
 
     public async Task<string> SaveImageAsync(byte[] data, string contentType)
     {
-        var img = new StoredImage 
-        { 
-            Data = data, 
-            ContentType = contentType, 
-            UploadedAt = DateTime.UtcNow, 
-            OriginalName = "upload.jpg" 
-        };
+        var img = new StoredImage { Data = data, ContentType = contentType, OriginalName = "upload.jpg" };
         await _db.StoredImages.AddAsync(img);
         await _db.SaveChangesAsync();
         return $"/db-images/{img.Id}";

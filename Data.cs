@@ -78,35 +78,18 @@ public class BulletItem
     [Column("Order")] 
     public int SortOrder { get; set; } = 0; 
 
-    // === NAVIGATION PROPERTIES (RENAMED TO AVOID HIDING WARNINGS) ===
-    [ForeignKey("BulletItemId")] 
+    // === NAVIGATION PROPERTIES (FIXED MAPPING) ===
+    // Using simple virtual properties here. 
+    // EF uses the [ForeignKey] defined in the detail classes to map these.
     public virtual BulletTaskDetail? DbTaskDetail { get; set; }
-
-    [ForeignKey("BulletItemId")] 
     public virtual BulletMeetingDetail? DbMeetingDetail { get; set; }
-
-    [ForeignKey("BulletItemId")] 
     public virtual BulletHabitDetail? DbHabitDetail { get; set; }
-
-    [ForeignKey("BulletItemId")] 
     public virtual BulletMediaDetail? DbMediaDetail { get; set; }
-
-    [ForeignKey("BulletItemId")] 
     public virtual BulletHolidayDetail? DbHolidayDetail { get; set; }
-
-    [ForeignKey("BulletItemId")] 
     public virtual BulletBirthdayDetail? DbBirthdayDetail { get; set; }
-
-    [ForeignKey("BulletItemId")] 
     public virtual BulletAnniversaryDetail? DbAnniversaryDetail { get; set; }
-
-    [ForeignKey("BulletItemId")] 
     public virtual BulletVacationDetail? DbVacationDetail { get; set; }
-
-    [ForeignKey("BulletItemId")] 
     public virtual BulletHealthDetail? DbHealthDetail { get; set; }
-
-    [ForeignKey("BulletItemId")] 
     public virtual BulletGameDetail? DbSportsDetail { get; set; }
 
     public virtual ICollection<BulletItemNote> Notes { get; set; } = new List<BulletItemNote>();
@@ -126,8 +109,9 @@ public class BulletItemNote
 
 public class BulletTaskDetail 
 { 
-    [Key] 
+    [Key, ForeignKey("BulletItem")]
     public int BulletItemId { get; set; } 
+    public virtual BulletItem BulletItem { get; set; } = null!;
     public string Status { get; set; } = "Pending"; 
     public bool IsCompleted { get; set; } = false; 
     public string Priority { get; set; } = "Normal"; 
@@ -138,8 +122,9 @@ public class BulletTaskDetail
 
 public class BulletMeetingDetail 
 { 
-    [Key] 
+    [Key, ForeignKey("BulletItem")]
     public int BulletItemId { get; set; } 
+    public virtual BulletItem BulletItem { get; set; } = null!;
     public DateTime? StartTime { get; set; } 
     public int DurationMinutes { get; set; } 
     public int ActualDurationMinutes { get; set; } 
