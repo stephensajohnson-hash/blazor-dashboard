@@ -60,23 +60,6 @@ public class AppDbContext : DbContext
     public DbSet<BudgetWatchItem> BudgetWatchItems { get; set; }
 }
 
-public class User 
-{ 
-    public int Id { get; set; } 
-    public string Username { get; set; } = ""; 
-    public string PasswordHash { get; set; } = ""; 
-    public string ZipCode { get; set; } = "75482"; 
-    public string AvatarUrl { get; set; } = ""; 
-    public int Age { get; set; } = 30; 
-    public double HeightInches { get; set; } = 70; 
-    public string Gender { get; set; } = "Male"; 
-    public string ActivityLevel { get; set; } = "Sedentary"; 
-    public int WeeklyCalorieDeficitGoal { get; set; } = 3500; 
-    public int DailyProteinGoal { get; set; } = 150; 
-    public int DailyFatGoal { get; set; } = 70; 
-    public int DailyCarbGoal { get; set; } = 200; 
-}
-
 public class BulletItem 
 { 
     public int Id { get; set; } 
@@ -91,53 +74,25 @@ public class BulletItem
     public string ImgUrl { get; set; } = ""; 
     public string LinkUrl { get; set; } = ""; 
     public string OriginalStringId { get; set; } = ""; 
+    
     [Column("Order")] 
     public int SortOrder { get; set; } = 0; 
 
-    // Navigation Properties for SQL Joins
-    [ForeignKey("BulletItemId")] 
+    // Navigation Properties (Strictly one per line for readability)
     public virtual BulletTaskDetail? TaskDetail { get; set; }
-
-    [ForeignKey("BulletItemId")] 
     public virtual BulletMeetingDetail? MeetingDetail { get; set; }
-
-    [ForeignKey("BulletItemId")] 
     public virtual BulletHabitDetail? HabitDetail { get; set; }
-
-    [ForeignKey("BulletItemId")] 
     public virtual BulletMediaDetail? MediaDetail { get; set; }
-
-    [ForeignKey("BulletItemId")] 
     public virtual BulletHolidayDetail? HolidayDetail { get; set; }
-
-    [ForeignKey("BulletItemId")] 
     public virtual BulletBirthdayDetail? BirthdayDetail { get; set; }
-
-    [ForeignKey("BulletItemId")] 
     public virtual BulletAnniversaryDetail? AnniversaryDetail { get; set; }
-
-    [ForeignKey("BulletItemId")] 
     public virtual BulletVacationDetail? VacationDetail { get; set; }
-
-    [ForeignKey("BulletItemId")] 
     public virtual BulletHealthDetail? HealthDetail { get; set; }
-
-    [ForeignKey("BulletItemId")] 
     public virtual BulletGameDetail? SportsDetail { get; set; }
 
     public virtual ICollection<BulletItemNote> Notes { get; set; } = new List<BulletItemNote>();
     public virtual ICollection<BulletHealthMeal> Meals { get; set; } = new List<BulletHealthMeal>();
     public virtual ICollection<BulletHealthWorkout> Workouts { get; set; } = new List<BulletHealthWorkout>();
-}
-
-public class BulletItemNote 
-{ 
-    public int Id { get; set; } 
-    public int BulletItemId { get; set; } 
-    public string Content { get; set; } = ""; 
-    public string ImgUrl { get; set; } = ""; 
-    public string LinkUrl { get; set; } = ""; 
-    public int Order { get; set; } = 0; 
 }
 
 public class BulletTaskDetail 
@@ -246,6 +201,39 @@ public class BulletHealthWorkout
     public int TimeSpentMinutes { get; set; } 
 }
 
+public class BulletGameDetail 
+{ 
+    [Key, ForeignKey("BulletItem")] 
+    public int BulletItemId { get; set; } 
+    public virtual BulletItem BulletItem { get; set; } = null!; 
+    public int LeagueId { get; set; } 
+    public int SeasonId { get; set; } 
+    public int HomeTeamId { get; set; } 
+    public int AwayTeamId { get; set; } 
+    public int HomeScore { get; set; } 
+    public int AwayScore { get; set; } 
+    public bool IsComplete { get; set; } 
+    public DateTime? StartTime { get; set; } 
+    public string TvChannel { get; set; } = ""; 
+}
+
+public class User 
+{ 
+    public int Id { get; set; } 
+    public string Username { get; set; } = ""; 
+    public string PasswordHash { get; set; } = ""; 
+    public string ZipCode { get; set; } = "75482"; 
+    public string AvatarUrl { get; set; } = ""; 
+    public int Age { get; set; } = 30; 
+    public double HeightInches { get; set; } = 70; 
+    public string Gender { get; set; } = "Male"; 
+    public string ActivityLevel { get; set; } = "Sedentary"; 
+    public int WeeklyCalorieDeficitGoal { get; set; } = 3500; 
+    public int DailyProteinGoal { get; set; } = 150; 
+    public int DailyFatGoal { get; set; } = 70; 
+    public int DailyCarbGoal { get; set; } = 200; 
+}
+
 public class StoredImage 
 { 
     public int Id { get; set; } 
@@ -282,22 +270,6 @@ public class Team
     public string Abbreviation { get; set; } = ""; 
     public string LogoUrl { get; set; } = ""; 
     public bool IsFavorite { get; set; } = false; 
-}
-
-public class BulletGameDetail 
-{ 
-    [Key, ForeignKey("BulletItem")] 
-    public int BulletItemId { get; set; } 
-    public virtual BulletItem BulletItem { get; set; } = null!; 
-    public int LeagueId { get; set; } 
-    public int SeasonId { get; set; } 
-    public int HomeTeamId { get; set; } 
-    public int AwayTeamId { get; set; } 
-    public int HomeScore { get; set; } 
-    public int AwayScore { get; set; } 
-    public bool IsComplete { get; set; } 
-    public DateTime? StartTime { get; set; } 
-    public string TvChannel { get; set; } = ""; 
 }
 
 public class BudgetPeriod 
