@@ -78,9 +78,8 @@ public class BulletItem
     [Column("Order")] 
     public int SortOrder { get; set; } = 0; 
 
-    // === NAVIGATION PROPERTIES (FIXED MAPPING) ===
-    // Using simple virtual properties here. 
-    // EF uses the [ForeignKey] defined in the detail classes to map these.
+    // === NAVIGATION PROPERTIES ===
+    // Renamed with 'Db' prefix to avoid collision with TaskDTO property names
     public virtual BulletTaskDetail? DbTaskDetail { get; set; }
     public virtual BulletMeetingDetail? DbMeetingDetail { get; set; }
     public virtual BulletHabitDetail? DbHabitDetail { get; set; }
@@ -109,7 +108,7 @@ public class BulletItemNote
 
 public class BulletTaskDetail 
 { 
-    [Key, ForeignKey("BulletItem")]
+    [Key, ForeignKey("BulletItem")] 
     public int BulletItemId { get; set; } 
     public virtual BulletItem BulletItem { get; set; } = null!;
     public string Status { get; set; } = "Pending"; 
@@ -122,7 +121,7 @@ public class BulletTaskDetail
 
 public class BulletMeetingDetail 
 { 
-    [Key, ForeignKey("BulletItem")]
+    [Key, ForeignKey("BulletItem")] 
     public int BulletItemId { get; set; } 
     public virtual BulletItem BulletItem { get; set; } = null!;
     public DateTime? StartTime { get; set; } 

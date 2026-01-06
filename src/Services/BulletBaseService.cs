@@ -16,16 +16,16 @@ public class BulletBaseService
 
     public async Task CreateBaseTablesIfMissing()
     {
-        // 1. User Goals
+        // 1. User Profile Goal Columns
         try { await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""WeeklyCalorieDeficitGoal"" INTEGER NOT NULL DEFAULT 3500;"); } catch { }
         try { await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""DailyProteinGoal"" INTEGER NOT NULL DEFAULT 150;"); } catch { }
         try { await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""DailyFatGoal"" INTEGER NOT NULL DEFAULT 70;"); } catch { }
         try { await _db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""DailyCarbGoal"" INTEGER NOT NULL DEFAULT 200;"); } catch { }
 
-        // 2. Core Tables
+        // 2. Core Bullet Header Table
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletItems"" (""Id"" SERIAL PRIMARY KEY, ""UserId"" INTEGER NOT NULL, ""Type"" TEXT NOT NULL DEFAULT 'task', ""Category"" TEXT NOT NULL DEFAULT 'personal', ""Date"" TIMESTAMP NOT NULL, ""CreatedAt"" TIMESTAMP NOT NULL DEFAULT NOW(), ""Title"" TEXT NOT NULL DEFAULT '', ""Description"" TEXT NOT NULL DEFAULT '', ""ImgUrl"" TEXT NOT NULL DEFAULT '', ""LinkUrl"" TEXT NOT NULL DEFAULT '', ""OriginalStringId"" TEXT NOT NULL DEFAULT '', ""Order"" INTEGER NOT NULL DEFAULT 0);");
-        
-        // 3. Detail Tables
+
+        // 3. Details Tables
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletItemNotes"" (""Id"" SERIAL PRIMARY KEY, ""BulletItemId"" INTEGER NOT NULL, ""Content"" TEXT NOT NULL DEFAULT '', ""ImgUrl"" TEXT NOT NULL DEFAULT '', ""LinkUrl"" TEXT NOT NULL DEFAULT '', ""Order"" INTEGER NOT NULL DEFAULT 0, CONSTRAINT ""FK_BulletItemNotes_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletTaskDetails"" (""BulletItemId"" INTEGER NOT NULL PRIMARY KEY, ""Status"" TEXT NOT NULL DEFAULT 'Pending', ""IsCompleted"" BOOLEAN NOT NULL DEFAULT FALSE, ""Priority"" TEXT NOT NULL DEFAULT 'Normal', ""TicketNumber"" TEXT NOT NULL DEFAULT '', ""TicketUrl"" TEXT NOT NULL DEFAULT '', ""DueDate"" TIMESTAMP NULL, CONSTRAINT ""FK_BulletTaskDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletMeetingDetails"" (""BulletItemId"" INTEGER NOT NULL PRIMARY KEY, ""StartTime"" TIMESTAMP NULL, ""DurationMinutes"" INTEGER NOT NULL DEFAULT 0, ""ActualDurationMinutes"" INTEGER NOT NULL DEFAULT 0, ""IsCompleted"" BOOLEAN NOT NULL DEFAULT FALSE, CONSTRAINT ""FK_BulletMeetingDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
@@ -39,7 +39,7 @@ public class BulletBaseService
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletHealthMeals"" (""Id"" SERIAL PRIMARY KEY, ""BulletItemId"" INTEGER NOT NULL, ""MealType"" TEXT NOT NULL DEFAULT 'Breakfast', ""Name"" TEXT NOT NULL DEFAULT '', ""Calories"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""Protein"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""Carbs"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""Fat"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""Fiber"" DOUBLE PRECISION NOT NULL DEFAULT 0, CONSTRAINT ""FK_HealthMeals_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletHealthWorkouts"" (""Id"" SERIAL PRIMARY KEY, ""BulletItemId"" INTEGER NOT NULL, ""Name"" TEXT NOT NULL DEFAULT '', ""CaloriesBurned"" DOUBLE PRECISION NOT NULL DEFAULT 0, ""TimeSpentMinutes"" INTEGER NOT NULL DEFAULT 0, CONSTRAINT ""FK_Workouts_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
 
-        // 4. Sports Tables
+        // 4. Sports Data Tables
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""Leagues"" (""Id"" SERIAL PRIMARY KEY, ""UserId"" INTEGER NOT NULL DEFAULT 0, ""Name"" TEXT NOT NULL DEFAULT '', ""ImgUrl"" TEXT NOT NULL DEFAULT '', ""LinkUrl"" TEXT NOT NULL DEFAULT '');");
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""Seasons"" (""Id"" SERIAL PRIMARY KEY, ""UserId"" INTEGER NOT NULL DEFAULT 0, ""LeagueId"" INTEGER NOT NULL DEFAULT 0, ""Name"" TEXT NOT NULL DEFAULT '', ""ImgUrl"" TEXT NOT NULL DEFAULT '');");
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""Teams"" (""Id"" SERIAL PRIMARY KEY, ""UserId"" INTEGER NOT NULL DEFAULT 0, ""LeagueId"" INTEGER NOT NULL DEFAULT 0, ""Name"" TEXT NOT NULL DEFAULT '', ""Abbreviation"" TEXT NOT NULL DEFAULT '', ""LogoUrl"" TEXT NOT NULL DEFAULT '', ""IsFavorite"" BOOLEAN NOT NULL DEFAULT FALSE);");
@@ -53,6 +53,7 @@ public class BulletBaseService
             var baseQuery = _db.BulletItems.AsNoTracking()
                 .Where(x => x.UserId == userId && x.Date >= start && x.Date <= end);
 
+            // CASE-INSENSITIVE TEXT SEARCH
             if (!string.IsNullOrWhiteSpace(query))
             {
                 var lowerQuery = query.ToLower();
@@ -61,11 +62,13 @@ public class BulletBaseService
                     x.Description.ToLower().Contains(lowerQuery));
             }
 
+            // FILTER BY TYPE
             if (!string.IsNullOrWhiteSpace(type) && type != "all")
             {
                 baseQuery = baseQuery.Where(x => x.Type == type);
             }
 
+            // INCLUDE CHILD DATA USING THE RENAMED 'DB' PREFIXED PROPERTIES
             var items = await baseQuery
                 .Include(x => x.DbTaskDetail)
                 .Include(x => x.DbMeetingDetail)
@@ -83,6 +86,7 @@ public class BulletBaseService
                 .OrderByDescending(x => x.Date)
                 .ToListAsync();
 
+            // MAP DATABASE PROPERTIES TO DTO PROPERTIES
             return items.Select(t => new BulletTaskService.TaskDTO
             {
                 Id = t.Id,
@@ -97,6 +101,7 @@ public class BulletBaseService
                 LinkUrl = t.LinkUrl,
                 OriginalStringId = t.OriginalStringId,
                 SortOrder = t.SortOrder,
+                
                 Detail = t.DbTaskDetail ?? new(),
                 MeetingDetail = t.DbMeetingDetail,
                 HabitDetail = t.DbHabitDetail,
@@ -107,6 +112,7 @@ public class BulletBaseService
                 VacationDetail = t.DbVacationDetail,
                 HealthDetail = t.DbHealthDetail,
                 SportsDetail = t.DbSportsDetail,
+                
                 Notes = t.Notes?.OrderBy(n => n.Order).ToList() ?? new(),
                 Meals = t.Meals?.ToList() ?? new(),
                 Workouts = t.Workouts?.ToList() ?? new()
@@ -114,7 +120,7 @@ public class BulletBaseService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"SEARCH_SQL_EXCEPTION: {ex.Message}");
+            Console.WriteLine($"SEARCH_LOGIC_ERROR: {ex.Message}");
             return new List<BulletTaskService.TaskDTO>();
         }
     }
@@ -154,7 +160,13 @@ public class BulletBaseService
 
     public async Task<string> SaveImageAsync(byte[] data, string contentType)
     {
-        var img = new StoredImage { Data = data, ContentType = contentType, OriginalName = "upload.jpg" };
+        var img = new StoredImage 
+        { 
+            Data = data, 
+            ContentType = contentType, 
+            UploadedAt = DateTime.UtcNow, 
+            OriginalName = "upload.jpg" 
+        };
         await _db.StoredImages.AddAsync(img);
         await _db.SaveChangesAsync();
         return $"/db-images/{img.Id}";
