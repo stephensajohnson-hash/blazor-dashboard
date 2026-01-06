@@ -25,7 +25,7 @@ public class AppDbContext : DbContext
     public DbSet<RecipeInstruction> RecipeInstructions { get; set; }
     public DbSet<RecipeCategory> RecipeCategories { get; set; }
     
-    // Bullet Calendar
+    // Bullet Calendar Core
     public DbSet<BulletItem> BulletItems { get; set; }
     public DbSet<BulletItemNote> BulletItemNotes { get; set; }
     public DbSet<BulletTaskDetail> BulletTaskDetails { get; set; }
@@ -37,18 +37,18 @@ public class AppDbContext : DbContext
     public DbSet<BulletAnniversaryDetail> BulletAnniversaryDetails { get; set; }
     public DbSet<BulletVacationDetail> BulletVacationDetails { get; set; }
     
-    // Health
+    // Health Details
     public DbSet<BulletHealthDetail> BulletHealthDetails { get; set; }
     public DbSet<BulletHealthMeal> BulletHealthMeals { get; set; }
     public DbSet<BulletHealthWorkout> BulletHealthWorkouts { get; set; }
 
-    // Sports
+    // Sports Data
     public DbSet<League> Leagues { get; set; }
     public DbSet<Season> Seasons { get; set; }
     public DbSet<Team> Teams { get; set; }
     public DbSet<BulletGameDetail> BulletGameDetails { get; set; }
 
-    // Budget
+    // Budget Tracker
     public DbSet<BudgetPeriod> BudgetPeriods { get; set; }
     public DbSet<BudgetCycle> BudgetCycles { get; set; }
     public DbSet<BudgetItem> BudgetItems { get; set; }
@@ -78,21 +78,50 @@ public class BulletItem
     [Column("Order")] 
     public int SortOrder { get; set; } = 0; 
 
-    // Navigation Properties (Strictly one per line for readability)
-    public virtual BulletTaskDetail? TaskDetail { get; set; }
-    public virtual BulletMeetingDetail? MeetingDetail { get; set; }
-    public virtual BulletHabitDetail? HabitDetail { get; set; }
-    public virtual BulletMediaDetail? MediaDetail { get; set; }
-    public virtual BulletHolidayDetail? HolidayDetail { get; set; }
-    public virtual BulletBirthdayDetail? BirthdayDetail { get; set; }
-    public virtual BulletAnniversaryDetail? AnniversaryDetail { get; set; }
-    public virtual BulletVacationDetail? VacationDetail { get; set; }
-    public virtual BulletHealthDetail? HealthDetail { get; set; }
-    public virtual BulletGameDetail? SportsDetail { get; set; }
+    // === NAVIGATION PROPERTIES (RENAMED TO AVOID HIDING WARNINGS) ===
+    [ForeignKey("BulletItemId")] 
+    public virtual BulletTaskDetail? DbTaskDetail { get; set; }
+
+    [ForeignKey("BulletItemId")] 
+    public virtual BulletMeetingDetail? DbMeetingDetail { get; set; }
+
+    [ForeignKey("BulletItemId")] 
+    public virtual BulletHabitDetail? DbHabitDetail { get; set; }
+
+    [ForeignKey("BulletItemId")] 
+    public virtual BulletMediaDetail? DbMediaDetail { get; set; }
+
+    [ForeignKey("BulletItemId")] 
+    public virtual BulletHolidayDetail? DbHolidayDetail { get; set; }
+
+    [ForeignKey("BulletItemId")] 
+    public virtual BulletBirthdayDetail? DbBirthdayDetail { get; set; }
+
+    [ForeignKey("BulletItemId")] 
+    public virtual BulletAnniversaryDetail? DbAnniversaryDetail { get; set; }
+
+    [ForeignKey("BulletItemId")] 
+    public virtual BulletVacationDetail? DbVacationDetail { get; set; }
+
+    [ForeignKey("BulletItemId")] 
+    public virtual BulletHealthDetail? DbHealthDetail { get; set; }
+
+    [ForeignKey("BulletItemId")] 
+    public virtual BulletGameDetail? DbSportsDetail { get; set; }
 
     public virtual ICollection<BulletItemNote> Notes { get; set; } = new List<BulletItemNote>();
     public virtual ICollection<BulletHealthMeal> Meals { get; set; } = new List<BulletHealthMeal>();
     public virtual ICollection<BulletHealthWorkout> Workouts { get; set; } = new List<BulletHealthWorkout>();
+}
+
+public class BulletItemNote 
+{ 
+    public int Id { get; set; } 
+    public int BulletItemId { get; set; } 
+    public string Content { get; set; } = ""; 
+    public string ImgUrl { get; set; } = ""; 
+    public string LinkUrl { get; set; } = ""; 
+    public int Order { get; set; } = 0; 
 }
 
 public class BulletTaskDetail 
