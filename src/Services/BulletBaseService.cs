@@ -95,4 +95,74 @@ public class BulletBaseService
     public async Task UpdateItemOrders(Dictionary<int, int> updates) { if (!updates.Any()) return; var ids = updates.Keys.ToList(); var items = await _db.BulletItems.Where(x => ids.Contains(x.Id)).ToListAsync(); foreach(var item in items) { if(updates.TryGetValue(item.Id, out int newOrder)) item.SortOrder = newOrder; } await _db.SaveChangesAsync(); }
     public async Task<int> ClearDataByType(int userId, string type) { var items = await _db.BulletItems.Where(x => x.UserId == userId && x.Type == type).ToListAsync(); _db.BulletItems.RemoveRange(items); await _db.SaveChangesAsync(); return items.Count; }
     public async Task<string> SaveImageAsync(byte[] data, string contentType) { var img = new StoredImage { Data = data, ContentType = contentType, UploadedAt = DateTime.UtcNow, OriginalName = "upload.jpg" }; await _db.StoredImages.AddAsync(img); await _db.SaveChangesAsync(); return $"/db-images/{img.Id}"; }
+
+    public async Task<List<BulletTaskService.TaskDTO>> SearchItems(int userId, string query, string type, DateTime start, DateTime end)
+{
+    // Start with the base query filtered by User and Date Range
+    var baseQuery = _db.BulletItems
+        .Where(x => x.UserId == userId && x.Date >= start && x.Date <= end);
+
+    // Apply Text Search (Title or Description)
+    if (!string.IsNullOrWhiteSpace(query))
+    {
+        var lowerQuery = query.ToLower();
+        baseQuery = baseQuery.Where(x => 
+            x.Title.ToLower().Contains(lowerQuery) || 
+            x.Description.ToLower().Contains(lowerQuery));
+    }
+
+    // Apply Type Filter
+    if (!string.IsNullOrWhiteSpace(type) && type != "all")
+    {
+        baseQuery = baseQuery.Where(x => x.Type == type);
+    }
+
+    // Include all detail tables to populate the DTO fully
+    var items = await baseQuery
+        .Include(x => x.Detail)
+        .Include(x => x.MeetingDetail)
+        .Include(x => x.HabitDetail)
+        .Include(x => x.MediaDetail)
+        .Include(x => x.HolidayDetail)
+        .Include(x => x.BirthdayDetail)
+        .Include(x => x.AnniversaryDetail)
+        .Include(x => x.VacationDetail)
+        .Include(x => x.HealthDetail)
+        .Include(x => x.SportsDetail)
+        .Include(x => x.Notes)
+        .Include(x => x.Meals)
+        .Include(x => x.Workouts)
+        .OrderByDescending(x => x.Date)
+        .ToListAsync();
+
+    // Map to TaskDTO so the frontend cards can render them immediately
+    return items.Select(t => new BulletTaskService.TaskDTO
+    {
+        Id = t.Id,
+        UserId = t.UserId,
+        Type = t.Type,
+        Category = t.Category,
+        Date = t.Date,
+        EndDate = t.EndDate,
+        Title = t.Title,
+        Description = t.Description,
+        ImgUrl = t.ImgUrl,
+        LinkUrl = t.LinkUrl,
+        OriginalStringId = t.OriginalStringId,
+        SortOrder = t.SortOrder,
+        Detail = t.Detail,
+        MeetingDetail = t.MeetingDetail,
+        HabitDetail = t.HabitDetail,
+        MediaDetail = t.MediaDetail,
+        HolidayDetail = t.HolidayDetail,
+        BirthdayDetail = t.BirthdayDetail,
+        AnniversaryDetail = t.AnniversaryDetail,
+        VacationDetail = t.VacationDetail,
+        HealthDetail = t.HealthDetail,
+        SportsDetail = t.SportsDetail,
+        Notes = t.Notes?.ToList() ?? new(),
+        Meals = t.Meals?.ToList() ?? new(),
+        Workouts = t.Workouts?.ToList() ?? new()
+    }).ToList();
+}
 }
