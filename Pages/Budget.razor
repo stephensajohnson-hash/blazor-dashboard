@@ -197,42 +197,36 @@ private async Task UpdateChart()
 
     var dataPoints = new List<object>();
 
-    // 1. Add Actual Budget Categories
     foreach (var item in FlatBudgetList)
     {
-        decimal total = item.PlannedAmount + item.CarriedOver;
-        if (total == 0) continue;
+        decimal totalAllocated = item.PlannedAmount + item.CarriedOver;
+        if (totalAllocated == 0) continue;
 
-        decimal spent = GetSpentForBudgetItem(item.Id);
+        decimal currentSpent = GetSpentForBudgetItem(item.Id);
+        decimal currentRem = totalAllocated - currentSpent;
+
+        // Calculate Forecasted/Projected impact
+        decimal upcomingBills = CurrentPeriod.WatchList?
+            .Where(w => w.ResolvedBudgetItemId == item.Id)
+            .Sum(w => w.Amount) ?? 0;
+            
+        decimal projectedRem = currentRem - upcomingBills;
+
         dataPoints.Add(new { 
             l = item.Name, 
-            v = (double)Math.Abs(total), 
-            r = (double)Math.Round(total - spent, 2),
-            isForecast = false 
+            v = (double)Math.Abs(totalAllocated), 
+            r = (double)Math.Round(currentRem, 2),
+            p = (double)Math.Round(projectedRem, 2) // Send Projected as 'p'
         });
     }
 
-    // 2. Add Expected Expenses (Watch List) as Shadow Blocks
-    if (CurrentPeriod.WatchList != null)
-    {
-        foreach (var watch in CurrentPeriod.WatchList)
-        {
-            dataPoints.Add(new { 
-                l = watch.Description, 
-                v = (double)watch.Amount, 
-                r = 0.0, // Forecasted items don't have "remaining" logic yet
-                isForecast = true 
-            });
-        }
-    }
-
-    // 3. Add Unaccounted
+    // Add Unaccounted
     decimal unacc = Unaccounted;
     dataPoints.Add(new { 
         l = "Unaccounted", 
         v = (double)Math.Max(1, Math.Abs(unacc)), 
         r = (double)Math.Round(unacc, 2),
-        isForecast = false 
+        p = (double)Math.Round(unacc, 2)
     });
 
     if (dataPoints.Any())
