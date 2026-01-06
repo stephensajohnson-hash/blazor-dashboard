@@ -138,15 +138,22 @@
             </div>
         </div>
 
-        <div class="bg-[#282b30] rounded-xl border border-gray-700 shadow-2xl mt-6 p-6 font-black font-black font-black">
-            <div class="flex justify-between items-center mb-6">
-                <div class="flex items-center gap-3"><h3 class="text-xs font-black text-blue-400 uppercase tracking-widest font-mono">Liquidity Treemap Analysis</h3><button @onclick="UpdateChart" class="text-gray-500 hover:text-white transition text-sm" title="Redraw Chart">🔄</button></div>
-                <div class="text-[9px] text-gray-600 font-black uppercase tracking-widest">Size = Allocation ($) | Yellow = Balanced | Green = Remaining | Red = Overspent</div>
-            </div>
-            <div class="h-64 w-full bg-black/40 rounded-xl p-4 border border-gray-800 shadow-inner font-black font-black">
-                <canvas id="budgetTreemap"></canvas>
-            </div>
+<div class="bg-[#282b30] rounded-xl border border-gray-700 shadow-2xl mt-6 p-6 font-black">
+    <div class="flex justify-between items-center mb-6">
+        <div class="flex items-center gap-3">
+            <h3 class="text-xs font-black text-blue-400 uppercase tracking-widest font-mono">Liquidity Treemap Analysis</h3>
+            <button @onclick="UpdateChart" class="bg-blue-600/20 text-blue-400 px-3 py-1 rounded text-[10px] hover:bg-blue-600 hover:text-white transition uppercase font-black tracking-tighter">Render Chart</button>
         </div>
+        <div class="text-[9px] text-gray-600 font-black uppercase tracking-widest">Yellow = Balanced | Green = Safe | Red = Deficit</div>
+    </div>
+    <div class="h-64 w-full bg-black/40 rounded-xl p-4 border border-gray-800 shadow-inner mb-4">
+        <canvas id="budgetTreemap"></canvas>
+    </div>
+    <div class="mt-4">
+        <label class="text-[8px] text-gray-600 uppercase font-black mb-1 block">JS Diagnostic Feed</label>
+        <textarea id="treemap-debug-log" readonly class="w-full bg-black/20 border border-gray-800 rounded p-2 text-[10px] font-mono text-gray-500 h-12" placeholder="Waiting for data interop..."></textarea>
+    </div>
+</div>
     }
 
     @if (EditingPeriod != null) {
@@ -191,37 +198,38 @@
     private decimal Unaccounted { get { if (CurrentPeriod == null) return 0; decimal bucketRem = 0; foreach(var item in FlatBudgetList) { decimal spent = GetSpentForBudgetItem(item.Id); decimal total = item.PlannedAmount + item.CarriedOver; bucketRem += (total - spent); } return Math.Round((CurrentBalance + ExpectedIncomeTotal) - bucketRem, 2); } }
 
 private async Task UpdateChart()
+{
+    if (CurrentPeriod == null) return;
+    RefreshFlatList();
+
+    // Ensure we are using a very simple list of objects
+    var dataPoints = new List<object>();
+
+    foreach (var item in FlatBudgetList)
     {
-        if (CurrentPeriod == null) return;
-        RefreshFlatList();
+        decimal total = item.PlannedAmount + item.CarriedOver;
+        if (total == 0) continue; // Skip empty buckets to avoid treemap division errors
 
-        // Build list with explicit double types and Math.Round
-        var dataPoints = FlatBudgetList
-            .Where(i => (i.PlannedAmount + i.CarriedOver) != 0)
-            .Select(item => {
-                decimal total = item.PlannedAmount + item.CarriedOver;
-                decimal spent = GetSpentForBudgetItem(item.Id);
-                return new { 
-                    l = item.Name, 
-                    v = (double)Math.Max(1, Math.Abs(total)), 
-                    r = (double)Math.Round(total - spent, 2) 
-                };
-            }).ToList<object>();
-
-        decimal unacc = Unaccounted;
+        decimal spent = GetSpentForBudgetItem(item.Id);
         dataPoints.Add(new { 
-            l = "Unaccounted", 
-            v = (double)Math.Max(1, Math.Abs(unacc)), 
-            r = (double)Math.Round(unacc, 2) 
+            l = item.Name, 
+            v = (double)Math.Abs(total), 
+            r = (double)Math.Round(total - spent, 2) 
         });
-
-        if (dataPoints.Any()) {
-            // Manual JSON serialization to prevent Blazor camel-casing
-            var json = System.Text.Json.JsonSerializer.Serialize(dataPoints);
-            await JS.InvokeVoidAsync("renderBudgetTreemap", "budgetTreemap", json);
-        }
     }
 
+    decimal unacc = Unaccounted;
+    dataPoints.Add(new { l = "Unaccounted", v = (double)Math.Max(1, Math.Abs(unacc)), r = (double)Math.Round(unacc, 2) });
+
+    if (dataPoints.Any())
+    {
+        // FORCE camelCase off and serialize to plain string
+        var options = new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = null };
+        var json = System.Text.Json.JsonSerializer.Serialize(dataPoints, options);
+        
+        await JS.InvokeVoidAsync("renderBudgetTreemap", "budgetTreemap", json);
+    }
+}
     private async Task RefreshAndChart() { RefreshFlatList(); StateHasChanged(); await Task.Delay(150); await UpdateChart(); }
 
     protected override async Task OnAfterRenderAsync(bool firstRender) {
