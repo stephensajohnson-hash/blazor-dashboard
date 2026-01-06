@@ -190,14 +190,36 @@
     private decimal AvailableFunds => Math.Round(CurrentBalance - ExpectedExpensesTotal, 2);
     private decimal Unaccounted { get { if (CurrentPeriod == null) return 0; decimal bucketRem = 0; foreach(var item in FlatBudgetList) { decimal spent = GetSpentForBudgetItem(item.Id); decimal total = item.PlannedAmount + item.CarriedOver; bucketRem += (total - spent); } return Math.Round((CurrentBalance + ExpectedIncomeTotal) - bucketRem, 2); } }
 
-    private async Task UpdateChart() {
-        if (CurrentPeriod == null) return; RefreshFlatList();
-        var dataPoints = FlatBudgetList.Where(i => (i.PlannedAmount + i.CarriedOver) != 0).Select(item => {
-            decimal total = item.PlannedAmount + item.CarriedOver; decimal spent = GetSpentForBudgetItem(item.Id);
-            return new { l = item.Name, v = (double)Math.Max(1, Math.Abs(total)), r = (double)Math.Round(total - spent, 2) };
-        }).ToList<object>();
-        decimal unacc = Unaccounted; dataPoints.Add(new { l = "Unaccounted", v = (double)Math.Max(1, Math.Abs(unacc)), r = (double)Math.Round(unacc, 2) });
-        if (dataPoints.Any()) { var json = System.Text.Json.JsonSerializer.Serialize(dataPoints); await JS.InvokeVoidAsync("renderBudgetTreemap", "budgetTreemap", json); }
+private async Task UpdateChart()
+    {
+        if (CurrentPeriod == null) return;
+        RefreshFlatList();
+
+        // Build list with explicit double types and Math.Round
+        var dataPoints = FlatBudgetList
+            .Where(i => (i.PlannedAmount + i.CarriedOver) != 0)
+            .Select(item => {
+                decimal total = item.PlannedAmount + item.CarriedOver;
+                decimal spent = GetSpentForBudgetItem(item.Id);
+                return new { 
+                    l = item.Name, 
+                    v = (double)Math.Max(1, Math.Abs(total)), 
+                    r = (double)Math.Round(total - spent, 2) 
+                };
+            }).ToList<object>();
+
+        decimal unacc = Unaccounted;
+        dataPoints.Add(new { 
+            l = "Unaccounted", 
+            v = (double)Math.Max(1, Math.Abs(unacc)), 
+            r = (double)Math.Round(unacc, 2) 
+        });
+
+        if (dataPoints.Any()) {
+            // Manual JSON serialization to prevent Blazor camel-casing
+            var json = System.Text.Json.JsonSerializer.Serialize(dataPoints);
+            await JS.InvokeVoidAsync("renderBudgetTreemap", "budgetTreemap", json);
+        }
     }
 
     private async Task RefreshAndChart() { RefreshFlatList(); StateHasChanged(); await Task.Delay(150); await UpdateChart(); }
