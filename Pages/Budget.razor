@@ -446,37 +446,42 @@
         }
     }
 
+// Place this class at the bottom of your Budget.razor @code block
+public class ChartDataPoint {
+    public string label { get; set; } = "";
+    public double value { get; set; }
+    public double remaining { get; set; }
+}
+
 private async Task UpdateChart()
 {
     if (CurrentPeriod == null) return;
     
     if (!FlatBudgetList.Any()) RefreshFlatList();
 
-    var chartData = new List<object>();
+    var chartData = new List<ChartDataPoint>();
 
     foreach (var item in FlatBudgetList) {
-        decimal spent = GetSpentForBudgetItem(item.Id);
-        decimal totalAllocated = item.PlannedAmount + item.CarriedOver;
-        decimal remaining = totalAllocated - spent;
+        double spent = (double)GetSpentForBudgetItem(item.Id);
+        double totalAllocated = (double)(item.PlannedAmount + item.CarriedOver);
+        double remaining = totalAllocated - spent;
 
-        // Size must be positive. Max(1) prevents crashes on empty buckets.
-        // Explicitly cast to (double) for JS compatibility.
-        double sizeValue = (double)Math.Max(1, Math.Abs(totalAllocated));
-        double remValue = (double)remaining;
+        // Treemap 'value' must be a positive number > 0 to render a box
+        double sizeValue = Math.Max(1.0, Math.Abs(totalAllocated));
 
-        chartData.Add(new { 
+        chartData.Add(new ChartDataPoint { 
             label = item.Name, 
             value = sizeValue, 
-            remaining = remValue 
+            remaining = remaining 
         });
     }
 
     // Add Unaccounted "Float"
-    double unaccountedVal = (double)Unaccounted;
-    chartData.Add(new { 
+    double unaccountedRemaining = (double)Unaccounted;
+    chartData.Add(new ChartDataPoint { 
         label = "Unaccounted", 
-        value = Math.Max(1, Math.Abs(unaccountedVal)), 
-        remaining = unaccountedVal 
+        value = Math.Max(1.0, Math.Abs(unaccountedRemaining)), 
+        remaining = unaccountedRemaining 
     });
 
     if (chartData.Any()) {
