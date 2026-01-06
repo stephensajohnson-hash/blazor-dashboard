@@ -68,7 +68,6 @@ public class BulletItem
     public string Category { get; set; } = "personal"; 
     public DateTime Date { get; set; } 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow; 
-    public DateTime? EndDate { get; set; }
     public string Title { get; set; } = ""; 
     public string Description { get; set; } = ""; 
     public string ImgUrl { get; set; } = ""; 
@@ -78,8 +77,7 @@ public class BulletItem
     [Column("Order")] 
     public int SortOrder { get; set; } = 0; 
 
-    // === NAVIGATION PROPERTIES ===
-    // Renamed with 'Db' prefix to avoid collision with TaskDTO property names
+    // Navigation Properties (Database side)
     public virtual BulletTaskDetail? DbTaskDetail { get; set; }
     public virtual BulletMeetingDetail? DbMeetingDetail { get; set; }
     public virtual BulletHabitDetail? DbHabitDetail { get; set; }
