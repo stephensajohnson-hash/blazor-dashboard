@@ -1,17 +1,20 @@
 @page "/image-manager"
-@using Dashboard
-@using Microsoft.JSInterop
-@using System.Text.Json
-@inject AppDbContext Db
-@inject ImageService ImageService
-@inject IJSRuntime JS
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.Extensions.DependencyInjection
+@namespace Dashboard.Components.Bullet
 @inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject IServiceScopeFactory ScopeFactory
 
+<PageTitle>Image Registry | Stephens' Dashboard</PageTitle>
+
+@* --- Common Header Integration --- *@
 <BulletHeader 
     ShowControls="false"
     CustomDateText="Image Registry">
     
     <div class="flex items-center gap-2 ml-4">
+        @* Search Bar *@
         <div class="relative flex items-center bg-black/40 border border-gray-700 rounded-lg px-2 focus-within:border-blue-500 transition-all font-black">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -19,12 +22,12 @@
             
             <input @bind="searchQuery" 
                    @bind:event="oninput" 
-                   placeholder="Search images..." 
+                   placeholder="Search filenames..." 
                    class="bg-transparent border-none text-xs py-1.5 px-2 w-32 md:w-48 outline-none text-white font-bold" />
             
             @if(!string.IsNullOrWhiteSpace(searchQuery))
             {
-                <button @onclick="() => searchQuery = \"\"" class="text-gray-500 hover:text-red-400 p-1">
+                <button @onclick="() => searchQuery = \"\"" class="text-gray-500 hover:text-red-400 p-1 transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12" />
                     </svg>
@@ -34,161 +37,141 @@
 
         <div class="h-6 w-px bg-gray-800 mx-2"></div>
 
+        @* Purge Action *@
         <button @onclick="PurgeDatabase" 
-                class="px-3 py-1.5 bg-red-950/30 border border-red-900/50 hover:bg-red-600 hover:border-red-400 text-red-500 hover:text-white text-[10px] font-black uppercase tracking-widest rounded-lg transition-all shadow-lg">
-            Purge Registry
+                class="px-3 py-1.5 bg-red-950/30 border border-red-900/50 hover:bg-red-600 hover:border-red-400 text-red-500 hover:text-white text-[10px] font-black uppercase tracking-widest rounded-lg transition-all shadow-lg active:scale-95">
+            Purge All Images
         </button>
     </div>
 </BulletHeader>
 
-<div class="min-h-screen bg-gray-900 text-white p-8 font-sans font-black uppercase">
-    
-    <div class="flex justify-between items-center mb-8 border-b border-gray-800 pb-6">
-        <div>
-            <h1 class="text-2xl tracking-tighter text-blue-400">Visual Asset Registry</h1>
-            <p class="text-[10px] text-gray-500 tracking-widest mt-1">Found @images.Count Total Assets</p>
-        </div>
-        <div class="flex gap-4">
-            <button @onclick="CleanupUnused" 
-                    disabled="@isPurging"
-                    class="bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white border border-red-500/50 px-6 py-2 rounded-lg text-xs transition shadow-lg font-black uppercase tracking-widest">
-                @(isPurging ? "PURGING_DATABASE..." : "🗑️ Purge Unused Local Data")
-            </button>
-        </div>
-    </div>
-
-    @if (isLoading)
+<div class="p-6">
+    @if (filteredImages == null)
     {
-        <div class="flex flex-col items-center justify-center py-20">
-            <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-            <div class="mt-4 animate-pulse text-blue-500 text-xs tracking-[0.3em]">Querying Ledger...</div>
+        <div class="flex justify-center py-20">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        </div>
+    }
+    else if (!filteredImages.Any())
+    {
+        <div class="text-center py-20 border-2 border-dashed border-gray-800 rounded-3xl">
+            <p class="text-gray-500 font-black uppercase tracking-widest">No images found in registry</p>
         </div>
     }
     else
     {
-        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-6">
-            @foreach (var img in images.Take(displayCount))
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-6">
+            @foreach (var img in filteredImages)
             {
-                <div class="bg-gray-800/40 border @(img.IsUsed ? "border-gray-700" : "border-red-500/40") rounded-xl overflow-hidden shadow-2xl group transition hover:scale-105 relative">
-                    
-                    @if (img.FirstUsedDate.HasValue)
-                    {
-                        <div class="absolute top-1 right-1 z-20 bg-black/60 backdrop-blur-md text-[7px] px-1.5 py-0.5 rounded border border-white/10 text-blue-400">
-                            @img.FirstUsedDate.Value.ToString("MMM dd, yyyy")
-                        </div>
-                    }
-
-                    <div class="aspect-square bg-black relative cursor-pointer" 
-                         @onclick="() => NavigateToFirstOccurrence(img)">
-                        
-                        <img src="@img.Url" class="w-full h-full object-cover" loading="lazy" />
-                        
-                        <div class="absolute inset-0 bg-blue-600/0 group-hover:bg-blue-600/20 transition-all flex items-center justify-center">
-                            <span class="opacity-0 group-hover:opacity-100 text-[8px] bg-blue-600 text-white px-2 py-1 rounded shadow-xl">GO_TO_ITEM</span>
-                        </div>
-
-                        @if (!img.IsUsed && img.IsLocal)
-                        {
-                            <div class="absolute inset-0 bg-red-900/60 flex items-center justify-center backdrop-blur-[1px]">
-                                <span class="text-[8px] bg-white text-red-600 px-2 py-0.5 rounded font-black tracking-tighter shadow-2xl">UNUSED_ORPHAN</span>
-                            </div>
-                        }
+                <div class="group bg-[#0f0f0f] border border-gray-800 rounded-2xl overflow-hidden shadow-2xl hover:border-blue-500/50 transition-all">
+                    @* Image Preview - Clicking navigates to that calendar day *@
+                    <div class="aspect-square bg-black overflow-hidden cursor-pointer" @onclick="() => NavigateToDay(img.UploadedAt)">
+                        <img src="/db-images/@img.Id" 
+                             alt="@img.OriginalName" 
+                             class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                     </div>
 
-                    <div class="p-2 bg-gray-900/50 space-y-2">
-                        <div class="flex items-center gap-2">
-                            <button @onclick='() => CopyToClipboard(img.Url)' @onclick:stopPropagation="true"
-                                    class="p-1 hover:text-blue-400 bg-black/40 rounded transition-colors text-[9px] px-2 font-black">
-                                📋 COPY
+                    <div class="p-3">
+                        <div class="text-[10px] font-black text-gray-500 truncate mb-1 uppercase tracking-tighter">
+                            @img.OriginalName
+                        </div>
+                        <div class="text-[9px] text-gray-600 mb-3 font-bold">
+                            Uploaded: @img.UploadedAt.ToString("MMM dd, yyyy")
+                        </div>
+
+                        <div class="flex gap-2">
+                            <button @onclick="() => CopyUrl(img.Id)" 
+                                    class="flex-1 bg-gray-900 hover:bg-blue-600 text-white text-[9px] font-black py-1.5 rounded transition uppercase tracking-widest border border-gray-700">
+                                🔗 URL
                             </button>
-                            <span class="text-[6px] text-gray-600 flex-1 truncate font-mono">@img.Url</span>
+                            <button @onclick="() => NavigateToDay(img.UploadedAt)" 
+                                    class="flex-1 bg-gray-900 hover:bg-gray-700 text-white text-[9px] font-black py-1.5 rounded transition uppercase tracking-widest border border-gray-700">
+                                📅 Day
+                            </button>
                         </div>
                     </div>
                 </div>
             }
         </div>
-
-        @if (images.Count > displayCount)
-        {
-            <div class="flex justify-center py-12">
-                <button @onclick="LoadMore" 
-                        class="px-12 py-4 bg-gray-800 border border-gray-700 rounded-xl text-xs font-black tracking-[0.3em] hover:bg-gray-700 hover:border-blue-500 transition-all shadow-2xl">
-                    LOAD MORE ASSETS (@(images.Count - displayCount) REMAINING)
-                </button>
-            </div>
-        }
     }
 </div>
 
 @code {
-    private bool isLoading = true;
-    private bool isPurging = false;
-    private int displayCount = 24;
-    private List<ImageService.ImageUsageDTO> images = new();
-    private int userId = 0;
+    private List<StoredImage>? allImages;
+    private string searchQuery = "";
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender) { await LoadUserDataAndImages(); }
-    }
+    // Reactive filter based on search query
+    private IEnumerable<StoredImage> filteredImages => 
+        string.IsNullOrWhiteSpace(searchQuery) 
+        ? (allImages ?? new()) 
+        : (allImages?.Where(i => i.OriginalName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) ?? new List<StoredImage>());
 
-    private async Task LoadUserDataAndImages()
+    protected override async Task OnInitializedAsync()
     {
-        try {
-            var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
-            if (!string.IsNullOrEmpty(json)) {
-                using var doc = JsonDocument.Parse(json);
-                if (doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p))
-                    userId = p.GetInt32();
-            }
-            if (userId > 0) { await LoadImages(); }
-        } catch { isLoading = false; StateHasChanged(); }
+        await LoadImages();
     }
 
     private async Task LoadImages()
     {
-        isLoading = true;
-        StateHasChanged();
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         
-        // Fetch fresh metadata from service
-        images = await ImageService.GetAllImages(userId);
-        
-        isLoading = false;
-        StateHasChanged();
+        // Fetching only ID and Metadata to keep it fast
+        allImages = await db.StoredImages
+            .OrderByDescending(i => i.UploadedAt)
+            .ToListAsync();
+            
+        Console.WriteLine($"Registry loaded: {allImages.Count} images found.");
     }
 
-    private void LoadMore()
+    private void NavigateToDay(DateTime date)
     {
-        displayCount += 48;
-        StateHasChanged(); // Force Blazor to re-render with the larger Take() count
+        var targetUrl = $"/bullet-calendar?date={date:yyyy-MM-dd}";
+        Console.WriteLine($"Navigating to calendar: {targetUrl}");
+        Nav.NavigateTo(targetUrl);
     }
 
-    private async Task CleanupUnused()
+    private async Task CopyUrl(int id)
     {
-        bool confirmed = await JS.InvokeAsync<bool>("confirm", "This will use a direct SQL command to purge orphan data. Continue?");
-        if (confirmed)
+        var url = $"{Nav.BaseUri}db-images/{id}";
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
+        Console.WriteLine($"Copied Image Link: {url}");
+    }
+
+    private async Task PurgeDatabase()
+    {
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", "⚠️ DANGER: This will permanently delete all images from the database. Are you sure?");
+        
+        if (!confirmed)
         {
-            isPurging = true;
+            Console.WriteLine("Purge operation aborted.");
+            return;
+        }
+
+        try 
+        {
+            Console.WriteLine("Executing Purge...");
+            using var scope = ScopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            
+            var imagesToDelete = await db.StoredImages.ToListAsync();
+            db.StoredImages.RemoveRange(imagesToDelete);
+            await db.SaveChangesAsync();
+
+            Console.WriteLine($"Successfully purged {imagesToDelete.Count} images.");
+            await LoadImages();
             StateHasChanged();
-            
-            int count = await ImageService.DeleteUnusedLocalImages(userId);
-            
-            isPurging = false;
-            await JS.InvokeVoidAsync("alert", count >= 0 ? $"Cleanup Success: {count} images purged from storage." : "Purge failed. Check system logs.");
-            
-            await LoadImages(); // Refresh the list
         }
-    }
-
-    private void NavigateToFirstOccurrence(ImageService.ImageUsageDTO img)
-    {
-        if (img.FirstUsedDate.HasValue)
+        catch (Exception ex)
         {
-            Nav.NavigateTo($"/bullet-calendar?view=day&date={img.FirstUsedDate.Value:yyyy-MM-dd}");
+            Console.error($"Purge Failed: {ex.Message}");
         }
     }
 
-    private async Task CopyToClipboard(string url) => await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
-
-    public class SessionData { public int UserId { get; set; } }
+    // This class should match your StoredImage model in AppDbContext
+    public class StoredImage {
+        public int Id { get; set; }
+        public string OriginalName { get; set; } = "";
+        public DateTime UploadedAt { get; set; }
+    }
 }
