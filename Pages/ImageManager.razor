@@ -1,0 +1,101 @@
+@page "/image-manager"
+@using Dashboard
+@using Microsoft.JSInterop
+@inject AppDbContext Db
+@inject ImageService ImageService
+@inject IJSRuntime JS
+
+<div class="min-h-screen bg-gray-900 text-white p-8 font-sans font-black uppercase">
+    <div class="flex justify-between items-center mb-8 border-b border-gray-800 pb-6">
+        <div>
+            <h1 class="text-2xl tracking-tighter text-blue-400">Visual Asset Registry</h1>
+            <p class="text-[10px] text-gray-500 tracking-widest mt-1">Manage local uploads and remote pointer references</p>
+        </div>
+        <div class="flex gap-4">
+            <button @onclick="CleanupUnused" class="bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white border border-red-500/50 px-6 py-2 rounded-lg text-xs transition shadow-lg">
+                🗑️ Purge Unused Local Data
+            </button>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="flex justify-center py-20 animate-pulse text-blue-500">Indexing assets...</div>
+    }
+    else
+    {
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-6">
+            @foreach (var img in images)
+            {
+                <div class="bg-gray-800/40 border @(img.IsUsed ? "border-gray-700" : "border-red-500/40") rounded-xl overflow-hidden shadow-2xl group transition hover:scale-105">
+                    <div class="aspect-square bg-black relative">
+                        <img src="@img.Url" class="w-full h-full object-cover" />
+                        
+                        @if (!img.IsUsed && img.IsLocal)
+                        {
+                            <div class="absolute inset-0 bg-red-900/60 flex items-center justify-center">
+                                <span class="text-[8px] bg-white text-red-600 px-2 py-0.5 rounded font-black">UNUSED</span>
+                            </div>
+                        }
+
+                        <button @onclick="() => ToggleFavorite(img)" class="absolute top-2 left-2 p-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10 text-xs">
+                            @(img.IsFavorite ? "⭐" : "☆")
+                        </button>
+                    </div>
+
+                    <div class="p-3 space-y-2">
+                        <div class="flex items-center gap-2">
+                            <input readonly value="@img.Url" class="bg-black/40 border-none text-[8px] text-gray-400 px-2 py-1 flex-1 rounded truncate font-mono" />
+                            <button @onclick='() => CopyToClipboard(img.Url)' class="p-1 hover:text-blue-400 transition" title="Copy Link">
+                                📋
+                            </button>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-[7px] text-gray-600 tracking-tighter">@(img.IsLocal ? "LOCAL_DB" : "REMOTE_URI")</span>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool isLoading = true;
+    private List<ImageService.ImageUsageDTO> images = new();
+    private int userId = 1; // You'll fetch this from your session logic
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadImages();
+    }
+
+    private async Task LoadImages()
+    {
+        isLoading = true;
+        // In a real app, get current userId from session logic
+        images = await ImageService.GetAllImages(userId);
+        isLoading = false;
+    }
+
+    private async Task CleanupUnused()
+    {
+        if (await JS.InvokeAsync<bool>("confirm", "This will permanently delete all uploaded images not currently assigned to any items. Proceed?"))
+        {
+            await ImageService.DeleteUnusedLocalImages(userId);
+            await LoadImages();
+        }
+    }
+
+    private async Task CopyToClipboard(string url)
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
+        // You could add a 'Copied!' toast here
+    }
+
+    private void ToggleFavorite(ImageService.ImageUsageDTO img)
+    {
+        img.IsFavorite = !img.IsFavorite;
+        // Logic to save this preference to a user-settings table could go here
+    }
+}
