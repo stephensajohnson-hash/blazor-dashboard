@@ -14,14 +14,26 @@
             <p class="text-[10px] text-gray-500 tracking-widest mt-1">Manage local uploads and remote pointer references</p>
         </div>
         <div class="flex gap-4">
+            @if(errorMessage != null)
+            {
+                <button @onclick="LoadImages" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-[10px]">🔄 Retry Connection</button>
+            }
             <button @onclick="CleanupUnused" 
-                    class="bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white border border-red-500/50 px-6 py-2 rounded-lg text-xs transition shadow-lg font-black uppercase tracking-widest">
+                    disabled="@isLoading"
+                    class="bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white border border-red-500/50 px-6 py-2 rounded-lg text-xs transition shadow-lg font-black uppercase tracking-widest disabled:opacity-30">
                 🗑️ Purge Unused Local Data
             </button>
         </div>
     </div>
 
-    @if (isLoading)
+    @if (errorMessage != null)
+    {
+        <div class="bg-red-900/20 border border-red-500/50 p-6 rounded-2xl text-center">
+            <p class="text-red-400 text-sm mb-2">DATABASE_OFFLINE_OR_TIMEOUT</p>
+            <p class="text-[10px] text-gray-500">@errorMessage</p>
+        </div>
+    }
+    else if (isLoading)
     {
         <div class="flex flex-col items-center justify-center py-20">
             <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
@@ -46,32 +58,20 @@
                         }
 
                         <button @onclick="() => ToggleFavorite(img)" 
-                                class="absolute top-2 left-2 p-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10 text-xs shadow-xl transition hover:scale-110 active:scale-90">
+                                class="absolute top-2 left-2 p-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10 text-xs">
                             @(img.IsFavorite ? "⭐" : "☆")
                         </button>
                     </div>
 
                     <div class="p-3 space-y-2 bg-gray-900/50">
                         <div class="flex items-center gap-2">
-                            <input readonly 
-                                   value="@img.Url" 
-                                   class="bg-black/40 border-none text-[8px] text-gray-500 px-2 py-1 flex-1 rounded truncate font-mono outline-none" />
-                            
-                            <button @onclick='() => CopyToClipboard(img.Url)' 
-                                    class="p-1 hover:text-blue-400 transition-colors" 
-                                    title="Copy Link">
-                                📋
-                            </button>
+                            <input readonly value="@img.Url" class="bg-black/40 border-none text-[8px] text-gray-500 px-2 py-1 flex-1 rounded truncate font-mono outline-none" />
+                            <button @onclick='() => CopyToClipboard(img.Url)' class="p-1 hover:text-blue-400 transition-colors" title="Copy Link">📋</button>
                         </div>
                         
                         <div class="flex justify-between items-center">
-                            <span class="text-[7px] text-gray-600 tracking-tighter">
-                                @(img.IsLocal ? "STORAGE_NODE" : "REMOTE_URI")
-                            </span>
-                            @if(img.IsUsed)
-                            {
-                                <span class="text-[7px] text-emerald-500 tracking-tighter font-black">ACTIVE</span>
-                            }
+                            <span class="text-[7px] text-gray-600 tracking-tighter">@(img.IsLocal ? "LOCAL_DB" : "REMOTE_URI")</span>
+                            @if(img.IsUsed) { <span class="text-[7px] text-emerald-500 font-black">ACTIVE</span> }
                         </div>
                     </div>
                 </div>
@@ -82,15 +82,13 @@
 
 @code {
     private bool isLoading = true;
+    private string? errorMessage;
     private List<ImageService.ImageUsageDTO> images = new();
     private int userId = 0;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
-        {
-            await LoadUserDataAndImages();
-        }
+        if (firstRender) { await LoadUserDataAndImages(); }
     }
 
     private async Task LoadUserDataAndImages()
@@ -101,37 +99,24 @@
             if (!string.IsNullOrEmpty(json)) 
             {
                 using var doc = JsonDocument.Parse(json);
-                if (doc.RootElement.TryGetProperty("UserId", out var p) || 
-                    doc.RootElement.TryGetProperty("userId", out p))
+                if (doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p))
                 {
                     userId = p.GetInt32();
                 }
             }
-
-            if (userId > 0)
-            {
-                await LoadImages();
-            }
+            if (userId > 0) { await LoadImages(); }
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Image Manager Init Error: {ex.Message}");
-        }
+        catch (Exception ex) { errorMessage = ex.Message; StateHasChanged(); }
     }
 
     private async Task LoadImages()
     {
         isLoading = true;
+        errorMessage = null;
         StateHasChanged();
         
-        try 
-        {
-            images = await ImageService.GetAllImages(userId);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Load Images Error: {ex.Message}");
-        }
+        try { images = await ImageService.GetAllImages(userId); }
+        catch (Exception ex) { errorMessage = ex.Message; }
 
         isLoading = false;
         StateHasChanged();
@@ -139,25 +124,30 @@
 
     private async Task CleanupUnused()
     {
-        bool confirmed = await JS.InvokeAsync<bool>("confirm", "DANGER: This will permanently delete all local image uploads that are not assigned to any items. This cannot be undone. Continue?");
-        
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", "Permanently delete all unassigned local images?");
         if (confirmed)
         {
-            await ImageService.DeleteUnusedLocalImages(userId);
-            await LoadImages();
+            isLoading = true;
+            StateHasChanged();
+            
+            int deletedCount = await ImageService.DeleteUnusedLocalImages(userId);
+            
+            if (deletedCount >= 0)
+            {
+                await JS.InvokeVoidAsync("alert", $"Registry Clean: {deletedCount} images purged.");
+                await LoadImages();
+            }
+            else
+            {
+                await JS.InvokeVoidAsync("alert", "Error during purge. Check database connection.");
+                isLoading = false;
+                StateHasChanged();
+            }
         }
     }
 
-    private async Task CopyToClipboard(string url)
-    {
-        await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
-    }
-
-    private void ToggleFavorite(ImageService.ImageUsageDTO img)
-    {
-        img.IsFavorite = !img.IsFavorite;
-        // In the future, we can add a 'FavoriteImages' table to persist this
-    }
+    private async Task CopyToClipboard(string url) => await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
+    private void ToggleFavorite(ImageService.ImageUsageDTO img) => img.IsFavorite = !img.IsFavorite;
 
     public class SessionData { public int UserId { get; set; } }
 }
