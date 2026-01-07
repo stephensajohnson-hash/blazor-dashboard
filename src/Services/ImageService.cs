@@ -21,7 +21,7 @@ public class ImageService
 
         try
         {
-            // 1. Gather used URLs with high-performance queries
+            // 1. Gather used URLs using AsNoTracking for speed
             var bulletImgs = await _db.BulletItems.AsNoTracking()
                 .Where(x => x.UserId == userId && x.ImgUrl != null && x.ImgUrl != "")
                 .Select(x => x.ImgUrl).ToListAsync();
@@ -37,20 +37,20 @@ public class ImageService
                 .Select(x => x.ImageUrl).ToListAsync();
             foreach (var url in recipeImgs) usedUrls.Add(url);
 
-            // 2. Fetch Stored Images Metadata only
-            var storedImages = await _db.StoredImages.AsNoTracking()
-                .Select(x => new { x.Id })
+            // 2. Fetch IDs only (Avoid loading the heavy 'Data' byte array)
+            var storedImageIds = await _db.StoredImages.AsNoTracking()
+                .Select(x => x.Id)
                 .ToListAsync();
             
-            foreach (var img in storedImages)
+            foreach (var id in storedImageIds)
             {
-                var localUrl = $"/db-images/{img.Id}";
+                var localUrl = $"/db-images/{id}";
                 results.Add(new ImageUsageDTO 
                 { 
                     Url = localUrl, 
                     IsLocal = true, 
                     IsUsed = usedUrls.Contains(localUrl),
-                    DbId = img.Id
+                    DbId = id
                 });
             }
 
@@ -62,10 +62,9 @@ public class ImageService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"REGISTRY_SCAN_FAILURE: {ex.Message}");
+            Console.WriteLine($"REGISTRY_SCAN_ERROR: {ex.Message}");
         }
 
-        // Return used items first, then unused
         return results.OrderByDescending(x => x.IsUsed).ToList();
     }
 
@@ -73,33 +72,32 @@ public class ImageService
     {
         try
         {
-            // Get the list of all IDs currently in use
-            var bulletUsage = await _db.BulletItems.AsNoTracking()
-                .Where(x => x.UserId == userId && x.ImgUrl.StartsWith("/db-images/"))
-                .Select(x => x.ImgUrl).ToListAsync();
-            
-            var usedIds = bulletUsage
-                .Select(u => u.Replace("/db-images/", ""))
-                .Select(s => int.TryParse(s, out var id) ? id : -1)
-                .Where(id => id != -1)
-                .ToHashSet();
+            // NEW: Use a Raw SQL Delete for maximum efficiency. 
+            // This avoids loading any binary data into memory.
+            string sql = @"
+                DELETE FROM ""StoredImages"" 
+                WHERE ""Id"" NOT IN (
+                    SELECT CAST(REPLACE(""ImgUrl"", '/db-images/', '') AS INTEGER)
+                    FROM ""BulletItems""
+                    WHERE ""ImgUrl"" LIKE '/db-images/%'
+                )
+                AND ""Id"" NOT IN (
+                    SELECT CAST(REPLACE(""LogoUrl"", '/db-images/', '') AS INTEGER)
+                    FROM ""Teams""
+                    WHERE ""LogoUrl"" LIKE '/db-images/%'
+                )
+                AND ""Id"" NOT IN (
+                    SELECT CAST(REPLACE(""ImageUrl"", '/db-images/', '') AS INTEGER)
+                    FROM ""Recipes""
+                    WHERE ""ImageUrl"" LIKE '/db-images/%'
+                );";
 
-            // Find images in DB that are NOT in that hashset
-            var toDelete = await _db.StoredImages
-                .Where(x => !usedIds.Contains(x.Id))
-                .ToListAsync();
-
-            int count = toDelete.Count;
-            if (count > 0)
-            {
-                _db.StoredImages.RemoveRange(toDelete);
-                await _db.SaveChangesAsync();
-            }
-            return count;
+            int deletedCount = await _db.Database.ExecuteSqlRawAsync(sql);
+            return deletedCount;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"PURGE_CRASH: {ex.Message}");
+            Console.WriteLine($"SQL_PURGE_CRASH: {ex.Message}");
             return -1;
         }
     }

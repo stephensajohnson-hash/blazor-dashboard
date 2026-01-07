@@ -11,78 +11,64 @@
     <div class="flex justify-between items-center mb-8 border-b border-gray-800 pb-6">
         <div>
             <h1 class="text-2xl tracking-tighter text-blue-400">Visual Asset Registry</h1>
-            <p class="text-[10px] text-gray-500 tracking-widest mt-1">Manage local uploads and remote pointer references</p>
+            <p class="text-[10px] text-gray-500 tracking-widest mt-1">Total Assets: @images.Count</p>
         </div>
         <div class="flex gap-4">
-            @if(errorMessage != null)
-            {
-                <button @onclick="LoadImages" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-[10px]">🔄 Retry Connection</button>
-            }
             <button @onclick="CleanupUnused" 
-                    disabled="@isLoading"
+                    disabled="@isPurging"
                     class="bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white border border-red-500/50 px-6 py-2 rounded-lg text-xs transition shadow-lg font-black uppercase tracking-widest disabled:opacity-30">
-                🗑️ Purge Unused Local Data
+                @(isPurging ? "PURGING_DB..." : "🗑️ Purge Unused Local Data")
             </button>
         </div>
     </div>
 
-    @if (errorMessage != null)
-    {
-        <div class="bg-red-900/20 border border-red-500/50 p-6 rounded-2xl text-center">
-            <p class="text-red-400 text-sm mb-2">DATABASE_OFFLINE_OR_TIMEOUT</p>
-            <p class="text-[10px] text-gray-500">@errorMessage</p>
-        </div>
-    }
-    else if (isLoading)
+    @if (isLoading)
     {
         <div class="flex flex-col items-center justify-center py-20">
             <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-            <div class="mt-4 animate-pulse text-blue-500 text-xs tracking-[0.3em]">Indexing assets...</div>
+            <div class="mt-4 animate-pulse text-blue-500 text-xs tracking-[0.3em]">Querying Database...</div>
         </div>
     }
     else
     {
-        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-6 pb-20">
-            @foreach (var img in images)
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-6">
+            @foreach (var img in images.Take(displayCount))
             {
-                <div class="bg-gray-800/40 border @(img.IsUsed ? "border-gray-700" : "border-red-500/40") rounded-xl overflow-hidden shadow-2xl group transition hover:scale-105 hover:border-blue-500/50">
-                    
+                <div class="bg-gray-800/40 border @(img.IsUsed ? "border-gray-700" : "border-red-500/40") rounded-xl overflow-hidden shadow-2xl group transition hover:scale-105">
                     <div class="aspect-square bg-black relative">
-                        <img src="@img.Url" class="w-full h-full object-cover" />
-                        
+                        <img src="@img.Url" class="w-full h-full object-cover" loading="lazy" />
                         @if (!img.IsUsed && img.IsLocal)
                         {
-                            <div class="absolute inset-0 bg-red-900/60 flex items-center justify-center backdrop-blur-[2px]">
-                                <span class="text-[8px] bg-white text-red-600 px-2 py-0.5 rounded font-black tracking-tighter">UNUSED_ORPHAN</span>
+                            <div class="absolute inset-0 bg-red-900/40 flex items-center justify-center">
+                                <span class="text-[8px] bg-white text-red-600 px-2 py-0.5 rounded font-black">UNUSED</span>
                             </div>
                         }
-
-                        <button @onclick="() => ToggleFavorite(img)" 
-                                class="absolute top-2 left-2 p-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10 text-xs">
-                            @(img.IsFavorite ? "⭐" : "☆")
-                        </button>
                     </div>
-
-                    <div class="p-3 space-y-2 bg-gray-900/50">
+                    <div class="p-3 bg-gray-900/50 space-y-2">
                         <div class="flex items-center gap-2">
-                            <input readonly value="@img.Url" class="bg-black/40 border-none text-[8px] text-gray-500 px-2 py-1 flex-1 rounded truncate font-mono outline-none" />
-                            <button @onclick='() => CopyToClipboard(img.Url)' class="p-1 hover:text-blue-400 transition-colors" title="Copy Link">📋</button>
-                        </div>
-                        
-                        <div class="flex justify-between items-center">
-                            <span class="text-[7px] text-gray-600 tracking-tighter">@(img.IsLocal ? "LOCAL_DB" : "REMOTE_URI")</span>
-                            @if(img.IsUsed) { <span class="text-[7px] text-emerald-500 font-black">ACTIVE</span> }
+                            <input readonly value="@img.Url" class="bg-black/40 border-none text-[8px] text-gray-400 px-2 py-1 flex-1 rounded truncate font-mono" />
+                            <button @onclick='() => CopyToClipboard(img.Url)' class="p-1 hover:text-blue-400">📋</button>
                         </div>
                     </div>
                 </div>
             }
         </div>
+
+        @if (images.Count > displayCount)
+        {
+            <div class="flex justify-center py-10">
+                <button @onclick="() => displayCount += 24" class="px-10 py-3 bg-gray-800 border border-gray-700 rounded-xl text-xs font-black tracking-widest hover:bg-gray-700 transition">
+                    LOAD MORE ASSETS (@(images.Count - displayCount) REMAINING)
+                </button>
+            </div>
+        }
     }
 </div>
 
 @code {
     private bool isLoading = true;
-    private string? errorMessage;
+    private bool isPurging = false;
+    private int displayCount = 24;
     private List<ImageService.ImageUsageDTO> images = new();
     private int userId = 0;
 
@@ -93,61 +79,41 @@
 
     private async Task LoadUserDataAndImages()
     {
-        try 
-        {
+        try {
             var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
-            if (!string.IsNullOrEmpty(json)) 
-            {
+            if (!string.IsNullOrEmpty(json)) {
                 using var doc = JsonDocument.Parse(json);
                 if (doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p))
-                {
                     userId = p.GetInt32();
-                }
             }
             if (userId > 0) { await LoadImages(); }
-        }
-        catch (Exception ex) { errorMessage = ex.Message; StateHasChanged(); }
+        } catch { isLoading = false; StateHasChanged(); }
     }
 
     private async Task LoadImages()
     {
         isLoading = true;
-        errorMessage = null;
         StateHasChanged();
-        
-        try { images = await ImageService.GetAllImages(userId); }
-        catch (Exception ex) { errorMessage = ex.Message; }
-
+        try { images = await ImageService.GetAllImages(userId); } catch { }
         isLoading = false;
         StateHasChanged();
     }
 
     private async Task CleanupUnused()
     {
-        bool confirmed = await JS.InvokeAsync<bool>("confirm", "Permanently delete all unassigned local images?");
-        if (confirmed)
+        if (await JS.InvokeAsync<bool>("confirm", "This will use a direct SQL command to purge orphans. Proceed?"))
         {
-            isLoading = true;
+            isPurging = true;
             StateHasChanged();
             
-            int deletedCount = await ImageService.DeleteUnusedLocalImages(userId);
+            int count = await ImageService.DeleteUnusedLocalImages(userId);
             
-            if (deletedCount >= 0)
-            {
-                await JS.InvokeVoidAsync("alert", $"Registry Clean: {deletedCount} images purged.");
-                await LoadImages();
-            }
-            else
-            {
-                await JS.InvokeVoidAsync("alert", "Error during purge. Check database connection.");
-                isLoading = false;
-                StateHasChanged();
-            }
+            await JS.InvokeVoidAsync("alert", count >= 0 ? $"Cleanup Complete: {count} images purged." : "SQL Error during purge.");
+            await LoadImages();
+            isPurging = false;
         }
     }
 
     private async Task CopyToClipboard(string url) => await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
-    private void ToggleFavorite(ImageService.ImageUsageDTO img) => img.IsFavorite = !img.IsFavorite;
-
     public class SessionData { public int UserId { get; set; } }
 }
