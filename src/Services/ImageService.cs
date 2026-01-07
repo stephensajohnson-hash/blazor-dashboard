@@ -16,28 +16,42 @@ public class ImageService
 
     public async Task<List<ImageUsageDTO>> GetAllImages(int userId)
     {
-        var usedUrls = new HashSet<string>();
+        // Dictionary to track URL -> Metadata (Date and Type)
+        var usageMap = new Dictionary<string, (DateTime Date, string Type)>();
         var results = new List<ImageUsageDTO>();
 
         try
         {
-            // 1. Gather used URLs using AsNoTracking for speed
-            var bulletImgs = await _db.BulletItems.AsNoTracking()
+            // 1. Scan BulletItems (Primary source of truth for dates)
+            var bulletData = await _db.BulletItems.AsNoTracking()
                 .Where(x => x.UserId == userId && x.ImgUrl != null && x.ImgUrl != "")
-                .Select(x => x.ImgUrl).ToListAsync();
-            foreach (var url in bulletImgs) usedUrls.Add(url);
+                .Select(x => new { x.ImgUrl, x.Date, x.Type })
+                .OrderBy(x => x.Date) // Find earliest use
+                .ToListAsync();
 
-            var teamImgs = await _db.Teams.AsNoTracking()
+            foreach (var item in bulletData)
+            {
+                if (!usageMap.ContainsKey(item.ImgUrl))
+                {
+                    usageMap[item.ImgUrl] = (item.Date, item.Type);
+                }
+            }
+
+            // 2. Scan Teams (Fallback date: Epoch or current)
+            var teamData = await _db.Teams.AsNoTracking()
                 .Where(x => x.UserId == userId && x.LogoUrl != null && x.LogoUrl != "")
-                .Select(x => x.LogoUrl).ToListAsync();
-            foreach (var url in teamImgs) usedUrls.Add(url);
+                .Select(x => new { x.LogoUrl })
+                .ToListAsync();
 
-            var recipeImgs = await _db.Recipes.AsNoTracking()
-                .Where(x => x.UserId == userId && x.ImageUrl != null && x.ImageUrl != "")
-                .Select(x => x.ImageUrl).ToListAsync();
-            foreach (var url in recipeImgs) usedUrls.Add(url);
+            foreach (var item in teamData)
+            {
+                if (!usageMap.ContainsKey(item.LogoUrl))
+                {
+                    usageMap[item.LogoUrl] = (DateTime.UtcNow, "sports");
+                }
+            }
 
-            // 2. Fetch IDs only (Avoid loading the heavy 'Data' byte array)
+            // 3. Fetch Stored Images IDs
             var storedImageIds = await _db.StoredImages.AsNoTracking()
                 .Select(x => x.Id)
                 .ToListAsync();
@@ -45,59 +59,58 @@ public class ImageService
             foreach (var id in storedImageIds)
             {
                 var localUrl = $"/db-images/{id}";
+                bool isUsed = usageMap.ContainsKey(localUrl);
+                
                 results.Add(new ImageUsageDTO 
                 { 
                     Url = localUrl, 
                     IsLocal = true, 
-                    IsUsed = usedUrls.Contains(localUrl),
-                    DbId = id
+                    IsUsed = isUsed,
+                    DbId = id,
+                    FirstUsedDate = isUsed ? usageMap[localUrl].Date : null,
+                    FirstUsedType = isUsed ? usageMap[localUrl].Type : "unused"
                 });
             }
 
-            // 3. Add Remote used images
-            foreach (var url in usedUrls.Where(u => !u.StartsWith("/db-images/")))
+            // 4. Add Remote used images
+            foreach (var kvp in usageMap.Where(u => !u.Key.StartsWith("/db-images/")))
             {
-                results.Add(new ImageUsageDTO { Url = url, IsLocal = false, IsUsed = true });
+                results.Add(new ImageUsageDTO 
+                { 
+                    Url = kvp.Key, 
+                    IsLocal = false, 
+                    IsUsed = true,
+                    FirstUsedDate = kvp.Value.Date,
+                    FirstUsedType = kvp.Value.Type
+                });
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"REGISTRY_SCAN_ERROR: {ex.Message}");
+            Console.WriteLine($"METADATA_SCAN_ERROR: {ex.Message}");
         }
 
-        return results.OrderByDescending(x => x.IsUsed).ToList();
+        return results.OrderByDescending(x => x.FirstUsedDate ?? DateTime.MinValue).ToList();
     }
 
     public async Task<int> DeleteUnusedLocalImages(int userId)
     {
         try
         {
-            // NEW: Use a Raw SQL Delete for maximum efficiency. 
-            // This avoids loading any binary data into memory.
+            // Direct SQL for performance remains the same
             string sql = @"
                 DELETE FROM ""StoredImages"" 
                 WHERE ""Id"" NOT IN (
                     SELECT CAST(REPLACE(""ImgUrl"", '/db-images/', '') AS INTEGER)
                     FROM ""BulletItems""
                     WHERE ""ImgUrl"" LIKE '/db-images/%'
-                )
-                AND ""Id"" NOT IN (
-                    SELECT CAST(REPLACE(""LogoUrl"", '/db-images/', '') AS INTEGER)
-                    FROM ""Teams""
-                    WHERE ""LogoUrl"" LIKE '/db-images/%'
-                )
-                AND ""Id"" NOT IN (
-                    SELECT CAST(REPLACE(""ImageUrl"", '/db-images/', '') AS INTEGER)
-                    FROM ""Recipes""
-                    WHERE ""ImageUrl"" LIKE '/db-images/%'
                 );";
 
-            int deletedCount = await _db.Database.ExecuteSqlRawAsync(sql);
-            return deletedCount;
+            return await _db.Database.ExecuteSqlRawAsync(sql);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"SQL_PURGE_CRASH: {ex.Message}");
+            Console.WriteLine($"PURGE_ERROR: {ex.Message}");
             return -1;
         }
     }
@@ -108,6 +121,8 @@ public class ImageService
         public bool IsLocal { get; set; }
         public bool IsUsed { get; set; }
         public int DbId { get; set; }
+        public DateTime? FirstUsedDate { get; set; }
+        public string FirstUsedType { get; set; } = "";
         public bool IsFavorite { get; set; }
     }
 }

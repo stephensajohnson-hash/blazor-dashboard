@@ -5,19 +5,20 @@
 @inject AppDbContext Db
 @inject ImageService ImageService
 @inject IJSRuntime JS
+@inject NavigationManager Nav
 
 <div class="min-h-screen bg-gray-900 text-white p-8 font-sans font-black uppercase">
     
     <div class="flex justify-between items-center mb-8 border-b border-gray-800 pb-6">
         <div>
             <h1 class="text-2xl tracking-tighter text-blue-400">Visual Asset Registry</h1>
-            <p class="text-[10px] text-gray-500 tracking-widest mt-1">Total Assets: @images.Count</p>
+            <p class="text-[10px] text-gray-500 tracking-widest mt-1">Found @images.Count Total Assets</p>
         </div>
         <div class="flex gap-4">
             <button @onclick="CleanupUnused" 
                     disabled="@isPurging"
-                    class="bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white border border-red-500/50 px-6 py-2 rounded-lg text-xs transition shadow-lg font-black uppercase tracking-widest disabled:opacity-30">
-                @(isPurging ? "PURGING_DB..." : "🗑️ Purge Unused Local Data")
+                    class="bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white border border-red-500/50 px-6 py-2 rounded-lg text-xs transition shadow-lg font-black uppercase tracking-widest">
+                @(isPurging ? "PURGING..." : "🗑️ Purge Unused")
             </button>
         </div>
     </div>
@@ -26,7 +27,7 @@
     {
         <div class="flex flex-col items-center justify-center py-20">
             <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-            <div class="mt-4 animate-pulse text-blue-500 text-xs tracking-[0.3em]">Querying Database...</div>
+            <div class="mt-4 animate-pulse text-blue-500 text-xs tracking-[0.3em]">Building Catalog...</div>
         </div>
     }
     else
@@ -34,9 +35,25 @@
         <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-6">
             @foreach (var img in images.Take(displayCount))
             {
-                <div class="bg-gray-800/40 border @(img.IsUsed ? "border-gray-700" : "border-red-500/40") rounded-xl overflow-hidden shadow-2xl group transition hover:scale-105">
-                    <div class="aspect-square bg-black relative">
-                        <img src="@img.Url" class="w-full h-full object-cover" loading="lazy" />
+                <div class="bg-gray-800/40 border @(img.IsUsed ? "border-gray-700" : "border-red-500/40") rounded-xl overflow-hidden shadow-2xl group transition hover:scale-105 relative">
+                    
+                    @if (img.FirstUsedDate.HasValue)
+                    {
+                        <div class="absolute top-1 right-1 z-20 bg-black/60 backdrop-blur-md text-[7px] px-1.5 py-0.5 rounded border border-white/10 text-blue-400">
+                            @img.FirstUsedDate.Value.ToString("MMM dd, yyyy")
+                        </div>
+                    }
+
+                    <div class="aspect-square bg-black relative cursor-pointer" 
+                         @onclick="() => NavigateToFirstOccurrence(img)">
+                        
+                        <img src="@img.Url" class="w-full h-full object-cover" loading="lazy" 
+                             onerror="this.src='https://via.placeholder.com/200?text=BROKEN_LINK'" />
+                        
+                        <div class="absolute inset-0 bg-blue-600/0 group-hover:bg-blue-600/20 transition-all flex items-center justify-center">
+                            <span class="opacity-0 group-hover:opacity-100 text-[8px] bg-blue-600 text-white px-2 py-1 rounded shadow-xl">GO_TO_ITEM</span>
+                        </div>
+
                         @if (!img.IsUsed && img.IsLocal)
                         {
                             <div class="absolute inset-0 bg-red-900/40 flex items-center justify-center">
@@ -44,10 +61,13 @@
                             </div>
                         }
                     </div>
-                    <div class="p-3 bg-gray-900/50 space-y-2">
+
+                    <div class="p-2 bg-gray-900/50 space-y-2">
                         <div class="flex items-center gap-2">
-                            <input readonly value="@img.Url" class="bg-black/40 border-none text-[8px] text-gray-400 px-2 py-1 flex-1 rounded truncate font-mono" />
-                            <button @onclick='() => CopyToClipboard(img.Url)' class="p-1 hover:text-blue-400">📋</button>
+                            <button @onclick='() => CopyToClipboard(img.Url)' class="p-1 hover:text-blue-400 bg-black/40 rounded transition-colors text-[10px]">
+                                📋 COPY URL
+                            </button>
+                            <span class="text-[6px] text-gray-600 flex-1 truncate">@img.Url</span>
                         </div>
                     </div>
                 </div>
@@ -58,7 +78,7 @@
         {
             <div class="flex justify-center py-10">
                 <button @onclick="() => displayCount += 24" class="px-10 py-3 bg-gray-800 border border-gray-700 rounded-xl text-xs font-black tracking-widest hover:bg-gray-700 transition">
-                    LOAD MORE ASSETS (@(images.Count - displayCount) REMAINING)
+                    LOAD MORE (@(images.Count - displayCount))
                 </button>
             </div>
         }
@@ -94,23 +114,28 @@
     {
         isLoading = true;
         StateHasChanged();
-        try { images = await ImageService.GetAllImages(userId); } catch { }
+        images = await ImageService.GetAllImages(userId);
         isLoading = false;
         StateHasChanged();
     }
 
+    private void NavigateToFirstOccurrence(ImageService.ImageUsageDTO img)
+    {
+        if (img.FirstUsedDate.HasValue)
+        {
+            // Navigates to the calendar day of this item
+            Nav.NavigateTo($"/bullet-calendar?view=day&date={img.FirstUsedDate.Value:yyyy-MM-dd}");
+        }
+    }
+
     private async Task CleanupUnused()
     {
-        if (await JS.InvokeAsync<bool>("confirm", "This will use a direct SQL command to purge orphans. Proceed?"))
-        {
+        if (await JS.InvokeAsync<bool>("confirm", "Delete all local orphans?")) {
             isPurging = true;
-            StateHasChanged();
-            
             int count = await ImageService.DeleteUnusedLocalImages(userId);
-            
-            await JS.InvokeVoidAsync("alert", count >= 0 ? $"Cleanup Complete: {count} images purged." : "SQL Error during purge.");
             await LoadImages();
             isPurging = false;
+            await JS.InvokeVoidAsync("alert", $"{count} images purged.");
         }
     }
 
