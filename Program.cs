@@ -51,6 +51,7 @@ builder.Services.AddScoped<SportsService>();
 builder.Services.AddScoped<BulletSportsService>();
 builder.Services.AddScoped<BulletMoviesService>();
 builder.Services.AddScoped<BudgetService>();
+builder.Services.AddScoped<ImageService>();
 
 // --- DATABASE REGISTRATION (UPDATED) ---
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
