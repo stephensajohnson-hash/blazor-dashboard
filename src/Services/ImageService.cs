@@ -21,36 +21,26 @@ public class ImageService
 
         try
         {
-            // 1. Gather used URLs from all known tables with individual try-catches
-            // BulletItems
-            try {
-                var bulletImgs = await _db.BulletItems
-                    .Where(x => x.UserId == userId && x.ImgUrl != null && x.ImgUrl != "")
-                    .Select(x => x.ImgUrl)
-                    .ToListAsync();
-                foreach (var url in bulletImgs) usedUrls.Add(url);
-            } catch (Exception ex) { Console.WriteLine($"Registry Scan Error (Bullets): {ex.Message}"); }
+            // 1. Gather used URLs with high-performance queries
+            var bulletImgs = await _db.BulletItems.AsNoTracking()
+                .Where(x => x.UserId == userId && x.ImgUrl != null && x.ImgUrl != "")
+                .Select(x => x.ImgUrl).ToListAsync();
+            foreach (var url in bulletImgs) usedUrls.Add(url);
 
-            // Teams
-            try {
-                var teamImgs = await _db.Teams
-                    .Where(x => x.UserId == userId && x.LogoUrl != null && x.LogoUrl != "")
-                    .Select(x => x.LogoUrl)
-                    .ToListAsync();
-                foreach (var url in teamImgs) usedUrls.Add(url);
-            } catch (Exception ex) { Console.WriteLine($"Registry Scan Error (Teams): {ex.Message}"); }
+            var teamImgs = await _db.Teams.AsNoTracking()
+                .Where(x => x.UserId == userId && x.LogoUrl != null && x.LogoUrl != "")
+                .Select(x => x.LogoUrl).ToListAsync();
+            foreach (var url in teamImgs) usedUrls.Add(url);
 
-            // Recipes
-            try {
-                var recipeImgs = await _db.Recipes
-                    .Where(x => x.UserId == userId && x.ImageUrl != null && x.ImageUrl != "")
-                    .Select(x => x.ImageUrl)
-                    .ToListAsync();
-                foreach (var url in recipeImgs) usedUrls.Add(url);
-            } catch (Exception ex) { Console.WriteLine($"Registry Scan Error (Recipes): {ex.Message}"); }
+            var recipeImgs = await _db.Recipes.AsNoTracking()
+                .Where(x => x.UserId == userId && x.ImageUrl != null && x.ImageUrl != "")
+                .Select(x => x.ImageUrl).ToListAsync();
+            foreach (var url in recipeImgs) usedUrls.Add(url);
 
-            // 2. Get all uploaded images
-            var storedImages = await _db.StoredImages.AsNoTracking().ToListAsync();
+            // 2. Fetch Stored Images Metadata only
+            var storedImages = await _db.StoredImages.AsNoTracking()
+                .Select(x => new { x.Id })
+                .ToListAsync();
             
             foreach (var img in storedImages)
             {
@@ -64,22 +54,18 @@ public class ImageService
                 });
             }
 
-            // 3. Add Remote images that are in use
+            // 3. Add Remote used images
             foreach (var url in usedUrls.Where(u => !u.StartsWith("/db-images/")))
             {
-                results.Add(new ImageUsageDTO 
-                { 
-                    Url = url, 
-                    IsLocal = false, 
-                    IsUsed = true 
-                });
+                results.Add(new ImageUsageDTO { Url = url, IsLocal = false, IsUsed = true });
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"TOTAL_REGISTRY_CRASH: {ex.Message}");
+            Console.WriteLine($"REGISTRY_SCAN_FAILURE: {ex.Message}");
         }
 
+        // Return used items first, then unused
         return results.OrderByDescending(x => x.IsUsed).ToList();
     }
 
@@ -87,21 +73,33 @@ public class ImageService
     {
         try
         {
-            var all = await GetAllImages(userId);
-            var unusedIds = all.Where(x => x.IsLocal && !x.IsUsed).Select(x => x.DbId).ToList();
+            // Get the list of all IDs currently in use
+            var bulletUsage = await _db.BulletItems.AsNoTracking()
+                .Where(x => x.UserId == userId && x.ImgUrl.StartsWith("/db-images/"))
+                .Select(x => x.ImgUrl).ToListAsync();
             
-            if (!unusedIds.Any()) return 0;
+            var usedIds = bulletUsage
+                .Select(u => u.Replace("/db-images/", ""))
+                .Select(s => int.TryParse(s, out var id) ? id : -1)
+                .Where(id => id != -1)
+                .ToHashSet();
 
-            var toDelete = await _db.StoredImages.Where(x => unusedIds.Contains(x.Id)).ToListAsync();
+            // Find images in DB that are NOT in that hashset
+            var toDelete = await _db.StoredImages
+                .Where(x => !usedIds.Contains(x.Id))
+                .ToListAsync();
+
             int count = toDelete.Count;
-            
-            _db.StoredImages.RemoveRange(toDelete);
-            await _db.SaveChangesAsync();
+            if (count > 0)
+            {
+                _db.StoredImages.RemoveRange(toDelete);
+                await _db.SaveChangesAsync();
+            }
             return count;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"PURGE_ERROR: {ex.Message}");
+            Console.WriteLine($"PURGE_CRASH: {ex.Message}");
             return -1;
         }
     }
