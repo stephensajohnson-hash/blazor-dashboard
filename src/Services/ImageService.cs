@@ -16,17 +16,16 @@ public class ImageService
 
     public async Task<List<ImageUsageDTO>> GetAllImages(int userId)
     {
-        // Dictionary to track URL -> Metadata (Date and Type)
         var usageMap = new Dictionary<string, (DateTime Date, string Type)>();
         var results = new List<ImageUsageDTO>();
 
         try
         {
-            // 1. Scan BulletItems (Primary source of truth for dates)
+            // 1. Scan BulletItems
             var bulletData = await _db.BulletItems.AsNoTracking()
                 .Where(x => x.UserId == userId && x.ImgUrl != null && x.ImgUrl != "")
                 .Select(x => new { x.ImgUrl, x.Date, x.Type })
-                .OrderBy(x => x.Date) // Find earliest use
+                .OrderBy(x => x.Date)
                 .ToListAsync();
 
             foreach (var item in bulletData)
@@ -37,7 +36,7 @@ public class ImageService
                 }
             }
 
-            // 2. Scan Teams (Fallback date: Epoch or current)
+            // 2. Scan Teams
             var teamData = await _db.Teams.AsNoTracking()
                 .Where(x => x.UserId == userId && x.LogoUrl != null && x.LogoUrl != "")
                 .Select(x => new { x.LogoUrl })
@@ -51,7 +50,7 @@ public class ImageService
                 }
             }
 
-            // 3. Fetch Stored Images IDs
+            // 3. Fetch Stored Images IDs only (fast metadata scan)
             var storedImageIds = await _db.StoredImages.AsNoTracking()
                 .Select(x => x.Id)
                 .ToListAsync();
@@ -72,7 +71,7 @@ public class ImageService
                 });
             }
 
-            // 4. Add Remote used images
+            // 4. Add Remote pointers
             foreach (var kvp in usageMap.Where(u => !u.Key.StartsWith("/db-images/")))
             {
                 results.Add(new ImageUsageDTO 
@@ -87,7 +86,7 @@ public class ImageService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"METADATA_SCAN_ERROR: {ex.Message}");
+            Console.WriteLine($"QUERY_ERROR: {ex.Message}");
         }
 
         return results.OrderByDescending(x => x.FirstUsedDate ?? DateTime.MinValue).ToList();
@@ -97,20 +96,28 @@ public class ImageService
     {
         try
         {
-            // Direct SQL for performance remains the same
+            // Direct SQL Delete using a simpler JOIN pattern to avoid timeouts
             string sql = @"
-                DELETE FROM ""StoredImages"" 
+                DELETE FROM ""StoredImages""
                 WHERE ""Id"" NOT IN (
                     SELECT CAST(REPLACE(""ImgUrl"", '/db-images/', '') AS INTEGER)
                     FROM ""BulletItems""
                     WHERE ""ImgUrl"" LIKE '/db-images/%'
+                    UNION
+                    SELECT CAST(REPLACE(""LogoUrl"", '/db-images/', '') AS INTEGER)
+                    FROM ""Teams""
+                    WHERE ""LogoUrl"" LIKE '/db-images/%'
+                    UNION
+                    SELECT CAST(REPLACE(""ImageUrl"", '/db-images/', '') AS INTEGER)
+                    FROM ""Recipes""
+                    WHERE ""ImageUrl"" LIKE '/db-images/%'
                 );";
 
             return await _db.Database.ExecuteSqlRawAsync(sql);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"PURGE_ERROR: {ex.Message}");
+            Console.WriteLine($"PURGE_SQL_CRASH: {ex.Message}");
             return -1;
         }
     }
