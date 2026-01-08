@@ -3,7 +3,7 @@
 @using Microsoft.Extensions.DependencyInjection
 @using Microsoft.JSInterop
 @using Microsoft.AspNetCore.Components.Web
-@using Dashboard // This ensures we use your global StoredImage model
+@using Dashboard
 @namespace Dashboard.Components.Bullet
 @inject NavigationManager Nav
 @inject IJSRuntime JS
@@ -11,25 +11,18 @@
 
 <PageTitle>Image Registry | Stephens' Dashboard</PageTitle>
 
-<BulletHeader 
-    ShowControls="false"
-    CustomDateText="Image Registry">
-    
+<BulletHeader ShowControls="false" CustomDateText="Image Registry">
     <div class="flex items-center gap-2 ml-4">
         @* Search Bar *@
         <div class="relative flex items-center bg-black/40 border border-gray-700 rounded-lg px-2 focus-within:border-blue-500 transition-all font-black">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
-            
-            <input @bind="searchQuery" 
-                   @bind:event="oninput" 
-                   placeholder="Search filenames..." 
+            <input @bind="searchQuery" @bind:event="oninput" placeholder="Search filenames..." 
                    class="bg-transparent border-none text-xs py-1.5 px-2 w-32 md:w-48 outline-none text-white font-bold" />
-            
             @if(!string.IsNullOrWhiteSpace(searchQuery))
             {
-                <button @onclick="ClearSearch" class="text-gray-500 hover:text-red-400 p-1 transition-colors">
+                <button @onclick="ClearSearch" class="text-gray-500 hover:text-red-400 p-1">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12" />
                     </svg>
@@ -41,7 +34,7 @@
 
         <button @onclick="PurgeDatabase" 
                 class="px-3 py-1.5 bg-red-950/30 border border-red-900/50 hover:bg-red-600 hover:border-red-400 text-red-500 hover:text-white text-[10px] font-black uppercase tracking-widest rounded-lg transition-all shadow-lg active:scale-95">
-            Purge All Images
+            Purge Registry
         </button>
     </div>
 </BulletHeader>
@@ -66,28 +59,14 @@
             {
                 <div class="group bg-[#0f0f0f] border border-gray-800 rounded-2xl overflow-hidden shadow-2xl hover:border-blue-500/50 transition-all">
                     <div class="aspect-square bg-black overflow-hidden cursor-pointer" @onclick="() => NavigateToDay(img.UploadedAt)">
-                        <img src="/db-images/@img.Id" 
-                             alt="@img.OriginalName" 
-                             class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                        <img src="/db-images/@img.Id" alt="@img.OriginalName" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                     </div>
-
                     <div class="p-3">
-                        <div class="text-[10px] font-black text-gray-500 truncate mb-1 uppercase tracking-tighter">
-                            @img.OriginalName
-                        </div>
-                        <div class="text-[9px] text-gray-600 mb-3 font-bold">
-                            Uploaded: @img.UploadedAt.ToString("MMM dd, yyyy")
-                        </div>
-
+                        <div class="text-[10px] font-black text-gray-500 truncate mb-1 uppercase tracking-tighter">@img.OriginalName</div>
+                        <div class="text-[9px] text-gray-600 mb-3 font-bold">Uploaded: @img.UploadedAt.ToString("MMM dd, yyyy")</div>
                         <div class="flex gap-2">
-                            <button @onclick="() => CopyUrl(img.Id)" 
-                                    class="flex-1 bg-gray-900 hover:bg-blue-600 text-white text-[9px] font-black py-1.5 rounded transition uppercase tracking-widest border border-gray-700">
-                                🔗 URL
-                            </button>
-                            <button @onclick="() => NavigateToDay(img.UploadedAt)" 
-                                    class="flex-1 bg-gray-900 hover:bg-gray-700 text-white text-[9px] font-black py-1.5 rounded transition uppercase tracking-widest border border-gray-700">
-                                📅 Day
-                            </button>
+                            <button @onclick="() => CopyUrl(img.Id)" class="flex-1 bg-gray-900 hover:bg-blue-600 text-white text-[9px] font-black py-1.5 rounded transition uppercase tracking-widest border border-gray-700">🔗 URL</button>
+                            <button @onclick="() => NavigateToDay(img.UploadedAt)" class="flex-1 bg-gray-900 hover:bg-gray-700 text-white text-[9px] font-black py-1.5 rounded transition uppercase tracking-widest border border-gray-700">📅 Day</button>
                         </div>
                     </div>
                 </div>
@@ -100,27 +79,18 @@
     private List<Dashboard.StoredImage>? allImages;
     private string searchQuery = "";
 
-    // 1. We filter for Unique IDs so the same image path only shows once
-    // 2. We then apply the search filter
-    private IEnumerable<Dashboard.StoredImage> filteredImages {
-        get {
-            if (allImages == null) return new List<Dashboard.StoredImage>();
-
-            var uniqueImages = allImages.DistinctBy(i => i.Id);
-
-            if (string.IsNullOrWhiteSpace(searchQuery))
-                return uniqueImages;
-
-            return uniqueImages.Where(i => 
-                (i.OriginalName ?? "").Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
-        }
-    }
+    // Prevents duplicate URL paths by Distincting by ID
+    private IEnumerable<Dashboard.StoredImage> filteredImages => 
+        (allImages ?? new List<Dashboard.StoredImage>())
+        .DistinctBy(i => i.Id)
+        .Where(i => string.IsNullOrWhiteSpace(searchQuery) || (i.OriginalName ?? "").Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnInitializedAsync()
     {
-        // We ONLY load. We do not call any "Cleanup" services here.
         await LoadImages();
     }
+
+    private void ClearSearch() => searchQuery = "";
 
     private async Task LoadImages()
     {
@@ -128,37 +98,30 @@
         {
             using var scope = ScopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            
-            // Just a straight pull of the registry
-            allImages = await db.StoredImages
-                .OrderByDescending(i => i.UploadedAt)
-                .ToListAsync();
-                
-            Console.WriteLine($"Registry loaded: {allImages?.Count ?? 0} total records found.");
+            allImages = await db.StoredImages.OrderByDescending(i => i.UploadedAt).ToListAsync();
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error Loading Images: {ex.Message}");
-        }
+        catch (Exception ex) { Console.WriteLine($"Load Error: {ex.Message}"); }
     }
 
-    private async Task PurgeUnusedImages()
+    private void NavigateToDay(DateTime date) => Nav.NavigateTo($"/bullet-calendar?date={date:yyyy-MM-dd}");
+
+    private async Task CopyUrl(int id)
     {
-        bool confirmed = await JS.InvokeAsync<bool>("confirm", "Delete only images NOT linked to any calendar items?");
+        var url = $"{Nav.BaseUri}db-images/{id}";
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
+    }
+
+    private async Task PurgeDatabase()
+    {
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", "⚠️ Clear entire registry?");
         if (!confirmed) return;
 
-        using var scope = ScopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-        // Logic to find images not referenced in any Task/Health/etc. tables
-        // Example:
-        // var usedIds = await db.BulletTasks.Select(t => t.ImageId).Distinct().ToListAsync();
-        // var unused = await db.StoredImages.Where(img => !usedIds.Contains(img.Id)).ToListAsync();
-        
-        // db.StoredImages.RemoveRange(unused);
-        // await db.SaveChangesAsync();
-        
-        Console.WriteLine("Manual cleanup complete.");
-        await LoadImages();
+        try {
+            using var scope = ScopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.StoredImages.RemoveRange(await db.StoredImages.ToListAsync());
+            await db.SaveChangesAsync();
+            await LoadImages();
+        } catch (Exception ex) { Console.WriteLine($"Purge Error: {ex.Message}"); }
     }
 }
