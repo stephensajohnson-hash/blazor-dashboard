@@ -54,7 +54,7 @@
             <div class="h-full flex flex-col font-black">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-sm font-black uppercase text-blue-400">Results (@searchResults.Count)</h2>
-                    <button @onclick="ClearSearch" class="text-[10px] font-bold text-gray-400 hover:text-red-400">Close</button>
+                    <button @onclick="ClearSearch" class="text-[10px] font-bold text-gray-400 hover:text-red-400 uppercase">Close</button>
                 </div>
                 <div class="flex-1 overflow-y-auto pr-2 scrollbar-hide">
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-20">
@@ -95,7 +95,7 @@
             <div class="grid grid-cols-7 gap-2 h-full font-sans font-bold">
                 @for(int i=0; i<7; i++) {
                     var d = weekStart.AddDays(i);
-                    <div class="flex flex-col h-full rounded-xl border @GetDayBorderClass(d) overflow-hidden bg-gray-800/40">
+                    <div class="flex flex-col h-full rounded-xl border @GetDayBorderClass(d) overflow-hidden bg-gray-800/40 shadow-lg">
                         <div class="p-2 text-center border-b border-gray-700/50 bg-gray-800/60 cursor-pointer hover:bg-gray-700 transition" @onclick="() => GoToDate(d)">
                             <div class="text-[10px] uppercase font-black text-gray-500">@d.ToString("ddd")</div>
                             <div class="text-lg font-black text-white">@d.Day</div>
@@ -192,14 +192,16 @@
                     if(doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p)) userId = p.GetInt32();
                     if(userId > 0) {
                         currentUser = await Db.Users.FindAsync(userId);
-                        clientOffset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()");
-                        var uri = Nav.ToAbsoluteUri(Nav.Uri);
-                        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("date", out var dateVal) && DateTime.TryParse(dateVal, out var parsed)) {
-                            viewDate = parsed;
-                        } else {
-                            viewDate = DateTime.UtcNow.AddMinutes(-clientOffset);
+                        if(currentUser != null) {
+                            clientOffset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()");
+                            var uri = Nav.ToAbsoluteUri(Nav.Uri);
+                            if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("date", out var dateVal) && DateTime.TryParse(dateVal, out var parsed)) {
+                                viewDate = parsed;
+                            } else {
+                                viewDate = DateTime.UtcNow.AddMinutes(-clientOffset);
+                            }
+                            await LoadData();
                         }
-                        await LoadData();
                     }
                 }
             } catch (Exception ex) { await LogToConsole($"Init Fail: {ex.Message}"); }
@@ -220,7 +222,7 @@
             loadedItems.Clear();
             await LogToConsole($"Syncing Range: {start:yyyy-MM-dd}");
 
-            // 1. Tasks & Meetings
+            // 1. Core Data
             loadedItems.AddRange(await TaskService.GetTasksForRange(userId, start, end));
             loadedMeetings = await MeetingService.GetMeetingsForRange(userId, start, end);
             foreach(var m in loadedMeetings) { m.MeetingDetail ??= new(); loadedItems.Add(m); }
