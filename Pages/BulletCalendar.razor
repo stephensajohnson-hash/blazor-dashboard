@@ -95,7 +95,7 @@
             <div class="grid grid-cols-7 gap-2 h-full font-sans font-bold">
                 @for(int i=0; i<7; i++) {
                     var d = weekStart.AddDays(i);
-                    <div class="flex flex-col h-full rounded-xl border @GetDayBorderClass(d) overflow-hidden bg-gray-800/40">
+                    <div class="flex flex-col h-full rounded-xl border @GetDayBorderClass(d) overflow-hidden bg-gray-800/40 shadow-lg">
                         <div class="p-2 text-center border-b border-gray-700/50 bg-gray-800/60 cursor-pointer hover:bg-gray-700 transition" @onclick="() => GoToDate(d)">
                             <div class="text-[10px] uppercase font-black text-gray-500">@d.ToString("ddd")</div>
                             <div class="text-lg font-black text-white">@d.Day</div>
@@ -130,7 +130,6 @@
     </div>
 </div>
 
-@* THE EDITOR POPUP *@
 <BaseEditor Item="editingItem" 
             TaskDetail="editingItem?.Detail ?? new()" 
             MeetingDetail="editingItem?.MeetingDetail ?? new()"
@@ -150,14 +149,14 @@
         else if (item.Type == "holiday") { <HolidayCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "vacation") { <VacationCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "health") { <HealthCard Item="item" User="currentUser" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
-        else if (item.Type == "sports") { <SportsCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
+        else if (item.Type == "sports") { <SportsCard Item="@(GetGame(item.Id))" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "media") { <MediaCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else { <TaskCard Item="item" OnClick="() => OpenEdit(item)" OnToggle="() => ToggleComplete(item)" OnDelete="() => DeleteTask(item.Id)" /> }
     };
 
     RenderFragment RenderPill(BulletTaskService.TaskDTO item) => __builder => {
-        @if(item.Type == "meeting") { <MeetingPill Item="item" OnClick="() => OpenEdit(item)" /> }
-        else if(item.Type == "sports") { <SportsPill Item="item" OnClick="() => OpenEdit(item)" /> }
+        @if(item.Type == "meeting") { <MeetingPill Item="@(GetMeeting(item.Id))" OnClick="() => OpenEdit(item)" /> }
+        else if(item.Type == "sports") { <SportsPill Item="@(GetGame(item.Id))" OnClick="() => OpenEdit(item)" /> }
         else { <TaskPill Task="item" OnClick="() => OpenEdit(item)" /> }
     };
 }
@@ -167,6 +166,8 @@
     private string currentView = "day"; private int clientOffset = 0; private bool isLoading = true;
     private List<BulletTaskService.TaskDTO> loadedItems = new(); 
     private List<BulletHabitService.HabitDTO> loadedHabits = new(); 
+    private List<BulletSportsService.GameDTO> loadedGames = new();
+    private List<BulletMeetingService.MeetingDTO> loadedMeetings = new();
     private BulletTaskService.TaskDTO? editingItem;
     private DateTime weekStart => viewDate.AddDays(-1 * ((7 + (viewDate.DayOfWeek - DayOfWeek.Monday)) % 7)).Date;
     private int daysInMonth => DateTime.DaysInMonth(viewDate.Year, viewDate.Month);
@@ -189,9 +190,7 @@
                         var uri = Nav.ToAbsoluteUri(Nav.Uri);
                         if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("date", out var dateVal) && DateTime.TryParse(dateVal, out var parsed)) {
                             viewDate = parsed;
-                        } else {
-                            viewDate = DateTime.UtcNow.AddMinutes(-clientOffset);
-                        }
+                        } else { viewDate = DateTime.UtcNow.AddMinutes(-clientOffset); }
                         await LoadData();
                     }
                 }
@@ -213,10 +212,10 @@
             loadedItems.Clear();
             await LogToConsole($"Syncing Range: {start:yyyy-MM-dd}");
 
-            // 1. Core Data (Includes MeetingDetail)
+            // 1. Core Data
             loadedItems.AddRange(await TaskService.GetTasksForRange(userId, start, end));
-            var meetings = await MeetingService.GetMeetingsForRange(userId, start, end);
-            foreach(var m in meetings) { m.MeetingDetail ??= new(); loadedItems.Add(m); }
+            loadedMeetings = await MeetingService.GetMeetingsForRange(userId, start, end);
+            foreach(var m in loadedMeetings) { m.MeetingDetail ??= new(); loadedItems.Add(m); }
 
             // 2. Health & Vacation
             try {
@@ -240,8 +239,8 @@
                 var annivs = await AnniversaryService.GetAnniversariesForRange(userId, start, end);
                 foreach(var a in annivs) loadedItems.Add(new BulletTaskService.TaskDTO { Id = a.Id, UserId = a.UserId, Type = "anniversary", Category = "personal", Date = a.Date, Title = a.Title, AnniversaryDetail = a.Detail, ImgUrl = a.ImgUrl });
 
-                var games = await SportsService.GetGamesForRange(userId, start, end);
-                foreach(var g in games) loadedItems.Add(new BulletTaskService.TaskDTO { Id = g.Id, UserId = g.UserId, Type = "sports", Category = "personal", Date = g.Date, Title = g.Title, SportsDetail = g.Detail, ImgUrl = g.ImgUrl });
+                loadedGames = await SportsService.GetGamesForRange(userId, start, end);
+                foreach(var g in loadedGames) loadedItems.Add(new BulletTaskService.TaskDTO { Id = g.Id, UserId = g.UserId, Type = "sports", Category = "personal", Date = g.Date, Title = g.Title, SportsDetail = g.Detail, ImgUrl = g.ImgUrl });
             } catch { }
 
             // 4. Media & Habits
@@ -254,8 +253,6 @@
                 foreach(var h in loadedHabits.Where(x => x.Date.Date >= start.Date && x.Date.Date <= end.Date))
                     loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, HabitDetail = h.Detail, ImgUrl = h.ImgUrl });
             } catch { }
-
-            await LogToConsole($"Loaded {loadedItems.Count} total items.");
         } catch (Exception ex) { await LogToConsole($"Sync Error: {ex.Message}"); }
         isLoading = false; StateHasChanged();
     }
@@ -293,11 +290,12 @@
     private List<BulletTaskService.TaskDTO> GetItemsForColumn(DateTime d, string cat) { 
         var items = loadedItems.Where(t => t.Date.Date == d.Date); 
         if (cat == "health") return items.Where(t => t.Type == "health" || t.Category == "health").ToList();
-        if (cat == "personal") return items.Where(t => t.Category != "work" && t.Category != "health").ToList(); // Includes Sports, Media, etc.
+        if (cat == "personal") return items.Where(t => t.Category != "work" && t.Category != "health").ToList();
         return items.Where(t => t.Category == "work").ToList();
     }
-
     private List<BulletTaskService.TaskDTO> GetItemsForDate(DateTime d) => loadedItems.Where(t => t.Date.Date == d.Date).ToList();
     private BulletHabitService.HabitDTO GetHabit(int id) => loadedHabits.FirstOrDefault(h => h.Id == id) ?? new();
+    private BulletMeetingService.MeetingDTO GetMeeting(int id) => loadedMeetings.FirstOrDefault(m => m.Id == id) ?? new();
+    private BulletSportsService.GameDTO GetGame(int id) => loadedGames.FirstOrDefault(g => g.Id == id) ?? new();
     private string GetDayBorderClass(DateTime d) => d.Date == DateTime.Today ? "border-yellow-500 shadow-lg" : "border-gray-700";
 }
