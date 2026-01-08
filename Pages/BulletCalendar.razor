@@ -387,50 +387,75 @@
         }
     }
 
-    private async Task LoadData()
+private async Task LoadData()
+{
+    if (currentUser == null) return; 
+    isLoading = true; 
+    StateHasChanged();
+    
+    DateTime start = DateTime.SpecifyKind(viewDate.Date, DateTimeKind.Utc); 
+    DateTime end = start.AddDays(1).AddSeconds(-1);
+
+    if (currentView == "week") { start = DateTime.SpecifyKind(weekStart, DateTimeKind.Utc); end = start.AddDays(7).AddSeconds(-1); }
+    else if (currentView == "month") { start = DateTime.SpecifyKind(new DateTime(viewDate.Year, viewDate.Month, 1), DateTimeKind.Utc); end = start.AddMonths(1).AddSeconds(-1); }
+    
+    try 
     {
-        if (currentUser == null) return; 
-        isLoading = true; 
-        StateHasChanged();
+        await LogToConsole($"--- Global Sync Initiated: {start:yyyy-MM-dd} ---");
+        loadedItems.Clear();
+
+        // 1. Tasks & Meetings
+        var tasks = await TaskService.GetTasksForRange(userId, start, end);
+        var meetings = await MeetingService.GetMeetingsForRange(userId, start, end);
+        loadedItems.AddRange(tasks);
+        loadedItems.AddRange(meetings);
+        await LogToConsole($"Loaded {tasks.Count} Tasks and {meetings.Count} Meetings.");
+
+        // 2. Birthdays, Holidays, Anniversaries
+        var birthdays = await BirthdayService.GetBirthdaysForRange(userId, start, end);
+        foreach(var b in birthdays) loadedItems.Add(new BulletTaskService.TaskDTO { Id = b.Id, UserId = b.UserId, Type = "birthday", Category = "personal", Date = b.Date, Title = b.Title, BirthdayDetail = b.Detail, Description = b.Description, Notes = b.Notes });
         
-        DateTime start = DateTime.SpecifyKind(viewDate.Date, DateTimeKind.Utc); 
-        DateTime end = start.AddDays(1).AddSeconds(-1);
+        var holidays = await HolidayService.GetHolidaysForRange(userId, start, end);
+        foreach(var h in holidays) loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "holiday", Category = "personal", Date = h.Date, Title = h.Title, HolidayDetail = h.Detail });
 
-        if (currentView == "week") { start = DateTime.SpecifyKind(weekStart, DateTimeKind.Utc); end = start.AddDays(7).AddSeconds(-1); }
-        else if (currentView == "month") { start = DateTime.SpecifyKind(new DateTime(viewDate.Year, viewDate.Month, 1), DateTimeKind.Utc); end = start.AddMonths(1).AddSeconds(-1); }
-        
-        try 
-        {
-            await LogToConsole($"Fetching items for {start:MMM dd} to {end:MMM dd}...");
-            loadedItems.Clear();
-            loadedItems.AddRange(await TaskService.GetTasksForRange(userId, start, end));
-            loadedItems.AddRange(await MeetingService.GetMeetingsForRange(userId, start, end));
-            
-            loadedHabits = await HabitService.GetHabits(userId);
-            foreach(var h in loadedHabits.Where(h => h.Date.Date >= start.Date && h.Date.Date <= end.Date)) 
-            {
-                loadedItems.Add(new BulletTaskService.TaskDTO 
-                { 
-                    Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, 
-                    Title = h.Title, HabitDetail = h.Detail, Description = h.Description, Notes = h.Notes, SortOrder = h.SortOrder 
-                });
-            }
+        var anniversaries = await AnniversaryService.GetAnniversariesForRange(userId, start, end);
+        foreach(var a in anniversaries) loadedItems.Add(new BulletTaskService.TaskDTO { Id = a.Id, UserId = a.UserId, Type = "anniversary", Category = "personal", Date = a.Date, Title = a.Title, AnniversaryDetail = a.Detail });
+        await LogToConsole($"Special Days: {birthdays.Count} Birthdays, {holidays.Count} Holidays, {anniversaries.Count} Anniversaries.");
 
-            var healthItems = await HealthService.GetHealthItemsForRange(userId, start, end);
-            foreach(var h in healthItems) 
-            {
-                loadedItems.Add(new BulletTaskService.TaskDTO 
-                { 
-                    Id = h.Id, UserId = h.UserId, Type = "health", Category = "health", Date = h.Date, 
-                    Title = h.Title, HealthDetail = h.Detail, Meals = h.Meals, Workouts = h.Workouts, SortOrder = h.SortOrder 
-                });
-            }
-        }
-        catch (Exception ex) { await LogToConsole($"Data Load Error: {ex.Message}"); }
+        // 3. Media & Vacations (Newly Added)
+        var media = await MediaService.GetMediaForRange(userId, start, end);
+        foreach(var m in media) loadedItems.Add(new BulletTaskService.TaskDTO { Id = m.Id, UserId = m.UserId, Type = "media", Category = "personal", Date = m.Date, Title = m.Title, MediaDetail = m.Detail, Description = m.Description, Notes = m.Notes });
 
-        isLoading = false; 
-        StateHasChanged();
+        var vacations = await VacationService.GetVacationsForRange(userId, start, end);
+        foreach(var v in vacations) loadedItems.Add(new BulletTaskService.TaskDTO { Id = v.Id, UserId = v.UserId, Type = "vacation", Category = "personal", Date = v.Date, Title = v.Title, VacationDetail = v.Detail, Description = v.Description, Notes = v.Notes });
+        await LogToConsole($"Lifestyle: {media.Count} Media items, {vacations.Count} Vacation days.");
+
+        // 4. Habits
+        loadedHabits = await HabitService.GetHabits(userId);
+        var activeHabits = loadedHabits.Where(h => h.Date.Date >= start.Date && h.Date.Date <= end.Date).ToList();
+        foreach(var h in activeHabits) loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, HabitDetail = h.Detail, SortOrder = h.SortOrder });
+        await LogToConsole($"Habits: {activeHabits.Count} tracked today.");
+
+        // 5. Health
+        var healthItems = await HealthService.GetHealthItemsForRange(userId, start, end);
+        foreach(var h in healthItems) loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "health", Category = "health", Date = h.Date, Title = h.Title, HealthDetail = h.Detail, Meals = h.Meals, Workouts = h.Workouts, SortOrder = h.SortOrder });
+        await LogToConsole($"Health: {healthItems.Count} entries.");
+
+        // 6. Sports (Newly Added)
+        var games = await SportsService.GetGamesForRange(userId, start, end);
+        foreach(var g in games) loadedItems.Add(new BulletTaskService.TaskDTO { Id = g.Id, UserId = g.UserId, Type = "sports", Category = "personal", Date = g.Date, Title = g.Title, SportsDetail = g.Detail });
+        await LogToConsole($"Sports: {games.Count} games scheduled.");
+
     }
+    catch (Exception ex) 
+    { 
+        await LogToConsole($"CRITICAL SYNC ERROR: {ex.Message}"); 
+    }
+
+    await LogToConsole($"Sync Complete. Total View Items: {loadedItems.Count}");
+    isLoading = false; 
+    StateHasChanged();
+}
 
     private async Task CommitItemToDatabase(BulletTaskService.TaskDTO t) 
     { 
