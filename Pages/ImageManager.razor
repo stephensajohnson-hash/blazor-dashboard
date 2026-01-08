@@ -57,7 +57,7 @@
                         @(usage.TotalCount == 0 ? "Orphaned" : $"{usage.TotalCount} Links")
                     </div>
 
-                    @* Individual Delete Button (Surgical) *@
+                    @* Individual Delete Button *@
                     <button @onclick="() => DeleteOne(img.Id)" class="absolute top-2 left-2 z-10 p-2 bg-black/60 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-xl" title="Delete from DB">🗑️</button>
 
                     <div class="aspect-video bg-black cursor-pointer overflow-hidden" @onclick="() => NavigateToSource(usage)">
@@ -69,9 +69,9 @@
                         
                         @* Priority Date Display *@
                         <div class="text-[9px] mb-2 font-black uppercase tracking-tight">
-                            @if (usage.IsCalendar)
+                            @if (usage.IsCalendar && usage.CalendarDate.HasValue)
                             {
-                                <span class="text-blue-400">📅 Calendar: @usage.SourceDate?.ToString("MMM dd, yyyy")</span>
+                                <span class="text-blue-400">📅 Calendar: @usage.CalendarDate.Value.ToString("MMM dd, yyyy")</span>
                             }
                             else
                             {
@@ -110,13 +110,14 @@
     private int pageSize = 50;
     private bool hasMorePages = true;
 
+    // Helper class to track usage
     public class ImageUsage {
         public int TotalCount { get; set; } = 0;
         public bool IsCalendar { get; set; } = false;
         public bool IsRecipe { get; set; } = false;
         public bool IsBudget { get; set; } = false;
         public bool IsDashboard { get; set; } = false;
-        public DateTime? SourceDate { get; set; }
+        public DateTime? CalendarDate { get; set; } // Property fixed here
     }
 
     protected override async Task OnInitializedAsync() => await LoadImages();
@@ -128,7 +129,7 @@
 
     private async Task LoadImages()
     {
-        await Log($"Fetching Page {currentPage}...");
+        await Log($"Syncing Page {currentPage}...");
         try {
             using var scope = ScopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -139,12 +140,11 @@
             allImages = await query.Skip((currentPage - 1) * pageSize).Take(pageSize).ToListAsync();
             hasMorePages = allImages.Count == pageSize;
 
-            // --- SCAN LOGIC (Scoped to current 50 images for stability) ---
             usageDetails = new();
             var currentPaths = allImages.Select(i => $"/db-images/{i.Id}").ToList();
             var currentIds = allImages.Select(i => i.Id).ToList();
 
-            // Check Tables
+            // Perform Targeted Scans
             var calMatches = await db.BulletItems.AsNoTracking().Where(x => currentPaths.Contains(x.ImgUrl)).Select(x => new { x.ImgUrl, x.Date }).ToListAsync();
             var noteMatches = await db.BulletItemNotes.AsNoTracking().Where(x => currentPaths.Contains(x.ImgUrl)).Select(x => x.ImgUrl).ToListAsync();
             var budgetMatches = await db.BudgetItems.AsNoTracking().Where(x => currentPaths.Contains(x.ImgUrl)).Select(x => x.ImgUrl).ToListAsync();
@@ -158,7 +158,7 @@
                 
                 var calHits = calMatches.Where(x => x.ImgUrl == path).ToList();
                 usage.IsCalendar = calHits.Any();
-                if(usage.IsCalendar) usage.SourceDate = calHits.First().Date;
+                if(usage.IsCalendar) usage.CalendarDate = calHits.First().Date; // Assignment fixed here
 
                 usage.IsRecipe = recipeIdMatches.Any(x => x == img.Id);
                 usage.IsBudget = budgetMatches.Any(x => x == path);
@@ -168,14 +168,14 @@
                 usageDetails[img.Id] = usage;
             }
 
-            await Log($"Scan Complete. Page {currentPage} rendered.");
+            await Log($"Render complete for page {currentPage}.");
             StateHasChanged();
-        } catch (Exception ex) { await Log($"CRITICAL ERROR: {ex.Message}"); }
+        } catch (Exception ex) { await Log($"DB SYNC ERROR: {ex.Message}"); }
     }
 
     private void NavigateToSource(ImageUsage usage) 
     {
-        if (usage.IsCalendar && usage.CalendarDate.HasValue) {
+        if (usage.IsCalendar && usage.CalendarDate.HasValue) { // Comparison fixed here
             Nav.NavigateTo($"/bullet-calendar?date={usage.CalendarDate.Value:yyyy-MM-dd}", forceLoad: true);
         } else if (usage.IsRecipe) Nav.NavigateTo("/recipes");
         else if (usage.IsBudget) Nav.NavigateTo("/budget-tracker");
@@ -188,7 +188,7 @@
     }
 
     private async Task DeleteOne(int id) {
-        if (!await JS.InvokeAsync<bool>("confirm", $"DANGER: Permanently delete image #{id}? This will break any existing links.")) return;
+        if (!await JS.InvokeAsync<bool>("confirm", $"Permanently delete image #{id}? This will break any existing links.")) return;
         try {
             using var scope = ScopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
