@@ -53,13 +53,13 @@
         {
             <div class="h-full flex flex-col font-black">
                 <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-sm font-black uppercase text-blue-400">Search Results (@searchResults.Count)</h2>
-                    <button @onclick="ClearSearch" class="text-[10px] font-bold text-gray-400 hover:text-red-400 uppercase tracking-widest transition-colors">Close Search</button>
+                    <h2 class="text-sm font-black uppercase text-blue-400">Results (@searchResults.Count)</h2>
+                    <button @onclick="ClearSearch" class="text-[10px] font-bold text-gray-400 hover:text-red-400 uppercase tracking-widest">Close Search</button>
                 </div>
                 <div class="flex-1 overflow-y-auto pr-2 scrollbar-hide">
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-20">
                         @foreach (var item in searchResults) {
-                            <div class="h-full border border-gray-800 rounded-xl overflow-hidden bg-gray-800/20 p-1 relative shadow-2xl transition-all hover:border-blue-500/30">
+                            <div class="h-full border border-gray-800 rounded-xl overflow-hidden bg-gray-800/20 p-1 relative shadow-2xl">
                                 <div class="absolute top-2 right-2 z-10 bg-blue-600 text-[8px] font-black px-1.5 py-0.5 rounded shadow-lg uppercase tracking-tighter">@item.Date.ToString("MMM dd")</div>
                                 @RenderItem(item)
                             </div>
@@ -130,6 +130,7 @@
     </div>
 </div>
 
+@* EDITOR COMPONENT BINDINGS *@
 <BaseEditor Item="editingItem" 
             TaskDetail="editingItem?.Detail ?? new()" 
             MeetingDetail="editingItem?.MeetingDetail ?? new()"
@@ -142,7 +143,7 @@
             OnDelete="DeleteCurrentTask" />
 
 @code {
-    // 1. RENDERING HELPERS: Standardized to handle specific types safely
+    // UI FRAGMENTS: Explicitly cast to original types to satisfy strict compiler checks
     RenderFragment RenderItem(BulletTaskService.TaskDTO item) => __builder => {
         if (item.Type == "meeting") { <MeetingCard Item="item" OnClick="() => OpenEdit(item)" OnToggle="() => ToggleMeetingComplete(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "habit") { <HabitCard Item="@(GetHabit(item.Id))" OnClick="() => OpenHabitEdit(GetHabit(item.Id))" OnDelete="() => DeleteTask(item.Id)" OnChange="SaveHabitDirectly" /> }
@@ -151,21 +152,22 @@
         else if (item.Type == "vacation") { <VacationCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "health") { <HealthCard Item="item" User="currentUser" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "sports") { 
-            var g = loadedGames.FirstOrDefault(x => x.Id == item.Id);
-            if(g != null) { <SportsCard Item="g" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
+            var sportsObj = loadedGames.FirstOrDefault(x => x.Id == item.Id);
+            if(sportsObj != null) { <SportsCard Item="sportsObj" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         }
         else if (item.Type == "media") { <MediaCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
+        else if (item.Type == "anniversary") { <AnniversaryCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else { <TaskCard Item="item" OnClick="() => OpenEdit(item)" OnToggle="() => ToggleComplete(item)" OnDelete="() => DeleteTask(item.Id)" /> }
     };
 
     RenderFragment RenderPill(BulletTaskService.TaskDTO item) => __builder => {
         if(item.Type == "meeting") { 
-            var m = loadedMeetings.FirstOrDefault(x => x.Id == item.Id);
-            if(m != null) { <MeetingPill Item="m" OnClick="() => OpenEdit(item)" /> }
+            var mObj = loadedMeetings.FirstOrDefault(x => x.Id == item.Id);
+            if(mObj != null) { <MeetingPill Item="mObj" OnClick="() => OpenEdit(item)" /> }
         }
         else if(item.Type == "sports") { 
-            var g = loadedGames.FirstOrDefault(x => x.Id == item.Id);
-            if(g != null) { <SportsPill Item="g" OnClick="() => OpenEdit(item)" /> }
+            var gObj = loadedGames.FirstOrDefault(x => x.Id == item.Id);
+            if(gObj != null) { <SportsPill Item="gObj" OnClick="() => OpenEdit(item)" /> }
         }
         else { <TaskPill Task="item" OnClick="() => OpenEdit(item)" /> }
     };
@@ -206,7 +208,7 @@
                         }
                     }
                 }
-            } catch (Exception ex) { await LogToConsole($"Init Fail: {ex.Message}"); }
+            } catch (Exception ex) { await LogToConsole($"Init Error: {ex.Message}"); }
             finally { isLoading = false; StateHasChanged(); }
         }
     }
@@ -267,6 +269,7 @@
                 foreach(var h in loadedHabits.Where(x => x.Date.Date >= start.Date && x.Date.Date <= end.Date))
                     loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, HabitDetail = h.Detail, ImgUrl = h.ImgUrl });
             } catch { }
+            await LogToConsole($"Loaded {loadedItems.Count} items.");
         } catch (Exception ex) { await LogToConsole($"Sync Error: {ex.Message}"); }
         isLoading = false; StateHasChanged();
     }
