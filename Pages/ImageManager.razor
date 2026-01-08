@@ -14,15 +14,18 @@
 <BulletHeader ShowControls="false" CustomDateText="Image Registry">
     <div class="flex items-center gap-2 ml-4">
         <div class="relative flex items-center bg-black/40 border border-gray-700 rounded-lg px-2 focus-within:border-blue-500 transition-all font-black">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
             <input @bind="searchQuery" @bind:event="oninput" placeholder="Search filenames..." 
                    class="bg-transparent border-none text-xs py-1.5 px-2 w-32 md:w-48 outline-none text-white font-bold" />
         </div>
 
-        <div class="h-6 w-px bg-gray-800 mx-2"></div>
-        <button @onclick="LoadImages" class="text-[10px] text-blue-400 hover:text-white font-black uppercase">🔄 Refresh Data</button>
+        @* Pagination Controls *@
+        <div class="flex items-center gap-2 ml-4">
+            <button @onclick="PrevPage" disabled="@(currentPage == 1)" class="px-2 py-1 bg-gray-800 rounded disabled:opacity-30 text-[10px] font-black">PREV</button>
+            <span class="text-[10px] font-mono text-blue-400">Page @currentPage</span>
+            <button @onclick="NextPage" disabled="@(!hasMorePages)" class="px-2 py-1 bg-gray-800 rounded disabled:opacity-30 text-[10px] font-black">NEXT</button>
+        </div>
+
+        <button @onclick="LoadImages" class="text-[10px] text-blue-400 hover:text-white font-black uppercase ml-4">🔄 Refresh</button>
     </div>
 </BulletHeader>
 
@@ -34,7 +37,7 @@
     else
     {
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            @foreach (var img in filteredImages)
+            @foreach (var img in allImages)
             {
                 int count = usageCounts.ContainsKey(img.Id) ? usageCounts[img.Id] : 0;
                 var displayPath = $"/db-images/{img.Id}";
@@ -42,30 +45,31 @@
                 <div class="group relative bg-[#0f0f0f] border border-gray-800 rounded-2xl overflow-hidden shadow-2xl hover:border-blue-500/50 transition-all">
                     
                     @* Usage Badge *@
-                    <div class="absolute top-2 right-2 z-10 px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-tighter shadow-xl backdrop-blur-md
+                    <div class="absolute top-2 right-2 z-10 px-2 py-1 rounded-md text-[9px] font-black uppercase 
                                 @(count > 0 ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30")">
                         @(count == 0 ? "Orphaned" : $"{count} Links")
                     </div>
 
-                    @* Single Delete Button *@
-                    <button @onclick="() => DeleteSingleImage(img.Id)" class="absolute top-2 left-2 z-10 p-1.5 bg-black/60 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    <button @onclick="() => DeleteOne(img.Id)" class="absolute top-2 left-2 z-10 p-2 bg-black/60 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                        🗑️
                     </button>
 
-                    <div class="aspect-video bg-black overflow-hidden cursor-pointer" @onclick="() => NavigateToDay(img.UploadedAt)">
-                        <img src="@displayPath" alt="@img.OriginalName" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                    <div class="aspect-video bg-black cursor-pointer" @onclick="() => NavigateToDay(img.UploadedAt)">
+                        <img src="@displayPath" class="w-full h-full object-cover group-hover:scale-105 transition-all" />
                     </div>
                     
                     <div class="p-3">
-                        <div class="text-[10px] font-black text-gray-400 truncate mb-1 uppercase tracking-tighter">@img.OriginalName</div>
+                        <div class="text-[10px] font-black text-gray-500 truncate uppercase mb-1">@img.OriginalName</div>
+                        @* Date Added Back *@
+                        <div class="text-[9px] text-gray-600 mb-2 font-bold italic">Uploaded: @img.UploadedAt.ToString("MMM dd, yyyy")</div>
                         
-                        <div class="bg-black/50 p-1.5 rounded border border-gray-800 mb-3 font-mono text-[10px] text-blue-400 truncate select-all">
+                        <div class="bg-black border border-gray-800 p-2 rounded text-[10px] font-mono text-blue-400 mb-3 select-all truncate">
                             @displayPath
                         </div>
 
                         <div class="flex gap-2">
-                            <button @onclick="() => CopyUrl(img.Id)" class="flex-1 bg-gray-900 hover:bg-blue-600 text-white text-[9px] font-black py-2 rounded transition uppercase tracking-widest border border-gray-700">🔗 Copy URL</button>
-                            <button @onclick="() => NavigateToDay(img.UploadedAt)" class="flex-1 bg-gray-900 hover:bg-gray-700 text-white text-[9px] font-black py-2 rounded transition uppercase tracking-widest border border-gray-700">📅 View Day</button>
+                            <button @onclick="() => CopyUrl(img.Id)" class="flex-1 bg-gray-900 py-2 rounded text-[9px] font-black uppercase border border-gray-700 hover:bg-blue-600">URL</button>
+                            <button @onclick="() => NavigateToDay(img.UploadedAt)" class="flex-1 bg-gray-900 py-2 rounded text-[9px] font-black uppercase border border-gray-700 hover:bg-gray-700">Day</button>
                         </div>
                     </div>
                 </div>
@@ -76,88 +80,80 @@
 
 @code {
     private List<Dashboard.StoredImage>? allImages;
-    private Dictionary<int, int> usageCounts = new(); 
+    private Dictionary<int, int> usageCounts = new();
     private string searchQuery = "";
-
-    private IEnumerable<Dashboard.StoredImage> filteredImages => 
-        (allImages ?? new List<Dashboard.StoredImage>())
-        .Where(i => string.IsNullOrWhiteSpace(searchQuery) || (i.OriginalName ?? "").Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
+    private int currentPage = 1;
+    private int pageSize = 50;
+    private bool hasMorePages = true;
 
     protected override async Task OnInitializedAsync() => await LoadImages();
 
-    private void ClearSearch() => searchQuery = "";
+    private async Task NextPage() { currentPage++; await LoadImages(); }
+    private async Task PrevPage() { currentPage--; await LoadImages(); }
 
     private async Task LoadImages()
     {
+        Console.WriteLine($"[LOG] Image Manager: Fetching page {currentPage} (Size: {pageSize})...");
         try {
             using var scope = ScopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             
-            allImages = await db.StoredImages.OrderByDescending(i => i.UploadedAt).ToListAsync();
+            // Paginated query to reduce memory load
+            var query = db.StoredImages.AsNoTracking().OrderByDescending(i => i.UploadedAt).AsQueryable();
+            
+            if (!string.IsNullOrWhiteSpace(searchQuery))
+                query = query.Where(i => i.OriginalName.Contains(searchQuery));
 
-            // --- DEEP USAGE SCAN ---
-            // Checking both ImageId and string URL references
-            var links = new List<string>();
-            var ids = new List<int>();
+            allImages = await query.Skip((currentPage - 1) * pageSize).Take(pageSize).ToListAsync();
+            hasMorePages = allImages.Count == pageSize;
 
-            // 1. Gather all String-based URLs
-            links.AddRange(await db.BulletItems.Select(x => x.ImgUrl).ToListAsync());
-            links.AddRange(await db.BulletItemNotes.Select(x => x.ImgUrl).ToListAsync());
-            links.AddRange(await db.BudgetItems.Select(x => x.ImgUrl).ToListAsync());
-            links.AddRange(await db.Leagues.Select(x => x.ImgUrl).ToListAsync());
-            links.AddRange(await db.Teams.Select(x => x.LogoUrl).ToListAsync());
-            links.AddRange(await db.Links.Select(x => x.Img).ToListAsync());
-            links.AddRange(await db.Countdowns.Select(x => x.Img).ToListAsync());
+            Console.WriteLine($"[LOG] Page {currentPage} loaded. Running lightweight usage scan...");
 
-            // 2. Gather all Integer-based IDs
-            var recipeIds = await db.Recipes.Where(x => x.ImageId != null).Select(x => x.ImageId!.Value).ToListAsync();
-            var categoryIds = await db.RecipeCategories.Where(x => x.ImageId != null).Select(x => x.ImageId!.Value).ToListAsync();
-            ids.AddRange(recipeIds);
-            ids.AddRange(categoryIds);
+            // --- LIGHTWEIGHT SCAN ---
+            // Instead of scanning every row in the DB, we only check the 50 images currently on screen.
+            var currentIds = allImages.Select(i => i.Id).ToList();
+            var currentPaths = currentIds.Select(id => $"/db-images/{id}").ToList();
 
-            // 3. Match URLs back to IDs (Extract ID from string "/db-images/123")
-            foreach (var link in links.Where(l => !string.IsNullOrEmpty(l) && l.Contains("/db-images/")))
-            {
-                var parts = link.Split('/');
-                if (parts.Length > 0 && int.TryParse(parts.Last(), out int extractedId))
-                {
-                    ids.Add(extractedId);
-                }
+            var bulletMatches = await db.BulletItems.AsNoTracking()
+                .Where(x => currentPaths.Contains(x.ImgUrl))
+                .GroupBy(x => x.ImgUrl)
+                .Select(g => new { Path = g.Key, Count = g.Count() })
+                .ToListAsync();
+
+            // Convert paths back to IDs for the badge
+            usageCounts = new Dictionary<int, int>();
+            foreach(var match in bulletMatches) {
+                if (int.TryParse(match.Path.Split('/').Last(), out int id)) usageCounts[id] = match.Count;
             }
 
-            // 4. Calculate final counts
-            usageCounts = ids.GroupBy(x => x).ToDictionary(g => g.Key, g => g.Count());
-            
+            Console.WriteLine($"[LOG] Usage scan complete. {usageCounts.Count} active links found in this batch.");
             StateHasChanged();
-        }
-        catch (Exception ex) { Console.WriteLine($"Load Error: {ex.Message}"); }
+        } catch (Exception ex) { Console.WriteLine($"[ERROR] Load Fail: {ex.Message}"); }
     }
 
     private void NavigateToDay(DateTime date) 
     {
-        Nav.NavigateTo($"/bullet-calendar?date={date:yyyy-MM-dd}");
+        // Fix: Query string parameters need exact format
+        var targetDate = date.ToString("yyyy-MM-dd");
+        Console.WriteLine($"[LOG] Navigating to Calendar Day: {targetDate}");
+        Nav.NavigateTo($"/bullet-calendar?date={targetDate}", forceLoad: true);
     }
 
-    private async Task CopyUrl(int id)
+    private async Task CopyUrl(int id) 
     {
         var url = $"{Nav.BaseUri}db-images/{id}";
         await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
+        Console.WriteLine($"[LOG] URL Copied: {url}");
     }
 
-    private async Task DeleteSingleImage(int id)
+    private async Task DeleteOne(int id)
     {
-        bool confirmed = await JS.InvokeAsync<bool>("confirm", $"DANGER: Are you sure you want to delete image #{id}? This cannot be undone.");
-        if (!confirmed) return;
-
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete image #{id}?")) return;
         try {
             using var scope = ScopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var img = await db.StoredImages.FindAsync(id);
-            if (img != null) {
-                db.StoredImages.Remove(img);
-                await db.SaveChangesAsync();
-                await LoadImages();
-            }
-        } catch (Exception ex) { Console.WriteLine($"Delete Error: {ex.Message}"); }
+            if (img != null) { db.StoredImages.Remove(img); await db.SaveChangesAsync(); await LoadImages(); }
+        } catch (Exception ex) { Console.WriteLine($"[ERROR] Delete Fail: {ex.Message}"); }
     }
 }
