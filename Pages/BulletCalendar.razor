@@ -40,8 +40,8 @@
         
         <div class="flex items-center gap-2 ml-4">
             <div class="relative flex items-center bg-black/40 border border-gray-700 rounded-lg px-2 focus-within:border-blue-500 transition-all font-black">
-                <input @bind="searchQuery" @bind:event="oninput" @onkeyup="HandleKeyUp" placeholder="Search..." 
-                       class="bg-transparent border-none text-xs py-1.5 px-2 w-24 md:w-32 outline-none text-white font-bold" />
+                <input @bind="searchQuery" @bind:event="oninput" @onkeyup="HandleKeyUp" placeholder="Search items..." 
+                       class="bg-transparent border-none text-xs py-1.5 px-2 w-32 md:w-48 outline-none text-white font-bold" />
             </div>
             <input type="date" @onchange="OnJumpDateChanged" 
                    class="bg-black/40 border border-gray-700 rounded-lg text-[10px] p-1 text-blue-400 outline-none focus:border-blue-500 font-black uppercase" />
@@ -51,7 +51,7 @@
     <div class="px-6 h-[calc(100vh-140px)] overflow-hidden pt-4 font-black">
         @if (isSearching)
         {
-            <div class="h-full flex flex-col">
+            <div class="h-full flex flex-col font-black">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-sm font-black uppercase text-blue-400">Search Results (@searchResults.Count)</h2>
                     <button @onclick="ClearSearch" class="text-[10px] font-bold text-gray-400 hover:text-red-400 uppercase">Close</button>
@@ -60,7 +60,7 @@
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-20">
                         @foreach (var item in searchResults) {
                             <div class="h-full border border-gray-800 rounded-xl overflow-hidden bg-gray-800/20 p-1 relative">
-                                <div class="absolute top-2 right-2 z-10 bg-blue-600 text-[8px] font-black px-1.5 py-0.5 rounded">@item.Date.ToString("MMM dd")</div>
+                                <div class="absolute top-2 right-2 z-10 bg-blue-600 text-[8px] font-black px-1.5 py-0.5 rounded shadow-lg">@item.Date.ToString("MMM dd")</div>
                                 @RenderItem(item)
                             </div>
                         }
@@ -79,8 +79,8 @@
                             <button @onclick='() => OpenEditor(cat.Item2, cat.Item2 == "health" ? "health" : "task", viewDate)' 
                                     class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition font-bold">＋ Add</button>
                         </div>
-                        <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide">
-                            @if(isLoading) { <div class="text-center text-gray-500 text-xs italic mt-4 animate-pulse">Syncing...</div> }
+                        <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide font-bold">
+                            @if(isLoading) { <div class="text-center text-gray-500 text-xs italic mt-4 animate-pulse uppercase">Syncing...</div> }
                             else {
                                 var colItems = GetSortedItems(GetItemsForColumn(viewDate, cat.Item2));
                                 foreach(var item in colItems) { <div @key="item.Id">@RenderItem(item)</div> }
@@ -136,27 +136,34 @@
             OnCancel="() => editingItem = null" />
 
 @code {
+    // UI FRAGMENTS - This ensures every type is supported in every view
     RenderFragment RenderItem(BulletTaskService.TaskDTO item) => __builder => {
         @if (item.Type == "meeting") { <MeetingCard Item="item" OnClick="() => OpenEdit(item)" OnToggle="() => ToggleMeetingComplete(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "habit") { <HabitCard Item="@(GetHabit(item.Id))" OnClick="() => OpenHabitEdit(GetHabit(item.Id))" OnDelete="() => DeleteTask(item.Id)" OnChange="SaveHabitDirectly" /> }
         else if (item.Type == "birthday") { <BirthdayCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "holiday") { <HolidayCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
+        else if (item.Type == "anniversary") { <AnniversaryCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "vacation") { <VacationCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
+        else if (item.Type == "media") { <MediaCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "health") { <HealthCard Item="item" User="currentUser" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "sports") { <SportsCard Item="@(GetGame(item.Id))" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else { <TaskCard Item="item" OnClick="() => OpenEdit(item)" OnToggle="() => ToggleComplete(item)" OnDelete="() => DeleteTask(item.Id)" /> }
     };
 
     RenderFragment RenderPill(BulletTaskService.TaskDTO item) => __builder => {
-        <TaskPill Task="item" OnClick="() => OpenEdit(item)" />
+        @if(item.Type == "meeting") { <MeetingPill Item="item" OnClick="() => OpenEdit(item)" /> }
+        else if(item.Type == "sports") { <SportsPill Item="@(GetGame(item.Id))" OnClick="() => OpenEdit(item)" /> }
+        else { <TaskPill Task="item" OnClick="() => OpenEdit(item)" /> }
     };
 }
 
 @code {
     private User? currentUser; private int userId = 0; private DateTime viewDate = DateTime.UtcNow; 
     private string currentView = "day"; private int clientOffset = 0; private bool isLoading = true;
-    private List<BulletTaskService.TaskDTO> loadedItems = new(); private List<BulletHabitService.HabitDTO> loadedHabits = new(); 
-    private List<BulletSportsService.GameDTO> loadedGames = new(); private BulletTaskService.TaskDTO? editingItem;
+    private List<BulletTaskService.TaskDTO> loadedItems = new(); 
+    private List<BulletHabitService.HabitDTO> loadedHabits = new(); 
+    private List<BulletSportsService.GameDTO> loadedGames = new();
+    private BulletTaskService.TaskDTO? editingItem;
     private DateTime weekStart => viewDate.AddDays(-1 * ((7 + (viewDate.DayOfWeek - DayOfWeek.Monday)) % 7)).Date;
     private int daysInMonth => DateTime.DaysInMonth(viewDate.Year, viewDate.Month);
     private int monthEmptyCells => ((int)new DateTime(viewDate.Year, viewDate.Month, 1).DayOfWeek + 6) % 7; 
@@ -175,14 +182,17 @@
                     if(userId > 0) {
                         currentUser = await Db.Users.FindAsync(userId);
                         clientOffset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()");
+                        
                         var uri = Nav.ToAbsoluteUri(Nav.Uri);
-                        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("date", out var dateVal)) {
-                            if (DateTime.TryParse(dateVal, out var parsed)) viewDate = parsed;
-                        } else { viewDate = DateTime.UtcNow.AddMinutes(-clientOffset); }
+                        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("date", out var dateVal) && DateTime.TryParse(dateVal, out var parsed)) {
+                            viewDate = parsed;
+                        } else {
+                            viewDate = DateTime.UtcNow.AddMinutes(-clientOffset);
+                        }
                         await LoadData();
                     }
                 }
-            } catch (Exception ex) { await LogToConsole($"Error: {ex.Message}"); }
+            } catch (Exception ex) { await LogToConsole($"Init Error: {ex.Message}"); }
             finally { isLoading = false; StateHasChanged(); }
         }
     }
@@ -191,6 +201,7 @@
     {
         if (currentUser == null) return; 
         isLoading = true; StateHasChanged();
+        
         DateTime start = DateTime.SpecifyKind(viewDate.Date, DateTimeKind.Utc); 
         DateTime end = start.AddDays(1).AddSeconds(-1);
         if (currentView == "week") { start = weekStart; end = start.AddDays(7).AddSeconds(-1); }
@@ -198,50 +209,54 @@
         
         try {
             loadedItems.Clear();
-            await LogToConsole($"Syncing Range: {start:yyyy-MM-dd} to {end:yyyy-MM-dd}");
+            await LogToConsole($"Loading {start:yyyy-MM-dd} to {end:yyyy-MM-dd}...");
 
-            // 1. Tasks & Meetings
+            // 1. Core Data
             loadedItems.AddRange(await TaskService.GetTasksForRange(userId, start, end));
             loadedItems.AddRange(await MeetingService.GetMeetingsForRange(userId, start, end));
 
-            // 2. Health (Enhanced Mapping for Card Load)
+            // 2. Health (Deep Initialize for Card Rendering)
             try {
                 var health = await HealthService.GetHealthItemsForRange(userId, start, end);
-                foreach(var h in health) {
-                    loadedItems.Add(new BulletTaskService.TaskDTO { 
-                        Id = h.Id, UserId = h.UserId, Type = "health", Category = "health", Date = h.Date, 
-                        Title = h.Title, HealthDetail = h.Detail, Meals = h.Meals ?? new(), Workouts = h.Workouts ?? new(), Notes = h.Notes ?? new() 
-                    });
-                }
+                foreach(var h in health) loadedItems.Add(new BulletTaskService.TaskDTO { 
+                    Id = h.Id, UserId = h.UserId, Type = "health", Category = "health", Date = h.Date, Title = h.Title, 
+                    HealthDetail = h.Detail, Meals = h.Meals ?? new(), Workouts = h.Workouts ?? new(), Notes = h.Notes ?? new() 
+                });
             } catch { await LogToConsole("Health skip."); }
 
-            // 3. Holidays (Restored)
+            // 3. Holidays, Vacations, Birthdays, Anniversaries
             try {
                 var holidays = await HolidayService.GetHolidaysForRange(userId, start, end);
                 foreach(var h in holidays) loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "holiday", Category = "personal", Date = h.Date, Title = h.Title, HolidayDetail = h.Detail });
-                await LogToConsole($"Loaded {holidays.Count} Holidays.");
-            } catch { await LogToConsole("Holiday skip."); }
 
-            // 4. Vacation & Birthdays
-            try {
                 var vacs = await VacationService.GetVacationsForRange(userId, start, end);
                 foreach(var v in vacs) loadedItems.Add(new BulletTaskService.TaskDTO { Id = v.Id, UserId = v.UserId, Type = "vacation", Category = "personal", Date = v.Date, Title = v.Title, VacationDetail = v.Detail });
-                
+
                 var bdays = await BirthdayService.GetBirthdaysForRange(userId, start, end);
                 foreach(var b in bdays) loadedItems.Add(new BulletTaskService.TaskDTO { Id = b.Id, UserId = b.UserId, Type = "birthday", Category = "personal", Date = b.Date, Title = b.Title, BirthdayDetail = b.Detail });
+
+                var annivs = await AnniversaryService.GetAnniversariesForRange(userId, start, end);
+                foreach(var a in annivs) loadedItems.Add(new BulletTaskService.TaskDTO { Id = a.Id, UserId = a.UserId, Type = "anniversary", Category = "personal", Date = a.Date, Title = a.Title, AnniversaryDetail = a.Detail });
             } catch { }
 
-            // 5. Sports & Habits
+            // 4. Media & Sports
             try {
+                var media = await MediaService.GetMedia(userId); // Fallback to list-filter if range method missing
+                foreach(var m in media.Where(x => x.Date.Date >= start.Date && x.Date.Date <= end.Date))
+                    loadedItems.Add(new BulletTaskService.TaskDTO { Id = m.Id, UserId = m.UserId, Type = "media", Category = "personal", Date = m.Date, Title = m.Title, MediaDetail = m.Detail });
+
                 loadedGames = await SportsService.GetGamesForRange(userId, start, end);
                 foreach(var g in loadedGames) loadedItems.Add(new BulletTaskService.TaskDTO { Id = g.Id, UserId = g.UserId, Type = "sports", Category = "personal", Date = g.Date, Title = g.Title, SportsDetail = g.Detail });
-                
-                loadedHabits = await HabitService.GetHabits(userId);
-                foreach(var h in loadedHabits.Where(x => x.Date.Date >= start.Date && x.Date.Date <= end.Date))
-                    loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, HabitDetail = h.Detail });
             } catch { }
 
-        } catch (Exception ex) { await LogToConsole($"Sync Error: {ex.Message}"); }
+            // 5. Habits
+            loadedHabits = await HabitService.GetHabits(userId);
+            foreach(var h in loadedHabits.Where(x => x.Date.Date >= start.Date && x.Date.Date <= end.Date))
+                loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, HabitDetail = h.Detail });
+
+            await LogToConsole($"Sync Complete. Found {loadedItems.Count} items.");
+        } catch (Exception ex) { await LogToConsole($"Global Sync Error: {ex.Message}"); }
+        
         isLoading = false; StateHasChanged();
     }
 
@@ -262,7 +277,6 @@
     private async Task HandleKeyUp(KeyboardEventArgs e) { if (e.Key == "Enter") await PerformQuickSearch(); }
     private async Task PerformQuickSearch() { isSearching = true; searchResults = await BaseService.SearchItems(userId, searchQuery, "all", DateTime.UtcNow.AddYears(-1), DateTime.UtcNow.AddYears(1)); }
     private void ClearSearch() { searchQuery = ""; isSearching = false; _ = LoadData(); }
-
     private List<BulletTaskService.TaskDTO> GetSortedItems(List<BulletTaskService.TaskDTO> items) => items?.OrderBy(t => t.SortOrder).ToList() ?? new();
     private List<BulletTaskService.TaskDTO> GetItemsForColumn(DateTime d, string cat) { 
         var items = loadedItems.Where(t => t.Date.Date == d.Date); 
