@@ -39,13 +39,18 @@
         OnViewChanged="SwitchView">
         
         <div class="flex items-center gap-2 ml-4">
+            @* Quick Search *@
             <div class="relative flex items-center bg-black/40 border border-gray-700 rounded-lg px-2 focus-within:border-blue-500 transition-all font-black">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input @bind="searchQuery" @bind:event="oninput" @onkeyup="HandleKeyUp" placeholder="Search items..." 
-                       class="bg-transparent border-none text-xs py-1.5 px-2 w-32 md:w-48 outline-none text-white font-bold" />
+                <input @bind="searchQuery" @bind:event="oninput" @onkeyup="HandleKeyUp" placeholder="Search..." 
+                       class="bg-transparent border-none text-xs py-1.5 px-2 w-24 md:w-32 outline-none text-white font-bold" />
+                @if(!string.IsNullOrWhiteSpace(searchQuery)) {
+                    <button @onclick="ClearSearch" class="text-gray-500 hover:text-red-400 p-1">✕</button>
+                }
             </div>
+
+            @* Jump to Date Picker *@
+            <input type="date" @onchange="OnJumpDateChanged" 
+                   class="bg-black/40 border border-gray-700 rounded-lg text-[10px] p-1 text-blue-400 outline-none focus:border-blue-500 font-black uppercase" />
         </div>
     </BulletHeader>
 
@@ -78,25 +83,55 @@
                         <div class="p-3 bg-gray-800/80 border-b border-gray-700 flex justify-between items-center sticky top-0 backdrop-blur z-10">
                             <span class="font-bold text-@cat.Item3-400 uppercase tracking-wider text-sm">@cat.Item1</span>
                             <button @onclick='() => OpenEditor(cat.Item2, cat.Item2 == "health" ? "health" : "task", viewDate)' 
-                                    class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition font-bold">＋ Add</button>
+                                    class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition font-bold uppercase">＋ Add</button>
                         </div>
                         <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide">
                             @if(isLoading) { <div class="text-center text-gray-500 text-xs italic mt-4 animate-pulse">Syncing...</div> }
                             else {
-                                foreach(var item in GetSortedItems(GetItemsForColumn(viewDate, cat.Item2))) { 
-                                    <div @key="item.Id">@RenderItem(item)</div> 
-                                }
+                                var colItems = GetSortedItems(GetItemsForColumn(viewDate, cat.Item2));
+                                foreach(var item in colItems) { <div @key="item.Id">@RenderItem(item)</div> }
                             }
                         </div>
                     </div>
                 }
             </div>
         }
-        else if (currentView == "week" || currentView == "month")
+        else if (currentView == "week")
         {
-            @* Standard Grid Views *@
-            <div class="text-center text-gray-700 uppercase text-[10px] mt-10 italic">View Rendered Based on ViewDate</div>
-            @* (Previous Grid Logic remains the same, omitted for file size) *@
+            <div class="grid grid-cols-7 gap-2 h-full font-sans font-bold">
+                @for(int i=0; i<7; i++) {
+                    var d = weekStart.AddDays(i);
+                    <div class="flex flex-col h-full rounded-xl border @GetDayBorderClass(d) overflow-hidden bg-gray-800/40">
+                        <div class="p-2 text-center border-b border-gray-700/50 bg-gray-800/60 cursor-pointer hover:bg-gray-700 transition" @onclick="() => GoToDate(d)">
+                            <div class="text-[10px] uppercase font-black text-gray-500">@d.ToString("ddd")</div>
+                            <div class="text-lg font-black text-white">@d.Day</div>
+                        </div>
+                        <div class="flex-1 overflow-y-auto p-1 space-y-1 scrollbar-hide">
+                            @foreach(var item in GetSortedItems(GetItemsForDate(d))) { @RenderPill(item) }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else if (currentView == "month")
+        {
+            <div class="flex flex-col h-full font-sans font-black">
+                <div class="grid grid-cols-7 text-center pb-2 border-b border-gray-800 mb-2 font-black uppercase text-[10px] text-gray-500">
+                    @foreach(var day in new[]{"Mon","Tue","Wed","Thu","Fri","Sat","Sun"}){ <div>@day</div> }
+                </div>
+                <div class="grid grid-cols-7 gap-1 flex-1 auto-rows-fr overflow-hidden font-black">
+                    @for(int i=0; i<monthEmptyCells; i++) { <div class="bg-gray-900/30 rounded-lg"></div> }
+                    @for(int d=1; d<=daysInMonth; d++){
+                        var currentDay = new DateTime(viewDate.Year, viewDate.Month, d);
+                        <div class="relative flex flex-col rounded-lg border @GetDayBorderClass(currentDay) p-1 hover:bg-gray-800 transition cursor-pointer bg-gray-900/50 shadow-inner font-black" @onclick="() => GoToDate(currentDay)">
+                            <div class="text-right text-[10px] font-bold text-gray-500 mb-1">@d</div>
+                            <div class="flex-1 overflow-y-auto space-y-1 scrollbar-hide max-h-24">
+                                @foreach(var item in GetSortedItems(GetItemsForDate(currentDay))) { @RenderPill(item) }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
         }
     </div>
 </div>
@@ -115,7 +150,9 @@
     };
 
     RenderFragment RenderPill(BulletTaskService.TaskDTO item) => __builder => {
-        <TaskPill Task="item" OnClick="() => OpenEdit(item)" />
+        @if(item.Type == "meeting") { <MeetingPill Item="item" OnClick="() => OpenEdit(item)" /> }
+        else if(item.Type == "sports") { <SportsPill Item="@(GetGame(item.Id))" OnClick="() => OpenEdit(item)" /> }
+        else { <TaskPill Task="item" OnClick="() => OpenEdit(item)" /> }
     };
 }
 
@@ -126,6 +163,7 @@
     private List<BulletSportsService.GameDTO> loadedGames = new(); private BulletTaskService.TaskDTO? editingItem;
     private DateTime weekStart => viewDate.AddDays(-1 * ((7 + (viewDate.DayOfWeek - DayOfWeek.Monday)) % 7)).Date;
     private int daysInMonth => DateTime.DaysInMonth(viewDate.Year, viewDate.Month);
+    private int monthEmptyCells => ((int)new DateTime(viewDate.Year, viewDate.Month, 1).DayOfWeek + 6) % 7; 
     private string searchQuery = ""; private bool isSearching = false; private List<BulletTaskService.TaskDTO> searchResults = new();
 
     private async Task LogToConsole(string message) => await JS.InvokeVoidAsync("console.log", $"[CALENDAR] {message}");
@@ -164,35 +202,34 @@
         
         try {
             loadedItems.Clear();
-            await LogToConsole($"Syncing data for: {start:yyyy-MM-dd}");
+            await LogToConsole($"Syncing Range: {start:yyyy-MM-dd} to {end:yyyy-MM-dd}");
 
-            // 1. Core Tasks & Meetings
-            loadedItems.AddRange(await TaskService.GetTasksForRange(userId, start, end));
-            loadedItems.AddRange(await MeetingService.GetMeetingsForRange(userId, start, end));
+            // 1. Fetch data
+            var tasks = await TaskService.GetTasksForRange(userId, start, end);
+            var meetings = await MeetingService.GetMeetingsForRange(userId, start, end);
+            loadedItems.AddRange(tasks);
+            loadedItems.AddRange(meetings);
 
-            // 2. Health (Restored)
             try {
                 var health = await HealthService.GetHealthItemsForRange(userId, start, end);
                 foreach(var h in health) loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "health", Category = "health", Date = h.Date, Title = h.Title, HealthDetail = h.Detail });
-                await LogToConsole($"Loaded {health.Count} Health items.");
-            } catch { await LogToConsole("Health skip."); }
+            } catch { await LogToConsole("Health error."); }
 
-            // 3. Vacation (Restored)
             try {
                 var vacs = await VacationService.GetVacationsForRange(userId, start, end);
                 foreach(var v in vacs) loadedItems.Add(new BulletTaskService.TaskDTO { Id = v.Id, UserId = v.UserId, Type = "vacation", Category = "personal", Date = v.Date, Title = v.Title, VacationDetail = v.Detail });
-            } catch { await LogToConsole("Vacation skip."); }
+            } catch { await LogToConsole("Vacation error."); }
 
-            // 4. Sports & Birthdays
             try {
                 var bdays = await BirthdayService.GetBirthdaysForRange(userId, start, end);
                 foreach(var b in bdays) loadedItems.Add(new BulletTaskService.TaskDTO { Id = b.Id, UserId = b.UserId, Type = "birthday", Category = "personal", Date = b.Date, Title = b.Title, BirthdayDetail = b.Detail });
-                
+            } catch { }
+
+            try {
                 loadedGames = await SportsService.GetGamesForRange(userId, start, end);
                 foreach(var g in loadedGames) loadedItems.Add(new BulletTaskService.TaskDTO { Id = g.Id, UserId = g.UserId, Type = "sports", Category = "personal", Date = g.Date, Title = g.Title, SportsDetail = g.Detail });
             } catch { }
 
-            // 5. Habits
             loadedHabits = await HabitService.GetHabits(userId);
             foreach(var h in loadedHabits.Where(x => x.Date.Date >= start.Date && x.Date.Date <= end.Date))
                 loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, HabitDetail = h.Detail });
@@ -201,6 +238,7 @@
         isLoading = false; StateHasChanged();
     }
 
+    private void OnJumpDateChanged(ChangeEventArgs e) { if (DateTime.TryParse(e.Value?.ToString(), out var d)) GoToDate(d); }
     private void OpenEditor(string cat, string type, DateTime d) => editingItem = new BulletTaskService.TaskDTO { UserId = userId, Category = cat, Type = type, Date = d };
     private void GoToDate(DateTime d) { viewDate = d; currentView = "day"; _ = LoadData(); }
     private void Prev() { if(currentView == "day") viewDate = viewDate.AddDays(-1); else if(currentView == "week") viewDate = viewDate.AddDays(-7); else viewDate = viewDate.AddMonths(-1); _ = LoadData(); }
@@ -217,6 +255,7 @@
     private async Task HandleKeyUp(KeyboardEventArgs e) { if (e.Key == "Enter") await PerformQuickSearch(); }
     private async Task PerformQuickSearch() { isSearching = true; searchResults = await BaseService.SearchItems(userId, searchQuery, "all", DateTime.UtcNow.AddYears(-1), DateTime.UtcNow.AddYears(1)); }
     private void ClearSearch() { searchQuery = ""; isSearching = false; _ = LoadData(); }
+
     private List<BulletTaskService.TaskDTO> GetSortedItems(List<BulletTaskService.TaskDTO> items) => items?.OrderBy(t => t.SortOrder).ToList() ?? new();
     private List<BulletTaskService.TaskDTO> GetItemsForColumn(DateTime d, string cat) { 
         var items = loadedItems.Where(t => t.Date.Date == d.Date); 
