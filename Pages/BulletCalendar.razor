@@ -39,16 +39,10 @@
         OnViewChanged="SwitchView">
         
         <div class="flex items-center gap-2 ml-4">
-            @* Quick Search *@
             <div class="relative flex items-center bg-black/40 border border-gray-700 rounded-lg px-2 focus-within:border-blue-500 transition-all font-black">
                 <input @bind="searchQuery" @bind:event="oninput" @onkeyup="HandleKeyUp" placeholder="Search..." 
                        class="bg-transparent border-none text-xs py-1.5 px-2 w-24 md:w-32 outline-none text-white font-bold" />
-                @if(!string.IsNullOrWhiteSpace(searchQuery)) {
-                    <button @onclick="ClearSearch" class="text-gray-500 hover:text-red-400 p-1">✕</button>
-                }
             </div>
-
-            @* Jump to Date Picker *@
             <input type="date" @onchange="OnJumpDateChanged" 
                    class="bg-black/40 border border-gray-700 rounded-lg text-[10px] p-1 text-blue-400 outline-none focus:border-blue-500 font-black uppercase" />
         </div>
@@ -57,7 +51,7 @@
     <div class="px-6 h-[calc(100vh-140px)] overflow-hidden pt-4 font-black">
         @if (isSearching)
         {
-            <div class="h-full flex flex-col font-black">
+            <div class="h-full flex flex-col">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-sm font-black uppercase text-blue-400">Search Results (@searchResults.Count)</h2>
                     <button @onclick="ClearSearch" class="text-[10px] font-bold text-gray-400 hover:text-red-400 uppercase">Close</button>
@@ -83,7 +77,7 @@
                         <div class="p-3 bg-gray-800/80 border-b border-gray-700 flex justify-between items-center sticky top-0 backdrop-blur z-10">
                             <span class="font-bold text-@cat.Item3-400 uppercase tracking-wider text-sm">@cat.Item1</span>
                             <button @onclick='() => OpenEditor(cat.Item2, cat.Item2 == "health" ? "health" : "task", viewDate)' 
-                                    class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition font-bold uppercase">＋ Add</button>
+                                    class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition font-bold">＋ Add</button>
                         </div>
                         <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide">
                             @if(isLoading) { <div class="text-center text-gray-500 text-xs italic mt-4 animate-pulse">Syncing...</div> }
@@ -136,13 +130,17 @@
     </div>
 </div>
 
-<BaseEditor Item="editingItem" TaskDetail="editingItem?.Detail ?? new()" OnCancel="() => editingItem = null" />
+<BaseEditor Item="editingItem" 
+            TaskDetail="editingItem?.Detail ?? new()" 
+            HealthDetail="editingItem?.HealthDetail ?? new()"
+            OnCancel="() => editingItem = null" />
 
 @code {
     RenderFragment RenderItem(BulletTaskService.TaskDTO item) => __builder => {
         @if (item.Type == "meeting") { <MeetingCard Item="item" OnClick="() => OpenEdit(item)" OnToggle="() => ToggleMeetingComplete(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "habit") { <HabitCard Item="@(GetHabit(item.Id))" OnClick="() => OpenHabitEdit(GetHabit(item.Id))" OnDelete="() => DeleteTask(item.Id)" OnChange="SaveHabitDirectly" /> }
         else if (item.Type == "birthday") { <BirthdayCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
+        else if (item.Type == "holiday") { <HolidayCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "vacation") { <VacationCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "health") { <HealthCard Item="item" User="currentUser" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "sports") { <SportsCard Item="@(GetGame(item.Id))" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
@@ -150,9 +148,7 @@
     };
 
     RenderFragment RenderPill(BulletTaskService.TaskDTO item) => __builder => {
-        @if(item.Type == "meeting") { <MeetingPill Item="item" OnClick="() => OpenEdit(item)" /> }
-        else if(item.Type == "sports") { <SportsPill Item="@(GetGame(item.Id))" OnClick="() => OpenEdit(item)" /> }
-        else { <TaskPill Task="item" OnClick="() => OpenEdit(item)" /> }
+        <TaskPill Task="item" OnClick="() => OpenEdit(item)" />
     };
 }
 
@@ -204,42 +200,53 @@
             loadedItems.Clear();
             await LogToConsole($"Syncing Range: {start:yyyy-MM-dd} to {end:yyyy-MM-dd}");
 
-            // 1. Fetch data
-            var tasks = await TaskService.GetTasksForRange(userId, start, end);
-            var meetings = await MeetingService.GetMeetingsForRange(userId, start, end);
-            loadedItems.AddRange(tasks);
-            loadedItems.AddRange(meetings);
+            // 1. Tasks & Meetings
+            loadedItems.AddRange(await TaskService.GetTasksForRange(userId, start, end));
+            loadedItems.AddRange(await MeetingService.GetMeetingsForRange(userId, start, end));
 
+            // 2. Health (Enhanced Mapping for Card Load)
             try {
                 var health = await HealthService.GetHealthItemsForRange(userId, start, end);
-                foreach(var h in health) loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "health", Category = "health", Date = h.Date, Title = h.Title, HealthDetail = h.Detail });
-            } catch { await LogToConsole("Health error."); }
+                foreach(var h in health) {
+                    loadedItems.Add(new BulletTaskService.TaskDTO { 
+                        Id = h.Id, UserId = h.UserId, Type = "health", Category = "health", Date = h.Date, 
+                        Title = h.Title, HealthDetail = h.Detail, Meals = h.Meals ?? new(), Workouts = h.Workouts ?? new(), Notes = h.Notes ?? new() 
+                    });
+                }
+            } catch { await LogToConsole("Health skip."); }
 
+            // 3. Holidays (Restored)
+            try {
+                var holidays = await HolidayService.GetHolidaysForRange(userId, start, end);
+                foreach(var h in holidays) loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "holiday", Category = "personal", Date = h.Date, Title = h.Title, HolidayDetail = h.Detail });
+                await LogToConsole($"Loaded {holidays.Count} Holidays.");
+            } catch { await LogToConsole("Holiday skip."); }
+
+            // 4. Vacation & Birthdays
             try {
                 var vacs = await VacationService.GetVacationsForRange(userId, start, end);
                 foreach(var v in vacs) loadedItems.Add(new BulletTaskService.TaskDTO { Id = v.Id, UserId = v.UserId, Type = "vacation", Category = "personal", Date = v.Date, Title = v.Title, VacationDetail = v.Detail });
-            } catch { await LogToConsole("Vacation error."); }
-
-            try {
+                
                 var bdays = await BirthdayService.GetBirthdaysForRange(userId, start, end);
                 foreach(var b in bdays) loadedItems.Add(new BulletTaskService.TaskDTO { Id = b.Id, UserId = b.UserId, Type = "birthday", Category = "personal", Date = b.Date, Title = b.Title, BirthdayDetail = b.Detail });
             } catch { }
 
+            // 5. Sports & Habits
             try {
                 loadedGames = await SportsService.GetGamesForRange(userId, start, end);
                 foreach(var g in loadedGames) loadedItems.Add(new BulletTaskService.TaskDTO { Id = g.Id, UserId = g.UserId, Type = "sports", Category = "personal", Date = g.Date, Title = g.Title, SportsDetail = g.Detail });
+                
+                loadedHabits = await HabitService.GetHabits(userId);
+                foreach(var h in loadedHabits.Where(x => x.Date.Date >= start.Date && x.Date.Date <= end.Date))
+                    loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, HabitDetail = h.Detail });
             } catch { }
-
-            loadedHabits = await HabitService.GetHabits(userId);
-            foreach(var h in loadedHabits.Where(x => x.Date.Date >= start.Date && x.Date.Date <= end.Date))
-                loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, HabitDetail = h.Detail });
 
         } catch (Exception ex) { await LogToConsole($"Sync Error: {ex.Message}"); }
         isLoading = false; StateHasChanged();
     }
 
     private void OnJumpDateChanged(ChangeEventArgs e) { if (DateTime.TryParse(e.Value?.ToString(), out var d)) GoToDate(d); }
-    private void OpenEditor(string cat, string type, DateTime d) => editingItem = new BulletTaskService.TaskDTO { UserId = userId, Category = cat, Type = type, Date = d };
+    private void OpenEditor(string cat, string type, DateTime d) => editingItem = new BulletTaskService.TaskDTO { UserId = userId, Category = cat, Type = type, Date = d, Detail = new(), HealthDetail = new(), HabitDetail = new(), Notes = new() };
     private void GoToDate(DateTime d) { viewDate = d; currentView = "day"; _ = LoadData(); }
     private void Prev() { if(currentView == "day") viewDate = viewDate.AddDays(-1); else if(currentView == "week") viewDate = viewDate.AddDays(-7); else viewDate = viewDate.AddMonths(-1); _ = LoadData(); }
     private void Next() { if(currentView == "day") viewDate = viewDate.AddDays(1); else if(currentView == "week") viewDate = viewDate.AddDays(7); else viewDate = viewDate.AddMonths(1); _ = LoadData(); }
