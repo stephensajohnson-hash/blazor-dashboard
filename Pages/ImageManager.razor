@@ -32,9 +32,11 @@
 
         <div class="h-6 w-px bg-gray-800 mx-2"></div>
 
-        <button @onclick="PurgeDatabase" 
-                class="px-3 py-1.5 bg-red-950/30 border border-red-900/50 hover:bg-red-600 hover:border-red-400 text-red-500 hover:text-white text-[10px] font-black uppercase tracking-widest rounded-lg transition-all shadow-lg active:scale-95">
-            Purge Registry
+        @* SURGICAL CLEANUP BUTTON *@
+        <button @onclick="CleanupOrphanedImages" 
+                class="px-3 py-1.5 bg-blue-950/30 border border-blue-900/50 hover:bg-blue-600 hover:border-blue-400 text-blue-400 hover:text-white text-[10px] font-black uppercase tracking-widest rounded-lg transition-all shadow-lg active:scale-95"
+                title="Only deletes images not used on any calendar item">
+            Cleanup Unused
         </button>
     </div>
 </BulletHeader>
@@ -58,6 +60,7 @@
             @foreach (var img in filteredImages)
             {
                 <div class="group bg-[#0f0f0f] border border-gray-800 rounded-2xl overflow-hidden shadow-2xl hover:border-blue-500/50 transition-all">
+                    @* Fixed Navigation: Passes the image's specific upload date *@
                     <div class="aspect-square bg-black overflow-hidden cursor-pointer" @onclick="() => NavigateToDay(img.UploadedAt)">
                         <img src="/db-images/@img.Id" alt="@img.OriginalName" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                     </div>
@@ -66,6 +69,7 @@
                         <div class="text-[9px] text-gray-600 mb-3 font-bold">Uploaded: @img.UploadedAt.ToString("MMM dd, yyyy")</div>
                         <div class="flex gap-2">
                             <button @onclick="() => CopyUrl(img.Id)" class="flex-1 bg-gray-900 hover:bg-blue-600 text-white text-[9px] font-black py-1.5 rounded transition uppercase tracking-widest border border-gray-700">🔗 URL</button>
+                            @* Fixed Navigation: Passes the image's specific upload date *@
                             <button @onclick="() => NavigateToDay(img.UploadedAt)" class="flex-1 bg-gray-900 hover:bg-gray-700 text-white text-[9px] font-black py-1.5 rounded transition uppercase tracking-widest border border-gray-700">📅 Day</button>
                         </div>
                     </div>
@@ -79,23 +83,18 @@
     private List<Dashboard.StoredImage>? allImages;
     private string searchQuery = "";
 
-    // Prevents duplicate URL paths by Distincting by ID
     private IEnumerable<Dashboard.StoredImage> filteredImages => 
         (allImages ?? new List<Dashboard.StoredImage>())
         .DistinctBy(i => i.Id)
         .Where(i => string.IsNullOrWhiteSpace(searchQuery) || (i.OriginalName ?? "").Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
 
-    protected override async Task OnInitializedAsync()
-    {
-        await LoadImages();
-    }
+    protected override async Task OnInitializedAsync() => await LoadImages();
 
     private void ClearSearch() => searchQuery = "";
 
     private async Task LoadImages()
     {
-        try 
-        {
+        try {
             using var scope = ScopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             allImages = await db.StoredImages.OrderByDescending(i => i.UploadedAt).ToListAsync();
@@ -103,25 +102,56 @@
         catch (Exception ex) { Console.WriteLine($"Load Error: {ex.Message}"); }
     }
 
-    private void NavigateToDay(DateTime date) => Nav.NavigateTo($"/bullet-calendar?date={date:yyyy-MM-dd}");
+    private void NavigateToDay(DateTime date) 
+    {
+        // Explicitly formats the date for the calendar query string
+        var url = $"/bullet-calendar?date={date:yyyy-MM-dd}";
+        Console.WriteLine($"Navigating to: {url}");
+        Nav.NavigateTo(url);
+    }
 
     private async Task CopyUrl(int id)
     {
         var url = $"{Nav.BaseUri}db-images/{id}";
         await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
+        Console.WriteLine($"Copied: {url}");
     }
 
-    private async Task PurgeDatabase()
+    private async Task CleanupOrphanedImages()
     {
-        bool confirmed = await JS.InvokeAsync<bool>("confirm", "⚠️ Clear entire registry?");
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", "This will only delete images NOT linked to any calendar items. Keep active images safe?");
         if (!confirmed) return;
 
         try {
             using var scope = ScopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            db.StoredImages.RemoveRange(await db.StoredImages.ToListAsync());
-            await db.SaveChangesAsync();
+
+            // 1. Find all Image IDs used in the Tasks table
+            var usedInTasks = await db.BulletTasks
+                .Where(t => t.ImageId != null)
+                .Select(t => t.ImageId.Value)
+                .ToListAsync();
+
+            // 2. Find all images in the registry NOT in that list
+            var unusedImages = await db.StoredImages
+                .Where(img => !usedInTasks.Contains(img.Id))
+                .ToListAsync();
+
+            if (unusedImages.Any())
+            {
+                db.StoredImages.RemoveRange(unusedImages);
+                await db.SaveChangesAsync();
+                Console.WriteLine($"Cleanup successful: Removed {unusedImages.Count} orphaned images.");
+            }
+            else
+            {
+                Console.WriteLine("No orphaned images found. All images are currently linked.");
+                await JS.InvokeVoidAsync("alert", "No orphaned images found. All images are currently linked to calendar items.");
+            }
+
             await LoadImages();
-        } catch (Exception ex) { Console.WriteLine($"Purge Error: {ex.Message}"); }
+            StateHasChanged();
+        } 
+        catch (Exception ex) { Console.WriteLine($"Cleanup Error: {ex.Message}"); }
     }
 }
