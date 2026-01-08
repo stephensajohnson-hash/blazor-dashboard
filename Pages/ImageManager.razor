@@ -37,10 +37,8 @@
 
         <div class="h-6 w-px bg-gray-800 mx-2"></div>
 
-        @* SURGICAL CLEANUP BUTTON *@
         <button @onclick="CleanupOrphanedImages" 
-                class="px-3 py-1.5 bg-blue-950/30 border border-blue-900/50 hover:bg-blue-600 hover:border-blue-400 text-blue-400 hover:text-white text-[10px] font-black uppercase tracking-widest rounded-lg transition-all shadow-lg active:scale-95"
-                title="Only deletes images not used on any calendar item">
+                class="px-3 py-1.5 bg-blue-950/30 border border-blue-900/50 hover:bg-blue-600 hover:border-blue-400 text-blue-400 hover:text-white text-[10px] font-black uppercase tracking-widest rounded-lg transition-all shadow-lg active:scale-95">
             Cleanup Unused
         </button>
     </div>
@@ -71,7 +69,6 @@
 
                 <div class="group relative bg-[#0f0f0f] border border-gray-800 rounded-2xl overflow-hidden shadow-2xl hover:border-blue-500/50 transition-all">
                     
-                    @* Usage Badge *@
                     <div class="absolute top-2 right-2 z-10 px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-tighter shadow-xl backdrop-blur-md
                                 @(count > 0 ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30")">
                         @(count == 0 ? "Orphaned" : $"{count} Links")
@@ -101,22 +98,11 @@
     private string searchQuery = "";
     private bool showOnlyOrphans = false;
 
-    // Filters duplicates, handles search, and optionally shows only orphaned images
-    private IEnumerable<Dashboard.StoredImage> filteredImages {
-        get {
-            var items = (allImages ?? new List<Dashboard.StoredImage>()).DistinctBy(i => i.Id);
-
-            if (showOnlyOrphans) {
-                items = items.Where(i => !usageCounts.ContainsKey(i.Id) || usageCounts[i.Id] == 0);
-            }
-
-            if (!string.IsNullOrWhiteSpace(searchQuery)) {
-                items = items.Where(i => (i.OriginalName ?? "").Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
-            }
-
-            return items;
-        }
-    }
+    private IEnumerable<Dashboard.StoredImage> filteredImages => 
+        (allImages ?? new List<Dashboard.StoredImage>())
+        .DistinctBy(i => i.Id)
+        .Where(i => !showOnlyOrphans || !usageCounts.ContainsKey(i.Id) || usageCounts[i.Id] == 0)
+        .Where(i => string.IsNullOrWhiteSpace(searchQuery) || (i.OriginalName ?? "").Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnInitializedAsync() => await LoadImages();
 
@@ -129,14 +115,22 @@
             using var scope = ScopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             
+            // 1. Get the Image Registry
             allImages = await db.StoredImages.OrderByDescending(i => i.UploadedAt).ToListAsync();
 
-            // Note: Change 'BulletItems' to match your actual table name if different
-            usageCounts = await db.BulletItems
-                .Where(t => t.ImageId != null)
-                .GroupBy(t => t.ImageId.Value)
-                .Select(g => new { ImageId = g.Key, Count = g.Count() })
-                .ToDictionaryAsync(x => x.ImageId, x => x.Count);
+            // 2. Load usage counts by checking the main Items table
+            // We cast to dynamic or use pattern matching to safely check for ImageId if it's not on the base class
+            var allItems = await db.BulletItems.ToListAsync();
+            
+            usageCounts = allItems
+                .Select(item => {
+                    // This uses reflection/casting to find the ImageId property on sub-types (TaskDTO, HealthDTO, etc)
+                    var prop = item.GetType().GetProperty("ImageId");
+                    return prop?.GetValue(item) as int?;
+                })
+                .Where(id => id.HasValue)
+                .GroupBy(id => id.Value)
+                .ToDictionary(g => g.Key, g => g.Count());
         }
         catch (Exception ex) { Console.WriteLine($"Load Error: {ex.Message}"); }
     }
@@ -151,22 +145,24 @@
 
     private async Task CleanupOrphanedImages()
     {
-        bool confirmed = await JS.InvokeAsync<bool>("confirm", "This will only delete images NOT linked to any calendar items. Proceed?");
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", "Delete only images NOT linked to any calendar items?");
         if (!confirmed) return;
 
         try {
             using var scope = ScopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-            // Find IDs used in the main items table
-            var usedImageIds = await db.BulletItems
-                .Where(t => t.ImageId != null)
-                .Select(t => t.ImageId.Value)
+            // Find all image IDs currently in use
+            var allItems = await db.BulletItems.ToListAsync();
+            var usedIds = allItems
+                .Select(item => item.GetType().GetProperty("ImageId")?.GetValue(item) as int?)
+                .Where(id => id.HasValue)
+                .Select(id => id.Value)
                 .Distinct()
-                .ToListAsync();
+                .ToList();
 
             var unusedImages = await db.StoredImages
-                .Where(img => !usedImageIds.Contains(img.Id))
+                .Where(img => !usedIds.Contains(img.Id))
                 .ToListAsync();
 
             if (unusedImages.Any())
@@ -174,11 +170,11 @@
                 db.StoredImages.RemoveRange(unusedImages);
                 await db.SaveChangesAsync();
                 await LoadImages();
-                await JS.InvokeVoidAsync("alert", $"Cleanup complete. Removed {unusedImages.Count} unused images.");
+                await JS.InvokeVoidAsync("alert", $"Removed {unusedImages.Count} orphaned images.");
             }
             else
             {
-                await JS.InvokeVoidAsync("alert", "All images in the registry are currently linked to calendar items.");
+                await JS.InvokeVoidAsync("alert", "No orphaned images found!");
             }
             StateHasChanged();
         } 
