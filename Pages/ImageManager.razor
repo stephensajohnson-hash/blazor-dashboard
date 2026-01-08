@@ -1,22 +1,142 @@
+@page "/image-manager"
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.Extensions.DependencyInjection
+@using Microsoft.JSInterop
+@using Microsoft.AspNetCore.Components.Web
+@using Dashboard
+@namespace Dashboard.Components.Bullet
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>Image Registry | Stephens' Dashboard</PageTitle>
+
+<BulletHeader ShowControls="false" CustomDateText="Image Registry">
+    <div class="flex items-center gap-2 ml-4">
+        @* Search Bar *@
+        <div class="relative flex items-center bg-black/40 border border-gray-700 rounded-lg px-2 focus-within:border-blue-500 transition-all font-black">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input @bind="searchQuery" @bind:event="oninput" placeholder="Search filenames..." 
+                   class="bg-transparent border-none text-xs py-1.5 px-2 w-32 md:w-48 outline-none text-white font-bold" />
+            
+            <button @onclick="ToggleOrphanFilter" class="ml-2 px-2 py-0.5 rounded text-[9px] uppercase font-black transition-all @(showOnlyOrphans ? "bg-red-500 text-white" : "bg-gray-800 text-gray-400 hover:text-white")">
+                Orphans
+            </button>
+
+            @if(!string.IsNullOrWhiteSpace(searchQuery))
+            {
+                <button @onclick="ClearSearch" class="text-gray-500 hover:text-red-400 p-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            }
+        </div>
+
+        <div class="h-6 w-px bg-gray-800 mx-2"></div>
+
+        @* SURGICAL CLEANUP BUTTON *@
+        <button @onclick="CleanupOrphanedImages" 
+                class="px-3 py-1.5 bg-blue-950/30 border border-blue-900/50 hover:bg-blue-600 hover:border-blue-400 text-blue-400 hover:text-white text-[10px] font-black uppercase tracking-widest rounded-lg transition-all shadow-lg active:scale-95"
+                title="Only deletes images not used on any calendar item">
+            Cleanup Unused
+        </button>
+    </div>
+</BulletHeader>
+
+<div class="p-6">
+    @if (allImages == null)
+    {
+        <div class="flex justify-center py-20">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        </div>
+    }
+    else if (!filteredImages.Any())
+    {
+        <div class="text-center py-20 border-2 border-dashed border-gray-800 rounded-3xl">
+            <p class="text-gray-500 font-black uppercase tracking-widest">No matching images found</p>
+            @if(showOnlyOrphans) {
+                <button @onclick="ToggleOrphanFilter" class="mt-4 text-blue-500 text-xs font-black uppercase underline">Show all images</button>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-6">
+            @foreach (var img in filteredImages)
+            {
+                int count = usageCounts.ContainsKey(img.Id) ? usageCounts[img.Id] : 0;
+
+                <div class="group relative bg-[#0f0f0f] border border-gray-800 rounded-2xl overflow-hidden shadow-2xl hover:border-blue-500/50 transition-all">
+                    
+                    @* Usage Badge *@
+                    <div class="absolute top-2 right-2 z-10 px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-tighter shadow-xl backdrop-blur-md
+                                @(count > 0 ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30")">
+                        @(count == 0 ? "Orphaned" : $"{count} Links")
+                    </div>
+
+                    <div class="aspect-square bg-black overflow-hidden cursor-pointer" @onclick="() => NavigateToDay(img.UploadedAt)">
+                        <img src="/db-images/@img.Id" alt="@img.OriginalName" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                    </div>
+                    
+                    <div class="p-3">
+                        <div class="text-[10px] font-black text-gray-500 truncate mb-1 uppercase tracking-tighter">@img.OriginalName</div>
+                        <div class="text-[9px] text-gray-600 mb-3 font-bold">Uploaded: @img.UploadedAt.ToString("MMM dd, yyyy")</div>
+                        <div class="flex gap-2">
+                            <button @onclick="() => CopyUrl(img.Id)" class="flex-1 bg-gray-900 hover:bg-blue-600 text-white text-[9px] font-black py-1.5 rounded transition uppercase tracking-widest border border-gray-700">🔗 URL</button>
+                            <button @onclick="() => NavigateToDay(img.UploadedAt)" class="flex-1 bg-gray-900 hover:bg-gray-700 text-white text-[9px] font-black py-1.5 rounded transition uppercase tracking-widest border border-gray-700">📅 Day</button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
 @code {
     private List<Dashboard.StoredImage>? allImages;
+    private Dictionary<int, int> usageCounts = new(); 
     private string searchQuery = "";
+    private bool showOnlyOrphans = false;
 
-    private IEnumerable<Dashboard.StoredImage> filteredImages => 
-        (allImages ?? new List<Dashboard.StoredImage>())
-        .DistinctBy(i => i.Id)
-        .Where(i => string.IsNullOrWhiteSpace(searchQuery) || (i.OriginalName ?? "").Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
+    // Filters duplicates, handles search, and optionally shows only orphaned images
+    private IEnumerable<Dashboard.StoredImage> filteredImages {
+        get {
+            var items = (allImages ?? new List<Dashboard.StoredImage>()).DistinctBy(i => i.Id);
+
+            if (showOnlyOrphans) {
+                items = items.Where(i => !usageCounts.ContainsKey(i.Id) || usageCounts[i.Id] == 0);
+            }
+
+            if (!string.IsNullOrWhiteSpace(searchQuery)) {
+                items = items.Where(i => (i.OriginalName ?? "").Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return items;
+        }
+    }
 
     protected override async Task OnInitializedAsync() => await LoadImages();
 
     private void ClearSearch() => searchQuery = "";
+    private void ToggleOrphanFilter() => showOnlyOrphans = !showOnlyOrphans;
 
     private async Task LoadImages()
     {
         try {
             using var scope = ScopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            
             allImages = await db.StoredImages.OrderByDescending(i => i.UploadedAt).ToListAsync();
+
+            // Note: Change 'BulletItems' to match your actual table name if different
+            usageCounts = await db.BulletItems
+                .Where(t => t.ImageId != null)
+                .GroupBy(t => t.ImageId.Value)
+                .Select(g => new { ImageId = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.ImageId, x => x.Count);
         }
         catch (Exception ex) { Console.WriteLine($"Load Error: {ex.Message}"); }
     }
@@ -38,42 +158,30 @@
             using var scope = ScopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-            // --- REVISED LOGIC TO FIND USED IMAGES ---
-            // We search the main table where your bullet items are stored. 
-            // Replace "BulletItems" with "Tasks" or whatever your table is actually named.
-            
-            // CHECK TABLE NAME: Is it db.Tasks? db.BulletItems? db.Entries?
-            var usedImageIds = await db.StoredImages
-                .Join(db.BulletItems, // <--- CHANGE THIS to your actual tasks table name
-                      img => img.Id,
-                      item => item.ImageId,
-                      (img, item) => img.Id)
+            // Find IDs used in the main items table
+            var usedImageIds = await db.BulletItems
+                .Where(t => t.ImageId != null)
+                .Select(t => t.ImageId.Value)
                 .Distinct()
                 .ToListAsync();
 
-            var allImagesInDb = await db.StoredImages.ToListAsync();
-            var unusedImages = allImagesInDb.Where(img => !usedImageIds.Contains(img.Id)).ToList();
+            var unusedImages = await db.StoredImages
+                .Where(img => !usedImageIds.Contains(img.Id))
+                .ToListAsync();
 
             if (unusedImages.Any())
             {
                 db.StoredImages.RemoveRange(unusedImages);
                 await db.SaveChangesAsync();
-                Console.WriteLine($"Cleanup successful: Removed {unusedImages.Count} orphaned images.");
-                
-                // Fixed the JS Alert syntax error
+                await LoadImages();
                 await JS.InvokeVoidAsync("alert", $"Cleanup complete. Removed {unusedImages.Count} unused images.");
             }
             else
             {
-                await JS.InvokeVoidAsync("alert", "No orphaned images found. Your registry is already clean!");
+                await JS.InvokeVoidAsync("alert", "All images in the registry are currently linked to calendar items.");
             }
-
-            await LoadImages();
             StateHasChanged();
         } 
-        catch (Exception ex) { 
-            Console.WriteLine($"Cleanup Error: {ex.Message}");
-            await JS.InvokeVoidAsync("alert", "Error during cleanup. Check the debug console.");
-        }
+        catch (Exception ex) { Console.WriteLine($"Cleanup Error: {ex.Message}"); }
     }
 }
