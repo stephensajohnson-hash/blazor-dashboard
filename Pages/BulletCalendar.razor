@@ -133,8 +133,13 @@
 <BaseEditor Item="editingItem" 
             TaskDetail="editingItem?.Detail ?? new()" 
             MeetingDetail="editingItem?.MeetingDetail ?? new()"
+            BirthdayDetail="editingItem?.BirthdayDetail ?? new()"
             HealthDetail="editingItem?.HealthDetail ?? new()"
             HabitDetail="editingItem?.HabitDetail ?? new()"
+            MediaDetail="editingItem?.MediaDetail ?? new()"
+            HolidayDetail="editingItem?.HolidayDetail ?? new()"
+            AnniversaryDetail="editingItem?.AnniversaryDetail ?? new()"
+            VacationDetail="editingItem?.VacationDetail ?? new()"
             SportsDetail="editingItem?.SportsDetail ?? new()"
             Notes="editingItem?.Notes ?? new()"
             OnSaveRecurring="HandleSave" 
@@ -167,6 +172,7 @@
     private string currentView = "day"; private int clientOffset = 0; private bool isLoading = true;
     private List<BulletTaskService.TaskDTO> loadedItems = new(); 
     private List<BulletHabitService.HabitDTO> loadedHabits = new(); 
+    private List<BulletSportsService.GameDTO> loadedGames = new();
     private BulletTaskService.TaskDTO? editingItem;
     private DateTime weekStart => viewDate.AddDays(-1 * ((7 + (viewDate.DayOfWeek - DayOfWeek.Monday)) % 7)).Date;
     private int daysInMonth => DateTime.DaysInMonth(viewDate.Year, viewDate.Month);
@@ -218,17 +224,17 @@
 
             // 2. Specialized Range Fetching
             try {
-                var health = await HealthService.GetHealthItemsForRange(userId, s, e);
-                foreach(var h in health) loadedItems.Add(new BulletTaskService.TaskDTO { 
-                    Id = h.Id, UserId = h.UserId, Type = "health", Category = "health", Date = h.Date, Title = h.Title, 
-                    HealthDetail = h.Detail, Meals = h.Meals ?? new(), Workouts = h.Workouts ?? new(), Notes = h.Notes ?? new(), ImgUrl = h.ImgUrl
+                var bdays = await BirthdayService.GetBirthdaysForRange(userId, s, e);
+                foreach(var b in bdays) loadedItems.Add(new BulletTaskService.TaskDTO { 
+                    Id = b.Id, UserId = b.UserId, Type = "birthday", Category = "personal", 
+                    Date = b.Date, Title = b.Title, BirthdayDetail = b.Detail ?? new(), ImgUrl = b.ImgUrl 
                 });
+
+                var health = await HealthService.GetHealthItemsForRange(userId, s, e);
+                foreach(var h in health) loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "health", Category = "health", Date = h.Date, Title = h.Title, HealthDetail = h.Detail, Meals = h.Meals ?? new(), Workouts = h.Workouts ?? new(), Notes = h.Notes ?? new(), ImgUrl = h.ImgUrl });
                 
                 var vacs = await VacationService.GetVacationsForRange(userId, s, e);
                 foreach(var v in vacs) loadedItems.Add(new BulletTaskService.TaskDTO { Id = v.Id, UserId = v.UserId, Type = "vacation", Category = "personal", Date = v.Date, Title = v.Title, VacationDetail = v.Detail, ImgUrl = v.ImgUrl });
-                
-                var bdays = await BirthdayService.GetBirthdaysForRange(userId, s, e);
-                foreach(var b in bdays) loadedItems.Add(new BulletTaskService.TaskDTO { Id = b.Id, UserId = b.UserId, Type = "birthday", Category = "personal", Date = b.Date, Title = b.Title, BirthdayDetail = b.Detail, ImgUrl = b.ImgUrl });
                 
                 var holidays = await HolidayService.GetHolidaysForRange(userId, s, e);
                 foreach(var h in holidays) loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "holiday", Category = "personal", Date = h.Date, Title = h.Title, HolidayDetail = h.Detail, ImgUrl = h.ImgUrl });
@@ -237,7 +243,7 @@
                 foreach(var a in annivs) loadedItems.Add(new BulletTaskService.TaskDTO { Id = a.Id, UserId = a.UserId, Type = "anniversary", Category = "personal", Date = a.Date, Title = a.Title, AnniversaryDetail = a.Detail, ImgUrl = a.ImgUrl });
                 
                 var games = await SportsService.GetGamesForRange(userId, s, e);
-                foreach(var g in games) loadedItems.Add(g);
+                loadedGames = games; foreach(var g in games) loadedItems.Add(g);
 
                 var media = await MediaService.GetMedia(userId);
                 foreach(var m in media.Where(x => x.Date.Date >= s.Date && x.Date.Date <= e.Date))
@@ -257,15 +263,20 @@
     private async Task HandleSave(BaseEditor.RecurrenceRequest req) {
         if (editingItem == null) return;
         try {
-            if (editingItem is BulletMeetingService.MeetingDTO m) await MeetingService.SaveMeeting(m);
+            if (editingItem.Type == "birthday") await BirthdayService.SaveBirthday(editingItem);
+            else if (editingItem.Type == "meeting") await MeetingService.SaveMeeting(editingItem);
             else if (editingItem.Type == "health") await HealthService.SaveHealth(new BulletHealthService.HealthDTO { Id = editingItem.Id, UserId = userId, Date = editingItem.Date, Title = editingItem.Title, Detail = editingItem.HealthDetail, Meals = editingItem.Meals, Workouts = editingItem.Workouts });
+            else if (editingItem.Type == "vacation") await VacationService.SaveVacation(editingItem);
+            else if (editingItem.Type == "media") await MediaService.SaveMedia(editingItem);
+            else if (editingItem.Type == "anniversary") await AnniversaryService.SaveAnniversary(editingItem);
             else await TaskService.SaveTask(editingItem);
-            editingItem = null; await LoadData();
+
+            editingItem = null; await LoadData(); 
         } catch (Exception ex) { await LogToConsole($"Save Error: {ex.Message}"); }
     }
 
     private void OnJumpDateChanged(ChangeEventArgs e) { if (DateTime.TryParse(e.Value?.ToString(), out var d)) GoToDate(d); }
-    private void OpenEditor(string cat, string type, DateTime d) => editingItem = new BulletTaskService.TaskDTO { UserId = userId, Category = cat, Type = type, Date = d, Detail = new(), HealthDetail = new(), MeetingDetail = new(), HabitDetail = new(), Notes = new() };
+    private void OpenEditor(string cat, string type, DateTime d) => editingItem = new BulletTaskService.TaskDTO { UserId = userId, Category = cat, Type = type, Date = d, Detail = new(), HealthDetail = new(), MeetingDetail = new(), HabitDetail = new(), BirthdayDetail = new(), Notes = new() };
     private void GoToDate(DateTime d) { viewDate = d; currentView = "day"; _ = LoadData(); }
     private void Prev() { if(currentView == "day") viewDate = viewDate.AddDays(-1); else if(currentView == "week") viewDate = viewDate.AddDays(-7); else viewDate = viewDate.AddMonths(-1); _ = LoadData(); }
     private void Next() { if(currentView == "day") viewDate = viewDate.AddDays(1); else if(currentView == "week") viewDate = viewDate.AddDays(7); else viewDate = viewDate.AddMonths(1); _ = LoadData(); }
@@ -274,7 +285,15 @@
     private string GetHeaderDate() => currentView == "day" ? viewDate.ToString("D") : (currentView == "week" ? $"Week of {weekStart:MMM d}" : viewDate.ToString("MMMM yyyy"));
     private async Task DeleteTask(int id) { if(await JS.InvokeAsync<bool>("confirm", "Delete?")) { await BaseService.DeleteItem(id); await LoadData(); } }
     private async Task DeleteCurrentTask() { if(editingItem != null) { await DeleteTask(editingItem.Id); editingItem = null; } }
-    private void OpenEdit(BulletTaskService.TaskDTO t) { editingItem = t; if(editingItem != null) editingItem.MeetingDetail ??= new(); }
+    private void OpenEdit(BulletTaskService.TaskDTO t) { 
+        editingItem = t; 
+        if(editingItem != null) {
+            editingItem.MeetingDetail ??= new();
+            editingItem.BirthdayDetail ??= new();
+            editingItem.HealthDetail ??= new();
+            editingItem.Notes ??= new();
+        }
+    }
     private void OpenHabitEdit(BulletHabitService.HabitDTO h) { editingItem = new BulletTaskService.TaskDTO { Id = h.Id, Type = "habit", HabitDetail = h.Detail, UserId = userId, Date = h.Date, Title = h.Title }; }
     private async Task ToggleComplete(BulletTaskService.TaskDTO t) { await TaskService.ToggleComplete(t.Id, !t.Detail.IsCompleted); await LoadData(); }
     private async Task ToggleMeetingComplete(BulletTaskService.TaskDTO t) { await MeetingService.ToggleComplete(t.Id, !t.MeetingDetail.IsCompleted); await LoadData(); }
