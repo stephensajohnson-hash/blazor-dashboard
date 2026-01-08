@@ -13,18 +13,20 @@
 
 <BulletHeader ShowControls="false" CustomDateText="Image Registry">
     <div class="flex items-center gap-2 ml-4">
+        @* Search Bar *@
         <div class="relative flex items-center bg-black/40 border border-gray-700 rounded-lg px-2 focus-within:border-blue-500 transition-all font-black">
             <input @bind="searchQuery" @bind:event="oninput" placeholder="Search filenames..." 
                    class="bg-transparent border-none text-xs py-1.5 px-2 w-32 md:w-48 outline-none text-white font-bold" />
         </div>
 
+        @* Pagination Controls *@
         <div class="flex items-center gap-2 ml-4">
-            <button @onclick="PrevPage" disabled="@(currentPage == 1)" class="px-2 py-1 bg-gray-800 rounded disabled:opacity-30 text-[10px] font-black hover:bg-blue-600 transition">PREV</button>
-            <span class="text-[10px] font-mono text-blue-400 min-w-[60px] text-center">Page @currentPage</span>
-            <button @onclick="NextPage" disabled="@(!hasMorePages)" class="px-2 py-1 bg-gray-800 rounded disabled:opacity-30 text-[10px] font-black hover:bg-blue-600 transition">NEXT</button>
+            <button @onclick="PrevPage" disabled="@(currentPage == 1)" class="px-3 py-1 bg-gray-800 rounded-lg disabled:opacity-30 text-[10px] font-black hover:bg-blue-600 transition shadow-lg">PREV</button>
+            <span class="text-[10px] font-mono text-blue-400 min-w-[80px] text-center bg-black/40 py-1 rounded-lg border border-gray-800">Page @currentPage</span>
+            <button @onclick="NextPage" disabled="@(!hasMorePages)" class="px-3 py-1 bg-gray-800 rounded-lg disabled:opacity-30 text-[10px] font-black hover:bg-blue-600 transition shadow-lg">NEXT</button>
         </div>
 
-        <button @onclick="LoadImages" class="text-[10px] text-blue-400 hover:text-white font-black uppercase ml-4">🔄 Sync</button>
+        <button @onclick="LoadImages" class="text-[10px] text-blue-400 hover:text-white font-black uppercase ml-4 px-2 py-1 border border-blue-900/30 rounded-lg hover:bg-blue-900/20 transition-all">🔄 Sync Data</button>
     </div>
 </BulletHeader>
 
@@ -33,9 +35,15 @@
     {
         <div class="flex justify-center py-20"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div></div>
     }
+    else if (!allImages.Any())
+    {
+        <div class="text-center py-20 border-2 border-dashed border-gray-800 rounded-3xl">
+            <p class="text-gray-500 font-black uppercase tracking-widest">No images found on this page</p>
+        </div>
+    }
     else
     {
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-20">
             @foreach (var img in allImages)
             {
                 var usage = usageDetails.ContainsKey(img.Id) ? usageDetails[img.Id] : new ImageUsage();
@@ -43,25 +51,27 @@
 
                 <div class="group relative bg-[#0f0f0f] border border-gray-800 rounded-2xl overflow-hidden shadow-2xl hover:border-blue-500/50 transition-all">
                     
+                    @* Usage Badge *@
                     <div class="absolute top-2 right-2 z-10 px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-tighter shadow-xl backdrop-blur-md
                                 @(usage.TotalCount > 0 ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30")">
                         @(usage.TotalCount == 0 ? "Orphaned" : $"{usage.TotalCount} Links")
                     </div>
 
-                    <button @onclick="() => DeleteOne(img.Id)" class="absolute top-2 left-2 z-10 p-2 bg-black/60 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">🗑️</button>
+                    @* Individual Delete Button (Surgical) *@
+                    <button @onclick="() => DeleteOne(img.Id)" class="absolute top-2 left-2 z-10 p-2 bg-black/60 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-xl" title="Delete from DB">🗑️</button>
 
                     <div class="aspect-video bg-black cursor-pointer overflow-hidden" @onclick="() => NavigateToSource(usage)">
                         <img src="@displayPath" alt="@img.OriginalName" class="w-full h-full object-cover group-hover:scale-105 transition-all duration-500" />
                     </div>
                     
                     <div class="p-3">
-                        <div class="text-[10px] font-black text-gray-400 truncate mb-1 uppercase">@img.OriginalName</div>
+                        <div class="text-[10px] font-black text-gray-500 truncate mb-1 uppercase">@img.OriginalName</div>
                         
-                        @* LOGIC: Priority Date Display *@
-                        <div class="text-[9px] mb-2 font-bold uppercase tracking-tight">
-                            @if (usage.IsCalendarItem && usage.CalendarDate.HasValue)
+                        @* Priority Date Display *@
+                        <div class="text-[9px] mb-2 font-black uppercase tracking-tight">
+                            @if (usage.IsCalendar)
                             {
-                                <span class="text-blue-400">📅 Calendar: @usage.CalendarDate.Value.ToString("MMM dd, yyyy")</span>
+                                <span class="text-blue-400">📅 Calendar: @usage.SourceDate?.ToString("MMM dd, yyyy")</span>
                             }
                             else
                             {
@@ -69,17 +79,20 @@
                             }
                         </div>
                         
-                        <div class="bg-black/80 border border-gray-800 p-2 rounded text-[10px] font-mono text-blue-400 mb-3 select-all truncate">
+                        @* File Path Display *@
+                        <div class="bg-black/80 border border-gray-800 p-2 rounded text-[10px] font-mono text-blue-400 mb-3 select-all truncate" title="Click to select and copy path">
                             @displayPath
                         </div>
 
                         <div class="flex gap-2">
-                            <button @onclick="() => CopyUrl(img.Id)" class="flex-1 bg-gray-900 py-2 rounded text-[9px] font-black uppercase border border-gray-700 hover:bg-blue-600 transition">Copy Path</button>
+                            <button @onclick="() => CopyPath(img.Id)" class="flex-1 bg-gray-900 py-2 rounded text-[9px] font-black uppercase border border-gray-700 hover:bg-blue-600 transition">Copy Path</button>
                             
-                            @if(usage.IsCalendarItem) {
+                            @if(usage.IsCalendar) {
                                 <button @onclick="() => NavigateToSource(usage)" class="flex-1 bg-blue-600/20 text-blue-400 py-2 rounded text-[9px] font-black uppercase border border-blue-500/30 hover:bg-blue-600 hover:text-white transition">📅 Day</button>
                             } else if (usage.TotalCount > 0) {
-                                <div class="flex-1 bg-gray-800/30 py-2 rounded text-[8px] text-center text-gray-600 font-black uppercase border border-gray-800/50">Dashboard/Other</div>
+                                <div class="flex-1 bg-gray-800/30 py-2 rounded text-[8px] text-center text-gray-600 font-black uppercase border border-gray-800/50">
+                                    @(usage.IsRecipe ? "Recipe" : usage.IsBudget ? "Budget" : usage.IsDashboard ? "Dashboard" : "Other")
+                                </div>
                             }
                         </div>
                     </div>
@@ -99,8 +112,11 @@
 
     public class ImageUsage {
         public int TotalCount { get; set; } = 0;
-        public bool IsCalendarItem { get; set; } = false;
-        public DateTime? CalendarDate { get; set; }
+        public bool IsCalendar { get; set; } = false;
+        public bool IsRecipe { get; set; } = false;
+        public bool IsBudget { get; set; } = false;
+        public bool IsDashboard { get; set; } = false;
+        public DateTime? SourceDate { get; set; }
     }
 
     protected override async Task OnInitializedAsync() => await LoadImages();
@@ -108,9 +124,11 @@
     private async Task NextPage() { currentPage++; await LoadImages(); }
     private async Task PrevPage() { currentPage--; await LoadImages(); }
 
+    private async Task Log(string msg) => await JS.InvokeVoidAsync("console.log", $"[IMAGE-MANAGER] {msg}");
+
     private async Task LoadImages()
     {
-        Console.WriteLine($"[SYSTEM] Batch Scanning Registry (Page {currentPage})...");
+        await Log($"Fetching Page {currentPage}...");
         try {
             using var scope = ScopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -121,66 +139,61 @@
             allImages = await query.Skip((currentPage - 1) * pageSize).Take(pageSize).ToListAsync();
             hasMorePages = allImages.Count == pageSize;
 
+            // --- SCAN LOGIC (Scoped to current 50 images for stability) ---
             usageDetails = new();
             var currentPaths = allImages.Select(i => $"/db-images/{i.Id}").ToList();
             var currentIds = allImages.Select(i => i.Id).ToList();
 
-            // Perform Lookups
-            var bulletItems = await db.BulletItems.AsNoTracking()
-                .Where(x => currentPaths.Contains(x.ImgUrl))
-                .Select(x => new { x.ImgUrl, x.Date })
-                .ToListAsync();
-
-            var noteItems = await db.BulletItemNotes.AsNoTracking().Where(x => currentPaths.Contains(x.ImgUrl)).Select(x => x.ImgUrl).ToListAsync();
-            var budgetItems = await db.BudgetItems.AsNoTracking().Where(x => currentPaths.Contains(x.ImgUrl)).Select(x => x.ImgUrl).ToListAsync();
-            var dashboardLinks = await db.Links.AsNoTracking().Where(x => currentPaths.Contains(x.Img)).Select(x => x.Img).ToListAsync();
-            var recipeIdLinks = await db.Recipes.AsNoTracking().Where(x => x.ImageId != null && currentIds.Contains(x.ImageId.Value)).Select(x => x.ImageId).ToListAsync();
+            // Check Tables
+            var calMatches = await db.BulletItems.AsNoTracking().Where(x => currentPaths.Contains(x.ImgUrl)).Select(x => new { x.ImgUrl, x.Date }).ToListAsync();
+            var noteMatches = await db.BulletItemNotes.AsNoTracking().Where(x => currentPaths.Contains(x.ImgUrl)).Select(x => x.ImgUrl).ToListAsync();
+            var budgetMatches = await db.BudgetItems.AsNoTracking().Where(x => currentPaths.Contains(x.ImgUrl)).Select(x => x.ImgUrl).ToListAsync();
+            var linkMatches = await db.Links.AsNoTracking().Where(x => currentPaths.Contains(x.Img)).Select(x => x.Img).ToListAsync();
+            var recipeIdMatches = await db.Recipes.AsNoTracking().Where(x => x.ImageId.HasValue && currentIds.Contains(x.ImageId.Value)).Select(x => x.ImageId).ToListAsync();
 
             foreach (var img in allImages)
             {
                 var path = $"/db-images/{img.Id}";
                 var usage = new ImageUsage();
                 
-                var calEntries = bulletItems.Where(x => x.ImgUrl == path).OrderBy(x => x.Date).ToList();
-                usage.TotalCount = calEntries.Count + noteItems.Count(x => x == path) + budgetItems.Count(x => x == path) + dashboardLinks.Count(x => x == path) + recipeIdLinks.Count(x => x == img.Id);
+                var calHits = calMatches.Where(x => x.ImgUrl == path).ToList();
+                usage.IsCalendar = calHits.Any();
+                if(usage.IsCalendar) usage.SourceDate = calHits.First().Date;
 
-                if (calEntries.Any()) {
-                    usage.IsCalendarItem = true;
-                    usage.CalendarDate = calEntries.First().Date;
-                }
+                usage.IsRecipe = recipeIdMatches.Any(x => x == img.Id);
+                usage.IsBudget = budgetMatches.Any(x => x == path);
+                usage.IsDashboard = linkMatches.Any(x => x == path);
+
+                usage.TotalCount = calHits.Count + noteMatches.Count(x => x == path) + budgetMatches.Count(x => x == path) + linkMatches.Count(x => x == path) + recipeIdMatches.Count(x => x == img.Id);
                 usageDetails[img.Id] = usage;
             }
 
-            Console.WriteLine($"[SYSTEM] Batch sync complete.");
+            await Log($"Scan Complete. Page {currentPage} rendered.");
             StateHasChanged();
-        } catch (Exception ex) { Console.WriteLine($"[ERROR] DB Connection Issue: {ex.Message}"); }
+        } catch (Exception ex) { await Log($"CRITICAL ERROR: {ex.Message}"); }
     }
 
     private void NavigateToSource(ImageUsage usage) 
     {
-        if (usage.IsCalendarItem && usage.CalendarDate.HasValue) {
-            // Using 'yyyy-MM-dd' for the standard ISO format used by most calendar URL handlers
-            var dateStr = usage.CalendarDate.Value.ToString("yyyy-MM-dd");
-            Console.WriteLine($"[NAV] Redirecting to Calendar Date: {dateStr}");
-            
-            // forceLoad: true ensures the page is re-initialized with the new query string
-            Nav.NavigateTo($"/bullet-calendar?date={dateStr}", forceLoad: true);
-        }
+        if (usage.IsCalendar && usage.CalendarDate.HasValue) {
+            Nav.NavigateTo($"/bullet-calendar?date={usage.CalendarDate.Value:yyyy-MM-dd}", forceLoad: true);
+        } else if (usage.IsRecipe) Nav.NavigateTo("/recipes");
+        else if (usage.IsBudget) Nav.NavigateTo("/budget-tracker");
     }
 
-    private async Task CopyUrl(int id) {
+    private async Task CopyPath(int id) {
         var path = $"/db-images/{id}";
         await JS.InvokeVoidAsync("navigator.clipboard.writeText", path);
-        Console.WriteLine($"[CLIPBOARD] Path Copied: {path}");
+        await Log($"Copied: {path}");
     }
 
     private async Task DeleteOne(int id) {
-        if (!await JS.InvokeAsync<bool>("confirm", $"DANGER: Permanently delete image #{id}?")) return;
+        if (!await JS.InvokeAsync<bool>("confirm", $"DANGER: Permanently delete image #{id}? This will break any existing links.")) return;
         try {
             using var scope = ScopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var img = await db.StoredImages.FindAsync(id);
             if (img != null) { db.StoredImages.Remove(img); await db.SaveChangesAsync(); await LoadImages(); }
-        } catch (Exception ex) { Console.WriteLine($"[ERROR] Delete Failed: {ex.Message}"); }
+        } catch (Exception ex) { await Log($"DELETE ERROR: {ex.Message}"); }
     }
 }

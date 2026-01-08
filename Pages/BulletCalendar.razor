@@ -1,6 +1,7 @@
 @page "/bullet-calendar"
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.WebUtilities
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Dashboard
 @using Dashboard.Components.Bullet
@@ -25,7 +26,7 @@
 @inject NavigationManager Nav
 
 <div class="min-h-screen bg-gray-900 text-white overflow-x-hidden pb-40 relative font-sans">
-   
+    
     <BulletHeader 
         ShowControls="true"
         CustomDateText="@GetHeaderDate()"
@@ -336,6 +337,11 @@
     private DateTime? filterStart; 
     private DateTime? filterEnd;
 
+    private async Task LogToConsole(string message)
+    {
+        await JS.InvokeVoidAsync("console.log", $"[CALENDAR-SYSTEM] {message}");
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
@@ -349,7 +355,22 @@
                         currentUser = await Db.Users.FindAsync(userId);
                         if(currentUser != null) {
                             clientOffset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()");
-                            viewDate = DateTime.UtcNow.AddMinutes(-clientOffset);
+                            
+                            // 1. SMART DATE RESOLVER: Check for URL Query String first
+                            var uri = Nav.ToAbsoluteUri(Nav.Uri);
+                            if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("date", out var dateValue))
+                            {
+                                if (DateTime.TryParse(dateValue, out var parsedDate)) {
+                                    viewDate = parsedDate;
+                                    await LogToConsole($"Date Resolved from URL: {viewDate:yyyy-MM-dd}");
+                                }
+                            }
+                            else 
+                            {
+                                viewDate = DateTime.UtcNow.AddMinutes(-clientOffset);
+                                await LogToConsole("No URL date found. Using Today.");
+                            }
+
                             allLeagues = await Db.Leagues.OrderBy(x => x.Name).ToListAsync();
                             allSeasons = await Db.Seasons.ToListAsync();
                             allTeams = await Db.Teams.ToListAsync();
@@ -357,7 +378,12 @@
                         }
                     }
                 }
-            } catch { } finally { isLoading = false; StateHasChanged(); }
+            } catch (Exception ex) { 
+                await LogToConsole($"Initialization Error: {ex.Message}");
+            } finally { 
+                isLoading = false; 
+                StateHasChanged(); 
+            }
         }
     }
 
@@ -375,6 +401,7 @@
         
         try 
         {
+            await LogToConsole($"Fetching items for {start:MMM dd} to {end:MMM dd}...");
             loadedItems.Clear();
             loadedItems.AddRange(await TaskService.GetTasksForRange(userId, start, end));
             loadedItems.AddRange(await MeetingService.GetMeetingsForRange(userId, start, end));
@@ -399,10 +426,7 @@
                 });
             }
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"LOAD_DATA_ERROR: {ex.Message}");
-        }
+        catch (Exception ex) { await LogToConsole($"Data Load Error: {ex.Message}"); }
 
         isLoading = false; 
         StateHasChanged();
