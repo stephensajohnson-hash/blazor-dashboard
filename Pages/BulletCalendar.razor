@@ -95,7 +95,7 @@
             <div class="grid grid-cols-7 gap-2 h-full font-sans font-bold">
                 @for(int i=0; i<7; i++) {
                     var d = weekStart.AddDays(i);
-                    <div class="flex flex-col h-full rounded-xl border @GetDayBorderClass(d) overflow-hidden bg-gray-800/40 shadow-lg">
+                    <div class="flex flex-col h-full rounded-xl border @GetDayBorderClass(d) overflow-hidden bg-gray-800/40">
                         <div class="p-2 text-center border-b border-gray-700/50 bg-gray-800/60 cursor-pointer hover:bg-gray-700 transition" @onclick="() => GoToDate(d)">
                             <div class="text-[10px] uppercase font-black text-gray-500">@d.ToString("ddd")</div>
                             <div class="text-lg font-black text-white">@d.Day</div>
@@ -155,8 +155,14 @@
     };
 
     RenderFragment RenderPill(BulletTaskService.TaskDTO item) => __builder => {
-        @if(item.Type == "meeting") { <MeetingPill Item="@(GetMeeting(item.Id))" OnClick="() => OpenEdit(item)" /> }
-        else if(item.Type == "sports") { <SportsPill Item="@(GetGame(item.Id))" OnClick="() => OpenEdit(item)" /> }
+        @if(item.Type == "meeting") { 
+            var m = GetMeeting(item.Id);
+            <MeetingPill Item="m" OnClick="() => OpenEdit(item)" /> 
+        }
+        else if(item.Type == "sports") { 
+            var g = GetGame(item.Id);
+            <SportsPill Item="g" OnClick="() => OpenEdit(item)" /> 
+        }
         else { <TaskPill Task="item" OnClick="() => OpenEdit(item)" /> }
     };
 }
@@ -190,7 +196,9 @@
                         var uri = Nav.ToAbsoluteUri(Nav.Uri);
                         if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("date", out var dateVal) && DateTime.TryParse(dateVal, out var parsed)) {
                             viewDate = parsed;
-                        } else { viewDate = DateTime.UtcNow.AddMinutes(-clientOffset); }
+                        } else {
+                            viewDate = DateTime.UtcNow.AddMinutes(-clientOffset);
+                        }
                         await LoadData();
                     }
                 }
@@ -212,7 +220,7 @@
             loadedItems.Clear();
             await LogToConsole($"Syncing Range: {start:yyyy-MM-dd}");
 
-            // 1. Core Data
+            // 1. Tasks & Meetings
             loadedItems.AddRange(await TaskService.GetTasksForRange(userId, start, end));
             loadedMeetings = await MeetingService.GetMeetingsForRange(userId, start, end);
             foreach(var m in loadedMeetings) { m.MeetingDetail ??= new(); loadedItems.Add(m); }
@@ -228,7 +236,7 @@
                 foreach(var v in vacs) loadedItems.Add(new BulletTaskService.TaskDTO { Id = v.Id, UserId = v.UserId, Type = "vacation", Category = "personal", Date = v.Date, Title = v.Title, VacationDetail = v.Detail, ImgUrl = v.ImgUrl });
             } catch { }
 
-            // 3. Special Days & Sports
+            // 3. Specials & Sports
             try {
                 var bdays = await BirthdayService.GetBirthdaysForRange(userId, start, end);
                 foreach(var b in bdays) loadedItems.Add(new BulletTaskService.TaskDTO { Id = b.Id, UserId = b.UserId, Type = "birthday", Category = "personal", Date = b.Date, Title = b.Title, BirthdayDetail = b.Detail, ImgUrl = b.ImgUrl });
