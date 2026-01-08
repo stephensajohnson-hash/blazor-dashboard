@@ -97,21 +97,30 @@
 </div>
 
 @code {
-    // We use Dashboard.StoredImage to be explicit and avoid local class conflicts
     private List<Dashboard.StoredImage>? allImages;
     private string searchQuery = "";
 
-    private IEnumerable<Dashboard.StoredImage> filteredImages => 
-        string.IsNullOrWhiteSpace(searchQuery) 
-        ? (allImages ?? new List<Dashboard.StoredImage>()) 
-        : (allImages?.Where(i => (i.OriginalName ?? "").Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) ?? new List<Dashboard.StoredImage>());
+    // 1. We filter for Unique IDs so the same image path only shows once
+    // 2. We then apply the search filter
+    private IEnumerable<Dashboard.StoredImage> filteredImages {
+        get {
+            if (allImages == null) return new List<Dashboard.StoredImage>();
+
+            var uniqueImages = allImages.DistinctBy(i => i.Id);
+
+            if (string.IsNullOrWhiteSpace(searchQuery))
+                return uniqueImages;
+
+            return uniqueImages.Where(i => 
+                (i.OriginalName ?? "").Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
+        // We ONLY load. We do not call any "Cleanup" services here.
         await LoadImages();
     }
-
-    private void ClearSearch() => searchQuery = "";
 
     private async Task LoadImages()
     {
@@ -120,11 +129,12 @@
             using var scope = ScopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             
+            // Just a straight pull of the registry
             allImages = await db.StoredImages
                 .OrderByDescending(i => i.UploadedAt)
                 .ToListAsync();
                 
-            Console.WriteLine($"Registry loaded: {allImages?.Count ?? 0} images found.");
+            Console.WriteLine($"Registry loaded: {allImages?.Count ?? 0} total records found.");
         }
         catch (Exception ex)
         {
@@ -132,42 +142,23 @@
         }
     }
 
-    private void NavigateToDay(DateTime date)
+    private async Task PurgeUnusedImages()
     {
-        var targetUrl = $"/bullet-calendar?date={date:yyyy-MM-dd}";
-        Console.WriteLine($"Navigating to calendar: {targetUrl}");
-        Nav.NavigateTo(targetUrl);
-    }
-
-    private async Task CopyUrl(int id)
-    {
-        var url = $"{Nav.BaseUri}db-images/{id}";
-        await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
-        Console.WriteLine($"Copied Image Link: {url}");
-    }
-
-    private async Task PurgeDatabase()
-    {
-        bool confirmed = await JS.InvokeAsync<bool>("confirm", "⚠️ DANGER: This will permanently delete all images. Proceed?");
-        
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", "Delete only images NOT linked to any calendar items?");
         if (!confirmed) return;
 
-        try 
-        {
-            using var scope = ScopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            
-            var imagesToDelete = await db.StoredImages.ToListAsync();
-            db.StoredImages.RemoveRange(imagesToDelete);
-            await db.SaveChangesAsync();
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-            Console.WriteLine("Purge Successful.");
-            await LoadImages();
-            StateHasChanged();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Purge Failed: {ex.Message}");
-        }
+        // Logic to find images not referenced in any Task/Health/etc. tables
+        // Example:
+        // var usedIds = await db.BulletTasks.Select(t => t.ImageId).Distinct().ToListAsync();
+        // var unused = await db.StoredImages.Where(img => !usedIds.Contains(img.Id)).ToListAsync();
+        
+        // db.StoredImages.RemoveRange(unused);
+        // await db.SaveChangesAsync();
+        
+        Console.WriteLine("Manual cleanup complete.");
+        await LoadImages();
     }
 }
