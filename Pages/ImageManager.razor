@@ -127,51 +127,73 @@
 
     private async Task Log(string msg) => await JS.InvokeVoidAsync("console.log", $"[IMAGE-MANAGER] {msg}");
 
-    private async Task LoadImages()
-    {
-        await Log($"Syncing Page {currentPage}...");
-        try {
-            using var scope = ScopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+private async Task LoadImages()
+{
+    await Log($"Starting Global Usage Scan (Page {currentPage})...");
+    try {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        
+        var query = db.StoredImages.AsNoTracking().OrderByDescending(i => i.UploadedAt).AsQueryable();
+        if (!string.IsNullOrWhiteSpace(searchQuery)) query = query.Where(i => i.OriginalName.Contains(searchQuery));
+
+        allImages = await query.Skip((currentPage - 1) * pageSize).Take(pageSize).ToListAsync();
+        hasMorePages = allImages.Count == pageSize;
+
+        usageDetails = new();
+        var currentPaths = allImages.Select(i => $"/db-images/{i.Id}").ToList();
+        var currentIds = allImages.Select(i => i.Id).ToList();
+
+        // --- 1. GATHER ALL STRING PATHS ---
+        var allPaths = new List<string>();
+        allPaths.AddRange(await db.BulletItems.Select(x => x.ImgUrl).ToListAsync());
+        allPaths.AddRange(await db.BulletItemNotes.Select(x => x.ImgUrl).ToListAsync());
+        allPaths.AddRange(await db.BudgetItems.Select(x => x.ImgUrl).ToListAsync());
+        allPaths.AddRange(await db.BudgetIncomeSources.Select(x => x.ImgUrl).ToListAsync());
+        allPaths.AddRange(await db.Leagues.Select(x => x.ImgUrl).ToListAsync());
+        allPaths.AddRange(await db.Seasons.Select(x => x.ImgUrl).ToListAsync());
+        allPaths.AddRange(await db.Teams.Select(x => x.LogoUrl).ToListAsync());
+        allPaths.AddRange(await db.Links.Select(x => x.Img).ToListAsync());
+        allPaths.AddRange(await db.Countdowns.Select(x => x.Img).ToListAsync());
+        allPaths.AddRange(await db.Stocks.Select(x => x.ImgUrl).ToListAsync());
+
+        // --- 2. GATHER ALL EXPLICIT IDs ---
+        var explicitIds = new List<int>();
+        explicitIds.AddRange(await db.Recipes.Where(x => x.ImageId != null).Select(x => x.ImageId!.Value).ToListAsync());
+        explicitIds.AddRange(await db.RecipeCategories.Where(x => x.ImageId != null).Select(x => x.ImageId!.Value).ToListAsync());
+
+        // --- 3. FETCH CALENDAR DATES FOR NAVIGATION ---
+        var calMatches = await db.BulletItems.AsNoTracking()
+            .Where(x => currentPaths.Contains(x.ImgUrl))
+            .Select(x => new { x.ImgUrl, x.Date })
+            .ToListAsync();
+
+        // --- 4. MAP USAGE TO SCREEN ITEMS ---
+        foreach (var img in allImages)
+        {
+            var path = $"/db-images/{img.Id}";
+            var usage = new ImageUsage();
             
-            var query = db.StoredImages.AsNoTracking().OrderByDescending(i => i.UploadedAt).AsQueryable();
-            if (!string.IsNullOrWhiteSpace(searchQuery)) query = query.Where(i => i.OriginalName.Contains(searchQuery));
+            // Calendar Check
+            var calHits = calMatches.Where(x => x.ImgUrl == path).ToList();
+            usage.IsCalendar = calHits.Any();
+            if(usage.IsCalendar) usage.CalendarDate = calHits.OrderBy(x => x.Date).First().Date;
 
-            allImages = await query.Skip((currentPage - 1) * pageSize).Take(pageSize).ToListAsync();
-            hasMorePages = allImages.Count == pageSize;
+            // Type Checks
+            usage.IsRecipe = explicitIds.Contains(img.Id) || await db.Recipes.AnyAsync(r => r.ImageUrl == path);
+            usage.IsBudget = await db.BudgetItems.AnyAsync(b => b.ImgUrl == path) || await db.BudgetIncomeSources.AnyAsync(i => i.ImgUrl == path);
+            usage.IsDashboard = await db.Links.AnyAsync(l => l.Img == path) || await db.Countdowns.AnyAsync(c => c.Img == path) || await db.Stocks.AnyAsync(s => s.ImgUrl == path);
 
-            usageDetails = new();
-            var currentPaths = allImages.Select(i => $"/db-images/{i.Id}").ToList();
-            var currentIds = allImages.Select(i => i.Id).ToList();
+            // Global Count
+            usage.TotalCount = allPaths.Count(x => x == path) + explicitIds.Count(x => x == img.Id);
+            
+            usageDetails[img.Id] = usage;
+        }
 
-            // Perform Targeted Scans
-            var calMatches = await db.BulletItems.AsNoTracking().Where(x => currentPaths.Contains(x.ImgUrl)).Select(x => new { x.ImgUrl, x.Date }).ToListAsync();
-            var noteMatches = await db.BulletItemNotes.AsNoTracking().Where(x => currentPaths.Contains(x.ImgUrl)).Select(x => x.ImgUrl).ToListAsync();
-            var budgetMatches = await db.BudgetItems.AsNoTracking().Where(x => currentPaths.Contains(x.ImgUrl)).Select(x => x.ImgUrl).ToListAsync();
-            var linkMatches = await db.Links.AsNoTracking().Where(x => currentPaths.Contains(x.Img)).Select(x => x.Img).ToListAsync();
-            var recipeIdMatches = await db.Recipes.AsNoTracking().Where(x => x.ImageId.HasValue && currentIds.Contains(x.ImageId.Value)).Select(x => x.ImageId).ToListAsync();
-
-            foreach (var img in allImages)
-            {
-                var path = $"/db-images/{img.Id}";
-                var usage = new ImageUsage();
-                
-                var calHits = calMatches.Where(x => x.ImgUrl == path).ToList();
-                usage.IsCalendar = calHits.Any();
-                if(usage.IsCalendar) usage.CalendarDate = calHits.First().Date; // Assignment fixed here
-
-                usage.IsRecipe = recipeIdMatches.Any(x => x == img.Id);
-                usage.IsBudget = budgetMatches.Any(x => x == path);
-                usage.IsDashboard = linkMatches.Any(x => x == path);
-
-                usage.TotalCount = calHits.Count + noteMatches.Count(x => x == path) + budgetMatches.Count(x => x == path) + linkMatches.Count(x => x == path) + recipeIdMatches.Count(x => x == img.Id);
-                usageDetails[img.Id] = usage;
-            }
-
-            await Log($"Render complete for page {currentPage}.");
-            StateHasChanged();
-        } catch (Exception ex) { await Log($"DB SYNC ERROR: {ex.Message}"); }
-    }
+        await Log($"Scan Complete. {allImages.Count} images processed.");
+        StateHasChanged();
+    } catch (Exception ex) { await Log($"SCAN ERROR: {ex.Message}"); }
+}
 
     private void NavigateToSource(ImageUsage usage) 
     {
