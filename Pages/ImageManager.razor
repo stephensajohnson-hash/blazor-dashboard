@@ -22,8 +22,7 @@
         </div>
 
         <div class="h-6 w-px bg-gray-800 mx-2"></div>
-
-        <button @onclick="LoadImages" class="text-[10px] text-blue-400 hover:text-white font-black uppercase">🔄 Refresh</button>
+        <button @onclick="LoadImages" class="text-[10px] text-blue-400 hover:text-white font-black uppercase">🔄 Refresh Data</button>
     </div>
 </BulletHeader>
 
@@ -48,7 +47,7 @@
                         @(count == 0 ? "Orphaned" : $"{count} Links")
                     </div>
 
-                    @* Individual Delete Button *@
+                    @* Single Delete Button *@
                     <button @onclick="() => DeleteSingleImage(img.Id)" class="absolute top-2 left-2 z-10 p-1.5 bg-black/60 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                     </button>
@@ -60,8 +59,7 @@
                     <div class="p-3">
                         <div class="text-[10px] font-black text-gray-400 truncate mb-1 uppercase tracking-tighter">@img.OriginalName</div>
                         
-                        @* Path Display *@
-                        <div class="bg-black/50 p-1.5 rounded border border-gray-800 mb-3 font-mono text-[10px] text-blue-400 truncate select-all" title="Click to copy this path">
+                        <div class="bg-black/50 p-1.5 rounded border border-gray-800 mb-3 font-mono text-[10px] text-blue-400 truncate select-all">
                             @displayPath
                         </div>
 
@@ -97,23 +95,38 @@
             
             allImages = await db.StoredImages.OrderByDescending(i => i.UploadedAt).ToListAsync();
 
-            // --- Comprehensive Usage Check ---
-            // We check every table that could possibly reference an ImageId
-            var usedIds = new List<int?>();
+            // --- DEEP USAGE SCAN ---
+            // Checking both ImageId and string URL references
+            var links = new List<string>();
+            var ids = new List<int>();
 
-            // 1. Check Bullet Journal / Tasks
-            usedIds.AddRange(await db.BulletItems.Select(t => (int?)EF.Property<int>(t, "ImageId")).ToListAsync());
-            
-            // 2. Check Recipes (Updating table names based on your feedback)
-            // usedIds.AddRange(await db.Recipes.Select(r => r.ImageId).ToListAsync());
+            // 1. Gather all String-based URLs
+            links.AddRange(await db.BulletItems.Select(x => x.ImgUrl).ToListAsync());
+            links.AddRange(await db.BulletItemNotes.Select(x => x.ImgUrl).ToListAsync());
+            links.AddRange(await db.BudgetItems.Select(x => x.ImgUrl).ToListAsync());
+            links.AddRange(await db.Leagues.Select(x => x.ImgUrl).ToListAsync());
+            links.AddRange(await db.Teams.Select(x => x.LogoUrl).ToListAsync());
+            links.AddRange(await db.Links.Select(x => x.Img).ToListAsync());
+            links.AddRange(await db.Countdowns.Select(x => x.Img).ToListAsync());
 
-            // 3. Check Budget
-            // usedIds.AddRange(await db.Budgets.Select(b => b.ImageId).ToListAsync());
+            // 2. Gather all Integer-based IDs
+            var recipeIds = await db.Recipes.Where(x => x.ImageId != null).Select(x => x.ImageId!.Value).ToListAsync();
+            var categoryIds = await db.RecipeCategories.Where(x => x.ImageId != null).Select(x => x.ImageId!.Value).ToListAsync();
+            ids.AddRange(recipeIds);
+            ids.AddRange(categoryIds);
 
-            usageCounts = usedIds
-                .Where(id => id.HasValue)
-                .GroupBy(id => id.Value)
-                .ToDictionary(g => g.Key, g => g.Count());
+            // 3. Match URLs back to IDs (Extract ID from string "/db-images/123")
+            foreach (var link in links.Where(l => !string.IsNullOrEmpty(l) && l.Contains("/db-images/")))
+            {
+                var parts = link.Split('/');
+                if (parts.Length > 0 && int.TryParse(parts.Last(), out int extractedId))
+                {
+                    ids.Add(extractedId);
+                }
+            }
+
+            // 4. Calculate final counts
+            usageCounts = ids.GroupBy(x => x).ToDictionary(g => g.Key, g => g.Count());
             
             StateHasChanged();
         }
@@ -122,9 +135,7 @@
 
     private void NavigateToDay(DateTime date) 
     {
-        // Fixing Navigation: Ensure date is formatted properly for the calendar
-        var formattedDate = date.ToString("yyyy-MM-dd");
-        Nav.NavigateTo($"/bullet-calendar?date={formattedDate}");
+        Nav.NavigateTo($"/bullet-calendar?date={date:yyyy-MM-dd}");
     }
 
     private async Task CopyUrl(int id)
@@ -135,7 +146,7 @@
 
     private async Task DeleteSingleImage(int id)
     {
-        bool confirmed = await JS.InvokeAsync<bool>("confirm", $"Delete this image (ID: {id}) from the database?");
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", $"DANGER: Are you sure you want to delete image #{id}? This cannot be undone.");
         if (!confirmed) return;
 
         try {
