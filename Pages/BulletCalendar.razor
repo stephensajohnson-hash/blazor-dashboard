@@ -54,7 +54,7 @@
             <div class="h-full flex flex-col font-black">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-sm font-black uppercase text-blue-400">Results (@searchResults.Count)</h2>
-                    <button @onclick="ClearSearch" class="text-[10px] font-bold text-gray-400 hover:text-red-400 uppercase">Close</button>
+                    <button @onclick="ClearSearch" class="text-[10px] font-bold text-gray-400 hover:text-red-400">Close</button>
                 </div>
                 <div class="flex-1 overflow-y-auto pr-2 scrollbar-hide">
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-20">
@@ -142,7 +142,7 @@
             OnDelete="DeleteCurrentTask" />
 
 @code {
-    // UI FRAGMENTS (RENDER HELPERS)
+    // 1. RENDER FRAGMENT: FULL CARDS (DAY VIEW)
     RenderFragment RenderItem(BulletTaskService.TaskDTO item) => __builder => {
         @if (item.Type == "meeting") { <MeetingCard Item="item" OnClick="() => OpenEdit(item)" OnToggle="() => ToggleMeetingComplete(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "habit") { <HabitCard Item="@(GetHabit(item.Id))" OnClick="() => OpenHabitEdit(GetHabit(item.Id))" OnDelete="() => DeleteTask(item.Id)" OnChange="SaveHabitDirectly" /> }
@@ -151,20 +151,21 @@
         else if (item.Type == "vacation") { <VacationCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "health") { <HealthCard Item="item" User="currentUser" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "sports") { 
-            var sportsObj = loadedGames.FirstOrDefault(x => x.Id == item.Id);
+            var sportsObj = GetGame(item.Id);
             if(sportsObj != null) { <SportsCard Item="sportsObj" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         }
         else if (item.Type == "media") { <MediaCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else { <TaskCard Item="item" OnClick="() => OpenEdit(item)" OnToggle="() => ToggleComplete(item)" OnDelete="() => DeleteTask(item.Id)" /> }
     };
 
+    // 2. RENDER FRAGMENT: COMPACT PILLS (WEEK/MONTH VIEW)
     RenderFragment RenderPill(BulletTaskService.TaskDTO item) => __builder => {
         @if(item.Type == "meeting") { 
-            var meetingObj = loadedMeetings.FirstOrDefault(x => x.Id == item.Id);
+            var meetingObj = GetMeeting(item.Id);
             if(meetingObj != null) { <MeetingPill Item="meetingObj" OnClick="() => OpenEdit(item)" /> }
         }
         else if(item.Type == "sports") { 
-            var gameObj = loadedGames.FirstOrDefault(x => x.Id == item.Id);
+            var gameObj = GetGame(item.Id);
             if(gameObj != null) { <SportsPill Item="gameObj" OnClick="() => OpenEdit(item)" /> }
         }
         else { <TaskPill Task="item" OnClick="() => OpenEdit(item)" /> }
@@ -224,17 +225,12 @@
             loadedItems.Clear();
             await LogToConsole($"Syncing Range: {start:yyyy-MM-dd}");
 
-            // 1. CORE: Tasks & Meetings
-            var tasks = await TaskService.GetTasksForRange(userId, start, end);
-            loadedItems.AddRange(tasks);
-            
+            // 1. Core Data
+            loadedItems.AddRange(await TaskService.GetTasksForRange(userId, start, end));
             loadedMeetings = await MeetingService.GetMeetingsForRange(userId, start, end);
-            foreach(var m in loadedMeetings) {
-                m.MeetingDetail ??= new();
-                loadedItems.Add(m);
-            }
+            foreach(var m in loadedMeetings) { m.MeetingDetail ??= new(); loadedItems.Add(m); }
 
-            // 2. HEALTH & VACATION
+            // 2. Health & Vacation
             try {
                 var health = await HealthService.GetHealthItemsForRange(userId, start, end);
                 foreach(var h in health) loadedItems.Add(new BulletTaskService.TaskDTO { 
@@ -245,7 +241,7 @@
                 foreach(var v in vacs) loadedItems.Add(new BulletTaskService.TaskDTO { Id = v.Id, UserId = v.UserId, Type = "vacation", Category = "personal", Date = v.Date, Title = v.Title, VacationDetail = v.Detail, ImgUrl = v.ImgUrl });
             } catch { }
 
-            // 3. SPECIALS & SPORTS
+            // 3. Specials & Sports
             try {
                 var bdays = await BirthdayService.GetBirthdaysForRange(userId, start, end);
                 foreach(var b in bdays) loadedItems.Add(new BulletTaskService.TaskDTO { Id = b.Id, UserId = b.UserId, Type = "birthday", Category = "personal", Date = b.Date, Title = b.Title, BirthdayDetail = b.Detail, ImgUrl = b.ImgUrl });
@@ -260,7 +256,7 @@
                 foreach(var g in loadedGames) loadedItems.Add(new BulletTaskService.TaskDTO { Id = g.Id, UserId = g.UserId, Type = "sports", Category = "personal", Date = g.Date, Title = g.Title, SportsDetail = g.Detail, ImgUrl = g.ImgUrl });
             } catch { }
 
-            // 4. MEDIA & HABITS
+            // 4. Media & Habits
             try {
                 var media = await MediaService.GetMedia(userId);
                 foreach(var m in media.Where(x => x.Date.Date >= start.Date && x.Date.Date <= end.Date))
@@ -270,8 +266,6 @@
                 foreach(var h in loadedHabits.Where(x => x.Date.Date >= start.Date && x.Date.Date <= end.Date))
                     loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, HabitDetail = h.Detail, ImgUrl = h.ImgUrl });
             } catch { }
-
-            await LogToConsole($"Loaded {loadedItems.Count} items.");
         } catch (Exception ex) { await LogToConsole($"Sync Error: {ex.Message}"); }
         isLoading = false; StateHasChanged();
     }
@@ -304,8 +298,8 @@
     private async Task HandleKeyUp(KeyboardEventArgs e) { if (e.Key == "Enter") await PerformQuickSearch(); }
     private async Task PerformQuickSearch() { isSearching = true; searchResults = await BaseService.SearchItems(userId, searchQuery, "all", DateTime.UtcNow.AddYears(-1), DateTime.UtcNow.AddYears(1)); }
     private void ClearSearch() { searchQuery = ""; isSearching = false; _ = LoadData(); }
-
     private List<BulletTaskService.TaskDTO> GetSortedItems(List<BulletTaskService.TaskDTO> items) => items?.OrderBy(t => t.SortOrder).ToList() ?? new();
+    
     private List<BulletTaskService.TaskDTO> GetItemsForColumn(DateTime d, string cat) { 
         var items = loadedItems.Where(t => t.Date.Date == d.Date); 
         if (cat == "health") return items.Where(t => t.Type == "health" || t.Category == "health").ToList();
