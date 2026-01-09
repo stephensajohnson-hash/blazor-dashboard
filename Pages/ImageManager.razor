@@ -90,7 +90,7 @@
     {
         <div class="space-y-4">
             <div class="bg-red-900/10 border border-red-900/30 p-4 rounded-2xl mb-6">
-                <p class="text-xs text-red-400 font-black uppercase tracking-widest">Scanning @allSystemContexts.Count unique links. Locations found will appear below.</p>
+                <p class="text-xs text-red-400 font-black uppercase tracking-widest">Scanning @allSystemContexts.Count unique active links. (Orphaned records filtered out)</p>
             </div>
 
             @if (!brokenLinks.Any())
@@ -155,6 +155,7 @@
         public int TotalCount { get; set; } = 0; 
         public bool IsCalendar { get; set; } = false; 
         public bool IsRecipe { get; set; } = false; 
+        public bool IsBudget { get; set; } = false;
         public DateTime? CalendarDate { get; set; } 
     }
     
@@ -186,16 +187,20 @@
 
             allSystemContexts.Clear();
             
-            // 1. SCAN CALENDAR & NOTES
-            var items = await db.BulletItems.AsNoTracking().Select(x => new { x.ImgUrl, x.Title, x.Date }).ToListAsync();
-            foreach(var x in items.Where(i => !string.IsNullOrEmpty(i.ImgUrl))) 
-                allSystemContexts.Add(new LinkSource { Url = x.ImgUrl, Area = "Calendar", Title = x.Title, Date = x.Date });
+            // 1. CALENDAR (Verified Join Logic)
+            var bulletItems = await db.BulletItems.AsNoTracking()
+                .Where(x => !string.IsNullOrEmpty(x.ImgUrl))
+                .Select(x => new LinkSource { Url = x.ImgUrl, Area = "Calendar", Title = x.Title, Date = x.Date })
+                .ToListAsync();
+            allSystemContexts.AddRange(bulletItems);
             
-            var notes = await db.BulletItemNotes.AsNoTracking().Select(x => new { x.ImgUrl, x.Content }).ToListAsync();
-            foreach(var n in notes.Where(i => !string.IsNullOrEmpty(i.ImgUrl)))
-                allSystemContexts.Add(new LinkSource { Url = n.ImgUrl, Area = "Note Log", Title = n.Content.Length > 20 ? n.Content[..20] + "..." : n.Content });
+            var bulletNotes = await (from n in db.BulletItemNotes
+                                   join i in db.BulletItems on n.BulletItemId equals i.Id
+                                   where n.ImgUrl != null && n.ImgUrl != ""
+                                   select new LinkSource { Url = n.ImgUrl, Area = "Note Log", Title = n.Content, Date = i.Date }).ToListAsync();
+            allSystemContexts.AddRange(bulletNotes);
 
-            // 2. SCAN RECIPES
+            // 2. RECIPES
             var recipes = await db.Recipes.AsNoTracking().Select(x => new { x.ImageUrl, x.ImageId, x.Title }).ToListAsync();
             foreach(var r in recipes) {
                 if(!string.IsNullOrEmpty(r.ImageUrl)) allSystemContexts.Add(new LinkSource { Url = r.ImageUrl, Area = "Recipe", Title = r.Title });
@@ -208,7 +213,7 @@
                 if(c.ImageId.HasValue) allSystemContexts.Add(new LinkSource { Url = $"/db-images/{c.ImageId}", Area = "Recipe Category", Title = c.Name });
             }
 
-            // 3. SCAN BUDGET (Items & Income Sources)
+            // 3. BUDGET (Restored Income Source)
             var budget = await db.BudgetItems.AsNoTracking().Select(x => new { x.ImgUrl, x.Name }).ToListAsync();
             foreach(var b in budget.Where(i => !string.IsNullOrEmpty(i.ImgUrl)))
                 allSystemContexts.Add(new LinkSource { Url = b.ImgUrl, Area = "Budget Item", Title = b.Name });
@@ -217,7 +222,7 @@
             foreach(var i in income.Where(x => !string.IsNullOrEmpty(x.ImgUrl)))
                 allSystemContexts.Add(new LinkSource { Url = i.ImgUrl, Area = "Income Source", Title = i.Name });
 
-            // 4. SCAN SPORTS (Leagues & Seasons & Teams)
+            // 4. SPORTS (Restored Seasons)
             var leagues = await db.Leagues.AsNoTracking().Select(x => new { x.ImgUrl, x.Name }).ToListAsync();
             foreach(var l in leagues.Where(x => !string.IsNullOrEmpty(x.ImgUrl)))
                 allSystemContexts.Add(new LinkSource { Url = l.ImgUrl, Area = "Sports League", Title = l.Name });
@@ -230,20 +235,20 @@
             foreach(var t in teams.Where(x => !string.IsNullOrEmpty(x.LogoUrl)))
                 allSystemContexts.Add(new LinkSource { Url = t.LogoUrl, Area = "Sports Team", Title = t.Name });
 
-            // 5. SCAN DASHBOARD (Links, Countdowns, Stocks)
+            // 5. DASHBOARD (Restored Stocks)
             var dash = await db.Links.AsNoTracking().Select(x => new { x.Img, x.Name }).ToListAsync();
             foreach(var l in dash.Where(i => !string.IsNullOrEmpty(i.Img)))
                 allSystemContexts.Add(new LinkSource { Url = l.Img, Area = "Dashboard Link", Title = l.Name });
 
-            var countdowns = await db.Countdowns.AsNoTracking().Select(x => new { x.Img, x.Name }).ToListAsync();
-            foreach(var c in countdowns.Where(x => !string.IsNullOrEmpty(x.Img)))
+            var count = await db.Countdowns.AsNoTracking().Select(x => new { x.Img, x.Name }).ToListAsync();
+            foreach(var c in count.Where(x => !string.IsNullOrEmpty(x.Img)))
                 allSystemContexts.Add(new LinkSource { Url = c.Img, Area = "Countdown", Title = c.Name });
 
             var stocks = await db.Stocks.AsNoTracking().Select(x => new { x.ImgUrl, x.Symbol }).ToListAsync();
             foreach(var s in stocks.Where(x => !string.IsNullOrEmpty(x.ImgUrl)))
                 allSystemContexts.Add(new LinkSource { Url = s.ImgUrl, Area = "Stock", Title = s.Symbol });
 
-            // MAP REGISTRY USAGE
+            // 6. MAPPING Block (Restored usage properties)
             foreach (var img in allImages) {
                 var path = $"/db-images/{img.Id}";
                 var usage = new ImageUsage();
@@ -253,7 +258,9 @@
                 var calMatch = matches.FirstOrDefault(x => x.Area == "Calendar");
                 usage.IsCalendar = calMatch != null;
                 if(usage.IsCalendar) usage.CalendarDate = calMatch?.Date;
+                
                 usage.IsRecipe = matches.Any(x => x.Area.Contains("Recipe"));
+                usage.IsBudget = matches.Any(x => x.Area.Contains("Budget") || x.Area == "Income Source");
                 
                 usageDetails[img.Id] = usage;
             }
@@ -264,10 +271,11 @@
     private void NavigateToSource(ImageUsage usage) {
         if (usage.IsCalendar && usage.CalendarDate.HasValue) Nav.NavigateTo($"/bullet-calendar?date={usage.CalendarDate.Value:yyyy-MM-dd}", forceLoad: true);
         else if (usage.IsRecipe) Nav.NavigateTo("/recipes");
+        else if (usage.IsBudget) Nav.NavigateTo("/budget-tracker");
     }
 
     private void NavigateToSpecific(LinkSource src) {
-        if (src.Area == "Calendar" && src.Date.HasValue) Nav.NavigateTo($"/bullet-calendar?date={src.Date.Value:yyyy-MM-dd}", forceLoad: true);
+        if ((src.Area == "Calendar" || src.Area == "Note Log") && src.Date.HasValue) Nav.NavigateTo($"/bullet-calendar?date={src.Date.Value:yyyy-MM-dd}", forceLoad: true);
         else if (src.Area.Contains("Recipe")) Nav.NavigateTo("/recipes");
         else if (src.Area.Contains("Budget") || src.Area == "Income Source") Nav.NavigateTo("/budget-tracker");
         else Nav.NavigateTo("/");
