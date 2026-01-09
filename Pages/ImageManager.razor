@@ -70,6 +70,7 @@
         else
         {
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-20 font-black">
+                @* FIXED SORTING: Orphaned (Count == 0) always listed first *@
                 @foreach (var img in allImages
                     .OrderBy(i => usageDetails.ContainsKey(i.Id) && usageDetails[i.Id].TotalCount > 0 ? 1 : 0)
                     .ThenByDescending(i => i.UploadedAt))
@@ -99,7 +100,7 @@
                             <div class="text-[10px] font-black text-gray-500 truncate mb-1 uppercase">
                                 @img.OriginalName
                             </div>
-                            <div class="bg-black/80 border border-gray-700 p-2 rounded text-[10px] font-mono text-blue-400 mb-3 select-all truncate">
+                            <div class="bg-black/80 border border-gray-700 p-2 rounded text-[10px] font-mono text-blue-400 mb-3 select-all truncate shadow-inner">
                                 @displayPath
                             </div>
                             <div class="flex gap-2">
@@ -113,6 +114,12 @@
                                         📅 Day
                                     </button>
                                 }
+                                else if(usage.IsSports) {
+                                    <button @onclick='() => Nav.NavigateTo("/manage-sports")' 
+                                            class="flex-1 bg-orange-600/20 text-orange-400 py-2 rounded text-[9px] font-black uppercase border border-orange-500/30 hover:bg-orange-600 hover:text-white transition shadow-md">
+                                        🏆 Sports
+                                    </button>
+                                }
                             </div>
                         </div>
                     </div>
@@ -122,11 +129,10 @@
     }
     else
     {
-        @* BROKEN LINKS TAB *@
         <div class="space-y-4 font-black">
             <div class="bg-red-900/10 border border-red-900/30 p-4 rounded-2xl mb-6">
                 <p class="text-xs text-red-400 font-black uppercase tracking-widest">
-                    Scanning validated active links. Deleted refs filtered out.
+                    Scanning all validated active links. Orphaned records filtered out.
                 </p>
             </div>
 
@@ -213,7 +219,9 @@
     }
 
     protected override async Task OnInitializedAsync() => await LoadImages();
+
     private void ReportBrokenLink(string url) { brokenLinks.Add(url); StateHasChanged(); }
+
     private async Task NextPage() { currentPage++; await LoadImages(); }
     private async Task PrevPage() { currentPage--; await LoadImages(); }
 
@@ -223,7 +231,7 @@
             using var scope = ScopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             
-            // SESSION FIX: Restore User ID retrieval
+            // USER CONTEXT RETRIEVAL
             var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
             int userId = 1; 
             if (!string.IsNullOrEmpty(json)) {
@@ -239,7 +247,9 @@
             hasMorePages = allImages.Count == pageSize;
             allSystemContexts.Clear();
             
-            // 1. CALENDAR VALIDATION
+            // --- SCANNING BLOCKS ---
+
+            // 1. CALENDAR (Validated Parents)
             var bulletItems = await db.BulletItems.AsNoTracking()
                 .Where(x => x.UserId == userId && !string.IsNullOrEmpty(x.ImgUrl))
                 .Select(x => new LinkSource { Url = x.ImgUrl, Area = "Calendar", Title = x.Title, Date = x.Date })
@@ -252,7 +262,7 @@
                                    select new LinkSource { Url = n.ImgUrl, Area = "Note Log", Title = n.Content, Date = i.Date }).ToListAsync();
             allSystemContexts.AddRange(bulletNotes);
 
-            // 2. RECIPES
+            // 2. RECIPES & CATEGORIES
             var recipes = await db.Recipes.AsNoTracking().Where(x => x.UserId == userId).ToListAsync();
             foreach(var r in recipes) {
                 if(!string.IsNullOrEmpty(r.ImageUrl)) allSystemContexts.Add(new LinkSource { Url = r.ImageUrl, Area = "Recipe", Title = r.Title });
@@ -265,7 +275,7 @@
                 if(c.ImageId.HasValue) allSystemContexts.Add(new LinkSource { Url = $"/db-images/{c.ImageId}", Area = "Recipe Category", Title = c.Name });
             }
 
-            // 3. BUDGET
+            // 3. BUDGET (Validated Items and Income)
             var budget = await (from bi in db.BudgetItems
                                join bc in db.BudgetCycles on bi.BudgetCycleId equals bc.Id
                                join bp in db.BudgetPeriods on bc.BudgetPeriodId equals bp.Id
@@ -278,35 +288,40 @@
                 .Select(x => new LinkSource { Url = x.ImgUrl, Area = "Income Source", Title = x.Name }).ToListAsync();
             allSystemContexts.AddRange(income);
 
-            // 4. SPORTS (Restored Missing Logic)
-            var leagues = await db.Leagues.AsNoTracking().Where(x => x.UserId == userId && !string.IsNullOrEmpty(x.ImgUrl))
+            // 4. SPORTS (Leagues, Seasons, Teams)
+            var leagues = await db.Leagues.AsNoTracking()
+                .Where(x => x.UserId == userId && !string.IsNullOrEmpty(x.ImgUrl))
                 .Select(x => new LinkSource { Url = x.ImgUrl, Area = "Sports League", Title = x.Name }).ToListAsync();
             allSystemContexts.AddRange(leagues);
 
-            var seasons = await db.Seasons.AsNoTracking().Where(x => x.UserId == userId && !string.IsNullOrEmpty(x.ImgUrl))
+            var seasons = await db.Seasons.AsNoTracking()
+                .Where(x => x.UserId == userId && !string.IsNullOrEmpty(x.ImgUrl))
                 .Select(x => new LinkSource { Url = x.ImgUrl, Area = "Sports Season", Title = x.Name }).ToListAsync();
             allSystemContexts.AddRange(seasons);
 
-            var teams = await db.Teams.AsNoTracking().Where(x => x.UserId == userId && !string.IsNullOrEmpty(x.LogoUrl))
+            var teams = await db.Teams.AsNoTracking()
+                .Where(x => x.UserId == userId && !string.IsNullOrEmpty(x.LogoUrl))
                 .Select(x => new LinkSource { Url = x.LogoUrl, Area = "Sports Team", Title = x.Name }).ToListAsync();
             allSystemContexts.AddRange(teams);
 
-            // 5. DASHBOARD (Restored Missing Logic)
+            // 5. DASHBOARD (Links, Countdowns, Stocks)
             var activeLinks = await (from l in db.Links
                                    join lg in db.LinkGroups on l.LinkGroupId equals lg.Id
                                    where lg.UserId == userId && !string.IsNullOrEmpty(l.Img)
                                    select new LinkSource { Url = l.Img, Area = "Dashboard Link", Title = l.Name }).ToListAsync();
             allSystemContexts.AddRange(activeLinks);
 
-            var countdowns = await db.Countdowns.AsNoTracking().Where(x => x.UserId == userId && !string.IsNullOrEmpty(x.Img))
+            var dashCounts = await db.Countdowns.AsNoTracking()
+                .Where(x => x.UserId == userId && !string.IsNullOrEmpty(x.Img))
                 .Select(x => new LinkSource { Url = x.Img, Area = "Countdown", Title = x.Name }).ToListAsync();
-            allSystemContexts.AddRange(countdowns);
+            allSystemContexts.AddRange(dashCounts);
 
-            var stocks = await db.Stocks.AsNoTracking().Where(x => x.UserId == userId && !string.IsNullOrEmpty(x.ImgUrl))
+            var stocks = await db.Stocks.AsNoTracking()
+                .Where(x => x.UserId == userId && !string.IsNullOrEmpty(x.ImgUrl))
                 .Select(x => new LinkSource { Url = x.ImgUrl, Area = "Stock", Title = x.Symbol }).ToListAsync();
             allSystemContexts.AddRange(stocks);
 
-            // 6. FINAL REGISTRY MAPPING (Restored Navigation Properties)
+            // 6. FINAL REGISTRY MAPPING
             foreach (var img in allImages) {
                 var path = $"/db-images/{img.Id}";
                 var oldPath = $"/images/db/{img.Id}"; 
@@ -320,7 +335,7 @@
                 
                 usage.IsRecipe = matches.Any(x => x.Area.Contains("Recipe"));
                 usage.IsBudget = matches.Any(x => x.Area.Contains("Budget") || x.Area == "Income Source");
-                usage.IsSports = matches.Any(x => x.Area.Contains("Sports"));
+                usage.IsSports = matches.Any(x => x.Area.Contains("Sports") || x.Area.Contains("Team"));
                 
                 usageDetails[img.Id] = usage;
             }
@@ -332,12 +347,14 @@
         if (usage.IsCalendar && usage.CalendarDate.HasValue) Nav.NavigateTo($"/bullet-calendar?date={usage.CalendarDate.Value:yyyy-MM-dd}", forceLoad: true);
         else if (usage.IsRecipe) Nav.NavigateTo("/recipes");
         else if (usage.IsBudget) Nav.NavigateTo("/budget-tracker");
+        else if (usage.IsSports) Nav.NavigateTo("/manage-sports");
     }
 
     private void NavigateToSpecific(LinkSource src) {
         if ((src.Area == "Calendar" || src.Area == "Note Log") && src.Date.HasValue) Nav.NavigateTo($"/bullet-calendar?date={src.Date.Value:yyyy-MM-dd}", forceLoad: true);
         else if (src.Area.Contains("Recipe")) Nav.NavigateTo("/recipes");
         else if (src.Area.Contains("Budget") || src.Area == "Income Source") Nav.NavigateTo("/budget-tracker");
+        else if (src.Area.Contains("Sports") || src.Area.Contains("Team")) Nav.NavigateTo("/manage-sports");
         else Nav.NavigateTo("/");
     }
 
