@@ -40,12 +40,11 @@ public class ImageService
                 }
             }
 
-            // 2. Scan BulletItemNotes (Usage in last 90 days)
-            var noteData = await _db.BulletItemNotes.AsNoTracking()
-                .Include(n => n.BulletItem)
-                .Where(n => n.BulletItem.UserId == userId && n.ImgUrl != null && n.ImgUrl != "")
-                .Select(n => new { n.ImgUrl, n.BulletItem.Date, n.BulletItem.Type })
-                .ToListAsync();
+            // 2. Scan BulletItemNotes (Join manually to filter by User/Date)
+            var noteData = await (from n in _db.BulletItemNotes
+                                 join i in _db.BulletItems on n.BulletItemId equals i.Id
+                                 where i.UserId == userId && n.ImgUrl != null && n.ImgUrl != ""
+                                 select new { n.ImgUrl, i.Date, i.Type }).ToListAsync();
 
             foreach (var note in noteData)
             {
@@ -102,7 +101,8 @@ public class ImageService
         }
         catch (Exception ex) { Console.WriteLine($"QUERY_ERROR: {ex.Message}"); }
 
-        return results.OrderByDescending(x => x.UsageCount).ThenByDescending(x => x.FirstUsedDate).ToList();
+        return results.OrderByDescending(x => x.UsageCount)
+                      .ThenByDescending(x => x.FirstUsedDate ?? DateTime.MinValue).ToList();
     }
 
     public async Task<int> DeleteUnusedLocalImages(int userId)
