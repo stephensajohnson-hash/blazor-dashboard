@@ -13,7 +13,6 @@
 
 <BulletHeader ShowControls="false" CustomDateText="Image Registry">
     <div class="flex items-center gap-2 ml-4">
-        @* TAB TOGGLE *@
         <div class="flex bg-black/40 rounded-lg p-1 border border-gray-700 mr-4 shadow-inner">
             <button @onclick='() => activeTab = "registry"' 
                     class="px-3 py-1 rounded-md text-[10px] font-black uppercase transition @(activeTab == "registry" ? "bg-blue-600 text-white shadow-lg" : "text-gray-500 hover:text-gray-300")">
@@ -55,7 +54,6 @@
         else
         {
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-20 font-black">
-                @* SORTED: Orphaned (Count 0) first, then by Upload Date *@
                 @foreach (var img in allImages.OrderBy(i => usageDetails.ContainsKey(i.Id) && usageDetails[i.Id].TotalCount > 0).ThenByDescending(i => i.UploadedAt))
                 {
                     var usage = usageDetails.ContainsKey(img.Id) ? usageDetails[img.Id] : new ImageUsage();
@@ -67,8 +65,7 @@
                             @(usage.TotalCount == 0 ? "Orphaned" : $"{usage.TotalCount} Links")
                         </div>
 
-                        @* DELETE BUTTON: Swapped Trash for X *@
-                        <button @onclick="() => DeleteOne(img.Id)" class="absolute top-2 left-2 z-10 p-2 bg-black/60 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-xl font-black text-xs">✕</button>
+                        <button @onclick="() => DeleteOne(img.Id)" class="absolute top-2 left-2 z-10 p-2 bg-black/60 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-xl">✕</button>
 
                         <div class="aspect-video bg-black cursor-pointer overflow-hidden" @onclick="() => NavigateToSource(usage)">
                             <img src="@displayPath" alt="@img.OriginalName" class="w-full h-full object-cover group-hover:scale-105 transition-all duration-500" />
@@ -91,10 +88,9 @@
     }
     else
     {
-        @* TAB: BROKEN LINKS WITH CONTEXT *@
         <div class="space-y-4">
             <div class="bg-red-900/10 border border-red-900/30 p-4 rounded-2xl mb-6">
-                <p class="text-xs text-red-400 font-black uppercase tracking-widest">Scanning @allSystemContexts.Count links. Broken items found will show their source location below.</p>
+                <p class="text-xs text-red-400 font-black uppercase tracking-widest">Scanning @allSystemContexts.Count unique links. Locations found will appear below.</p>
             </div>
 
             @if (!brokenLinks.Any())
@@ -137,7 +133,6 @@
                 </div>
             }
 
-            @* Invisible image load triggers the onerror event *@
             <div class="hidden">
                 @foreach (var context in allSystemContexts)
                 {
@@ -165,10 +160,9 @@
     
     public class LinkSource {
         public string Url { get; set; } = "";
-        public string Area { get; set; } = ""; // Calendar, Recipe, Budget, Dashboard
-        public string Title { get; set; } = ""; // Task Title, Recipe Name, etc.
+        public string Area { get; set; } = ""; 
+        public string Title { get; set; } = ""; 
         public DateTime? Date { get; set; }
-        public int? ExplicitId { get; set; }
     }
 
     protected override async Task OnInitializedAsync() => await LoadImages();
@@ -192,51 +186,79 @@
 
             allSystemContexts.Clear();
             
-            // 1. SCAN CALENDAR (Core & Notes)
-            var bulletItems = await db.BulletItems.AsNoTracking().Select(x => new { x.ImgUrl, x.Title, x.Date }).ToListAsync();
-            foreach(var x in bulletItems.Where(i => !string.IsNullOrEmpty(i.ImgUrl))) 
+            // 1. SCAN CALENDAR & NOTES
+            var items = await db.BulletItems.AsNoTracking().Select(x => new { x.ImgUrl, x.Title, x.Date }).ToListAsync();
+            foreach(var x in items.Where(i => !string.IsNullOrEmpty(i.ImgUrl))) 
                 allSystemContexts.Add(new LinkSource { Url = x.ImgUrl, Area = "Calendar", Title = x.Title, Date = x.Date });
             
             var notes = await db.BulletItemNotes.AsNoTracking().Select(x => new { x.ImgUrl, x.Content }).ToListAsync();
             foreach(var n in notes.Where(i => !string.IsNullOrEmpty(i.ImgUrl)))
                 allSystemContexts.Add(new LinkSource { Url = n.ImgUrl, Area = "Note Log", Title = n.Content.Length > 20 ? n.Content[..20] + "..." : n.Content });
 
-            // 2. SCAN RECIPES (Scanning Titles & Categories)
+            // 2. SCAN RECIPES
             var recipes = await db.Recipes.AsNoTracking().Select(x => new { x.ImageUrl, x.ImageId, x.Title }).ToListAsync();
             foreach(var r in recipes) {
                 if(!string.IsNullOrEmpty(r.ImageUrl)) allSystemContexts.Add(new LinkSource { Url = r.ImageUrl, Area = "Recipe", Title = r.Title });
-                if(r.ImageId.HasValue) allSystemContexts.Add(new LinkSource { Url = $"/db-images/{r.ImageId}", Area = "Recipe", Title = r.Title, ExplicitId = r.ImageId });
+                if(r.ImageId.HasValue) allSystemContexts.Add(new LinkSource { Url = $"/db-images/{r.ImageId}", Area = "Recipe", Title = r.Title });
             }
 
             var cats = await db.RecipeCategories.AsNoTracking().Select(x => new { x.ImageUrl, x.ImageId, x.Name }).ToListAsync();
             foreach(var c in cats) {
                 if(!string.IsNullOrEmpty(c.ImageUrl)) allSystemContexts.Add(new LinkSource { Url = c.ImageUrl, Area = "Recipe Category", Title = c.Name });
-                if(c.ImageId.HasValue) allSystemContexts.Add(new LinkSource { Url = $"/db-images/{c.ImageId}", Area = "Recipe Category", Title = c.Name, ExplicitId = c.ImageId });
+                if(c.ImageId.HasValue) allSystemContexts.Add(new LinkSource { Url = $"/db-images/{c.ImageId}", Area = "Recipe Category", Title = c.Name });
             }
 
-            // 3. SCAN BUDGET & DASHBOARD
+            // 3. SCAN BUDGET (Items & Income Sources)
             var budget = await db.BudgetItems.AsNoTracking().Select(x => new { x.ImgUrl, x.Name }).ToListAsync();
             foreach(var b in budget.Where(i => !string.IsNullOrEmpty(i.ImgUrl)))
                 allSystemContexts.Add(new LinkSource { Url = b.ImgUrl, Area = "Budget Item", Title = b.Name });
 
+            var income = await db.BudgetIncomeSources.AsNoTracking().Select(x => new { x.ImgUrl, x.Name }).ToListAsync();
+            foreach(var i in income.Where(x => !string.IsNullOrEmpty(x.ImgUrl)))
+                allSystemContexts.Add(new LinkSource { Url = i.ImgUrl, Area = "Income Source", Title = i.Name });
+
+            // 4. SCAN SPORTS (Leagues & Seasons & Teams)
+            var leagues = await db.Leagues.AsNoTracking().Select(x => new { x.ImgUrl, x.Name }).ToListAsync();
+            foreach(var l in leagues.Where(x => !string.IsNullOrEmpty(x.ImgUrl)))
+                allSystemContexts.Add(new LinkSource { Url = l.ImgUrl, Area = "Sports League", Title = l.Name });
+
+            var seasons = await db.Seasons.AsNoTracking().Select(x => new { x.ImgUrl, x.Name }).ToListAsync();
+            foreach(var s in seasons.Where(x => !string.IsNullOrEmpty(x.ImgUrl)))
+                allSystemContexts.Add(new LinkSource { Url = s.ImgUrl, Area = "Sports Season", Title = s.Name });
+
+            var teams = await db.Teams.AsNoTracking().Select(x => new { x.LogoUrl, x.Name }).ToListAsync();
+            foreach(var t in teams.Where(x => !string.IsNullOrEmpty(x.LogoUrl)))
+                allSystemContexts.Add(new LinkSource { Url = t.LogoUrl, Area = "Sports Team", Title = t.Name });
+
+            // 5. SCAN DASHBOARD (Links, Countdowns, Stocks)
             var dash = await db.Links.AsNoTracking().Select(x => new { x.Img, x.Name }).ToListAsync();
             foreach(var l in dash.Where(i => !string.IsNullOrEmpty(i.Img)))
                 allSystemContexts.Add(new LinkSource { Url = l.Img, Area = "Dashboard Link", Title = l.Name });
 
-            // 4. MAP REGISTRY USAGE - Orphaned logic fix
+            var countdowns = await db.Countdowns.AsNoTracking().Select(x => new { x.Img, x.Name }).ToListAsync();
+            foreach(var c in countdowns.Where(x => !string.IsNullOrEmpty(x.Img)))
+                allSystemContexts.Add(new LinkSource { Url = c.Img, Area = "Countdown", Title = c.Name });
+
+            var stocks = await db.Stocks.AsNoTracking().Select(x => new { x.ImgUrl, x.Symbol }).ToListAsync();
+            foreach(var s in stocks.Where(x => !string.IsNullOrEmpty(x.ImgUrl)))
+                allSystemContexts.Add(new LinkSource { Url = s.ImgUrl, Area = "Stock", Title = s.Symbol });
+
+            // MAP REGISTRY USAGE
             foreach (var img in allImages) {
                 var path = $"/db-images/{img.Id}";
                 var usage = new ImageUsage();
-                var matches = allSystemContexts.Where(x => x.Url == path || x.ExplicitId == img.Id).ToList();
+                var matches = allSystemContexts.Where(x => x.Url == path).ToList();
+                
                 usage.TotalCount = matches.Count;
                 var calMatch = matches.FirstOrDefault(x => x.Area == "Calendar");
                 usage.IsCalendar = calMatch != null;
                 if(usage.IsCalendar) usage.CalendarDate = calMatch?.Date;
                 usage.IsRecipe = matches.Any(x => x.Area.Contains("Recipe"));
+                
                 usageDetails[img.Id] = usage;
             }
             StateHasChanged();
-        } catch (Exception ex) { await JS.InvokeVoidAsync("console.log", "LOAD_ERROR: " + ex.Message); }
+        } catch (Exception ex) { await JS.InvokeVoidAsync("console.log", ex.Message); }
     }
 
     private void NavigateToSource(ImageUsage usage) {
@@ -247,7 +269,7 @@
     private void NavigateToSpecific(LinkSource src) {
         if (src.Area == "Calendar" && src.Date.HasValue) Nav.NavigateTo($"/bullet-calendar?date={src.Date.Value:yyyy-MM-dd}", forceLoad: true);
         else if (src.Area.Contains("Recipe")) Nav.NavigateTo("/recipes");
-        else if (src.Area == "Budget Item") Nav.NavigateTo("/budget-tracker");
+        else if (src.Area.Contains("Budget") || src.Area == "Income Source") Nav.NavigateTo("/budget-tracker");
         else Nav.NavigateTo("/");
     }
 
