@@ -141,13 +141,15 @@
             AnniversaryDetail="editingItem?.AnniversaryDetail ?? new()"
             VacationDetail="editingItem?.VacationDetail ?? new()"
             SportsDetail="editingItem?.SportsDetail ?? new()"
+            Leagues="leagues"
+            Seasons="seasons"
+            Teams="teams"
             Notes="editingItem?.Notes ?? new()"
             OnSaveRecurring="HandleSave" 
             OnCancel="() => editingItem = null" 
             OnDelete="DeleteCurrentTask" />
 
 @code {
-    // RESOLVED: Replaced Pattern Match with ID lookup to satisfy Component Type Safety (CS1503)
     RenderFragment RenderItem(BulletTaskService.TaskDTO item) => __builder => {
         if (item.Type == "meeting") { 
             var m = _meetings.FirstOrDefault(x => x.Id == item.Id);
@@ -196,7 +198,11 @@
     private string currentView = "day"; private int clientOffset = 0; private bool isLoading = true;
     private List<BulletTaskService.TaskDTO> loadedItems = new(); 
     
-    // TYPE-SAFE BUFFERS: Store original objects to pass to components
+    // LIST DECLARATIONS: Fixed CS0103 build errors
+    private List<League> leagues = new();
+    private List<Season> seasons = new();
+    private List<Team> teams = new();
+
     private List<BulletMeetingService.MeetingDTO> _meetings = new();
     private List<BulletBirthdayService.BirthdayDTO> _bdays = new();
     private List<BulletVacationService.VacationDTO> _vacations = new();
@@ -296,7 +302,7 @@
         } catch (Exception ex) { await LogToConsole($"Save Error: {ex.Message}"); }
     }
 
-    private void OpenNewEditor(string cat, string type, DateTime d) => editingItem = new BulletTaskService.TaskDTO { UserId = userId, Category = cat, Type = type, Date = d, Detail = new(), HealthDetail = new(), MeetingDetail = new(), HabitDetail = new(), BirthdayDetail = new(), Notes = new() };
+    private void OpenNewEditor(string cat, string type, DateTime d) => editingItem = new BulletTaskService.TaskDTO { UserId = userId, Category = cat, Type = type, Date = d, Detail = new(), HealthDetail = new(), MeetingDetail = new(), HabitDetail = new(), BirthdayDetail = new(), SportsDetail = new(), Notes = new() };
     private void OnJumpDateChanged(ChangeEventArgs e) { if (DateTime.TryParse(e.Value?.ToString(), out var d)) GoToDate(d); }
     private void GoToDate(DateTime d) { viewDate = d; currentView = "day"; _ = LoadData(); }
     private void Prev() { if(currentView == "day") viewDate = viewDate.AddDays(-1); else if(currentView == "week") viewDate = viewDate.AddDays(-7); else viewDate = viewDate.AddMonths(-1); _ = LoadData(); }
@@ -306,25 +312,23 @@
     private string GetHeaderDate() => currentView == "day" ? viewDate.ToString("D") : (currentView == "week" ? $"Week of {weekStart:MMM d}" : viewDate.ToString("MMMM yyyy"));
     private async Task DeleteTask(int id) { if(await JS.InvokeAsync<bool>("confirm", "Delete?")) { await BaseService.DeleteItem(id); await LoadData(); } }
     private async Task DeleteCurrentTask() { if(editingItem != null) { await DeleteTask(editingItem.Id); editingItem = null; } }
-    private async Task OpenEdit(BulletTaskService.TaskDTO t) 
-    { 
+
+    private async Task OpenEdit(BulletTaskService.TaskDTO t) { 
         editingItem = t; 
-        if(editingItem != null) 
-        { 
+        if(editingItem != null) { 
             editingItem.MeetingDetail ??= new(); 
             editingItem.BirthdayDetail ??= new(); 
             editingItem.HealthDetail ??= new(); 
+            editingItem.SportsDetail ??= new();
             editingItem.Notes ??= new(); 
-            
-            // ADD THIS: Fix for empty sports dropdowns
-            editingItem.DbSportsDetail ??= new(); 
-            
-            // Ensure dropdown lists are populated for the modal
+
+            // ASYNC LOAD: Fixed data loading in modals
             leagues = await SportsService.GetLeagues(userId);
             seasons = await SportsService.GetSeasons(userId);
             teams = await SportsService.GetTeams(userId);
         } 
     }
+
     private void OpenHabitEdit(BulletHabitService.HabitDTO h) { editingItem = new BulletTaskService.TaskDTO { Id = h.Id, Type = "habit", HabitDetail = h.Detail, UserId = userId, Date = h.Date, Title = h.Title }; }
     private async Task ToggleComplete(BulletTaskService.TaskDTO t) { await TaskService.ToggleComplete(t.Id, !t.Detail.IsCompleted); await LoadData(); }
     private async Task ToggleMeetingComplete(BulletTaskService.TaskDTO t) { await MeetingService.ToggleComplete(t.Id, !t.MeetingDetail.IsCompleted); await LoadData(); }
