@@ -13,6 +13,7 @@
 
 <BulletHeader ShowControls="false" CustomDateText="Image Registry">
     <div class="flex items-center gap-2 ml-4">
+        @* Tab Switcher *@
         <div class="flex bg-black/40 rounded-lg p-1 border border-gray-700 mr-4 shadow-inner">
             <button @onclick='() => activeTab = "registry"' 
                     class="px-3 py-1 rounded-md text-[10px] font-black uppercase transition @(activeTab == "registry" ? "bg-blue-600 text-white shadow-lg" : "text-gray-500 hover:text-gray-300")">
@@ -88,9 +89,9 @@
     }
     else
     {
-        <div class="space-y-4">
+        <div class="space-y-4 font-black">
             <div class="bg-red-900/10 border border-red-900/30 p-4 rounded-2xl mb-6">
-                <p class="text-xs text-red-400 font-black uppercase tracking-widest">Scanning @allSystemContexts.Count unique active links. (Orphaned records filtered out)</p>
+                <p class="text-xs text-red-400 font-black uppercase tracking-widest">Scanning @allSystemContexts.Count validated active links.</p>
             </div>
 
             @if (!brokenLinks.Any())
@@ -101,7 +102,7 @@
             }
             else
             {
-                <div class="grid grid-cols-1 gap-4 font-black">
+                <div class="grid grid-cols-1 gap-4">
                     @foreach (var url in brokenLinks)
                     {
                         var sources = allSystemContexts.Where(x => x.Url == url).ToList();
@@ -109,7 +110,7 @@
                             <div class="flex justify-between items-start">
                                 <div class="flex-1 min-w-0">
                                     <div class="text-[10px] font-mono text-red-400 truncate mb-1">@url</div>
-                                    <h4 class="text-xs text-gray-500 uppercase tracking-widest">Found in @sources.Count location(s):</h4>
+                                    <h4 class="text-xs text-gray-500 uppercase tracking-widest">Found in @sources.Count active location(s):</h4>
                                 </div>
                                 <button @onclick="() => CopyRawPath(url)" class="px-4 py-1.5 bg-gray-800 rounded text-[9px] font-black uppercase hover:bg-blue-600 transition shrink-0 ml-4 shadow-lg">Copy URL</button>
                             </div>
@@ -178,6 +179,7 @@
         try {
             using var scope = ScopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            int userId = 1; // Explicitly set user context
             
             var query = db.StoredImages.AsNoTracking().OrderByDescending(i => i.UploadedAt).AsQueryable();
             if (!string.IsNullOrWhiteSpace(searchQuery)) query = query.Where(i => i.OriginalName.Contains(searchQuery));
@@ -187,75 +189,92 @@
 
             allSystemContexts.Clear();
             
-            // 1. CALENDAR (Verified Join Logic)
-            var bulletItems = await db.BulletItems.AsNoTracking()
-                .Where(x => !string.IsNullOrEmpty(x.ImgUrl))
+            // 1. CALENDAR (Tasks and Validated Notes)
+            var activeItems = await db.BulletItems.AsNoTracking()
+                .Where(x => x.UserId == userId && !string.IsNullOrEmpty(x.ImgUrl))
                 .Select(x => new LinkSource { Url = x.ImgUrl, Area = "Calendar", Title = x.Title, Date = x.Date })
                 .ToListAsync();
-            allSystemContexts.AddRange(bulletItems);
+            allSystemContexts.AddRange(activeItems);
             
-            var bulletNotes = await (from n in db.BulletItemNotes
+            var activeNotes = await (from n in db.BulletItemNotes
                                    join i in db.BulletItems on n.BulletItemId equals i.Id
-                                   where n.ImgUrl != null && n.ImgUrl != ""
-                                   select new LinkSource { Url = n.ImgUrl, Area = "Note Log", Title = n.Content, Date = i.Date }).ToListAsync();
-            allSystemContexts.AddRange(bulletNotes);
+                                   where i.UserId == userId && n.ImgUrl != null && n.ImgUrl != ""
+                                   select new LinkSource { 
+                                       Url = n.ImgUrl, Area = "Note Log", Title = n.Content, Date = i.Date 
+                                   }).ToListAsync();
+            allSystemContexts.AddRange(activeNotes);
 
-            // 2. RECIPES
-            var recipes = await db.Recipes.AsNoTracking().Select(x => new { x.ImageUrl, x.ImageId, x.Title }).ToListAsync();
+            // 2. RECIPES (Validated by UserId)
+            var recipes = await db.Recipes.AsNoTracking()
+                .Where(x => x.UserId == userId).ToListAsync();
             foreach(var r in recipes) {
                 if(!string.IsNullOrEmpty(r.ImageUrl)) allSystemContexts.Add(new LinkSource { Url = r.ImageUrl, Area = "Recipe", Title = r.Title });
                 if(r.ImageId.HasValue) allSystemContexts.Add(new LinkSource { Url = $"/db-images/{r.ImageId}", Area = "Recipe", Title = r.Title });
             }
 
-            var cats = await db.RecipeCategories.AsNoTracking().Select(x => new { x.ImageUrl, x.ImageId, x.Name }).ToListAsync();
+            var cats = await db.RecipeCategories.AsNoTracking()
+                .Where(x => x.UserId == userId).ToListAsync();
             foreach(var c in cats) {
                 if(!string.IsNullOrEmpty(c.ImageUrl)) allSystemContexts.Add(new LinkSource { Url = c.ImageUrl, Area = "Recipe Category", Title = c.Name });
                 if(c.ImageId.HasValue) allSystemContexts.Add(new LinkSource { Url = $"/db-images/{c.ImageId}", Area = "Recipe Category", Title = c.Name });
             }
 
-            // 3. BUDGET (Restored Income Source)
-            var budget = await db.BudgetItems.AsNoTracking().Select(x => new { x.ImgUrl, x.Name }).ToListAsync();
-            foreach(var b in budget.Where(i => !string.IsNullOrEmpty(i.ImgUrl)))
-                allSystemContexts.Add(new LinkSource { Url = b.ImgUrl, Area = "Budget Item", Title = b.Name });
+            // 3. BUDGET (Items and Income)
+            var budget = await (from bi in db.BudgetItems
+                               join bc in db.BudgetCycles on bi.BudgetCycleId equals bc.Id
+                               join bp in db.BudgetPeriods on bc.BudgetPeriodId equals bp.Id
+                               where bp.UserId == userId && !string.IsNullOrEmpty(bi.ImgUrl)
+                               select new LinkSource { Url = bi.ImgUrl, Area = "Budget Item", Title = bi.Name }).ToListAsync();
+            allSystemContexts.AddRange(budget);
 
-            var income = await db.BudgetIncomeSources.AsNoTracking().Select(x => new { x.ImgUrl, x.Name }).ToListAsync();
-            foreach(var i in income.Where(x => !string.IsNullOrEmpty(x.ImgUrl)))
-                allSystemContexts.Add(new LinkSource { Url = i.ImgUrl, Area = "Income Source", Title = i.Name });
+            var income = await db.BudgetIncomeSources.AsNoTracking()
+                .Where(x => x.UserId == userId && !string.IsNullOrEmpty(x.ImgUrl))
+                .Select(x => new LinkSource { Url = x.ImgUrl, Area = "Income Source", Title = x.Name }).ToListAsync();
+            allSystemContexts.AddRange(income);
 
-            // 4. SPORTS (Restored Seasons)
-            var leagues = await db.Leagues.AsNoTracking().Select(x => new { x.ImgUrl, x.Name }).ToListAsync();
-            foreach(var l in leagues.Where(x => !string.IsNullOrEmpty(x.ImgUrl)))
-                allSystemContexts.Add(new LinkSource { Url = l.ImgUrl, Area = "Sports League", Title = l.Name });
+            // 4. SPORTS
+            var leagues = await db.Leagues.AsNoTracking()
+                .Where(x => x.UserId == userId && !string.IsNullOrEmpty(x.ImgUrl))
+                .Select(x => new LinkSource { Url = x.ImgUrl, Area = "Sports League", Title = x.Name }).ToListAsync();
+            allSystemContexts.AddRange(leagues);
 
-            var seasons = await db.Seasons.AsNoTracking().Select(x => new { x.ImgUrl, x.Name }).ToListAsync();
-            foreach(var s in seasons.Where(x => !string.IsNullOrEmpty(x.ImgUrl)))
-                allSystemContexts.Add(new LinkSource { Url = s.ImgUrl, Area = "Sports Season", Title = s.Name });
+            var seasons = await db.Seasons.AsNoTracking()
+                .Where(x => x.UserId == userId && !string.IsNullOrEmpty(x.ImgUrl))
+                .Select(x => new LinkSource { Url = x.ImgUrl, Area = "Sports Season", Title = x.Name }).ToListAsync();
+            allSystemContexts.AddRange(seasons);
 
-            var teams = await db.Teams.AsNoTracking().Select(x => new { x.LogoUrl, x.Name }).ToListAsync();
-            foreach(var t in teams.Where(x => !string.IsNullOrEmpty(x.LogoUrl)))
-                allSystemContexts.Add(new LinkSource { Url = t.LogoUrl, Area = "Sports Team", Title = t.Name });
+            var teams = await db.Teams.AsNoTracking()
+                .Where(x => x.UserId == userId && !string.IsNullOrEmpty(x.LogoUrl))
+                .Select(x => new LinkSource { Url = x.LogoUrl, Area = "Sports Team", Title = x.Name }).ToListAsync();
+            allSystemContexts.AddRange(teams);
 
-            // 5. DASHBOARD (Restored Stocks)
-            var dash = await db.Links.AsNoTracking().Select(x => new { x.Img, x.Name }).ToListAsync();
-            foreach(var l in dash.Where(i => !string.IsNullOrEmpty(i.Img)))
-                allSystemContexts.Add(new LinkSource { Url = l.Img, Area = "Dashboard Link", Title = l.Name });
+            // 5. DASHBOARD (Validating parent Link Group exists)
+            var activeLinks = await (from l in db.Links
+                                   join lg in db.LinkGroups on l.LinkGroupId equals lg.Id
+                                   where lg.UserId == userId && !string.IsNullOrEmpty(l.Img)
+                                   select new LinkSource { Url = l.Img, Area = "Dashboard Link", Title = l.Name }).ToListAsync();
+            allSystemContexts.AddRange(activeLinks);
 
-            var count = await db.Countdowns.AsNoTracking().Select(x => new { x.Img, x.Name }).ToListAsync();
-            foreach(var c in count.Where(x => !string.IsNullOrEmpty(x.Img)))
-                allSystemContexts.Add(new LinkSource { Url = c.Img, Area = "Countdown", Title = c.Name });
+            var dashCounts = await db.Countdowns.AsNoTracking()
+                .Where(x => x.UserId == userId && !string.IsNullOrEmpty(x.Img))
+                .Select(x => new LinkSource { Url = x.Img, Area = "Countdown", Title = x.Name }).ToListAsync();
+            allSystemContexts.AddRange(dashCounts);
 
-            var stocks = await db.Stocks.AsNoTracking().Select(x => new { x.ImgUrl, x.Symbol }).ToListAsync();
-            foreach(var s in stocks.Where(x => !string.IsNullOrEmpty(x.ImgUrl)))
-                allSystemContexts.Add(new LinkSource { Url = s.ImgUrl, Area = "Stock", Title = s.Symbol });
+            var stocks = await db.Stocks.AsNoTracking()
+                .Where(x => x.UserId == userId && !string.IsNullOrEmpty(x.ImgUrl))
+                .Select(x => new LinkSource { Url = x.ImgUrl, Area = "Stock", Title = x.Symbol }).ToListAsync();
+            allSystemContexts.AddRange(stocks);
 
-            // 6. MAPPING Block (Restored usage properties)
+            // 6. MAPPING Block (Ensuring patterns match Registry paths)
             foreach (var img in allImages) {
                 var path = $"/db-images/{img.Id}";
+                var oldPath = $"/images/db/{img.Id}"; // Check for legacy pattern
+                
                 var usage = new ImageUsage();
-                var matches = allSystemContexts.Where(x => x.Url == path).ToList();
+                var matches = allSystemContexts.Where(x => x.Url == path || x.Url == oldPath).ToList();
                 
                 usage.TotalCount = matches.Count;
-                var calMatch = matches.FirstOrDefault(x => x.Area == "Calendar");
+                var calMatch = matches.FirstOrDefault(x => x.Area == "Calendar" || x.Area == "Note Log");
                 usage.IsCalendar = calMatch != null;
                 if(usage.IsCalendar) usage.CalendarDate = calMatch?.Date;
                 
@@ -265,7 +284,7 @@
                 usageDetails[img.Id] = usage;
             }
             StateHasChanged();
-        } catch (Exception ex) { await JS.InvokeVoidAsync("console.log", ex.Message); }
+        } catch (Exception ex) { await JS.InvokeVoidAsync("console.log", "SYNC_ERROR: " + ex.Message); }
     }
 
     private void NavigateToSource(ImageUsage usage) {
