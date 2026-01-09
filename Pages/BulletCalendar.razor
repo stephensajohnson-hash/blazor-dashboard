@@ -42,6 +42,14 @@
             <div class="relative flex items-center bg-black/40 border border-gray-700 rounded-lg px-2 focus-within:border-blue-500 transition-all font-black shadow-inner">
                 <input @bind="searchQuery" @bind:event="oninput" @onkeyup="HandleKeyUp" placeholder="Search..." 
                        class="bg-transparent border-none text-xs py-1.5 px-2 w-24 md:w-32 outline-none text-white font-bold" />
+                
+                @* RESTORED SLIDER BUTTON *@
+                <button @onclick="() => showAdvancedSearch = !showAdvancedSearch" 
+                        class="p-1 text-gray-500 hover:text-blue-400 transition-colors" title="Advanced Filters">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                    </svg>
+                </button>
             </div>
             <input type="date" @onchange="OnJumpDateChanged" 
                    class="bg-black/40 border border-gray-700 rounded-lg text-[10px] p-1 text-blue-400 outline-none focus:border-blue-500 font-black uppercase shadow-lg" />
@@ -130,6 +138,49 @@
     </div>
 </div>
 
+@* RESTORED ADVANCED SEARCH MODAL *@
+@if (showAdvancedSearch)
+{
+    <div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" @onclick="() => showAdvancedSearch = false">
+        <div class="bg-gray-900 border border-gray-700 w-full max-w-md rounded-2xl shadow-2xl p-6 font-black uppercase overflow-hidden" @onclick:stopPropagation="true">
+            <h3 class="text-blue-400 text-xs tracking-widest mb-6">Advanced Search Engine</h3>
+            
+            <div class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-[10px] text-gray-500 mb-1">From Date</label>
+                        <input type="date" @bind="searchStart" class="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white" />
+                    </div>
+                    <div>
+                        <label class="block text-[10px] text-gray-500 mb-1">Thru Date</label>
+                        <input type="date" @bind="searchEnd" class="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white" />
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-[10px] text-gray-500 mb-1">Identity Type</label>
+                    <select @bind="searchType" class="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white">
+                        <option value="all">All Types</option>
+                        <option value="task">Tasks</option>
+                        <option value="meeting">Meetings</option>
+                        <option value="habit">Habits</option>
+                        <option value="health">Health Logs</option>
+                        <option value="sports">Sports</option>
+                        <option value="birthday">Birthdays</option>
+                        <option value="holiday">Holidays</option>
+                        <option value="media">Media</option>
+                    </select>
+                </div>
+
+                <div class="pt-4 flex gap-2">
+                    <button @onclick="() => showAdvancedSearch = false" class="flex-1 py-2 text-[10px] text-gray-500">Cancel</button>
+                    <button @onclick="ExecuteAdvancedSearch" class="flex-1 bg-blue-600 py-2 rounded-lg text-[10px] text-white shadow-lg">Scan Database</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 <BaseEditor Item="editingItem" 
             TaskDetail="editingItem?.Detail ?? new()" 
             MeetingDetail="editingItem?.MeetingDetail ?? new()"
@@ -164,7 +215,7 @@
             else if (item.Type == "habit") { <HabitCard Item="@(GetHabit(item.Id))" OnClick="() => OpenHabitEdit(GetHabit(item.Id))" OnDelete="() => DeleteTask(item.Id)" OnChange="SaveHabitDirectly" /> }
             else if (item.Type == "birthday") { 
                 var b = _bdays.FirstOrDefault(x => x.Id == item.Id);
-                if(b != null) { <BirthdayCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
+                if(b != null) { <BirthdayCard item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
             }
             else if (item.Type == "holiday") { 
                 var h = _holidays.FirstOrDefault(x => x.Id == item.Id);
@@ -230,7 +281,15 @@
     private DateTime weekStart => viewDate.AddDays(-1 * ((7 + (viewDate.DayOfWeek - DayOfWeek.Monday)) % 7)).Date;
     private int daysInMonth => DateTime.DaysInMonth(viewDate.Year, viewDate.Month);
     private int monthEmptyCells => ((int)new DateTime(viewDate.Year, viewDate.Month, 1).DayOfWeek + 6) % 7; 
-    private string searchQuery = ""; private bool isSearching = false; private List<BulletTaskService.TaskDTO> searchResults = new();
+    
+    // SEARCH STATE
+    private string searchQuery = ""; 
+    private bool isSearching = false; 
+    private List<BulletTaskService.TaskDTO> searchResults = new();
+    private bool showAdvancedSearch = false;
+    private DateTime searchStart = DateTime.Today.AddYears(-1);
+    private DateTime searchEnd = DateTime.Today.AddYears(1);
+    private string searchType = "all";
 
     private async Task LogToConsole(string msg) => await JS.InvokeVoidAsync("console.log", $"[CALENDAR] {msg}");
 
@@ -266,7 +325,6 @@
             loadedItems.Clear();
             loadedItems.AddRange(await TaskService.GetTasksForRange(userId, s, e));
             
-            // SURGICAL FIX: Restored Category mapping from database values
             _meetings = await MeetingService.GetMeetingsForRange(userId, s, e);
             foreach(var m in _meetings) loadedItems.Add(new BulletTaskService.TaskDTO { Id = m.Id, UserId = m.UserId, Type = "meeting", Category = m.Category, Date = m.Date, Title = m.Title, SortOrder = m.SortOrder, MeetingDetail = m.MeetingDetail ?? new(), ImgUrl = m.ImgUrl, LinkUrl = m.LinkUrl, Notes = m.Notes ?? new() });
 
@@ -289,7 +347,7 @@
             foreach(var m in _media.Where(x => x.Date.Date >= s.Date && x.Date.Date <= e.Date)) loadedItems.Add(new BulletTaskService.TaskDTO { Id = m.Id, UserId = m.UserId, Type = "media", Category = m.Category, Date = m.Date, Title = m.Title, SortOrder = m.SortOrder, MediaDetail = m.Detail, ImgUrl = m.ImgUrl, LinkUrl = m.LinkUrl, Notes = m.Notes ?? new() });
 
             var health = await HealthService.GetHealthItemsForRange(userId, s, e);
-            foreach(var h in health) loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "health", Category = h.Category, Date = h.Date, Title = h.Title, SortOrder = h.SortOrder, HealthDetail = h.Detail, Meals = h.Meals ?? new(), Workouts = h.Workouts ?? new(), Notes = h.Notes ?? new(), ImgUrl = h.ImgUrl });
+            foreach(var h in health) loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "health", Category = "health", Date = h.Date, Title = h.Title, SortOrder = h.SortOrder, HealthDetail = h.Detail, Meals = h.Meals ?? new(), Workouts = h.Workouts ?? new(), Notes = h.Notes ?? new(), ImgUrl = h.ImgUrl });
 
             loadedHabits = await HabitService.GetHabits(userId);
             foreach(var h in loadedHabits.Where(x => x.Date.Date >= s.Date && x.Date.Date <= e.Date)) loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "habit", Category = h.Category, Date = h.Date, Title = h.Title, SortOrder = h.SortOrder, HabitDetail = h.Detail, ImgUrl = h.ImgUrl });
@@ -330,7 +388,6 @@
     private async Task HandleSave(BaseEditor.RecurrenceRequest req) {
         if (editingItem == null) return;
         try {
-            // SURGICAL FIX: Added Category mapping to specialized DTOs so column changes persist
             if (editingItem.Type == "birthday") {
                 await BirthdayService.SaveBirthday(new BulletBirthdayService.BirthdayDTO { Id = editingItem.Id, UserId = userId, Title = editingItem.Title, Date = editingItem.Date, Category = editingItem.Category, Detail = editingItem.BirthdayDetail, ImgUrl = editingItem.ImgUrl, LinkUrl = editingItem.LinkUrl, Notes = editingItem.Notes });
             }
@@ -377,7 +434,17 @@
     private async Task ToggleMeetingComplete(BulletTaskService.TaskDTO t) { await MeetingService.ToggleComplete(t.Id, !t.MeetingDetail.IsCompleted); await LoadData(); }
     private async Task SaveHabitDirectly(BulletHabitService.HabitDTO h) { await HabitService.SaveHabit(h); await LoadData(); }
     private async Task HandleKeyUp(KeyboardEventArgs e) { if (e.Key == "Enter") await PerformQuickSearch(); }
-    private async Task PerformQuickSearch() { isSearching = true; searchResults = await BaseService.SearchItems(userId, searchQuery, "all", DateTime.UtcNow.AddYears(-1), DateTime.UtcNow.AddYears(1)); }
+    
+    private async Task PerformQuickSearch() { 
+        isSearching = true; 
+        searchResults = await BaseService.SearchItems(userId, searchQuery, searchType, searchStart, searchEnd); 
+    }
+
+    private async Task ExecuteAdvancedSearch() {
+        showAdvancedSearch = false;
+        await PerformQuickSearch();
+    }
+
     private void ClearSearch() { searchQuery = ""; isSearching = false; _ = LoadData(); }
     private List<BulletTaskService.TaskDTO> GetSortedItems(List<BulletTaskService.TaskDTO> items) => items?.OrderBy(t => t.SortOrder).ThenBy(t => t.Id).ToList() ?? new();
     private List<BulletTaskService.TaskDTO> GetItemsForColumn(DateTime d, string cat) { 
