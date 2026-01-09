@@ -152,7 +152,6 @@
 @code {
     RenderFragment RenderItem(BulletTaskService.TaskDTO item) => __builder => {
         <div class="relative group">
-            @* SORTING OVERLAY FOR CARDS *@
             <div class="absolute -left-2 top-1/2 -translate-y-1/2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20">
                 <button @onclick="() => MoveItem(item, -1)" @onclick:stopPropagation="true" class="p-1 bg-gray-800 border border-gray-700 rounded hover:bg-blue-600 text-[8px]">▲</button>
                 <button @onclick="() => MoveItem(item, 1)" @onclick:stopPropagation="true" class="p-1 bg-gray-800 border border-gray-700 rounded hover:bg-blue-600 text-[8px]">▼</button>
@@ -194,7 +193,6 @@
 
     RenderFragment RenderPill(BulletTaskService.TaskDTO item) => __builder => {
         <div class="relative group">
-            @* SORTING OVERLAY FOR PILLS (WEEK VIEW) *@
             <div class="absolute -left-1 top-1/2 -translate-y-1/2 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-20">
                 <button @onclick="() => MoveItem(item, -1)" @onclick:stopPropagation="true" class="px-0.5 bg-black/80 border border-gray-700 rounded hover:bg-blue-600 text-[6px]">▲</button>
                 <button @onclick="() => MoveItem(item, 1)" @onclick:stopPropagation="true" class="px-0.5 bg-black/80 border border-gray-700 rounded hover:bg-blue-600 text-[6px]">▼</button>
@@ -308,16 +306,23 @@
         if (newIndex < 0 || newIndex >= dayItems.Count) return;
 
         var targetItem = dayItems[newIndex];
-        int tempOrder = item.SortOrder;
+        
+        // Swap values locally
+        int oldOrder = item.SortOrder;
         item.SortOrder = targetItem.SortOrder;
-        targetItem.SortOrder = tempOrder;
+        targetItem.SortOrder = oldOrder;
 
         if (item.SortOrder == targetItem.SortOrder) {
             if (direction < 0) item.SortOrder--; else item.SortOrder++;
         }
 
-        await TaskService.UpdateSortOrder(item.Id, item.Type, item.SortOrder);
-        await TaskService.UpdateSortOrder(targetItem.Id, targetItem.Type, targetItem.SortOrder);
+        // DIRECT DB FIX: Update database directly since service method is missing
+        var dbItem = await Db.BulletItems.FindAsync(item.Id);
+        var dbTarget = await Db.BulletItems.FindAsync(targetItem.Id);
+        if (dbItem != null) dbItem.SortOrder = item.SortOrder;
+        if (dbTarget != null) dbTarget.SortOrder = targetItem.SortOrder;
+        
+        await Db.SaveChangesAsync();
         await LoadData();
     }
 
