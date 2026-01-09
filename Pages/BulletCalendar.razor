@@ -152,9 +152,10 @@
 @code {
     RenderFragment RenderItem(BulletTaskService.TaskDTO item) => __builder => {
         <div class="relative group">
-            <div class="absolute -left-3 top-1/2 -translate-y-1/2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                <button @onclick="() => MoveItem(item, -1)" @onclick:stopPropagation="true" class="p-1 bg-gray-800 border border-gray-700 rounded hover:bg-blue-600 text-[8px] shadow-xl">▲</button>
-                <button @onclick="() => MoveItem(item, 1)" @onclick:stopPropagation="true" class="p-1 bg-gray-800 border border-gray-700 rounded hover:bg-blue-600 text-[8px] shadow-xl">▼</button>
+            @* SORTING OVERLAY FOR CARDS *@
+            <div class="absolute -left-3 top-1/2 -translate-y-1/2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-30">
+                <button @onclick="() => MoveItem(item, -1)" @onclick:stopPropagation="true" class="p-1.5 bg-gray-800 border border-gray-700 rounded hover:bg-blue-600 text-[8px] shadow-2xl">▲</button>
+                <button @onclick="() => MoveItem(item, 1)" @onclick:stopPropagation="true" class="p-1.5 bg-gray-800 border border-gray-700 rounded hover:bg-blue-600 text-[8px] shadow-2xl">▼</button>
             </div>
             
             @if (item.Type == "meeting") { 
@@ -193,9 +194,10 @@
 
     RenderFragment RenderPill(BulletTaskService.TaskDTO item) => __builder => {
         <div class="relative group">
-            <div class="absolute -left-2 top-1/2 -translate-y-1/2 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-50">
-                <button @onclick="() => MoveItem(item, -1)" @onclick:stopPropagation="true" class="p-0.5 bg-black border border-gray-700 rounded hover:bg-blue-600 text-[6px] shadow-2xl">▲</button>
-                <button @onclick="() => MoveItem(item, 1)" @onclick:stopPropagation="true" class="p-0.5 bg-black border border-gray-700 rounded hover:bg-blue-600 text-[6px] shadow-2xl">▼</button>
+            @* SORTING OVERLAY FOR PILLS (WEEK VIEW) - INCREASED HITBOX AND Z-INDEX *@
+            <div class="absolute -left-3 top-1/2 -translate-y-1/2 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-[100]">
+                <button @onclick="() => MoveItem(item, -1)" @onclick:stopPropagation="true" class="p-1 bg-black border border-gray-700 rounded hover:bg-blue-600 text-[7px] shadow-2xl relative">▲</button>
+                <button @onclick="() => MoveItem(item, 1)" @onclick:stopPropagation="true" class="p-1 bg-black border border-gray-700 rounded hover:bg-blue-600 text-[7px] shadow-2xl relative">▼</button>
             </div>
 
             @if (item.Type == "sports") {
@@ -298,6 +300,7 @@
 
     private async Task MoveItem(BulletTaskService.TaskDTO item, int direction)
     {
+        // Get the items for the exact date of the item being moved
         var dayItems = GetSortedItems(GetItemsForDate(item.Date));
         int currentIndex = dayItems.FindIndex(x => x.Id == item.Id && x.Type == item.Type);
         if (currentIndex == -1) return;
@@ -307,24 +310,24 @@
 
         var targetItem = dayItems[newIndex];
         
-        // Ensure values are different to force a swap in OrderBy
+        // Swap values and enforce unique sequence
+        int oldOrder = item.SortOrder;
+        item.SortOrder = targetItem.SortOrder;
+        targetItem.SortOrder = oldOrder;
+
         if (item.SortOrder == targetItem.SortOrder) {
             if (direction < 0) item.SortOrder = targetItem.SortOrder - 1;
             else item.SortOrder = targetItem.SortOrder + 1;
-        } else {
-            int temp = item.SortOrder;
-            item.SortOrder = targetItem.SortOrder;
-            targetItem.SortOrder = temp;
         }
 
-        // Direct DB Update logic
+        // Use direct database context for reliability
         var dbItem = await Db.BulletItems.FindAsync(item.Id);
         var dbTarget = await Db.BulletItems.FindAsync(targetItem.Id);
         if (dbItem != null) dbItem.SortOrder = item.SortOrder;
         if (dbTarget != null) dbTarget.SortOrder = targetItem.SortOrder;
         
         await Db.SaveChangesAsync();
-        await LoadData();
+        await LoadData(); // Re-fetch all data to refresh the lists
     }
 
     private async Task HandleSave(BaseEditor.RecurrenceRequest req) {
