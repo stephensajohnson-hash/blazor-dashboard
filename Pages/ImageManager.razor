@@ -57,8 +57,8 @@
                         @(usage.TotalCount == 0 ? "Orphaned" : $"{usage.TotalCount} Links")
                     </div>
 
-                    @* Individual Delete Button *@
-                    <button @onclick="() => DeleteOne(img.Id)" class="absolute top-2 left-2 z-10 p-2 bg-black/60 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-xl" title="Delete from DB">🗑️</button>
+                    @* Updated Delete Button (X icon) *@
+                    <button @onclick="() => DeleteOne(img.Id)" class="absolute top-2 left-2 z-10 p-2 bg-black/60 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-xl font-black text-xs" title="Delete from DB">✕</button>
 
                     <div class="aspect-video bg-black cursor-pointer overflow-hidden" @onclick="() => NavigateToSource(usage)">
                         <img src="@displayPath" alt="@img.OriginalName" class="w-full h-full object-cover group-hover:scale-105 transition-all duration-500" />
@@ -67,7 +67,6 @@
                     <div class="p-3">
                         <div class="text-[10px] font-black text-gray-500 truncate mb-1 uppercase">@img.OriginalName</div>
                         
-                        @* Priority Date Display *@
                         <div class="text-[9px] mb-2 font-black uppercase tracking-tight">
                             @if (usage.IsCalendar && usage.CalendarDate.HasValue)
                             {
@@ -79,16 +78,15 @@
                             }
                         </div>
                         
-                        @* File Path Display *@
-                        <div class="bg-black/80 border border-gray-800 p-2 rounded text-[10px] font-mono text-blue-400 mb-3 select-all truncate" title="Click to select and copy path">
+                        <div class="bg-black/80 border border-gray-700 p-2 rounded text-[10px] font-mono text-blue-400 mb-3 select-all truncate shadow-inner" title="Click to select and copy path">
                             @displayPath
                         </div>
 
                         <div class="flex gap-2">
-                            <button @onclick="() => CopyPath(img.Id)" class="flex-1 bg-gray-900 py-2 rounded text-[9px] font-black uppercase border border-gray-700 hover:bg-blue-600 transition">Copy Path</button>
+                            <button @onclick="() => CopyPath(img.Id)" class="flex-1 bg-gray-900 py-2 rounded text-[9px] font-black uppercase border border-gray-700 hover:bg-blue-600 transition shadow-md">Copy Path</button>
                             
                             @if(usage.IsCalendar) {
-                                <button @onclick="() => NavigateToSource(usage)" class="flex-1 bg-blue-600/20 text-blue-400 py-2 rounded text-[9px] font-black uppercase border border-blue-500/30 hover:bg-blue-600 hover:text-white transition">📅 Day</button>
+                                <button @onclick="() => NavigateToSource(usage)" class="flex-1 bg-blue-600/20 text-blue-400 py-2 rounded text-[9px] font-black uppercase border border-blue-500/30 hover:bg-blue-600 hover:text-white transition shadow-md">📅 Day</button>
                             } else if (usage.TotalCount > 0) {
                                 <div class="flex-1 bg-gray-800/30 py-2 rounded text-[8px] text-center text-gray-600 font-black uppercase border border-gray-800/50">
                                     @(usage.IsRecipe ? "Recipe" : usage.IsBudget ? "Budget" : usage.IsDashboard ? "Dashboard" : "Other")
@@ -110,14 +108,13 @@
     private int pageSize = 50;
     private bool hasMorePages = true;
 
-    // Helper class to track usage
     public class ImageUsage {
         public int TotalCount { get; set; } = 0;
         public bool IsCalendar { get; set; } = false;
         public bool IsRecipe { get; set; } = false;
         public bool IsBudget { get; set; } = false;
         public bool IsDashboard { get; set; } = false;
-        public DateTime? CalendarDate { get; set; } // Property fixed here
+        public DateTime? CalendarDate { get; set; }
     }
 
     protected override async Task OnInitializedAsync() => await LoadImages();
@@ -129,7 +126,7 @@
 
 private async Task LoadImages()
 {
-    await Log($"Starting Global Usage Scan (Page {currentPage})...");
+    await Log($"Starting Usage Scan (Page {currentPage})...");
     try {
         using var scope = ScopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -142,10 +139,9 @@ private async Task LoadImages()
 
         usageDetails = new();
         var currentPaths = allImages.Select(i => $"/db-images/{i.Id}").ToList();
-        var currentIds = allImages.Select(i => i.Id).ToList();
 
-        // --- 1. GATHER ALL STRING PATHS ---
-        var allPaths = new List<string>();
+        // 1. SCALING STRING PATHS - Ensure Category Image URLs are included
+        var allPaths = new List<string?>();
         allPaths.AddRange(await db.BulletItems.Select(x => x.ImgUrl).ToListAsync());
         allPaths.AddRange(await db.BulletItemNotes.Select(x => x.ImgUrl).ToListAsync());
         allPaths.AddRange(await db.BudgetItems.Select(x => x.ImgUrl).ToListAsync());
@@ -156,48 +152,46 @@ private async Task LoadImages()
         allPaths.AddRange(await db.Links.Select(x => x.Img).ToListAsync());
         allPaths.AddRange(await db.Countdowns.Select(x => x.Img).ToListAsync());
         allPaths.AddRange(await db.Stocks.Select(x => x.ImgUrl).ToListAsync());
+        allPaths.AddRange(await db.Recipes.Select(x => x.ImageUrl).ToListAsync());
+        allPaths.AddRange(await db.RecipeCategories.Select(x => x.ImageUrl).ToListAsync()); // FIXED
 
-        // --- 2. GATHER ALL EXPLICIT IDs ---
+        // 2. GATHER ALL EXPLICIT IDs
         var explicitIds = new List<int>();
         explicitIds.AddRange(await db.Recipes.Where(x => x.ImageId != null).Select(x => x.ImageId!.Value).ToListAsync());
-        explicitIds.AddRange(await db.RecipeCategories.Where(x => x.ImageId != null).Select(x => x.ImageId!.Value).ToListAsync());
+        explicitIds.AddRange(await db.RecipeCategories.Where(x => x.ImageId != null).Select(x => x.ImageId!.Value).ToListAsync()); // FIXED
 
-        // --- 3. FETCH CALENDAR DATES FOR NAVIGATION ---
+        // 3. FETCH CALENDAR DATES
         var calMatches = await db.BulletItems.AsNoTracking()
             .Where(x => currentPaths.Contains(x.ImgUrl))
             .Select(x => new { x.ImgUrl, x.Date })
             .ToListAsync();
 
-        // --- 4. MAP USAGE TO SCREEN ITEMS ---
+        // 4. MAP USAGE
         foreach (var img in allImages)
         {
             var path = $"/db-images/{img.Id}";
             var usage = new ImageUsage();
             
-            // Calendar Check
             var calHits = calMatches.Where(x => x.ImgUrl == path).ToList();
             usage.IsCalendar = calHits.Any();
             if(usage.IsCalendar) usage.CalendarDate = calHits.OrderBy(x => x.Date).First().Date;
 
-            // Type Checks
-            usage.IsRecipe = explicitIds.Contains(img.Id) || await db.Recipes.AnyAsync(r => r.ImageUrl == path);
-            usage.IsBudget = await db.BudgetItems.AnyAsync(b => b.ImgUrl == path) || await db.BudgetIncomeSources.AnyAsync(i => i.ImgUrl == path);
+            // Type Checks including the Recipe Category logic
+            usage.IsRecipe = explicitIds.Contains(img.Id) || await db.Recipes.AnyAsync(r => r.ImageUrl == path) || await db.RecipeCategories.AnyAsync(c => c.ImageUrl == path);
+            usage.IsBudget = await db.BudgetItems.AnyAsync(b => b.ImgUrl == path) || await db.BudgetIncomeSources.AnyAsync(i => i.i.ImgUrl == path);
             usage.IsDashboard = await db.Links.AnyAsync(l => l.Img == path) || await db.Countdowns.AnyAsync(c => c.Img == path) || await db.Stocks.AnyAsync(s => s.ImgUrl == path);
 
-            // Global Count
             usage.TotalCount = allPaths.Count(x => x == path) + explicitIds.Count(x => x == img.Id);
-            
             usageDetails[img.Id] = usage;
         }
 
-        await Log($"Scan Complete. {allImages.Count} images processed.");
         StateHasChanged();
     } catch (Exception ex) { await Log($"SCAN ERROR: {ex.Message}"); }
 }
 
     private void NavigateToSource(ImageUsage usage) 
     {
-        if (usage.IsCalendar && usage.CalendarDate.HasValue) { // Comparison fixed here
+        if (usage.IsCalendar && usage.CalendarDate.HasValue) {
             Nav.NavigateTo($"/bullet-calendar?date={usage.CalendarDate.Value:yyyy-MM-dd}", forceLoad: true);
         } else if (usage.IsRecipe) Nav.NavigateTo("/recipes");
         else if (usage.IsBudget) Nav.NavigateTo("/budget-tracker");
