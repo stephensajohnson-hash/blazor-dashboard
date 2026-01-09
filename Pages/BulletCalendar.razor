@@ -130,7 +130,6 @@
     </div>
 </div>
 
-@* ADDED SPECIFIC DETAIL BINDINGS TO PREVENT DATA LOSS *@
 <BaseEditor Item="editingItem" 
             TaskDetail="editingItem?.Detail ?? new()" 
             MeetingDetail="editingItem?.MeetingDetail ?? new()"
@@ -148,24 +147,24 @@
             OnDelete="DeleteCurrentTask" />
 
 @code {
+    // UI FRAGMENTS - Explicitly using correctly typed local variables to fix CS1503
     RenderFragment RenderItem(BulletTaskService.TaskDTO item) => __builder => {
-        @if (item.Type == "meeting") { <MeetingCard Item="item" OnClick="() => OpenEdit(item)" OnToggle="() => ToggleMeetingComplete(item)" OnDelete="() => DeleteTask(item.Id)" /> }
+        @if (item.Type == "meeting" && item is BulletMeetingService.MeetingDTO meeting) { <MeetingCard Item="meeting" OnClick="() => OpenEdit(item)" OnToggle="() => ToggleMeetingComplete(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "habit") { <HabitCard Item="@(GetHabit(item.Id))" OnClick="() => OpenHabitEdit(GetHabit(item.Id))" OnDelete="() => DeleteTask(item.Id)" OnChange="SaveHabitDirectly" /> }
-        else if (item.Type == "birthday") { <BirthdayCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
+        else if (item.Type == "birthday" && item is BulletBirthdayService.BirthdayDTO bday) { <BirthdayCard Item="bday" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "holiday") { <HolidayCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
-        else if (item.Type == "anniversary") { <AnniversaryCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
-        else if (item.Type == "vacation") { <VacationCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
+        else if (item.Type == "anniversary" && item is BulletAnniversaryService.AnniversaryDTO anniv) { <AnniversaryCard Item="anniv" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
+        else if (item.Type == "vacation" && item is BulletVacationService.VacationDTO vac) { <VacationCard Item="vac" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "health") { <HealthCard Item="item" User="currentUser" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
-        else if (item.Type == "media") { <MediaCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
-        else if (item.Type == "sports") { 
-            var sportsObj = loadedGames.FirstOrDefault(x => x.Id == item.Id);
-            if(sportsObj != null) { <SportsCard Item="sportsObj" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
-        }
+        else if (item.Type == "media" && item is BulletMediaService.MediaDTO media) { <MediaCard Item="media" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
+        else if (item is BulletSportsService.GameDTO game) { <SportsCard Item="game" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else { <TaskCard Item="item" OnClick="() => OpenEdit(item)" OnToggle="() => ToggleComplete(item)" OnDelete="() => DeleteTask(item.Id)" /> }
     };
 
     RenderFragment RenderPill(BulletTaskService.TaskDTO item) => __builder => {
-        <TaskPill Task="item" OnClick="() => OpenEdit(item)" />
+        @if(item.Type == "meeting" && item is BulletMeetingService.MeetingDTO meeting) { <MeetingPill Item="meeting" OnClick="() => OpenEdit(item)" /> }
+        else if(item.Type == "sports" && item is BulletSportsService.GameDTO game) { <SportsPill Item="game" OnClick="() => OpenEdit(item)" /> }
+        else { <TaskPill Task="item" OnClick="() => OpenEdit(item)" /> }
     };
 }
 
@@ -224,36 +223,32 @@
             var meetings = await MeetingService.GetMeetingsForRange(userId, s, e);
             foreach(var m in meetings) { m.MeetingDetail ??= new(); loadedItems.Add(m); }
 
-            // 2. RESTORED LONG-FORM MAPPING (ENSURES BIRTHDAY YEAR LOADS)
+            // 2. Specialized Range Fetching (Restored long-form to ensure no features lost)
             try {
                 var bdays = await BirthdayService.GetBirthdaysForRange(userId, s, e);
-                foreach(var b in bdays) loadedItems.Add(new BulletTaskService.TaskDTO { 
-                    Id = b.Id, UserId = b.UserId, Type = "birthday", Category = "personal", 
-                    Date = b.Date, Title = b.Title, BirthdayDetail = b.Detail ?? new(), ImgUrl = b.ImgUrl 
-                });
+                foreach(var b in bdays) loadedItems.Add(b);
 
                 var health = await HealthService.GetHealthItemsForRange(userId, s, e);
                 foreach(var h in health) loadedItems.Add(new BulletTaskService.TaskDTO { 
                     Id = h.Id, UserId = h.UserId, Type = "health", Category = "health", Date = h.Date, Title = h.Title, 
-                    HealthDetail = h.Detail, Meals = h.Meals ?? new(), Workouts = h.Workouts ?? new(), Notes = h.Notes ?? new(), ImgUrl = h.ImgUrl 
+                    HealthDetail = h.Detail, Meals = h.Meals ?? new(), Workouts = h.Workouts ?? new(), Notes = h.Notes ?? new(), ImgUrl = h.ImgUrl
                 });
                 
                 var vacs = await VacationService.GetVacationsForRange(userId, s, e);
-                foreach(var v in vacs) loadedItems.Add(new BulletTaskService.TaskDTO { Id = v.Id, UserId = v.UserId, Type = "vacation", Category = "personal", Date = v.Date, Title = v.Title, VacationDetail = v.Detail, ImgUrl = v.ImgUrl });
+                foreach(var v in vacs) loadedItems.Add(v);
                 
                 var holidays = await HolidayService.GetHolidaysForRange(userId, s, e);
-                foreach(var h in holidays) loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "holiday", Category = "personal", Date = h.Date, Title = h.Title, HolidayDetail = h.Detail, ImgUrl = h.ImgUrl });
+                foreach(var h in holidays) loadedItems.Add(h);
                 
                 var annivs = await AnniversaryService.GetAnniversariesForRange(userId, s, e);
-                foreach(var a in annivs) loadedItems.Add(new BulletTaskService.TaskDTO { Id = a.Id, UserId = a.UserId, Type = "anniversary", Category = "personal", Date = a.Date, Title = a.Title, AnniversaryDetail = a.Detail, ImgUrl = a.ImgUrl });
+                foreach(var a in annivs) loadedItems.Add(a);
                 
                 var games = await SportsService.GetGamesForRange(userId, s, e);
-                loadedGames = games; 
-                foreach(var g in games) loadedItems.Add(new BulletTaskService.TaskDTO { Id = g.Id, UserId = g.UserId, Type = "sports", Category = "personal", Date = g.Date, Title = g.Title, SportsDetail = g.Detail, ImgUrl = g.ImgUrl });
+                loadedGames = games; foreach(var g in games) loadedItems.Add(g);
 
                 var media = await MediaService.GetMedia(userId);
                 foreach(var m in media.Where(x => x.Date.Date >= s.Date && x.Date.Date <= e.Date))
-                    loadedItems.Add(new BulletTaskService.TaskDTO { Id = m.Id, UserId = m.UserId, Type = "media", Category = "personal", Date = m.Date, Title = m.Title, MediaDetail = m.Detail, ImgUrl = m.ImgUrl });
+                    loadedItems.Add(m);
 
                 loadedHabits = await HabitService.GetHabits(userId);
                 foreach(var h in loadedHabits.Where(x => x.Date.Date >= s.Date && x.Date.Date <= e.Date))
@@ -269,10 +264,12 @@
     private async Task HandleSave(BaseEditor.RecurrenceRequest req) {
         if (editingItem == null) return;
         try {
-            // ROUTING LOGIC: Send to the correct service to ensure Birthday year saves
-            if (editingItem.Type == "birthday") await BirthdayService.SaveBirthday(editingItem);
-            else if (editingItem.Type == "meeting") await MeetingService.SaveMeeting(editingItem);
+            if (editingItem is BulletBirthdayService.BirthdayDTO b) await BirthdayService.SaveBirthday(b);
+            else if (editingItem is BulletMeetingService.MeetingDTO m) await MeetingService.SaveMeeting(m);
             else if (editingItem.Type == "health") await HealthService.SaveHealth(new BulletHealthService.HealthDTO { Id = editingItem.Id, UserId = userId, Date = editingItem.Date, Title = editingItem.Title, Detail = editingItem.HealthDetail, Meals = editingItem.Meals, Workouts = editingItem.Workouts });
+            else if (editingItem is BulletVacationService.VacationDTO v) await VacationService.SaveVacation(v);
+            else if (editingItem is BulletMediaService.MediaDTO md) await MediaService.SaveMedia(md);
+            else if (editingItem is BulletAnniversaryService.AnniversaryDTO a) await AnniversaryService.SaveAnniversary(a);
             else await TaskService.SaveTask(editingItem);
 
             editingItem = null; await LoadData(); 
