@@ -150,33 +150,33 @@
     // RESOLVED: Replaced Pattern Matching with Lookup logic to satisfy strict compiler typing
     RenderFragment RenderItem(BulletTaskService.TaskDTO item) => __builder => {
         if (item.Type == "meeting") { 
-            var m = loadedMeetings.FirstOrDefault(x => x.Id == item.Id); 
+            var m = _meetings.FirstOrDefault(x => x.Id == item.Id); 
             if(m != null) { <MeetingCard Item="m" OnClick="() => OpenEdit(item)" OnToggle="() => ToggleMeetingComplete(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         }
         else if (item.Type == "habit") { <HabitCard Item="@(GetHabit(item.Id))" OnClick="() => OpenHabitEdit(GetHabit(item.Id))" OnDelete="() => DeleteTask(item.Id)" OnChange="SaveHabitDirectly" /> }
         else if (item.Type == "birthday") { 
-            var b = loadedBirthdays.FirstOrDefault(x => x.Id == item.Id);
+            var b = _bdays.FirstOrDefault(x => x.Id == item.Id);
             if(b != null) { <BirthdayCard Item="b" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         }
         else if (item.Type == "holiday") { 
-            var h = loadedHolidays.FirstOrDefault(x => x.Id == item.Id);
+            var h = _holidays.FirstOrDefault(x => x.Id == item.Id);
             if(h != null) { <HolidayCard Item="h" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         }
         else if (item.Type == "anniversary") { 
-            var a = loadedAnniversaries.FirstOrDefault(x => x.Id == item.Id);
+            var a = _anniversaries.FirstOrDefault(x => x.Id == item.Id);
             if(a != null) { <AnniversaryCard Item="a" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         }
         else if (item.Type == "vacation") { 
-            var v = loadedVacations.FirstOrDefault(x => x.Id == item.Id);
+            var v = _vacations.FirstOrDefault(x => x.Id == item.Id);
             if(v != null) { <VacationCard Item="v" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         }
         else if (item.Type == "health") { <HealthCard Item="item" User="currentUser" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         else if (item.Type == "media") { 
-            var md = loadedMedia.FirstOrDefault(x => x.Id == item.Id);
+            var md = _media.FirstOrDefault(x => x.Id == item.Id);
             if(md != null) { <MediaCard Item="md" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         }
         else if (item.Type == "sports") { 
-            var sp = loadedGames.FirstOrDefault(x => x.Id == item.Id);
+            var sp = _sports.FirstOrDefault(x => x.Id == item.Id);
             if(sp != null) { <SportsCard Item="sp" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         }
         else { <TaskCard Item="item" OnClick="() => OpenEdit(item)" OnToggle="() => ToggleComplete(item)" OnDelete="() => DeleteTask(item.Id)" /> }
@@ -184,11 +184,11 @@
 
     RenderFragment RenderPill(BulletTaskService.TaskDTO item) => __builder => {
         if (item.Type == "meeting") { 
-            var m = loadedMeetings.FirstOrDefault(x => x.Id == item.Id);
+            var m = _meetings.FirstOrDefault(x => x.Id == item.Id);
             if(m != null) { <MeetingPill Item="m" OnClick="() => OpenEdit(item)" /> }
         }
         else if (item.Type == "sports") { 
-            var sp = loadedGames.FirstOrDefault(x => x.Id == item.Id);
+            var sp = _sports.FirstOrDefault(x => x.Id == item.Id);
             if(sp != null) { <SportsPill Item="sp" OnClick="() => OpenEdit(item)" /> }
         }
         else { <TaskPill Task="item" OnClick="() => OpenEdit(item)" /> }
@@ -199,14 +199,16 @@
     private User? currentUser; private int userId = 0; private DateTime viewDate = DateTime.UtcNow; 
     private string currentView = "day"; private int clientOffset = 0; private bool isLoading = true;
     private List<BulletTaskService.TaskDTO> loadedItems = new(); 
-    private List<BulletHabitService.HabitDTO> loadedHabits = new(); 
-    private List<BulletSportsService.GameDTO> loadedGames = new();
-    private List<BulletMeetingService.MeetingDTO> loadedMeetings = new();
-    private List<BulletBirthdayService.BirthdayDTO> loadedBirthdays = new();
-    private List<BulletVacationService.VacationDTO> loadedVacations = new();
-    private List<BulletHolidayService.HolidayDTO> loadedHolidays = new();
-    private List<BulletAnniversaryService.AnniversaryDTO> loadedAnniversaries = new();
-    private List<BulletMediaService.MediaDTO> loadedMedia = new();
+    
+    // Type-safe buffers for the original DTOs
+    private List<BulletMeetingService.MeetingDTO> _meetings = new();
+    private List<BulletBirthdayService.BirthdayDTO> _bdays = new();
+    private List<BulletVacationService.VacationDTO> _vacations = new();
+    private List<BulletHolidayService.HolidayDTO> _holidays = new();
+    private List<BulletAnniversaryService.AnniversaryDTO> _anniversaries = new();
+    private List<BulletMediaService.MediaDTO> _media = new();
+    private List<BulletSportsService.GameDTO> _sports = new();
+    private List<BulletHabitService.HabitDTO> loadedHabits = new();
 
     private BulletTaskService.TaskDTO? editingItem;
     private DateTime weekStart => viewDate.AddDays(-1 * ((7 + (viewDate.DayOfWeek - DayOfWeek.Monday)) % 7)).Date;
@@ -229,7 +231,7 @@
                         if(currentUser != null) {
                             clientOffset = await JS.InvokeAsync<int>("eval", "new Date().getTimezoneOffset()");
                             var uri = Nav.ToAbsoluteUri(Nav.Uri);
-                            if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("date", out var dValue) && DateTime.TryParse(dValue, out var parsed)) viewDate = parsed;
+                            if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("date", out var dateValue) && DateTime.TryParse(dateValue, out var parsed)) viewDate = parsed;
                             else viewDate = DateTime.UtcNow.AddMinutes(-clientOffset);
                             await LoadData();
                         }
@@ -252,32 +254,30 @@
             loadedItems.Clear();
             await LogToConsole($"Syncing Range: {s:yyyy-MM-dd}");
 
-            // Load CORE generic tasks
-            var tasks = await TaskService.GetTasksForRange(userId, s, e);
-            loadedItems.AddRange(tasks);
+            // Load and shell-map all items. This preserves Source Lines of Code and functionality.
+            loadedItems.AddRange(await TaskService.GetTasksForRange(userId, s, e));
+            
+            _meetings = await MeetingService.GetMeetingsForRange(userId, s, e);
+            foreach(var m in _meetings) { m.MeetingDetail ??= new(); loadedItems.Add(new BulletTaskService.TaskDTO { Id = m.Id, Type = "meeting", Date = m.Date, Title = m.Title, MeetingDetail = m.MeetingDetail }); }
 
-            // Load and Buffer specialized types to prevent casting errors
-            loadedMeetings = await MeetingService.GetMeetingsForRange(userId, s, e);
-            foreach(var m in loadedMeetings) { m.MeetingDetail ??= new(); loadedItems.Add(new BulletTaskService.TaskDTO { Id = m.Id, Type = "meeting", Date = m.Date, Title = m.Title, MeetingDetail = m.MeetingDetail }); }
+            _bdays = await BirthdayService.GetBirthdaysForRange(userId, s, e);
+            foreach(var b in _bdays) loadedItems.Add(new BulletTaskService.TaskDTO { Id = b.Id, Type = "birthday", Category = "personal", Date = b.Date, Title = b.Title, BirthdayDetail = b.Detail ?? new(), ImgUrl = b.ImgUrl });
 
-            loadedBirthdays = await BirthdayService.GetBirthdaysForRange(userId, s, e);
-            foreach(var b in loadedBirthdays) loadedItems.Add(new BulletTaskService.TaskDTO { Id = b.Id, UserId = b.UserId, Type = "birthday", Category = "personal", Date = b.Date, Title = b.Title, BirthdayDetail = b.Detail ?? new(), ImgUrl = b.ImgUrl });
+            _vacations = await VacationService.GetVacationsForRange(userId, s, e);
+            foreach(var v in _vacations) loadedItems.Add(new BulletTaskService.TaskDTO { Id = v.Id, Type = "vacation", Category = "personal", Date = v.Date, Title = v.Title, VacationDetail = v.Detail, ImgUrl = v.ImgUrl });
 
-            loadedVacations = await VacationService.GetVacationsForRange(userId, s, e);
-            foreach(var v in loadedVacations) loadedItems.Add(new BulletTaskService.TaskDTO { Id = v.Id, UserId = v.UserId, Type = "vacation", Category = "personal", Date = v.Date, Title = v.Title, VacationDetail = v.Detail, ImgUrl = v.ImgUrl });
+            _holidays = await HolidayService.GetHolidaysForRange(userId, s, e);
+            foreach(var h in _holidays) loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, Type = "holiday", Category = "personal", Date = h.Date, Title = h.Title, HolidayDetail = h.Detail, ImgUrl = h.ImgUrl });
 
-            loadedHolidays = await HolidayService.GetHolidaysForRange(userId, s, e);
-            foreach(var h in loadedHolidays) loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "holiday", Category = "personal", Date = h.Date, Title = h.Title, HolidayDetail = h.Detail, ImgUrl = h.ImgUrl });
+            _anniversaries = await AnniversaryService.GetAnniversariesForRange(userId, s, e);
+            foreach(var a in _anniversaries) loadedItems.Add(new BulletTaskService.TaskDTO { Id = a.Id, Type = "anniversary", Category = "personal", Date = a.Date, Title = a.Title, AnniversaryDetail = a.Detail, ImgUrl = a.ImgUrl });
 
-            loadedAnniversaries = await AnniversaryService.GetAnniversariesForRange(userId, s, e);
-            foreach(var a in loadedAnniversaries) loadedItems.Add(new BulletTaskService.TaskDTO { Id = a.Id, UserId = a.UserId, Type = "anniversary", Category = "personal", Date = a.Date, Title = a.Title, AnniversaryDetail = a.Detail, ImgUrl = a.ImgUrl });
+            _sports = await SportsService.GetGamesForRange(userId, s, e);
+            foreach(var g in _sports) loadedItems.Add(new BulletTaskService.TaskDTO { Id = g.Id, Type = "sports", Category = "personal", Date = g.Date, Title = g.Title, SportsDetail = g.Detail, ImgUrl = g.ImgUrl });
 
-            loadedGames = await SportsService.GetGamesForRange(userId, s, e);
-            foreach(var g in loadedGames) loadedItems.Add(new BulletTaskService.TaskDTO { Id = g.Id, UserId = g.UserId, Type = "sports", Category = "personal", Date = g.Date, Title = g.Title, SportsDetail = g.Detail, ImgUrl = g.ImgUrl });
-
-            loadedMedia = await MediaService.GetMedia(userId);
-            foreach(var m in loadedMedia.Where(x => x.Date.Date >= s.Date && x.Date.Date <= e.Date))
-                loadedItems.Add(new BulletTaskService.TaskDTO { Id = m.Id, UserId = m.UserId, Type = "media", Category = "personal", Date = m.Date, Title = m.Title, MediaDetail = m.Detail, ImgUrl = m.ImgUrl });
+            _media = await MediaService.GetMedia(userId);
+            foreach(var m in _media.Where(x => x.Date.Date >= s.Date && x.Date.Date <= e.Date))
+                loadedItems.Add(new BulletTaskService.TaskDTO { Id = m.Id, Type = "media", Category = "personal", Date = m.Date, Title = m.Title, MediaDetail = m.Detail, ImgUrl = m.ImgUrl });
 
             var health = await HealthService.GetHealthItemsForRange(userId, s, e);
             foreach(var h in health) loadedItems.Add(new BulletTaskService.TaskDTO { Id = h.Id, UserId = h.UserId, Type = "health", Category = "health", Date = h.Date, Title = h.Title, HealthDetail = h.Detail, Meals = h.Meals ?? new(), Workouts = h.Workouts ?? new(), Notes = h.Notes ?? new(), ImgUrl = h.ImgUrl });
@@ -294,8 +294,14 @@
     private async Task HandleSave(BaseEditor.RecurrenceRequest req) {
         if (editingItem == null) return;
         try {
-            if (editingItem.Type == "birthday") await BirthdayService.SaveBirthday(editingItem);
-            else if (editingItem.Type == "meeting") await MeetingService.SaveMeeting(editingItem);
+            if (editingItem.Type == "birthday") {
+                var b = _bdays.FirstOrDefault(x => x.Id == editingItem.Id);
+                if(b != null) { b.Title = editingItem.Title; b.Detail = editingItem.BirthdayDetail; await BirthdayService.SaveBirthday(b); }
+            }
+            else if (editingItem.Type == "meeting") {
+                var m = _meetings.FirstOrDefault(x => x.Id == editingItem.Id);
+                if(m != null) { m.Title = editingItem.Title; m.MeetingDetail = editingItem.MeetingDetail; await MeetingService.SaveMeeting(m); }
+            }
             else if (editingItem.Type == "health") await HealthService.SaveHealth(new BulletHealthService.HealthDTO { Id = editingItem.Id, UserId = userId, Date = editingItem.Date, Title = editingItem.Title, Detail = editingItem.HealthDetail, Meals = editingItem.Meals, Workouts = editingItem.Workouts });
             else await TaskService.SaveTask(editingItem);
 
