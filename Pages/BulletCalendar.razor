@@ -419,17 +419,17 @@
             string vGroupId = t.VacationDetail?.VacationGroupId;
             if (t.Id > 0 && !string.IsNullOrEmpty(vGroupId)) {
                 // Group Update: Sync metadata to all items in this group
-                var groupItems = await Db.BulletItems.Where(x => x.UserId == t.UserId && x.Type == "vacation")
-                    .Include(x => x.VacationDetail)
-                    .Where(x => x.VacationDetail.VacationGroupId == vGroupId)
-                    .ToListAsync();
-                foreach(var item in groupItems) {
-                    item.Title = t.Title;
-                    item.Category = t.Category;
-                    item.Description = t.Description;
-                    item.ImgUrl = t.ImgUrl;
+                var groupDetails = await Db.BulletVacationDetails.Include(v => v.BulletItem)
+                    .Where(v => v.VacationGroupId == vGroupId).ToListAsync();
+                foreach(var vd in groupDetails) {
+                    if(vd.BulletItem != null) {
+                        vd.BulletItem.Title = t.Title; 
+                        vd.BulletItem.Category = t.Category;
+                        vd.BulletItem.Description = t.Description; 
+                        vd.BulletItem.ImgUrl = t.ImgUrl;
+                    }
                 }
-                // Specifically update the one being edited for instance-specific fields (Notes)
+                // Specifically update the instance for fields that aren't synced (Notes)
                 await VacationService.SaveVacation(new BulletVacationService.VacationDTO { Id = t.Id, UserId = t.UserId, Type = "vacation", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.VacationDetail ?? new(), Notes = t.Notes ?? new() });
                 await Db.SaveChangesAsync();
             } else if (t.Id > 0) {
@@ -456,7 +456,7 @@
     private string GetDayBorderClass(DateTime date) { var today = DateTime.UtcNow.AddMinutes(-clientOffset).Date; return date.Date == today ? "border-yellow-500 shadow-lg" : "border-gray-700"; }
     private void SwitchView(string view) { currentView = view; _ = LoadData(); }
     private void GoToday() { viewDate = DateTime.UtcNow.AddMinutes(-clientOffset); _ = LoadData(); }
-    private void GoToDate(DateTime d) { viewDate = d; SwitchView("day"); }
+    private void GoToDate(DateTime d) { viewDate = d; currentView = "day"; _ = LoadData(); }
     private string GetHeaderDate() { if(currentView == "day") return viewDate.ToString("D"); return currentView == "week" ? $"Week of {weekStart:MMM d}" : viewDate.ToString("MMMM yyyy"); }
     private async Task DeleteTask(int id) { if(await JS.InvokeAsync<bool>("confirm", "Delete item?")) { await BaseService.DeleteItem(id); await LoadData(); } }
     private async Task DeleteCurrentTask() { if(editingItem != null && editingItem.Id > 0 && await JS.InvokeAsync<bool>("confirm", "Delete?")) { await BaseService.DeleteItem(editingItem.Id); editingItem = null; await LoadData(); } }
@@ -507,13 +507,13 @@
         return newItem;
     }
 
-    private async Task OpenNewEditor(string cat, string type, DateTime d) { 
-        var newItem = new BulletTaskService.TaskDTO { UserId = userId, Category = cat, Type = type, Date = d, Detail = new(), HealthDetail = new(), MeetingDetail = new(), HabitDetail = new(), MediaDetail = new(), HolidayDetail = new(), BirthdayDetail = new(), AnniversaryDetail = new(), VacationDetail = new(), SportsDetail = new(), Notes = new() };
+    private async Task OpenNewEditor(string cat, string type, DateTime targetDate) { 
+        var newItem = new BulletTaskService.TaskDTO { UserId = userId, Category = cat, Type = type, Date = targetDate, Detail = new(), HealthDetail = new(), MeetingDetail = new(), HabitDetail = new(), HolidayDetail = new(), BirthdayDetail = new(), AnniversaryDetail = new(), VacationDetail = new(), MediaDetail = new(), SportsDetail = new(), Notes = new() };
         
         if (type == "health") {
             try {
                 var lastHealth = await Db.BulletHealthDetails.Include(d => d.BulletItem)
-                    .Where(h => h.BulletItem.UserId == userId && h.BulletItem.Type == "health" && h.BulletItem.Date < d)
+                    .Where(h => h.BulletItem.UserId == userId && h.BulletItem.Type == "health" && h.BulletItem.Date < targetDate)
                     .OrderByDescending(h => h.BulletItem.Date).FirstOrDefaultAsync();
                 if (lastHealth != null && lastHealth.WeightLbs > 0) newItem.HealthDetail.WeightLbs = lastHealth.WeightLbs;
             } catch { }
