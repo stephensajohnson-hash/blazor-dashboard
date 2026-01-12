@@ -158,7 +158,6 @@
             <h3 class="text-blue-400 text-xs tracking-widest mb-6">Advanced Search Engine</h3>
             
             <div class="space-y-4">
-                @* Presets Dropdown *@
                 <div>
                     <label class="block text-[10px] text-gray-500 mb-1">Date Range Scoping</label>
                     <select @onchange="e => SetDateRange(e.Value?.ToString())" class="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white">
@@ -463,7 +462,7 @@
     private void SwitchView(string view) { currentView = view; _ = LoadData(); }
     private void GoToday() { viewDate = DateTime.UtcNow.AddMinutes(-clientOffset); _ = LoadData(); }
     private void GoToDate(DateTime d) { 
-        isSearching = false; searchQuery = ""; // Clear search screen when jumping to a day
+        isSearching = false; searchQuery = ""; // Exit search view
         viewDate = d; SwitchView("day"); 
     }
     private string GetHeaderDate() { if(currentView == "day") return viewDate.ToString("D"); return currentView == "week" ? $"Week of {weekStart:MMM d}" : viewDate.ToString("MMMM yyyy"); }
@@ -516,12 +515,12 @@
         return newItem;
     }
 
-    private async Task OpenNewEditor(string cat, string type, DateTime d) { 
-        var newItem = new BulletTaskService.TaskDTO { UserId = userId, Category = cat, Type = type, Date = d, Detail = new(), HealthDetail = new(), MeetingDetail = new(), HabitDetail = new(), HolidayDetail = new(), BirthdayDetail = new(), AnniversaryDetail = new(), VacationDetail = new(), MediaDetail = new(), SportsDetail = new(), Notes = new() };
+    private async Task OpenNewEditor(string cat, string type, DateTime targetDate) { 
+        var newItem = new BulletTaskService.TaskDTO { UserId = userId, Category = cat, Type = type, Date = targetDate, Detail = new(), HealthDetail = new(), MeetingDetail = new(), HabitDetail = new(), HolidayDetail = new(), BirthdayDetail = new(), AnniversaryDetail = new(), VacationDetail = new(), MediaDetail = new(), SportsDetail = new(), Notes = new() };
         if (type == "health") {
             try {
                 var lastHealth = await Db.BulletHealthDetails.Include(d => d.BulletItem)
-                    .Where(h => h.BulletItem.UserId == userId && h.BulletItem.Type == "health" && h.BulletItem.Date < d)
+                    .Where(h => h.BulletItem.UserId == userId && h.BulletItem.Type == "health" && h.BulletItem.Date < targetDate)
                     .OrderByDescending(h => h.BulletItem.Date).FirstOrDefaultAsync();
                 if (lastHealth != null && lastHealth.WeightLbs > 0) newItem.HealthDetail.WeightLbs = lastHealth.WeightLbs;
             } catch { }
@@ -560,9 +559,10 @@
     
     private async Task HandleKeyUp(KeyboardEventArgs e) { if (e.Key == "Enter") await PerformQuickSearch(); }
     private async Task PerformQuickSearch() { 
-        currentPage = 1; // Reset to page 1 on new search
+        currentPage = 1; 
         isSearching = true; 
-        searchResults = await BaseService.SearchItems(userId, searchQuery, searchType, searchStart, searchEnd); 
+        // FIX: Sort search results by Date (earliest first) before pagination
+        searchResults = (await BaseService.SearchItems(userId, searchQuery, searchType, searchStart, searchEnd)).OrderBy(x => x.Date).ToList(); 
     }
     private async Task ExecuteAdvancedSearch() { showAdvancedSearch = false; await PerformQuickSearch(); }
     private void ClearSearch() { searchQuery = ""; isSearching = false; _ = LoadData(); }
