@@ -12,16 +12,16 @@
     </div>
 
     <div class="shrink-0 bg-black/30 border-r border-gray-700 flex flex-col items-center justify-between py-2 px-1 relative" 
-         style="width: @BulletViewConfig.ImgWidthDay">
+          style="width: @BulletViewConfig.ImgWidthDay">
         
         <div class="text-[10px] font-bold text-gray-500 uppercase tracking-wider text-center leading-tight w-full px-1">
             @LeagueName
         </div>
 
-        <div class="flex-1 flex items-center justify-center w-full overflow-hidden my-1">
-            @if(!string.IsNullOrEmpty(LeagueLogo)) 
+        <div class="flex-1 flex items-center justify-center w-full my-1">
+            @if(!string.IsNullOrEmpty(MainLogoUrl)) 
             {
-                <img src="@LeagueLogo" class="w-full h-full object-contain opacity-80" />
+                <img src="@MainLogoUrl" class="w-full h-full object-contain opacity-100 transform scale-[1.8]" />
             }
             else
             {
@@ -117,9 +117,10 @@
     private string HomeRecord = "-";
     private string AwayRecord = "-";
 
+    private string MainLogoUrl => IsFavorite(HomeTeam) ? HomeTeam?.LogoUrl : (IsFavorite(AwayTeam) ? AwayTeam?.LogoUrl : LeagueLogo);
+
     protected override async Task OnParametersSetAsync()
     {
-        // ISOLATED SCOPE to prevent NpgsqlOperationInProgressException
         using (var scope = ScopeFactory.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -127,7 +128,6 @@
             if (Item.Detail.HomeTeamId > 0) 
             {
                 HomeTeam = await db.Teams.FindAsync(Item.Detail.HomeTeamId);
-                // Optimization: Only calc record if Favorite
                 if (IsFavorite(HomeTeam)) 
                     HomeRecord = await CalculatePointInTimeRecord(db, Item.Detail.HomeTeamId, Item.Detail.LeagueId);
             }
@@ -144,7 +144,7 @@
                 var l = await db.Leagues.FindAsync(Item.Detail.LeagueId);
                 if (l != null) 
                 {
-                    LeagueName = l.Name; // FIX: removed .Abbreviation
+                    LeagueName = l.Name;
                     LeagueLogo = l.ImgUrl;
                 }
             }
@@ -155,7 +155,6 @@
     private async Task<string> CalculatePointInTimeRecord(AppDbContext db, int teamId, int leagueId)
     {
         if (leagueId == 0) return "0-0";
-
         var relevantGames = await (from d in db.BulletGameDetails
                                    join i in db.BulletItems on d.BulletItemId equals i.Id
                                    where d.LeagueId == leagueId && d.IsComplete 
@@ -169,18 +168,14 @@
             bool isHome = g.HomeTeamId == teamId;
             int myScore = isHome ? g.HomeScore : g.AwayScore;
             int oppScore = isHome ? g.AwayScore : g.HomeScore;
-
             if (myScore > oppScore) w++;
             else if (myScore < oppScore) l++;
             else t++;
         }
-
         return t > 0 ? $"{w}-{l}-{t}" : $"{w}-{l}";
     }
 
-    private string GetScoreDisplay(int score) => 
-        (Item.Detail.IsComplete || score > 0) ? score.ToString() : "--";
-
+    private string GetScoreDisplay(int score) => (Item.Detail.IsComplete || score > 0) ? score.ToString() : "--";
     private bool IsFavorite(Team? t) => t?.IsFavorite ?? false;
 
     private int ResultState 
@@ -190,23 +185,17 @@
             if (!Item.Detail.IsComplete) return 0;
             bool hFav = IsFavorite(HomeTeam);
             bool aFav = IsFavorite(AwayTeam);
-            
             if (!hFav && !aFav) return 0;
-
             int hScore = Item.Detail.HomeScore;
             int aScore = Item.Detail.AwayScore;
-
-            if (hScore == aScore) return 3; // Tie
-
+            if (hScore == aScore) return 3;
             if (hFav) return hScore > aScore ? 1 : 2;
             if (aFav) return aScore > hScore ? 1 : 2;
-            
             return 0;
         }
     }
 
     private string GetStampText() => ResultState switch { 1 => "WIN", 2 => "LOSS", 3 => "TIE", _ => "" };
-    
     private string GetStampClass() => ResultState switch {
         1 => "text-green-500 border-green-500 bg-green-900/80",
         2 => "text-red-500 border-red-500 bg-red-900/80",
