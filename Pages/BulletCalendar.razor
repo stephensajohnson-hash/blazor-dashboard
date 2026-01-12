@@ -84,7 +84,7 @@
                     <div class="bg-gray-800/40 rounded-xl border border-gray-700 flex flex-col h-full overflow-hidden shadow-2xl">
                         <div class="p-3 bg-gray-800/80 border-b border-gray-700 flex justify-between items-center sticky top-0 backdrop-blur z-10">
                             <span class="font-bold text-@cat.Item3-400 uppercase tracking-wider text-sm">@cat.Item1</span>
-                            <button @onclick='async () => await OpenEditor(cat.Item2, cat.Item2 == "health" ? "health" : "task", viewDate)' 
+                            <button @onclick='() => OpenNewEditor(cat.Item2, cat.Item2 == "health" ? "health" : "task", viewDate)' 
                                     class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition font-bold uppercase tracking-widest shadow-md">＋ Add</button>
                         </div>
                         <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide font-bold">
@@ -191,9 +191,9 @@
             AnniversaryDetail="editingItem?.AnniversaryDetail ?? new()"
             VacationDetail="editingItem?.VacationDetail ?? new()"
             SportsDetail="editingItem?.SportsDetail ?? new()"
-            Leagues="allLeagues"
-            Seasons="allSeasons"
-            Teams="allTeams"
+            Leagues="leagues"
+            Seasons="seasons"
+            Teams="teams"
             Notes="editingItem?.Notes ?? new()"
             OnSaveRecurring="HandleSave" 
             OnCancel="() => editingItem = null" 
@@ -263,9 +263,9 @@
     private string currentView = "day"; private int clientOffset = 0; private bool isLoading = true;
     private List<BulletTaskService.TaskDTO> loadedItems = new(); 
     
-    private List<League> allLeagues = new();
-    private List<Season> allSeasons = new();
-    private List<Team> allTeams = new();
+    private List<League> leagues = new();
+    private List<Season> seasons = new();
+    private List<Team> teams = new();
 
     private List<BulletMeetingService.MeetingDTO> _meetings = new();
     private List<BulletBirthdayService.BirthdayDTO> _bdays = new();
@@ -303,9 +303,6 @@
                         var uri = Nav.ToAbsoluteUri(Nav.Uri);
                         if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("date", out var dVal) && DateTime.TryParse(dVal, out var parsed)) viewDate = parsed;
                         else viewDate = DateTime.UtcNow.AddMinutes(-clientOffset);
-                        allLeagues = await Db.Leagues.OrderBy(x => x.Name).ToListAsync() ?? new();
-                        allSeasons = await Db.Seasons.ToListAsync() ?? new();
-                        allTeams = await Db.Teams.ToListAsync() ?? new();
                         await LoadData();
                     }
                 }
@@ -325,7 +322,6 @@
             loadedItems.Clear();
             loadedItems.AddRange(await TaskService.GetTasksForRange(userId, s, e));
             
-            // SURGICAL FIX: Map Categories and Descriptions correctly from DB across all types
             _meetings = await MeetingService.GetMeetingsForRange(userId, s, e);
             foreach(var m in _meetings) loadedItems.Add(new BulletTaskService.TaskDTO { Id = m.Id, UserId = m.UserId, Type = "meeting", Category = m.Category, Date = m.Date, Title = m.Title, Description = m.Description, SortOrder = m.SortOrder, MeetingDetail = m.MeetingDetail ?? new(), ImgUrl = m.ImgUrl, LinkUrl = m.LinkUrl, Notes = m.Notes ?? new() });
 
@@ -378,7 +374,7 @@
         }
 
         var dbItem = await Db.BulletItems.FindAsync(item.Id);
-        var dbTarget = await Db.DbItems.FindAsync(targetItem.Id); // Note: Fix this to Db.BulletItems if DbItems is wrong
+        var dbTarget = await Db.BulletItems.FindAsync(targetItem.Id);
         if (dbItem != null) dbItem.SortOrder = item.SortOrder;
         if (dbTarget != null) dbTarget.SortOrder = targetItem.SortOrder;
         
@@ -396,7 +392,7 @@
 
     private async Task CommitItemToDatabase(BulletTaskService.TaskDTO t)
     {
-        // SURGICAL FIX: Standardized type checking and category mapping to ensure persistence
+        // SURGICAL FIX: Normalizing type for safe comparison and mapping Category/Description
         string type = t.Type?.ToLower().Trim() ?? "task";
 
         if (type == "meeting") await MeetingService.SaveMeeting(new BulletMeetingService.MeetingDTO { Id = t.Id, UserId = t.UserId, Type = "meeting", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, LinkUrl = t.LinkUrl, MeetingDetail = t.MeetingDetail ?? new(), Notes = t.Notes ?? new() });
@@ -483,7 +479,7 @@
     private void OpenEdit(BulletTaskService.TaskDTO t) { 
         editingItem = CreateCopy(t); 
         editingItem.Id = t.Id;
-        // SURGICAL FIX: Ensure specialized details are initialized on editingItem so editor binds correctly.
+        // Ensure specialized details are initialized on editingItem so editor binds correctly.
         editingItem.MeetingDetail ??= new();
         editingItem.HabitDetail ??= new();
         editingItem.MediaDetail ??= new();
