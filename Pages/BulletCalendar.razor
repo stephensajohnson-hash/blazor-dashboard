@@ -211,43 +211,39 @@
             </div>
 
             @if (item.Type == "meeting") { 
-                var m = _meetings.FirstOrDefault(x => x.Id == item.Id);
-                if(m != null) { <MeetingCard Item="item" OnClick="() => OpenEdit(item)" OnToggle="() => ToggleMeetingComplete(item)" OnDelete="() => DeleteTask(item.Id)" /> }
+                <MeetingCard Item="item" OnClick="() => OpenEdit(item)" OnToggle="() => ToggleMeetingComplete(item)" OnDelete="() => DeleteTask(item.Id)" />
             }
-            else if (item.Type == "habit") { <HabitCard Item="@(GetHabit(item.Id))" OnClick="() => OpenHabitEdit(GetHabit(item.Id))" OnDelete="() => DeleteTask(item.Id)" OnChange="SaveHabitDirectly" /> }
+            else if (item.Type == "habit") { 
+                <HabitCard Item="@(GetHabit(item))" OnClick="() => OpenHabitEdit(GetHabit(item))" OnDelete="() => DeleteTask(item.Id)" OnChange="SaveHabitDirectly" /> 
+            }
             else if (item.Type == "birthday") { 
-                var b = _bdays.FirstOrDefault(x => x.Id == item.Id);
-                if(b != null) { <BirthdayCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
+                <BirthdayCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" />
             }
             else if (item.Type == "holiday") { 
-                var h = _holidays.FirstOrDefault(x => x.Id == item.Id);
-                if(h != null) { <HolidayCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
+                <HolidayCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" />
             }
             else if (item.Type == "anniversary") { 
-                var a = _anniversaries.FirstOrDefault(x => x.Id == item.Id);
-                if(a != null) { <AnniversaryCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
+                <AnniversaryCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" />
             }
             else if (item.Type == "vacation") { 
-                var v = _vacations.FirstOrDefault(x => x.Id == item.Id);
-                if(v != null) { <VacationCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
+                <VacationCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" />
             }
             else if (item.Type == "health") { <HealthCard Item="item" User="currentUser" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
             else if (item.Type == "media") { 
-                var md = _media.FirstOrDefault(x => x.Id == item.Id);
-                if(md != null) { <MediaCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
+                <MediaCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" />
             }
             else if (item.Type == "sports") { 
-                var g = _sports.FirstOrDefault(x => x.Id == item.Id);
-                if(g != null) { <SportsCard Item="g" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" /> }
+                <SportsCard Item="@(GetGame(item))" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" />
             }
-            else { <TaskCard Item="item" OnClick="() => OpenEdit(item)" OnToggle="() => ToggleComplete(item)" OnDelete="() => DeleteTask(item.Id)" /> }
+            else { 
+                <TaskCard Item="item" OnClick="() => OpenEdit(item)" OnToggle="() => ToggleComplete(item)" OnDelete="() => DeleteTask(item.Id)" /> 
+            }
         </div>
     };
 
     RenderFragment RenderPill(BulletTaskService.TaskDTO item) => __builder => {
         if (item.Type == "sports") {
-            var g = _sports.FirstOrDefault(x => x.Id == item.Id);
-            if(g != null) { <SportsPill Item="g" OnClick="() => OpenEdit(item)" OnMoveUp="() => MoveItem(item, -1)" OnMoveDown="() => MoveItem(item, 1)" /> }
+            <SportsPill Item="@(GetGame(item))" OnClick="() => OpenEdit(item)" OnMoveUp="() => MoveItem(item, -1)" OnMoveDown="() => MoveItem(item, 1)" />
         }
         else if (item.Type == "meeting") { <MeetingPill Item="item" OnClick="() => OpenEdit(item)" OnMoveUp="() => MoveItem(item, -1)" OnMoveDown="() => MoveItem(item, 1)" ImageWidth="@BulletViewConfig.ImgWidthWeek" /> }
         else if (item.Type == "habit") { <HabitPill Item="item" OnClick="() => OpenEdit(item)" OnMoveUp="() => MoveItem(item, -1)" OnMoveDown="() => MoveItem(item, 1)" ImageWidth="@BulletViewConfig.ImgWidthWeek" /> }
@@ -438,7 +434,10 @@
     private string GetDayBorderClass(DateTime date) { var today = DateTime.UtcNow.AddMinutes(-clientOffset).Date; return date.Date == today ? "border-yellow-500 shadow-lg" : "border-gray-700"; }
     private void SwitchView(string view) { currentView = view; _ = LoadData(); }
     private void GoToday() { viewDate = DateTime.UtcNow.AddMinutes(-clientOffset); _ = LoadData(); }
-    private void GoToDate(DateTime d) { viewDate = d; currentView = "day"; _ = LoadData(); }
+    private void GoToDate(DateTime d) { 
+        isSearching = false; searchQuery = ""; // Clear search so calendar view actually refreshes
+        viewDate = d; SwitchView("day"); 
+    }
     private string GetHeaderDate() { if(currentView == "day") return viewDate.ToString("D"); return currentView == "week" ? $"Week of {weekStart:MMM d}" : viewDate.ToString("MMMM yyyy"); }
     private async Task DeleteTask(int id) { if(await JS.InvokeAsync<bool>("confirm", "Delete item?")) { await BaseService.DeleteItem(id); await LoadData(); } }
     private async Task DeleteCurrentTask() { if(editingItem != null && editingItem.Id > 0 && await JS.InvokeAsync<bool>("confirm", "Delete?")) { await BaseService.DeleteItem(editingItem.Id); editingItem = null; await LoadData(); } }
@@ -542,6 +541,18 @@
     if (category.Equals("personal", StringComparison.OrdinalIgnoreCase)) return dayItems.Where(t => !t.Category.Trim().Equals("work", StringComparison.OrdinalIgnoreCase) && !t.Category.Trim().Equals("health", StringComparison.OrdinalIgnoreCase)).ToList(); return dayItems.Where(t => t.Category.Trim().Equals(category.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
     }
     private List<BulletTaskService.TaskDTO> GetItemsForDate(DateTime d) => loadedItems.Where(t => t.Date.Date == d.Date).ToList();
-    private BulletHabitService.HabitDTO GetHabit(int id) => loadedHabits.FirstOrDefault(h => h.Id == id) ?? new();
-    private BulletSportsService.GameDTO GetGame(int id) => _sports.FirstOrDefault(g => g.Id == id) ?? new();
+    private BulletHabitService.HabitDTO GetHabit(BulletTaskService.TaskDTO t) {
+        var h = loadedHabits.FirstOrDefault(x => x.Id == t.Id);
+        if (h != null) return h;
+        return new BulletHabitService.HabitDTO {
+            Id = t.Id, UserId = t.UserId, Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, SortOrder = t.SortOrder, Detail = t.HabitDetail ?? new(), ImgUrl = t.ImgUrl, Notes = t.Notes ?? new()
+        };
+    }
+    private BulletSportsService.GameDTO GetGame(BulletTaskService.TaskDTO t) {
+        var g = _sports.FirstOrDefault(x => x.Id == t.Id);
+        if (g != null) return g;
+        return new BulletSportsService.GameDTO {
+            Id = t.Id, UserId = t.UserId, Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, SortOrder = t.SortOrder, Detail = t.SportsDetail ?? new(), ImgUrl = t.ImgUrl, LinkUrl = t.LinkUrl
+        };
+    }
 }
