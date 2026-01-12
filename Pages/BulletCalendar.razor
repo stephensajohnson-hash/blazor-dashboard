@@ -43,7 +43,6 @@
                 <input @bind="searchQuery" @bind:event="oninput" @onkeyup="HandleKeyUp" placeholder="Search..." 
                        class="bg-transparent border-none text-xs py-1.5 px-2 w-24 md:w-32 outline-none text-white font-bold" />
                 
-                @* RESTORED SLIDER BUTTON *@
                 <button @onclick="() => showAdvancedSearch = !showAdvancedSearch" 
                         class="p-1 text-gray-500 hover:text-blue-400 transition-colors" title="Advanced Filters">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -84,7 +83,7 @@
                     <div class="bg-gray-800/40 rounded-xl border border-gray-700 flex flex-col h-full overflow-hidden shadow-2xl">
                         <div class="p-3 bg-gray-800/80 border-b border-gray-700 flex justify-between items-center sticky top-0 backdrop-blur z-10">
                             <span class="font-bold text-@cat.Item3-400 uppercase tracking-wider text-sm">@cat.Item1</span>
-                            <button @onclick='() => OpenNewEditor(cat.Item2, cat.Item2 == "health" ? "health" : "task", viewDate)' 
+                            <button @onclick='async () => await OpenEditor(cat.Item2, cat.Item2 == "health" ? "health" : "task", viewDate)' 
                                     class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition font-bold uppercase tracking-widest shadow-md">＋ Add</button>
                         </div>
                         <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide font-bold">
@@ -191,11 +190,11 @@
             AnniversaryDetail="editingItem?.AnniversaryDetail ?? new()"
             VacationDetail="editingItem?.VacationDetail ?? new()"
             SportsDetail="editingItem?.SportsDetail ?? new()"
-            Leagues="leagues"
-            Seasons="seasons"
-            Teams="teams"
+            Leagues="allLeagues"
+            Seasons="allSeasons"
+            Teams="allTeams"
             Notes="editingItem?.Notes ?? new()"
-            OnSaveRecurring="HandleSave" 
+            OnSaveRecurring="SaveRecurringSeries" 
             OnCancel="() => editingItem = null" 
             OnDelete="DeleteCurrentTask" />
 
@@ -266,6 +265,9 @@
     private List<League> leagues = new();
     private List<Season> seasons = new();
     private List<Team> teams = new();
+    private List<League> allLeagues = new();
+    private List<Season> allSeasons = new();
+    private List<Team> allTeams = new();
 
     private List<BulletMeetingService.MeetingDTO> _meetings = new();
     private List<BulletBirthdayService.BirthdayDTO> _bdays = new();
@@ -303,6 +305,9 @@
                         var uri = Nav.ToAbsoluteUri(Nav.Uri);
                         if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("date", out var dVal) && DateTime.TryParse(dVal, out var parsed)) viewDate = parsed;
                         else viewDate = DateTime.UtcNow.AddMinutes(-clientOffset);
+                        allLeagues = await Db.Leagues.OrderBy(x => x.Name).ToListAsync() ?? new();
+                        allSeasons = await Db.Seasons.ToListAsync() ?? new();
+                        allTeams = await Db.Teams.ToListAsync() ?? new();
                         await LoadData();
                     }
                 }
@@ -392,7 +397,7 @@
 
     private async Task CommitItemToDatabase(BulletTaskService.TaskDTO t)
     {
-        // SURGICAL FIX: Normalizing type for safe comparison and mapping Category/Description
+        // Normalizing type for safe comparison
         string type = t.Type?.ToLower().Trim() ?? "task";
 
         if (type == "meeting") await MeetingService.SaveMeeting(new BulletMeetingService.MeetingDTO { Id = t.Id, UserId = t.UserId, Type = "meeting", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, LinkUrl = t.LinkUrl, MeetingDetail = t.MeetingDetail ?? new(), Notes = t.Notes ?? new() });
@@ -411,6 +416,47 @@
         else if (type == "health") await HealthService.SaveHealth(new BulletHealthService.HealthDTO { Id = t.Id, UserId = t.UserId, Type = "health", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.HealthDetail ?? new(), Meals = t.Meals ?? new(), Workouts = t.Workouts ?? new(), Notes = t.Notes ?? new() });
         else if (type == "sports") await SportsService.SaveGame(new BulletSportsService.GameDTO { Id = t.Id, UserId = t.UserId, Type = "sports", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.SportsDetail ?? new() });
         else await TaskService.SaveTask(t);
+    }
+
+    private async Task SaveRecurringSeries(BaseEditor.RecurrenceRequest req)
+    {
+        if (editingItem == null) return;
+        try {
+            await CommitItemToDatabase(editingItem);
+
+            if (req.Frequency != "none" && req.ThruDate > editingItem.Date)
+            {
+                DateTime nextDate = editingItem.Date;
+                int offsetCount = 1;
+                while (true)
+                {
+                    nextDate = req.Frequency switch {
+                        "daily" => nextDate.AddDays(1),
+                        "weekly" => nextDate.AddDays(7),
+                        "biweekly" => nextDate.AddDays(14),
+                        "monthly" => nextDate.AddMonths(1),
+                        _ => nextDate
+                    };
+                    if (nextDate.Date > req.ThruDate.Date) break;
+
+                    var clone = CreateCopy(editingItem);
+                    clone.Id = 0; 
+                    clone.Date = nextDate;
+                    if (editingItem.EndDate.HasValue) {
+                        var duration = editingItem.EndDate.Value - editingItem.Date;
+                        clone.EndDate = nextDate + duration;
+                    }
+                    if (editingItem.Type == "habit" && req.IncrementHabitStreak && clone.HabitDetail != null) {
+                        clone.HabitDetail.StreakCount += offsetCount;
+                    }
+                    await CommitItemToDatabase(clone);
+                    offsetCount++;
+                    if (offsetCount > 365) break; 
+                }
+            }
+            editingItem = null;
+            await LoadData();
+        } catch (Exception ex) { await LogToConsole($"Save Error: {ex.Message}"); }
     }
 
     private void Prev() { if(currentView == "day") viewDate = viewDate.AddDays(-1); else if(currentView == "week") viewDate = viewDate.AddDays(-7); else viewDate = viewDate.AddMonths(-1); _ = LoadData(); }
@@ -479,7 +525,7 @@
     private void OpenEdit(BulletTaskService.TaskDTO t) { 
         editingItem = CreateCopy(t); 
         editingItem.Id = t.Id;
-        // Ensure specialized details are initialized on editingItem so editor binds correctly.
+        // Ensure specialized detail objects are initialized on editingItem so editor binds correctly.
         editingItem.MeetingDetail ??= new();
         editingItem.HabitDetail ??= new();
         editingItem.MediaDetail ??= new();
