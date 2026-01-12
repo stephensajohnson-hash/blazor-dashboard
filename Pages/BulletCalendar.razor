@@ -43,7 +43,6 @@
                 <input @bind="searchQuery" @bind:event="oninput" @onkeyup="HandleKeyUp" placeholder="Search..." 
                        class="bg-transparent border-none text-xs py-1.5 px-2 w-24 md:w-32 outline-none text-white font-bold" />
                 
-                @* RESTORED SLIDER BUTTON *@
                 <button @onclick="() => showAdvancedSearch = !showAdvancedSearch" 
                         class="p-1 text-gray-500 hover:text-blue-400 transition-colors" title="Advanced Filters">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -84,7 +83,7 @@
                     <div class="bg-gray-800/40 rounded-xl border border-gray-700 flex flex-col h-full overflow-hidden shadow-2xl">
                         <div class="p-3 bg-gray-800/80 border-b border-gray-700 flex justify-between items-center sticky top-0 backdrop-blur z-10">
                             <span class="font-bold text-@cat.Item3-400 uppercase tracking-wider text-sm">@cat.Item1</span>
-                            <button @onclick='async () => await OpenEditor(cat.Item2, cat.Item2 == "health" ? "health" : "task", viewDate)' 
+                            <button @onclick='() => OpenNewEditor(cat.Item2, cat.Item2 == "health" ? "health" : "task", viewDate)' 
                                     class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition font-bold uppercase tracking-widest shadow-md">＋ Add</button>
                         </div>
                         <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide font-bold">
@@ -202,7 +201,6 @@
 @code {
     RenderFragment RenderItem(BulletTaskService.TaskDTO item) => __builder => {
         <div class="relative group">
-            @* SURGICAL FIX: Day View buttons moved to right side to avoid clipping *@
             <div class="absolute right-1 top-1/2 -translate-y-1/2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-50">
                 <button @onclick="() => MoveItem(item, -1)" @onclick:stopPropagation="true" class="p-1.5 bg-black/60 border border-white/10 rounded hover:bg-blue-600 text-[8px] shadow-2xl">▲</button>
                 <button @onclick="() => MoveItem(item, 1)" @onclick:stopPropagation="true" class="p-1.5 bg-black/60 border border-white/10 rounded hover:bg-blue-600 text-[8px] shadow-2xl">▼</button>
@@ -434,6 +432,8 @@
     private async Task MoveItemUp(int id) => await ReorderItem(id, -1);
     private async Task MoveItemDown(int id) => await ReorderItem(id, 1);
     
+    private void OnJumpDateChanged(ChangeEventArgs e) { if (DateTime.TryParse(e.Value?.ToString(), out var d)) GoToDate(d); }
+
     private async Task ReorderItem(int id, int direction) { 
         var item = loadedItems.FirstOrDefault(x => x.Id == id);
         if (item == null) return; 
@@ -481,7 +481,7 @@
     private void OpenEdit(BulletTaskService.TaskDTO t) { 
         editingItem = CreateCopy(t); 
         editingItem.Id = t.Id;
-        // SURGICAL FIX: Ensure specialized details are initialized on editingItem so editor binds correctly.
+        // Ensure specialized detail objects are initialized on editingItem so editor binds correctly.
         editingItem.MeetingDetail ??= new();
         editingItem.HabitDetail ??= new();
         editingItem.MediaDetail ??= new();
@@ -510,13 +510,11 @@
 
     private List<BulletTaskService.TaskDTO> GetSortedItems(List<BulletTaskService.TaskDTO> items) => items?.OrderBy(t => t.SortOrder).ThenBy(t => GetTypePriority(t.Type)).ThenBy(t => t.MeetingDetail?.StartTime).ThenBy(t => t.Id).ToList() ?? new();
     private int GetTypePriority(string type) => type switch { "health" => -3, "vacation" => -2, "habit" => -1, "holiday" => 0, "meeting" => 1, "task" => 2, "birthday" => 3, "anniversary" => 4, "media" => 5, _ => 6 };
-    private List<BulletTaskService.TaskDTO> GetItemsForColumn(DateTime d, string cat) { 
-        var items = loadedItems.Where(t => t.Date.Date == d.Date); 
-        if (cat == "health") return items.Where(t => t.Type == "health" || t.Category == "health").ToList();
-        if (cat == "personal") return items.Where(t => t.Category != "work" && t.Category != "health").ToList();
-        return items.Where(t => t.Category == "work").ToList();
+    private List<BulletTaskService.TaskDTO> GetItemsForColumn(DateTime d, string category) { var dayItems = loadedItems.Where(t => t.Date.Date == d.Date);
+    if (category.Equals("personal", StringComparison.OrdinalIgnoreCase)) return dayItems.Where(t => !t.Category.Trim().Equals("work", StringComparison.OrdinalIgnoreCase) && !t.Category.Trim().Equals("health", StringComparison.OrdinalIgnoreCase)).ToList(); return dayItems.Where(t => t.Category.Trim().Equals(category.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
     }
     private List<BulletTaskService.TaskDTO> GetItemsForDate(DateTime d) => loadedItems.Where(t => t.Date.Date == d.Date).ToList();
     private BulletHabitService.HabitDTO GetHabit(int id) => loadedHabits.FirstOrDefault(h => h.Id == id) ?? new();
     private BulletSportsService.GameDTO GetGame(int id) => loadedGames.FirstOrDefault(g => g.Id == id) ?? new();
+    private async Task LogToConsole(string msg) => await JS.InvokeVoidAsync("console.log", $"[CALENDAR] {msg}");
 }
