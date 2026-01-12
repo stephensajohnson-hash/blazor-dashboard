@@ -83,7 +83,7 @@
                     <div class="bg-gray-800/40 rounded-xl border border-gray-700 flex flex-col h-full overflow-hidden shadow-2xl">
                         <div class="p-3 bg-gray-800/80 border-b border-gray-700 flex justify-between items-center sticky top-0 backdrop-blur z-10">
                             <span class="font-bold text-@cat.Item3-400 uppercase tracking-wider text-sm">@cat.Item1</span>
-                            <button @onclick='async () => await OpenEditor(cat.Item2, cat.Item2 == "health" ? "health" : "task", viewDate)' 
+                            <button @onclick='async () => await OpenNewEditor(cat.Item2, cat.Item2 == "health" ? "health" : "task", viewDate)' 
                                     class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition font-bold uppercase tracking-widest shadow-md">＋ Add</button>
                         </div>
                         <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide font-bold">
@@ -287,8 +287,6 @@
     private DateTime searchEnd = DateTime.Today.AddYears(1);
     private string searchType = "all";
 
-    private async Task LogToConsole(string msg) => await JS.InvokeVoidAsync("console.log", $"[CALENDAR] {msg}");
-
     protected override async Task OnAfterRenderAsync(bool firstRender) {
         if (firstRender) {
             try {
@@ -394,7 +392,7 @@
 
     private async Task CommitItemToDatabase(BulletTaskService.TaskDTO t)
     {
-        // FIX IDENTITY: Update the master record type so Task can become Media
+        // MASTER SYNC: Update Type and Category in master table to allow identity changes (Task -> Media)
         if (t.Id > 0)
         {
             var dbItem = await Db.BulletItems.FindAsync(t.Id);
@@ -422,7 +420,7 @@
                 await VacationService.SaveVacation(new BulletVacationService.VacationDTO { Id = 0, UserId = t.UserId, Type = "vacation", Category = t.Category, Date = dt, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.VacationDetail ?? new() });
             }
         }
-        else if (type == "health") await HealthService.SaveHealth(new BulletHealthService.HealthDTO { Id = t.Id, UserId = t.UserId, Type = "health", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.HealthDetail ?? new(), Meals = t.Meals ?? new(), Workouts = t.Workouts ?? new(), Notes = t.Notes ?? new() });
+        else if (type == "health") await HealthService.SaveHealth(new BulletHealthService.HealthDTO { Id = t.Id, UserId = t.UserId, Date = t.Date, Title = t.Title, Description = t.Description, Category = t.Category, Detail = t.HealthDetail ?? new(), Meals = t.Meals ?? new(), Workouts = t.Workouts ?? new(), Notes = t.Notes ?? new() });
         else if (type == "sports") await SportsService.SaveGame(new BulletSportsService.GameDTO { Id = t.Id, UserId = t.UserId, Type = "sports", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.SportsDetail ?? new() });
         else await TaskService.SaveTask(t);
     }
@@ -485,9 +483,23 @@
         return newItem;
     }
 
-    private async Task OpenEditor(string category, string type, DateTime date) { 
-        var newItem = new BulletTaskService.TaskDTO { UserId = userId, Category = category, Type = type, Date = date, Detail = new(), MeetingDetail = new(), HabitDetail = new(), MediaDetail = new(), HolidayDetail = new(), BirthdayDetail = new(), AnniversaryDetail = new(), VacationDetail = new(), HealthDetail = new(), SportsDetail = new(), Notes = new(), Meals = new(), Workouts = new() };
+    private async Task OpenNewEditor(string cat, string type, DateTime d) { 
+        var newItem = new BulletTaskService.TaskDTO { UserId = userId, Category = cat, Type = type, Date = d, Detail = new(), HealthDetail = new(), MeetingDetail = new(), HabitDetail = new(), BirthdayDetail = new(), SportsDetail = new(), Notes = new() };
+        
+        // SURGICAL FIX: Pre-fill weight with last known value for new Health items
+        if (type == "health") {
+            try {
+                var lastHealth = await Db.BulletHealthDetails.Include(d => d.BulletItem)
+                    .Where(d => d.BulletItem.UserId == userId && d.BulletItem.Type == "health" && d.BulletItem.Date < d)
+                    .OrderByDescending(d => d.BulletItem.Date).FirstOrDefaultAsync();
+                if (lastHealth != null && lastHealth.WeightLbs > 0) newItem.HealthDetail.WeightLbs = lastHealth.WeightLbs;
+            } catch { }
+        }
         editingItem = newItem;
+    }
+
+    private async Task OpenEditor(string category, string type, DateTime date) { 
+        await OpenNewEditor(category, type, date);
     }
     
     private void OpenEdit(BulletTaskService.TaskDTO t) { 
@@ -519,6 +531,8 @@
     private async Task PerformQuickSearch() { isSearching = true; searchResults = await BaseService.SearchItems(userId, searchQuery, searchType, searchStart, searchEnd); }
     private async Task ExecuteAdvancedSearch() { showAdvancedSearch = false; await PerformQuickSearch(); }
     private void ClearSearch() { searchQuery = ""; isSearching = false; _ = LoadData(); }
+
+    private async Task LogToConsole(string msg) => await JS.InvokeVoidAsync("console.log", $"[CALENDAR] {msg}");
 
     private List<BulletTaskService.TaskDTO> GetSortedItems(List<BulletTaskService.TaskDTO> items) => items?.OrderBy(t => t.SortOrder).ThenBy(t => GetTypePriority(t.Type)).ThenBy(t => t.MeetingDetail?.StartTime).ThenBy(t => t.Id).ToList() ?? new();
     private int GetTypePriority(string type) => type switch { "health" => -3, "vacation" => -2, "habit" => -1, "holiday" => 0, "meeting" => 1, "task" => 2, "birthday" => 3, "anniversary" => 4, "media" => 5, _ => 6 };
