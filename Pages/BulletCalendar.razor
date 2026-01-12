@@ -83,7 +83,7 @@
                     <div class="bg-gray-800/40 rounded-xl border border-gray-700 flex flex-col h-full overflow-hidden shadow-2xl">
                         <div class="p-3 bg-gray-800/80 border-b border-gray-700 flex justify-between items-center sticky top-0 backdrop-blur z-10">
                             <span class="font-bold text-@cat.Item3-400 uppercase tracking-wider text-sm">@cat.Item1</span>
-                            <button @onclick='async () => await OpenEditor(cat.Item2, cat.Item2 == "health" ? "health" : "task", viewDate)' 
+                            <button @onclick="() => HandleAddClick(cat.Item2)" 
                                     class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition font-bold uppercase tracking-widest shadow-md">＋ Add</button>
                         </div>
                         <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide font-bold">
@@ -382,7 +382,7 @@
         {
             if (dbItem.SortOrder == dbTarget.SortOrder)
             {
-                // Assign new orders based on position in the sorted UI list
+                // Safety Re-indexing: Assign unique, sequential orders to solve jumping behavior
                 for(int i=0; i<dayItems.Count; i++) {
                     var dItem = await Db.BulletItems.FindAsync(dayItems[i].Id);
                     if(dItem != null) dItem.SortOrder = i * 10;
@@ -434,6 +434,7 @@
         else if (type == "vacation") {
             string vGroupId = t.VacationDetail?.VacationGroupId;
             if (t.Id > 0 && !string.IsNullOrEmpty(vGroupId)) {
+                // Group ID Sync: Apply edits to all daily instances in the vacation group
                 var groupDetails = await Db.BulletVacationDetails.Include(v => v.BulletItem)
                     .Where(v => v.VacationGroupId == vGroupId).ToListAsync();
                 foreach(var vd in groupDetails) {
@@ -444,11 +445,13 @@
                         vd.BulletItem.ImgUrl = t.ImgUrl;
                     }
                 }
+                // Save instance-specific notes
                 await VacationService.SaveVacation(new BulletVacationService.VacationDTO { Id = t.Id, UserId = t.UserId, Type = "vacation", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.VacationDetail ?? new(), Notes = t.Notes ?? new() });
                 await Db.SaveChangesAsync();
             } else if (t.Id > 0) {
                 await VacationService.SaveVacation(new BulletVacationService.VacationDTO { Id = t.Id, UserId = t.UserId, Type = "vacation", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.VacationDetail ?? new(), Notes = t.Notes ?? new() });
             } else {
+                // Create New Date Range
                 var start = t.Date.Date;
                 var end = (t.EndDate ?? start).Date;
                 for (var dt = start; dt <= end; dt = dt.AddDays(1)) {
@@ -473,7 +476,10 @@
     private async Task DeleteTask(int id) { if(await JS.InvokeAsync<bool>("confirm", "Delete item?")) { await BaseService.DeleteItem(id); await LoadData(); } }
     private async Task DeleteCurrentTask() { if(editingItem != null && editingItem.Id > 0 && await JS.InvokeAsync<bool>("confirm", "Delete?")) { await BaseService.DeleteItem(editingItem.Id); editingItem = null; await LoadData(); } }
     private async Task ToggleComplete(BulletTaskService.TaskDTO t) { t.Detail.IsCompleted = !t.Detail.IsCompleted; await TaskService.ToggleComplete(t.Id, t.Detail.IsCompleted); }
-    private async Task ToggleMeetingComplete(BulletTaskService.TaskDTO t) { if(t.MeetingDetail != null) { t.MeetingDetail.IsCompleted = !t.MeetingDetail.IsCompleted; await MeetingService.ToggleComplete(t.Id, t.MeetingDetail.IsCompleted); } }
+    private async Task ToggleMeetingComplete(BulletTaskService.TaskDTO t) { if(t.MeetingDetail != null) { 
+        // Parent Sync Fix: MeetingCard already updated the object, so we just save the final state
+        await MeetingService.ToggleComplete(t.Id, t.MeetingDetail.IsCompleted); 
+    } }
     private async Task SaveHabitDirectly(BulletHabitService.HabitDTO h) { await HabitService.SaveHabit(h); }
     private async Task MoveItemUp(int id) => await ReorderItem(id, -1);
     private async Task MoveItemDown(int id) => await ReorderItem(id, 1);
@@ -483,7 +489,12 @@
     private async Task ReorderItem(int id, int direction) { 
         var item = loadedItems.FirstOrDefault(x => x.Id == id);
         if (item == null) return; 
+        // Force full day scope to ensure items can be moved in week/month views
         await MoveItem(item, direction, false);
+    }
+
+    private void HandleAddClick(string cat) { 
+        _ = OpenNewEditor(cat, cat == "health" ? "health" : "task", viewDate);
     }
 
     private BulletTaskService.TaskDTO CreateCopy(BulletTaskService.TaskDTO t) {
@@ -502,7 +513,7 @@
     }
 
     private async Task OpenNewEditor(string cat, string type, DateTime targetDate) { 
-        var newItem = new BulletTaskService.TaskDTO { UserId = userId, Category = cat, Type = type, Date = targetDate, Detail = new(), HealthDetail = new(), MeetingDetail = new(), HabitDetail = new(), MediaDetail = new(), HolidayDetail = new(), BirthdayDetail = new(), AnniversaryDetail = new(), VacationDetail = new(), SportsDetail = new(), Notes = new() };
+        var newItem = new BulletTaskService.TaskDTO { UserId = userId, Category = cat, Type = type, Date = targetDate, Detail = new(), HealthDetail = new(), MeetingDetail = new(), HabitDetail = new(), HolidayDetail = new(), BirthdayDetail = new(), AnniversaryDetail = new(), VacationDetail = new(), MediaDetail = new(), SportsDetail = new(), Notes = new() };
         if (type == "health") {
             try {
                 var lastHealth = await Db.BulletHealthDetails.Include(d => d.BulletItem)
@@ -521,6 +532,7 @@
     private void OpenEdit(BulletTaskService.TaskDTO t) { 
         editingItem = CreateCopy(t); 
         editingItem.Id = t.Id;
+        // Fix binding for specialized details
         editingItem.MeetingDetail ??= new();
         editingItem.HabitDetail ??= new();
         editingItem.MediaDetail ??= new();
