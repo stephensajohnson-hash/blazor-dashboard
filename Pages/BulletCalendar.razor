@@ -60,12 +60,22 @@
         {
             <div class="h-full flex flex-col font-black">
                 <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-sm font-black uppercase text-blue-400">Search Results (@searchResults.Count)</h2>
+                    <div class="flex items-center gap-4">
+                        <h2 class="text-sm font-black uppercase text-blue-400">Search Results (@searchResults.Count)</h2>
+                        @if (TotalPages > 1)
+                        {
+                            <div class="flex items-center gap-2 bg-black/40 px-2 py-1 rounded-lg border border-gray-800">
+                                <button @onclick="() => currentPage = Math.Max(1, currentPage - 1)" disabled="@(currentPage == 1)" class="text-[10px] text-gray-400 hover:text-white disabled:opacity-30">PREV</button>
+                                <span class="text-[10px] text-gray-600">Page @currentPage of @TotalPages</span>
+                                <button @onclick="() => currentPage = Math.Min(TotalPages, currentPage + 1)" disabled="@(currentPage == TotalPages)" class="text-[10px] text-gray-400 hover:text-white disabled:opacity-30">NEXT</button>
+                            </div>
+                        }
+                    </div>
                     <button @onclick="ClearSearch" class="text-[10px] font-bold text-gray-400 hover:text-red-400 uppercase tracking-widest transition-colors">Close</button>
                 </div>
                 <div class="flex-1 overflow-y-auto pr-2 scrollbar-hide">
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-20">
-                        @foreach (var item in searchResults) {
+                        @foreach (var item in searchResults.Skip((currentPage - 1) * pageSize).Take(pageSize)) {
                             <div class="h-full border border-gray-800 rounded-xl overflow-hidden bg-gray-800/20 p-1 relative shadow-2xl">
                                 <button @onclick="() => GoToDate(item.Date)" @onclick:stopPropagation="true" 
                                         class="absolute top-2 left-2 z-20 bg-blue-600 hover:bg-blue-500 text-[8px] font-black px-1.5 py-0.5 rounded shadow-lg uppercase cursor-pointer transition-colors border-none outline-none"
@@ -148,6 +158,23 @@
             <h3 class="text-blue-400 text-xs tracking-widest mb-6">Advanced Search Engine</h3>
             
             <div class="space-y-4">
+                @* Presets Dropdown *@
+                <div>
+                    <label class="block text-[10px] text-gray-500 mb-1">Date Range Scoping</label>
+                    <select @onchange="e => SetDateRange(e.Value?.ToString())" class="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white">
+                        <option value="">Manual Selection...</option>
+                        <option value="this-month">This Month (@DateTime.Today.ToString("MMMM yyyy"))</option>
+                        <option value="last-month">Last Month (@DateTime.Today.AddMonths(-1).ToString("MMMM yyyy"))</option>
+                        <option value="next-month">Next Month (@DateTime.Today.AddMonths(1).ToString("MMMM yyyy"))</option>
+                        <option value="this-quarter">This Quarter</option>
+                        <option value="last-quarter">Last Quarter</option>
+                        <option value="next-quarter">Next Quarter</option>
+                        <option value="this-year">This Year (@DateTime.Today.Year)</option>
+                        <option value="last-year">Last Year (@(DateTime.Today.Year - 1))</option>
+                        <option value="next-year">Next Year (@(DateTime.Today.Year + 1))</option>
+                    </select>
+                </div>
+
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-[10px] text-gray-500 mb-1">From Date</label>
@@ -213,9 +240,7 @@
             @if (item.Type == "meeting") { 
                 <MeetingCard Item="item" OnClick="() => OpenEdit(item)" OnToggle="() => ToggleMeetingComplete(item)" OnDelete="() => DeleteTask(item.Id)" />
             }
-            else if (item.Type == "habit") { 
-                <HabitCard Item="@(GetHabit(item))" OnClick="() => OpenHabitEdit(GetHabit(item))" OnDelete="() => DeleteTask(item.Id)" OnChange="SaveHabitDirectly" /> 
-            }
+            else if (item.Type == "habit") { <HabitCard Item="@(GetHabit(item))" OnClick="() => OpenHabitEdit(GetHabit(item))" OnDelete="() => DeleteTask(item.Id)" OnChange="SaveHabitDirectly" /> }
             else if (item.Type == "birthday") { 
                 <BirthdayCard Item="item" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" />
             }
@@ -235,9 +260,7 @@
             else if (item.Type == "sports") { 
                 <SportsCard Item="@(GetGame(item))" OnClick="() => OpenEdit(item)" OnDelete="() => DeleteTask(item.Id)" />
             }
-            else { 
-                <TaskCard Item="item" OnClick="() => OpenEdit(item)" OnToggle="() => ToggleComplete(item)" OnDelete="() => DeleteTask(item.Id)" /> 
-            }
+            else { <TaskCard Item="item" OnClick="() => OpenEdit(item)" OnToggle="() => ToggleComplete(item)" OnDelete="() => DeleteTask(item.Id)" /> }
         </div>
     };
 
@@ -286,6 +309,11 @@
     private DateTime searchStart = DateTime.Today.AddYears(-1);
     private DateTime searchEnd = DateTime.Today.AddYears(1);
     private string searchType = "all";
+
+    // Pagination State
+    private int currentPage = 1;
+    private const int pageSize = 50;
+    private int TotalPages => (int)Math.Ceiling(searchResults.Count / (double)pageSize);
 
     private async Task LogToConsole(string msg) => await JS.InvokeVoidAsync("console.log", $"[CALENDAR] {msg}");
 
@@ -435,7 +463,7 @@
     private void SwitchView(string view) { currentView = view; _ = LoadData(); }
     private void GoToday() { viewDate = DateTime.UtcNow.AddMinutes(-clientOffset); _ = LoadData(); }
     private void GoToDate(DateTime d) { 
-        isSearching = false; searchQuery = ""; // Clear search so calendar view actually refreshes
+        isSearching = false; searchQuery = ""; // Clear search screen when jumping to a day
         viewDate = d; SwitchView("day"); 
     }
     private string GetHeaderDate() { if(currentView == "day") return viewDate.ToString("D"); return currentView == "week" ? $"Week of {weekStart:MMM d}" : viewDate.ToString("MMMM yyyy"); }
@@ -488,12 +516,12 @@
         return newItem;
     }
 
-    private async Task OpenNewEditor(string cat, string type, DateTime targetDate) { 
-        var newItem = new BulletTaskService.TaskDTO { UserId = userId, Category = cat, Type = type, Date = targetDate, Detail = new(), HealthDetail = new(), MeetingDetail = new(), HabitDetail = new(), HolidayDetail = new(), BirthdayDetail = new(), AnniversaryDetail = new(), VacationDetail = new(), MediaDetail = new(), SportsDetail = new(), Notes = new() };
+    private async Task OpenNewEditor(string cat, string type, DateTime d) { 
+        var newItem = new BulletTaskService.TaskDTO { UserId = userId, Category = cat, Type = type, Date = d, Detail = new(), HealthDetail = new(), MeetingDetail = new(), HabitDetail = new(), HolidayDetail = new(), BirthdayDetail = new(), AnniversaryDetail = new(), VacationDetail = new(), MediaDetail = new(), SportsDetail = new(), Notes = new() };
         if (type == "health") {
             try {
                 var lastHealth = await Db.BulletHealthDetails.Include(d => d.BulletItem)
-                    .Where(h => h.BulletItem.UserId == userId && h.BulletItem.Type == "health" && h.BulletItem.Date < targetDate)
+                    .Where(h => h.BulletItem.UserId == userId && h.BulletItem.Type == "health" && h.BulletItem.Date < d)
                     .OrderByDescending(h => h.BulletItem.Date).FirstOrDefaultAsync();
                 if (lastHealth != null && lastHealth.WeightLbs > 0) newItem.HealthDetail.WeightLbs = lastHealth.WeightLbs;
             } catch { }
@@ -531,9 +559,60 @@
     private async Task OpenVacationEdit(BulletTaskService.TaskDTO t) { OpenEdit(t); }
     
     private async Task HandleKeyUp(KeyboardEventArgs e) { if (e.Key == "Enter") await PerformQuickSearch(); }
-    private async Task PerformQuickSearch() { isSearching = true; searchResults = await BaseService.SearchItems(userId, searchQuery, searchType, searchStart, searchEnd); }
+    private async Task PerformQuickSearch() { 
+        currentPage = 1; // Reset to page 1 on new search
+        isSearching = true; 
+        searchResults = await BaseService.SearchItems(userId, searchQuery, searchType, searchStart, searchEnd); 
+    }
     private async Task ExecuteAdvancedSearch() { showAdvancedSearch = false; await PerformQuickSearch(); }
     private void ClearSearch() { searchQuery = ""; isSearching = false; _ = LoadData(); }
+
+    private void SetDateRange(string preset)
+    {
+        var today = DateTime.Today;
+        switch (preset)
+        {
+            case "this-month":
+                searchStart = new DateTime(today.Year, today.Month, 1);
+                searchEnd = searchStart.AddMonths(1).AddDays(-1);
+                break;
+            case "last-month":
+                searchStart = new DateTime(today.Year, today.Month, 1).AddMonths(-1);
+                searchEnd = new DateTime(today.Year, today.Month, 1).AddDays(-1);
+                break;
+            case "next-month":
+                searchStart = new DateTime(today.Year, today.Month, 1).AddMonths(1);
+                searchEnd = searchStart.AddMonths(1).AddDays(-1);
+                break;
+            case "this-quarter":
+                int q = (today.Month - 1) / 3;
+                searchStart = new DateTime(today.Year, (q * 3) + 1, 1);
+                searchEnd = searchStart.AddMonths(3).AddDays(-1);
+                break;
+            case "last-quarter":
+                int lq = ((today.Month - 1) / 3) - 1;
+                searchStart = new DateTime(today.Year, 1, 1).AddMonths(lq * 3);
+                searchEnd = searchStart.AddMonths(3).AddDays(-1);
+                break;
+            case "next-quarter":
+                int nq = ((today.Month - 1) / 3) + 1;
+                searchStart = new DateTime(today.Year, 1, 1).AddMonths(nq * 3);
+                searchEnd = searchStart.AddMonths(3).AddDays(-1);
+                break;
+            case "this-year":
+                searchStart = new DateTime(today.Year, 1, 1);
+                searchEnd = new DateTime(today.Year, 12, 31);
+                break;
+            case "last-year":
+                searchStart = new DateTime(today.Year - 1, 1, 1);
+                searchEnd = new DateTime(today.Year - 1, 12, 31);
+                break;
+            case "next-year":
+                searchStart = new DateTime(today.Year + 1, 1, 1);
+                searchEnd = new DateTime(today.Year + 1, 12, 31);
+                break;
+        }
+    }
 
     private List<BulletTaskService.TaskDTO> GetSortedItems(List<BulletTaskService.TaskDTO> items) => items?.OrderBy(t => t.SortOrder).ThenBy(t => GetTypePriority(t.Type)).ThenBy(t => t.MeetingDetail?.StartTime).ThenBy(t => t.Id).ToList() ?? new();
     private int GetTypePriority(string type) => type switch { "health" => -3, "vacation" => -2, "habit" => -1, "holiday" => 0, "meeting" => 1, "task" => 2, "birthday" => 3, "anniversary" => 4, "media" => 5, _ => 6 };
