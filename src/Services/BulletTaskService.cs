@@ -6,8 +6,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System;
 
-namespace Dashboard;
-
 public class BulletTaskService
 {
     private readonly IDbContextFactory<AppDbContext> _factory;
@@ -30,6 +28,7 @@ public class BulletTaskService
         public BulletHealthDetail? HealthDetail { get; set; }
         public BulletGameDetail? SportsDetail { get; set; } 
         
+        public List<BulletTaskTodoItem> Todos { get; set; } = new();
         public List<BulletHealthMeal> Meals { get; set; } = new();
         public List<BulletHealthWorkout> Workouts { get; set; } = new();
         public List<BulletItemNote> Notes { get; set; } = new();
@@ -76,10 +75,10 @@ public class BulletTaskService
         item.Title = dto.Title;
         item.Description = dto.Description;
         item.Date = dto.Date;
-        item.Type = dto.Type;
         item.Category = dto.Category;
         item.ImgUrl = dto.ImgUrl;
         item.LinkUrl = dto.LinkUrl;
+        item.Type = dto.Type;
         await db.SaveChangesAsync();
 
         var detail = await db.BulletTaskDetails.FindAsync(item.Id);
@@ -94,7 +93,7 @@ public class BulletTaskService
         detail.TicketUrl = dto.Detail.TicketUrl;
         detail.IsCompleted = dto.Detail.IsCompleted;
 
-        // SAVE TO-DO LIST
+        // SAVE CHECKLIST
         var existingTodos = db.BulletTaskTodoItems.Where(x => x.BulletItemId == item.Id);
         db.BulletTaskTodoItems.RemoveRange(existingTodos);
 
