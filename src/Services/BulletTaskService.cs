@@ -6,6 +6,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System;
 
+namespace Dashboard;
+
 public class BulletTaskService
 {
     private readonly IDbContextFactory<AppDbContext> _factory;
@@ -38,34 +40,36 @@ public class BulletTaskService
     public async Task<List<TaskDTO>> GetTasksForRange(int userId, DateTime start, DateTime end)
     {
         using var db = _factory.CreateDbContext();
+        
+        // SURGICAL FIX: Include Todos in the join query
         var items = await (from baseItem in db.BulletItems.Include(x => x.Todos)
                            join detail in db.BulletTaskDetails on baseItem.Id equals detail.BulletItemId
                            where baseItem.UserId == userId 
                                  && baseItem.Date >= start && baseItem.Date <= end
                                  && baseItem.Type == "task"
-                           select new TaskDTO 
-                           { 
-                               Id = baseItem.Id, UserId = baseItem.UserId, Type = baseItem.Type, Category = baseItem.Category,
-                               Date = baseItem.Date, Title = baseItem.Title, Description = baseItem.Description, 
-                               ImgUrl = baseItem.ImgUrl, LinkUrl = baseItem.LinkUrl, OriginalStringId = baseItem.OriginalStringId,
-                               SortOrder = baseItem.SortOrder,
-                               Detail = detail,
-                               Todos = baseItem.Todos.OrderBy(t => t.Order).ToList()
-                           }).ToListAsync();
+                           select new { baseItem, detail }).ToListAsync();
 
-        if (items.Any())
-        {
-            var ids = items.Select(i => i.Id).ToList();
-            var notes = await db.BulletItemNotes.Where(n => ids.Contains(n.BulletItemId)).OrderBy(n => n.Order).ToListAsync();
-            foreach (var i in items) i.Notes = notes.Where(n => n.BulletItemId == i.Id).ToList();
-        }
-        return items;
+        Console.WriteLine($"[Service] Found {items.Count} tasks. Logging Todo counts per task:");
+        
+        return items.Select(x => {
+            Console.WriteLine($"Task ID {x.baseItem.Id}: {x.baseItem.Todos?.Count ?? 0} todos in DB.");
+            return new TaskDTO 
+            { 
+                Id = x.baseItem.Id, UserId = x.baseItem.UserId, Type = x.baseItem.Type, Category = x.baseItem.Category,
+                Date = x.baseItem.Date, Title = x.baseItem.Title, Description = x.baseItem.Description, 
+                ImgUrl = x.baseItem.ImgUrl, LinkUrl = x.baseItem.LinkUrl, OriginalStringId = x.baseItem.OriginalStringId,
+                SortOrder = x.baseItem.SortOrder,
+                Detail = x.detail,
+                Todos = x.baseItem.Todos?.OrderBy(t => t.Order).ToList() ?? new List<BulletTaskTodoItem>()
+            };
+        }).ToList();
     }
 
     public async Task SaveTask(TaskDTO dto)
     {
         using var db = _factory.CreateDbContext();
-        
+        Console.WriteLine($"[Service] SaveTask called for ID {dto.Id}. Incoming Todo count: {dto.Todos?.Count ?? 0}");
+
         var item = await db.BulletItems.FindAsync(dto.Id);
         if (item == null)
         {
@@ -93,7 +97,7 @@ public class BulletTaskService
         detail.TicketUrl = dto.Detail.TicketUrl;
         detail.IsCompleted = dto.Detail.IsCompleted;
 
-        // SAVE CHECKLIST
+        // PERSIST CHECKLIST
         var existingTodos = db.BulletTaskTodoItems.Where(x => x.BulletItemId == item.Id);
         db.BulletTaskTodoItems.RemoveRange(existingTodos);
 
@@ -110,11 +114,11 @@ public class BulletTaskService
                 }).ToList();
                 
             await db.BulletTaskTodoItems.AddRangeAsync(validTodos);
+            Console.WriteLine($"[Service] ID {item.Id}: Committed {validTodos.Count} non-blank todos.");
 
             if (validTodos.Any())
             {
-                bool allDone = validTodos.All(x => x.IsCompleted);
-                detail.IsCompleted = allDone;
+                detail.IsCompleted = validTodos.All(x => x.IsCompleted);
             }
         }
 
