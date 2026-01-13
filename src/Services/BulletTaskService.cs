@@ -58,11 +58,11 @@ public class BulletTaskService
         }).ToList();
     }
 
-    public async Task SaveTask(TaskDTO dto)
+public async Task SaveTask(TaskDTO dto)
     {
         using var db = _factory.CreateDbContext();
-        Console.WriteLine($"[Service] Saving {dto.Id}. Todos in DTO: {dto.Todos?.Count ?? 0}");
 
+        // 1. Update the base item metadata
         var item = await db.BulletItems.FindAsync(dto.Id);
         if (item == null)
         {
@@ -75,9 +75,12 @@ public class BulletTaskService
         item.Category = dto.Category;
         item.ImgUrl = dto.ImgUrl;
         item.LinkUrl = dto.LinkUrl;
-        item.Type = dto.Type;
+        item.Type = dto.Type; 
+        
+        // Must save here so new items have an Id for the children to reference
         await db.SaveChangesAsync();
 
+        // 2. Update the specific Task details (Priority, Due Date, etc.)
         var detail = await db.BulletTaskDetails.FindAsync(item.Id);
         if (detail == null)
         {
@@ -90,12 +93,14 @@ public class BulletTaskService
         detail.TicketUrl = dto.Detail.TicketUrl;
         detail.IsCompleted = dto.Detail.IsCompleted;
 
-        // SAVE CHECKLIST
+        // 3. PERSIST THE CHECKLIST
+        // Clear existing items to prevent duplicates or orphaned rows
         var existingTodos = db.BulletTaskTodoItems.Where(x => x.BulletItemId == item.Id);
         db.BulletTaskTodoItems.RemoveRange(existingTodos);
 
         if (dto.Todos != null)
         {
+            // Only save items that actually have text content
             var validTodos = dto.Todos
                 .Where(t => !string.IsNullOrWhiteSpace(t.Content))
                 .Select((t, index) => new BulletTaskTodoItem
@@ -107,8 +112,8 @@ public class BulletTaskService
                 }).ToList();
                 
             await db.BulletTaskTodoItems.AddRangeAsync(validTodos);
-            Console.WriteLine($"[Service] Task {item.Id}: {validTodos.Count} items stored.");
 
+            // Final safety sync: Ensure master status matches the checklist
             if (validTodos.Any())
             {
                 detail.IsCompleted = validTodos.All(x => x.IsCompleted);
