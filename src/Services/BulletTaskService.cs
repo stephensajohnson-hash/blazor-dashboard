@@ -6,6 +6,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System;
 
+namespace Dashboard;
+
 public class BulletTaskService
 {
     private readonly IDbContextFactory<AppDbContext> _factory;
@@ -28,6 +30,7 @@ public class BulletTaskService
         public BulletHealthDetail? HealthDetail { get; set; }
         public BulletGameDetail? SportsDetail { get; set; } 
         
+        public List<BulletTaskTodoItem> Todos { get; set; } = new();
         public List<BulletHealthMeal> Meals { get; set; } = new();
         public List<BulletHealthWorkout> Workouts { get; set; } = new();
         public List<BulletItemNote> Notes { get; set; } = new();
@@ -37,21 +40,20 @@ public class BulletTaskService
     public async Task<List<TaskDTO>> GetTasksForRange(int userId, DateTime start, DateTime end)
     {
         using var db = _factory.CreateDbContext();
-        var items = await (from baseItem in db.BulletItems
-                                .Include(x => x.Todos) // Added to pull checklist
-                            join detail in db.BulletTaskDetails on baseItem.Id equals detail.BulletItemId
-                            where baseItem.UserId == userId 
-                                  && baseItem.Date >= start && baseItem.Date <= end
-                                  && baseItem.Type == "task"
-                            select new TaskDTO 
-                            { 
-                                Id = baseItem.Id, UserId = baseItem.UserId, Type = baseItem.Type, Category = baseItem.Category,
-                                Date = baseItem.Date, Title = baseItem.Title, Description = baseItem.Description, 
-                                ImgUrl = baseItem.ImgUrl, LinkUrl = baseItem.LinkUrl, OriginalStringId = baseItem.OriginalStringId,
-                                SortOrder = baseItem.SortOrder,
-                                Detail = detail,
-                                Todos = baseItem.Todos.OrderBy(t => t.Order).ToList() // Map Todos
-                            }).ToListAsync();
+        var items = await (from baseItem in db.BulletItems.Include(x => x.Todos)
+                           join detail in db.BulletTaskDetails on baseItem.Id equals detail.BulletItemId
+                           where baseItem.UserId == userId 
+                                 && baseItem.Date >= start && baseItem.Date <= end
+                                 && baseItem.Type == "task"
+                           select new TaskDTO 
+                           { 
+                               Id = baseItem.Id, UserId = baseItem.UserId, Type = baseItem.Type, Category = baseItem.Category,
+                               Date = baseItem.Date, Title = baseItem.Title, Description = baseItem.Description, 
+                               ImgUrl = baseItem.ImgUrl, LinkUrl = baseItem.LinkUrl, OriginalStringId = baseItem.OriginalStringId,
+                               SortOrder = baseItem.SortOrder,
+                               Detail = detail,
+                               Todos = baseItem.Todos.OrderBy(t => t.Order).ToList()
+                           }).ToListAsync();
 
         if (items.Any())
         {
@@ -65,8 +67,7 @@ public class BulletTaskService
     public async Task SaveTask(TaskDTO dto)
     {
         using var db = _factory.CreateDbContext();
-        
-        // 1. Save main item
+
         var item = await db.BulletItems.FindAsync(dto.Id);
         if (item == null)
         {
@@ -76,12 +77,12 @@ public class BulletTaskService
         item.Title = dto.Title;
         item.Description = dto.Description;
         item.Date = dto.Date;
+        item.Type = "task";
         item.Category = dto.Category;
         item.ImgUrl = dto.ImgUrl;
         item.LinkUrl = dto.LinkUrl;
         await db.SaveChangesAsync();
 
-        // 2. Save detail
         var detail = await db.BulletTaskDetails.FindAsync(item.Id);
         if (detail == null)
         {
@@ -94,7 +95,7 @@ public class BulletTaskService
         detail.TicketUrl = dto.Detail.TicketUrl;
         detail.IsCompleted = dto.Detail.IsCompleted;
 
-        // 3. SAVE TO-DO LIST (Surgical addition)
+        // SAVE TO-DO LIST
         var existingTodos = db.BulletTaskTodoItems.Where(x => x.BulletItemId == item.Id);
         db.BulletTaskTodoItems.RemoveRange(existingTodos);
 
@@ -107,7 +108,7 @@ public class BulletTaskService
                     BulletItemId = item.Id,
                     Content = t.Content,
                     IsCompleted = t.IsCompleted,
-                    Order = index 
+                    Order = index
                 }).ToList();
                 
             await db.BulletTaskTodoItems.AddRangeAsync(validTodos);
