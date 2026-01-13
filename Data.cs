@@ -37,7 +37,7 @@ public class AppDbContext : DbContext
     public DbSet<BulletAnniversaryDetail> BulletAnniversaryDetails { get; set; }
     public DbSet<BulletVacationDetail> BulletVacationDetails { get; set; }
     
-    // NEW: Sub-task To-do Items
+    // NEW: Sub-task Todo Items
     public DbSet<BulletTaskTodoItem> BulletTaskTodoItems { get; set; }
     
     // Health Details
@@ -93,7 +93,10 @@ public class BulletItem
     public virtual BulletGameDetail? DbSportsDetail { get; set; }
 
     public virtual ICollection<BulletItemNote> Notes { get; set; } = new List<BulletItemNote>();
+    
+    // Linked Todo List Items
     public virtual ICollection<BulletTaskTodoItem> Todos { get; set; } = new List<BulletTaskTodoItem>();
+    
     public virtual ICollection<BulletHealthMeal> Meals { get; set; } = new List<BulletHealthMeal>();
     public virtual ICollection<BulletHealthWorkout> Workouts { get; set; } = new List<BulletHealthWorkout>();
 }

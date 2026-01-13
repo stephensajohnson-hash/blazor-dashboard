@@ -64,7 +64,7 @@
                         <h2 class="text-sm font-black uppercase text-blue-400">Search Results (@searchResults.Count)</h2>
                         @if (TotalPages > 1)
                         {
-                            <div class="flex items-center gap-2 bg-black/40 px-2 py-1 rounded-lg border border-gray-800">
+                            <div class="flex items-center gap-2 bg-black/40 px-2 py-1 rounded-lg border border-gray-800 shadow-xl">
                                 <button @onclick="() => currentPage = Math.Max(1, currentPage - 1)" disabled="@(currentPage == 1)" class="text-[10px] text-gray-400 hover:text-white disabled:opacity-30">PREV</button>
                                 <span class="text-[10px] text-gray-600">Page @currentPage of @TotalPages</span>
                                 <button @onclick="() => currentPage = Math.Min(TotalPages, currentPage + 1)" disabled="@(currentPage == TotalPages)" class="text-[10px] text-gray-400 hover:text-white disabled:opacity-30">NEXT</button>
@@ -96,7 +96,7 @@
                     <div class="bg-gray-800/40 rounded-xl border border-gray-700 flex flex-col h-full overflow-hidden shadow-2xl">
                         <div class="p-3 bg-gray-800/80 border-b border-gray-700 flex justify-between items-center sticky top-0 backdrop-blur z-10">
                             <span class="font-bold text-@cat.Item3-400 uppercase tracking-wider text-sm">@cat.Item1</span>
-                            <button @onclick='async () => await OpenEditor(cat.Item2, cat.Item2 == "health" ? "health" : "task", viewDate)' 
+                            <button @onclick="() => HandleAddClick(cat.Item2)" 
                                     class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition font-bold uppercase tracking-widest shadow-md">＋ Add</button>
                         </div>
                         <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide font-bold">
@@ -166,7 +166,7 @@
             <div class="space-y-4">
                 <div>
                     <label class="block text-[10px] text-gray-500 mb-1">Date Range Scoping</label>
-                    <select @onchange="e => SetDateRange(e.Value?.ToString())" class="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white">
+                    <select @onchange="e => SetDateRange(e.Value?.ToString())" class="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white font-black">
                         <option value="">Manual Selection...</option>
                         <option value="this-month">This Month (@DateTime.Today.ToString("MMMM yyyy"))</option>
                         <option value="last-month">Last Month (@DateTime.Today.AddMonths(-1).ToString("MMMM yyyy"))</option>
@@ -193,7 +193,7 @@
 
                 <div>
                     <label class="block text-[10px] text-gray-500 mb-1">Identity Type</label>
-                    <select @bind="searchType" class="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white">
+                    <select @bind="searchType" class="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white font-black">
                         <option value="all">All Types</option>
                         <option value="task">Tasks</option>
                         <option value="meeting">Meetings</option>
@@ -207,8 +207,8 @@
                 </div>
 
                 <div class="pt-4 flex gap-2">
-                    <button @onclick="() => showAdvancedSearch = false" class="flex-1 py-2 text-[10px] text-gray-500">Cancel</button>
-                    <button @onclick="ExecuteAdvancedSearch" class="flex-1 bg-blue-600 py-2 rounded-lg text-[10px] text-white shadow-lg uppercase">Scan Database</button>
+                    <button @onclick="() => showAdvancedSearch = false" class="flex-1 py-2 text-[10px] text-gray-500 font-black uppercase">Cancel</button>
+                    <button @onclick="ExecuteAdvancedSearch" class="flex-1 bg-blue-600 py-2 rounded-lg text-[10px] text-white shadow-lg uppercase tracking-widest font-black">Scan Database</button>
                 </div>
             </div>
         </div>
@@ -238,8 +238,8 @@
     RenderFragment RenderItem(BulletTaskService.TaskDTO item) => __builder => {
         <div class="relative group">
             <div class="absolute right-1 top-1/2 -translate-y-1/2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-50">
-                <button @onclick="() => MoveItem(item, -1)" @onclick:stopPropagation="true" class="p-1.5 bg-black/60 border border-white/10 rounded hover:bg-blue-600 text-[8px] shadow-2xl">▲</button>
-                <button @onclick="() => MoveItem(item, 1)" @onclick:stopPropagation="true" class="p-1.5 bg-black/60 border border-white/10 rounded hover:bg-blue-600 text-[8px] shadow-2xl">▼</button>
+                <button @onclick="() => MoveItem(item, -1, true)" @onclick:stopPropagation="true" class="p-1.5 bg-black/60 border border-white/10 rounded hover:bg-blue-600 text-[8px] shadow-2xl">▲</button>
+                <button @onclick="() => MoveItem(item, 1, true)" @onclick:stopPropagation="true" class="p-1.5 bg-black/60 border border-white/10 rounded hover:bg-blue-600 text-[8px] shadow-2xl">▼</button>
             </div>
 
             @if (item.Type == "meeting") { 
@@ -315,9 +315,12 @@
     private DateTime searchEnd = DateTime.Today.AddYears(1);
     private string searchType = "all";
 
+    // Pagination State
     private int currentPage = 1;
     private const int pageSize = 50;
     private int TotalPages => (int)Math.Ceiling(searchResults.Count / (double)pageSize);
+
+    private async Task LogToConsole(string msg) => await JS.InvokeVoidAsync("console.log", $"[CALENDAR] {msg}");
 
     private async Task SyncDatabaseSchema()
     {
@@ -431,6 +434,7 @@
         {
             if (dbItem.SortOrder == dbTarget.SortOrder)
             {
+                // Safety Re-indexing: Fix random jumping behavior
                 for(int i=0; i<dayItems.Count; i++) {
                     var dItem = await Db.BulletItems.FindAsync(dayItems[i].Id);
                     if(dItem != null) dItem.SortOrder = i * 10;
@@ -459,6 +463,7 @@
 
     private async Task CommitItemToDatabase(BulletTaskService.TaskDTO t)
     {
+        // MASTER SYNC: Critical for conversion and category sticks
         if (t.Id > 0)
         {
             var dbItem = await Db.BulletItems.FindAsync(t.Id);
@@ -482,6 +487,7 @@
         else if (type == "vacation") {
             string vGroupId = t.VacationDetail?.VacationGroupId;
             if (t.Id > 0 && !string.IsNullOrEmpty(vGroupId)) {
+                // Group Update Fix
                 var groupDetails = await Db.BulletVacationDetails.Include(v => v.BulletItem)
                     .Where(v => v.VacationGroupId == vGroupId).ToListAsync();
                 foreach(var vd in groupDetails) {
@@ -495,8 +501,10 @@
                 await VacationService.SaveVacation(new BulletVacationService.VacationDTO { Id = t.Id, UserId = t.UserId, Type = "vacation", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.VacationDetail ?? new(), Notes = t.Notes ?? new() });
                 await Db.SaveChangesAsync();
             } else if (t.Id > 0) {
+                // Single Instance Fix
                 await VacationService.SaveVacation(new BulletVacationService.VacationDTO { Id = t.Id, UserId = t.UserId, Type = "vacation", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.VacationDetail ?? new(), Notes = t.Notes ?? new() });
             } else {
+                // Create New Range Fix
                 var start = t.Date.Date;
                 var end = (t.EndDate ?? start).Date;
                 for (var dt = start; dt <= end; dt = dt.AddDays(1)) {
@@ -663,15 +671,11 @@
     private BulletHabitService.HabitDTO GetHabit(BulletTaskService.TaskDTO t) {
         var h = loadedHabits.FirstOrDefault(x => x.Id == t.Id);
         if (h != null) return h;
-        return new BulletHabitService.HabitDTO {
-            Id = t.Id, UserId = t.UserId, Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, SortOrder = t.SortOrder, Detail = t.HabitDetail ?? new(), ImgUrl = t.ImgUrl, Notes = t.Notes ?? new()
-        };
+        return new BulletHabitService.HabitDTO { Id = t.Id, UserId = t.UserId, Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, SortOrder = t.SortOrder, Detail = t.HabitDetail ?? new(), ImgUrl = t.ImgUrl, Notes = t.Notes ?? new() };
     }
     private BulletSportsService.GameDTO GetGame(BulletTaskService.TaskDTO t) {
         var g = _sports.FirstOrDefault(x => x.Id == t.Id);
         if (g != null) return g;
-        return new BulletSportsService.GameDTO {
-            Id = t.Id, UserId = t.UserId, Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, SortOrder = t.SortOrder, Detail = t.SportsDetail ?? new(), ImgUrl = t.ImgUrl, LinkUrl = t.LinkUrl
-        };
+        return new BulletSportsService.GameDTO { Id = t.Id, UserId = t.UserId, Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, SortOrder = t.SortOrder, Detail = t.SportsDetail ?? new(), ImgUrl = t.ImgUrl, LinkUrl = t.LinkUrl };
     }
 }
