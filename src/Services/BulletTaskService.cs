@@ -77,7 +77,7 @@ public class BulletTaskService
         item.Title = dto.Title;
         item.Description = dto.Description;
         item.Date = dto.Date;
-        item.Type = "task";
+        item.Type = dto.Type;
         item.Category = dto.Category;
         item.ImgUrl = dto.ImgUrl;
         item.LinkUrl = dto.LinkUrl;

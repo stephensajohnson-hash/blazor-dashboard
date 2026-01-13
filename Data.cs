@@ -24,6 +24,8 @@ public class AppDbContext : DbContext
     public DbSet<RecipeIngredient> RecipeIngredients { get; set; }
     public DbSet<RecipeInstruction> RecipeInstructions { get; set; }
     public DbSet<RecipeCategory> RecipeCategories { get; set; }
+    
+    // Bullet Calendar Core
     public DbSet<BulletItem> BulletItems { get; set; }
     public DbSet<BulletItemNote> BulletItemNotes { get; set; }
     public DbSet<BulletTaskDetail> BulletTaskDetails { get; set; }
@@ -34,14 +36,22 @@ public class AppDbContext : DbContext
     public DbSet<BulletBirthdayDetail> BulletBirthdayDetails { get; set; }
     public DbSet<BulletAnniversaryDetail> BulletAnniversaryDetails { get; set; }
     public DbSet<BulletVacationDetail> BulletVacationDetails { get; set; }
+    
+    // Todo items
     public DbSet<BulletTaskTodoItem> BulletTaskTodoItems { get; set; }
+    
+    // Health Details
     public DbSet<BulletHealthDetail> BulletHealthDetails { get; set; }
     public DbSet<BulletHealthMeal> BulletHealthMeals { get; set; }
     public DbSet<BulletHealthWorkout> BulletHealthWorkouts { get; set; }
+
+    // Sports Data
     public DbSet<League> Leagues { get; set; }
     public DbSet<Season> Seasons { get; set; }
     public DbSet<Team> Teams { get; set; }
     public DbSet<BulletGameDetail> BulletGameDetails { get; set; }
+
+    // Budget Tracker
     public DbSet<BudgetPeriod> BudgetPeriods { get; set; }
     public DbSet<BudgetCycle> BudgetCycles { get; set; }
     public DbSet<BudgetItem> BudgetItems { get; set; }
@@ -66,7 +76,11 @@ public class BulletItem
     public string ImgUrl { get; set; } = ""; 
     public string LinkUrl { get; set; } = ""; 
     public string OriginalStringId { get; set; } = ""; 
-    [Column("Order")] public int SortOrder { get; set; } = 0; 
+    
+    [Column("Order")] 
+    public int SortOrder { get; set; } = 0; 
+
+    // Navigation Properties
     public virtual BulletTaskDetail? DbTaskDetail { get; set; }
     public virtual BulletMeetingDetail? DbMeetingDetail { get; set; }
     public virtual BulletHabitDetail? DbHabitDetail { get; set; }
@@ -77,10 +91,11 @@ public class BulletItem
     public virtual BulletVacationDetail? DbVacationDetail { get; set; }
     public virtual BulletHealthDetail? DbHealthDetail { get; set; }
     public virtual BulletGameDetail? DbSportsDetail { get; set; }
-    public virtual ICollection<BulletItemNote> Notes { get; set; } = new List<BulletItemNote>();
-    public virtual ICollection<BulletTaskTodoItem> Todos { get; set; } = new List<BulletTaskTodoItem>();
-    public virtual ICollection<BulletHealthMeal> Meals { get; set; } = new List<BulletHealthMeal>();
-    public virtual ICollection<BulletHealthWorkout> Workouts { get; set; } = new List<BulletHealthWorkout>();
+
+    public virtual List<BulletItemNote> Notes { get; set; } = new();
+    public virtual List<BulletTaskTodoItem> Todos { get; set; } = new();
+    public virtual List<BulletHealthMeal> Meals { get; set; } = new();
+    public virtual List<BulletHealthWorkout> Workouts { get; set; } = new();
 }
 
 public class BulletTaskTodoItem 
@@ -104,7 +119,8 @@ public class BulletItemNote
 
 public class BulletTaskDetail 
 { 
-    [Key, ForeignKey("BulletItem")] public int BulletItemId { get; set; } 
+    [Key, ForeignKey("BulletItem")] 
+    public int BulletItemId { get; set; } 
     public virtual BulletItem BulletItem { get; set; } = null!;
     public string Status { get; set; } = "Pending"; 
     public bool IsCompleted { get; set; } = false; 
@@ -116,7 +132,8 @@ public class BulletTaskDetail
 
 public class BulletMeetingDetail 
 { 
-    [Key, ForeignKey("BulletItem")] public int BulletItemId { get; set; } 
+    [Key, ForeignKey("BulletItem")] 
+    public int BulletItemId { get; set; } 
     public virtual BulletItem BulletItem { get; set; } = null!;
     public DateTime? StartTime { get; set; } 
     public int DurationMinutes { get; set; } 
@@ -126,7 +143,8 @@ public class BulletMeetingDetail
 
 public class BulletHabitDetail 
 { 
-    [Key, ForeignKey("BulletItem")] public int BulletItemId { get; set; } 
+    [Key, ForeignKey("BulletItem")] 
+    public int BulletItemId { get; set; } 
     public virtual BulletItem BulletItem { get; set; } = null!; 
     public int StreakCount { get; set; } = 0; 
     public string Status { get; set; } = "Active"; 
@@ -135,7 +153,8 @@ public class BulletHabitDetail
 
 public class BulletMediaDetail 
 { 
-    [Key, ForeignKey("BulletItem")] public int BulletItemId { get; set; } 
+    [Key, ForeignKey("BulletItem")] 
+    public int BulletItemId { get; set; } 
     public virtual BulletItem BulletItem { get; set; } = null!; 
     public int Rating { get; set; } = 0; 
     public int ReleaseYear { get; set; } = 0; 
@@ -144,21 +163,24 @@ public class BulletMediaDetail
 
 public class BulletHolidayDetail 
 { 
-    [Key, ForeignKey("BulletItem")] public int BulletItemId { get; set; } 
+    [Key, ForeignKey("BulletItem")] 
+    public int BulletItemId { get; set; } 
     public virtual BulletItem BulletItem { get; set; } = null!; 
     public bool IsWorkHoliday { get; set; } = false; 
 }
 
 public class BulletBirthdayDetail 
 { 
-    [Key, ForeignKey("BulletItem")] public int BulletItemId { get; set; } 
+    [Key, ForeignKey("BulletItem")] 
+    public int BulletItemId { get; set; } 
     public virtual BulletItem BulletItem { get; set; } = null!; 
     public int? DOB_Year { get; set; } 
 }
 
 public class BulletAnniversaryDetail 
 { 
-    [Key, ForeignKey("BulletItem")] public int BulletItemId { get; set; } 
+    [Key, ForeignKey("BulletItem")] 
+    public int BulletItemId { get; set; } 
     public virtual BulletItem BulletItem { get; set; } = null!; 
     public string AnniversaryType { get; set; } = "Other"; 
     public int? FirstYear { get; set; } 
@@ -166,14 +188,16 @@ public class BulletAnniversaryDetail
 
 public class BulletVacationDetail 
 { 
-    [Key, ForeignKey("BulletItem")] public int BulletItemId { get; set; } 
+    [Key, ForeignKey("BulletItem")] 
+    public int BulletItemId { get; set; } 
     public virtual BulletItem BulletItem { get; set; } = null!; 
     public string VacationGroupId { get; set; } = ""; 
 }
 
 public class BulletHealthDetail 
 { 
-    [Key, ForeignKey("BulletItem")] public int BulletItemId { get; set; } 
+    [Key, ForeignKey("BulletItem")] 
+    public int BulletItemId { get; set; } 
     public virtual BulletItem BulletItem { get; set; } = null!; 
     public double WeightLbs { get; set; } 
     public int CalculatedTDEE { get; set; } 
@@ -203,7 +227,8 @@ public class BulletHealthWorkout
 
 public class BulletGameDetail 
 { 
-    [Key, ForeignKey("BulletItem")] public int BulletItemId { get; set; } 
+    [Key, ForeignKey("BulletItem")] 
+    public int BulletItemId { get; set; } 
     public virtual BulletItem BulletItem { get; set; } = null!; 
     public int LeagueId { get; set; } 
     public int SeasonId { get; set; } 
