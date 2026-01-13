@@ -64,10 +64,11 @@ public class BulletTaskService
         return items;
     }
 
-    public async Task SaveTask(TaskDTO dto)
+   public async Task SaveTask(TaskDTO dto)
     {
         using var db = _factory.CreateDbContext();
 
+        // 1. Save or Update the Master Item
         var item = await db.BulletItems.FindAsync(dto.Id);
         if (item == null)
         {
@@ -81,8 +82,10 @@ public class BulletTaskService
         item.Category = dto.Category;
         item.ImgUrl = dto.ImgUrl;
         item.LinkUrl = dto.LinkUrl;
-        await db.SaveChangesAsync();
+        
+        await db.SaveChangesAsync(); // Ensure we have an ID for new items
 
+        // 2. Save or Update Task Details
         var detail = await db.BulletTaskDetails.FindAsync(item.Id);
         if (detail == null)
         {
@@ -95,28 +98,28 @@ public class BulletTaskService
         detail.TicketUrl = dto.Detail.TicketUrl;
         detail.IsCompleted = dto.Detail.IsCompleted;
 
-        // SAVE TO-DO LIST
+        // 3. TODO LIST PERSISTENCE
         var existingTodos = db.BulletTaskTodoItems.Where(x => x.BulletItemId == item.Id);
         db.BulletTaskTodoItems.RemoveRange(existingTodos);
 
-        if (dto.Todos != null)
+        if (dto.Todos != null && dto.Todos.Any())
         {
             var validTodos = dto.Todos
                 .Where(t => !string.IsNullOrWhiteSpace(t.Content))
                 .Select((t, index) => new BulletTaskTodoItem
                 {
-                    BulletItemId = item.Id,
+                    BulletItemId = item.Id, // Link to the master task ID
                     Content = t.Content,
                     IsCompleted = t.IsCompleted,
-                    Order = index
+                    Order = index 
                 }).ToList();
                 
             await db.BulletTaskTodoItems.AddRangeAsync(validTodos);
 
+            // Auto-complete master if all sub-items are done
             if (validTodos.Any())
             {
-                bool allDone = validTodos.All(x => x.IsCompleted);
-                detail.IsCompleted = allDone;
+                detail.IsCompleted = validTodos.All(x => x.IsCompleted);
             }
         }
 
