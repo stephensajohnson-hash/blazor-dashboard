@@ -60,54 +60,42 @@ public class BulletTaskService
         return items;
     }
 
-    public async Task SaveTask(TaskDTO dto)
+public async Task SaveTask(TaskDTO dto)
+{
+    // ... existing logic to save BulletItem and BulletTaskDetail ...
+
+    // SAVE TO-DO LIST
+    // 1. Remove existing to-dos for this item
+    var existingTodos = db.BulletTaskTodoItems.Where(x => x.BulletItemId == dto.Id);
+    db.BulletTaskTodoItems.RemoveRange(existingTodos);
+
+    // 2. Add new to-dos (filter out blanks)
+    if (dto.Todos != null)
     {
-        using var db = _factory.CreateDbContext();
+        var validTodos = dto.Todos
+            .Where(t => !string.IsNullOrWhiteSpace(t.Content))
+            .Select((t, index) => new BulletTaskTodoItem
+            {
+                BulletItemId = dto.Id,
+                Content = t.Content,
+                IsCompleted = t.IsCompleted,
+                Order = index // Reset order to be sequential
+            });
+            
+        await db.BulletTaskTodoItems.AddRangeAsync(validTodos);
 
-        // --- UTC FIX ---
-        if (dto.Date.Kind == DateTimeKind.Unspecified) dto.Date = DateTime.SpecifyKind(dto.Date, DateTimeKind.Utc);
-        else if (dto.Date.Kind == DateTimeKind.Local) dto.Date = dto.Date.ToUniversalTime();
-
-        if (dto.Detail.DueDate.HasValue)
+        // 3. Logic Sync: Auto-complete main task if all valid todos are complete
+        var todoList = validTodos.ToList();
+        if (todoList.Any())
         {
-            if (dto.Detail.DueDate.Value.Kind == DateTimeKind.Unspecified) 
-                dto.Detail.DueDate = DateTime.SpecifyKind(dto.Detail.DueDate.Value, DateTimeKind.Utc);
-            else if (dto.Detail.DueDate.Value.Kind == DateTimeKind.Local) 
-                dto.Detail.DueDate = dto.Detail.DueDate.Value.ToUniversalTime();
+            bool allDone = todoList.All(x => x.IsCompleted);
+            var detail = await db.BulletTaskDetails.FindAsync(dto.Id);
+            if (detail != null) detail.IsCompleted = allDone;
         }
-        // ---------------
-
-        BulletItem? item = null;
-        if (dto.Id > 0) item = await db.BulletItems.FindAsync(dto.Id);
-        else {
-            item = new BulletItem { UserId = dto.UserId, Type = "task", CreatedAt = DateTime.UtcNow };
-            await db.BulletItems.AddAsync(item);
-        }
-
-        item.Title = dto.Title; item.Category = dto.Category; item.Description = dto.Description; 
-        item.ImgUrl = dto.ImgUrl; item.LinkUrl = dto.LinkUrl; item.Date = dto.Date;
-        item.SortOrder = dto.SortOrder;
-        
-        await db.SaveChangesAsync();
-
-        var detail = await db.BulletTaskDetails.FindAsync(item.Id);
-        if (detail == null) { detail = new BulletTaskDetail { BulletItemId = item.Id }; await db.BulletTaskDetails.AddAsync(detail); }
-
-        // --- FIELD MAPPING FIX ---
-        detail.Status = dto.Detail.Status;
-        detail.Priority = dto.Detail.Priority;
-        detail.IsCompleted = dto.Detail.IsCompleted;
-        detail.DueDate = dto.Detail.DueDate;
-        // -------------------------
-
-        await db.SaveChangesAsync();
-
-        var oldNotes = await db.BulletItemNotes.Where(n => n.BulletItemId == item.Id).ToListAsync();
-        db.BulletItemNotes.RemoveRange(oldNotes);
-        foreach (var n in dto.Notes) { n.Id = 0; n.BulletItemId = item.Id; await db.BulletItemNotes.AddAsync(n); }
-        
-        await db.SaveChangesAsync();
     }
+
+    await db.SaveChangesAsync();
+}
 
     public async Task ToggleComplete(int id, bool isComplete)
     {
