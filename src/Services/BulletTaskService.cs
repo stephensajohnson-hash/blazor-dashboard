@@ -30,7 +30,6 @@ public class BulletTaskService
         public BulletHealthDetail? HealthDetail { get; set; }
         public BulletGameDetail? SportsDetail { get; set; } 
         
-        public List<BulletTaskTodoItem> Todos { get; set; } = new();
         public List<BulletHealthMeal> Meals { get; set; } = new();
         public List<BulletHealthWorkout> Workouts { get; set; } = new();
         public List<BulletItemNote> Notes { get; set; } = new();
@@ -64,65 +63,64 @@ public class BulletTaskService
         return items;
     }
 
-  public async Task SaveTask(TaskDTO dto)
-{
-    using var db = _factory.CreateDbContext();
-    Console.WriteLine($"[Service] Saving Task ID: {dto.Id}. Todo Count in DTO: {dto.Todos?.Count ?? 0}");
-
-    var item = await db.BulletItems.FindAsync(dto.Id);
-    if (item == null)
+    public async Task SaveTask(TaskDTO dto)
     {
-        item = new BulletItem { UserId = dto.UserId, CreatedAt = DateTime.UtcNow };
-        db.BulletItems.Add(item);
-    }
-    item.Title = dto.Title;
-    item.Description = dto.Description;
-    item.Date = dto.Date;
-    item.Type = "task";
-    item.Category = dto.Category;
-    item.ImgUrl = dto.ImgUrl;
-    item.LinkUrl = dto.LinkUrl;
-    await db.SaveChangesAsync();
-
-    var detail = await db.BulletTaskDetails.FindAsync(item.Id);
-    if (detail == null)
-    {
-        detail = new BulletTaskDetail { BulletItemId = item.Id };
-        db.BulletTaskDetails.Add(detail);
-    }
-    detail.Priority = dto.Detail.Priority;
-    detail.DueDate = dto.Detail.DueDate;
-    detail.TicketNumber = dto.Detail.TicketNumber;
-    detail.TicketUrl = dto.Detail.TicketUrl;
-    detail.IsCompleted = dto.Detail.IsCompleted;
-
-    // TODO PERSISTENCE logic
-    var existingTodos = db.BulletTaskTodoItems.Where(x => x.BulletItemId == item.Id);
-    db.BulletTaskTodoItems.RemoveRange(existingTodos);
-
-    if (dto.Todos != null)
-    {
-        var validTodos = dto.Todos
-            .Where(t => !string.IsNullOrWhiteSpace(t.Content))
-            .Select((t, index) => new BulletTaskTodoItem
-            {
-                BulletItemId = item.Id,
-                Content = t.Content,
-                IsCompleted = t.IsCompleted,
-                Order = index 
-            }).ToList();
-            
-        await db.BulletTaskTodoItems.AddRangeAsync(validTodos);
-        Console.WriteLine($"[Service] Persisting {validTodos.Count} valid todo items to DB.");
-
-        if (validTodos.Any())
+        using var db = _factory.CreateDbContext();
+        
+        var item = await db.BulletItems.FindAsync(dto.Id);
+        if (item == null)
         {
-            detail.IsCompleted = validTodos.All(x => x.IsCompleted);
+            item = new BulletItem { UserId = dto.UserId, CreatedAt = DateTime.UtcNow };
+            db.BulletItems.Add(item);
         }
-    }
+        item.Title = dto.Title;
+        item.Description = dto.Description;
+        item.Date = dto.Date;
+        item.Type = dto.Type;
+        item.Category = dto.Category;
+        item.ImgUrl = dto.ImgUrl;
+        item.LinkUrl = dto.LinkUrl;
+        await db.SaveChangesAsync();
 
-    await db.SaveChangesAsync();
-}
+        var detail = await db.BulletTaskDetails.FindAsync(item.Id);
+        if (detail == null)
+        {
+            detail = new BulletTaskDetail { BulletItemId = item.Id };
+            db.BulletTaskDetails.Add(detail);
+        }
+        detail.Priority = dto.Detail.Priority;
+        detail.DueDate = dto.Detail.DueDate;
+        detail.TicketNumber = dto.Detail.TicketNumber;
+        detail.TicketUrl = dto.Detail.TicketUrl;
+        detail.IsCompleted = dto.Detail.IsCompleted;
+
+        // SAVE TO-DO LIST
+        var existingTodos = db.BulletTaskTodoItems.Where(x => x.BulletItemId == item.Id);
+        db.BulletTaskTodoItems.RemoveRange(existingTodos);
+
+        if (dto.Todos != null)
+        {
+            var validTodos = dto.Todos
+                .Where(t => !string.IsNullOrWhiteSpace(t.Content))
+                .Select((t, index) => new BulletTaskTodoItem
+                {
+                    BulletItemId = item.Id,
+                    Content = t.Content,
+                    IsCompleted = t.IsCompleted,
+                    Order = index 
+                }).ToList();
+                
+            await db.BulletTaskTodoItems.AddRangeAsync(validTodos);
+
+            if (validTodos.Any())
+            {
+                bool allDone = validTodos.All(x => x.IsCompleted);
+                detail.IsCompleted = allDone;
+            }
+        }
+
+        await db.SaveChangesAsync();
+    }
 
     public async Task ToggleComplete(int id, bool isComplete)
     {
