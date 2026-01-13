@@ -38,18 +38,20 @@ public class BulletTaskService
     {
         using var db = _factory.CreateDbContext();
         var items = await (from baseItem in db.BulletItems
-                           join detail in db.BulletTaskDetails on baseItem.Id equals detail.BulletItemId
-                           where baseItem.UserId == userId 
-                                 && baseItem.Date >= start && baseItem.Date <= end
-                                 && baseItem.Type == "task"
-                           select new TaskDTO 
-                           { 
-                               Id = baseItem.Id, UserId = baseItem.UserId, Type = baseItem.Type, Category = baseItem.Category,
-                               Date = baseItem.Date, Title = baseItem.Title, Description = baseItem.Description, 
-                               ImgUrl = baseItem.ImgUrl, LinkUrl = baseItem.LinkUrl, OriginalStringId = baseItem.OriginalStringId,
-                               SortOrder = baseItem.SortOrder,
-                               Detail = detail
-                           }).ToListAsync();
+                                .Include(x => x.Todos) // Added to pull checklist
+                            join detail in db.BulletTaskDetails on baseItem.Id equals detail.BulletItemId
+                            where baseItem.UserId == userId 
+                                  && baseItem.Date >= start && baseItem.Date <= end
+                                  && baseItem.Type == "task"
+                            select new TaskDTO 
+                            { 
+                                Id = baseItem.Id, UserId = baseItem.UserId, Type = baseItem.Type, Category = baseItem.Category,
+                                Date = baseItem.Date, Title = baseItem.Title, Description = baseItem.Description, 
+                                ImgUrl = baseItem.ImgUrl, LinkUrl = baseItem.LinkUrl, OriginalStringId = baseItem.OriginalStringId,
+                                SortOrder = baseItem.SortOrder,
+                                Detail = detail,
+                                Todos = baseItem.Todos.OrderBy(t => t.Order).ToList() // Map Todos
+                            }).ToListAsync();
 
         if (items.Any())
         {
@@ -60,42 +62,65 @@ public class BulletTaskService
         return items;
     }
 
-public async Task SaveTask(TaskDTO dto)
-{
-    // ... existing logic to save BulletItem and BulletTaskDetail ...
-
-    // SAVE TO-DO LIST
-    // 1. Remove existing to-dos for this item
-    var existingTodos = db.BulletTaskTodoItems.Where(x => x.BulletItemId == dto.Id);
-    db.BulletTaskTodoItems.RemoveRange(existingTodos);
-
-    // 2. Add new to-dos (filter out blanks)
-    if (dto.Todos != null)
+    public async Task SaveTask(TaskDTO dto)
     {
-        var validTodos = dto.Todos
-            .Where(t => !string.IsNullOrWhiteSpace(t.Content))
-            .Select((t, index) => new BulletTaskTodoItem
-            {
-                BulletItemId = dto.Id,
-                Content = t.Content,
-                IsCompleted = t.IsCompleted,
-                Order = index // Reset order to be sequential
-            });
-            
-        await db.BulletTaskTodoItems.AddRangeAsync(validTodos);
-
-        // 3. Logic Sync: Auto-complete main task if all valid todos are complete
-        var todoList = validTodos.ToList();
-        if (todoList.Any())
+        using var db = _factory.CreateDbContext();
+        
+        // 1. Save main item
+        var item = await db.BulletItems.FindAsync(dto.Id);
+        if (item == null)
         {
-            bool allDone = todoList.All(x => x.IsCompleted);
-            var detail = await db.BulletTaskDetails.FindAsync(dto.Id);
-            if (detail != null) detail.IsCompleted = allDone;
+            item = new BulletItem { UserId = dto.UserId, CreatedAt = DateTime.UtcNow };
+            db.BulletItems.Add(item);
         }
-    }
+        item.Title = dto.Title;
+        item.Description = dto.Description;
+        item.Date = dto.Date;
+        item.Category = dto.Category;
+        item.ImgUrl = dto.ImgUrl;
+        item.LinkUrl = dto.LinkUrl;
+        await db.SaveChangesAsync();
 
-    await db.SaveChangesAsync();
-}
+        // 2. Save detail
+        var detail = await db.BulletTaskDetails.FindAsync(item.Id);
+        if (detail == null)
+        {
+            detail = new BulletTaskDetail { BulletItemId = item.Id };
+            db.BulletTaskDetails.Add(detail);
+        }
+        detail.Priority = dto.Detail.Priority;
+        detail.DueDate = dto.Detail.DueDate;
+        detail.TicketNumber = dto.Detail.TicketNumber;
+        detail.TicketUrl = dto.Detail.TicketUrl;
+        detail.IsCompleted = dto.Detail.IsCompleted;
+
+        // 3. SAVE TO-DO LIST (Surgical addition)
+        var existingTodos = db.BulletTaskTodoItems.Where(x => x.BulletItemId == item.Id);
+        db.BulletTaskTodoItems.RemoveRange(existingTodos);
+
+        if (dto.Todos != null)
+        {
+            var validTodos = dto.Todos
+                .Where(t => !string.IsNullOrWhiteSpace(t.Content))
+                .Select((t, index) => new BulletTaskTodoItem
+                {
+                    BulletItemId = item.Id,
+                    Content = t.Content,
+                    IsCompleted = t.IsCompleted,
+                    Order = index 
+                }).ToList();
+                
+            await db.BulletTaskTodoItems.AddRangeAsync(validTodos);
+
+            if (validTodos.Any())
+            {
+                bool allDone = validTodos.All(x => x.IsCompleted);
+                detail.IsCompleted = allDone;
+            }
+        }
+
+        await db.SaveChangesAsync();
+    }
 
     public async Task ToggleComplete(int id, bool isComplete)
     {
