@@ -40,8 +40,6 @@ public class BulletTaskService
     public async Task<List<TaskDTO>> GetTasksForRange(int userId, DateTime start, DateTime end)
     {
         using var db = _factory.CreateDbContext();
-        
-        // SURGICAL FIX: Include Todos in the join query
         var items = await (from baseItem in db.BulletItems.Include(x => x.Todos)
                            join detail in db.BulletTaskDetails on baseItem.Id equals detail.BulletItemId
                            where baseItem.UserId == userId 
@@ -49,26 +47,21 @@ public class BulletTaskService
                                  && baseItem.Type == "task"
                            select new { baseItem, detail }).ToListAsync();
 
-        Console.WriteLine($"[Service] Found {items.Count} tasks. Logging Todo counts per task:");
-        
-        return items.Select(x => {
-            Console.WriteLine($"Task ID {x.baseItem.Id}: {x.baseItem.Todos?.Count ?? 0} todos in DB.");
-            return new TaskDTO 
-            { 
-                Id = x.baseItem.Id, UserId = x.baseItem.UserId, Type = x.baseItem.Type, Category = x.baseItem.Category,
-                Date = x.baseItem.Date, Title = x.baseItem.Title, Description = x.baseItem.Description, 
-                ImgUrl = x.baseItem.ImgUrl, LinkUrl = x.baseItem.LinkUrl, OriginalStringId = x.baseItem.OriginalStringId,
-                SortOrder = x.baseItem.SortOrder,
-                Detail = x.detail,
-                Todos = x.baseItem.Todos?.OrderBy(t => t.Order).ToList() ?? new List<BulletTaskTodoItem>()
-            };
+        return items.Select(x => new TaskDTO 
+        { 
+            Id = x.baseItem.Id, UserId = x.baseItem.UserId, Type = x.baseItem.Type, Category = x.baseItem.Category,
+            Date = x.baseItem.Date, Title = x.baseItem.Title, Description = x.baseItem.Description, 
+            ImgUrl = x.baseItem.ImgUrl, LinkUrl = x.baseItem.LinkUrl, OriginalStringId = x.baseItem.OriginalStringId,
+            SortOrder = x.baseItem.SortOrder,
+            Detail = x.detail,
+            Todos = x.baseItem.Todos.OrderBy(t => t.Order).ToList()
         }).ToList();
     }
 
     public async Task SaveTask(TaskDTO dto)
     {
         using var db = _factory.CreateDbContext();
-        Console.WriteLine($"[Service] SaveTask called for ID {dto.Id}. Incoming Todo count: {dto.Todos?.Count ?? 0}");
+        Console.WriteLine($"[Service] Saving {dto.Id}. Todos in DTO: {dto.Todos?.Count ?? 0}");
 
         var item = await db.BulletItems.FindAsync(dto.Id);
         if (item == null)
@@ -97,7 +90,7 @@ public class BulletTaskService
         detail.TicketUrl = dto.Detail.TicketUrl;
         detail.IsCompleted = dto.Detail.IsCompleted;
 
-        // PERSIST CHECKLIST
+        // SAVE CHECKLIST
         var existingTodos = db.BulletTaskTodoItems.Where(x => x.BulletItemId == item.Id);
         db.BulletTaskTodoItems.RemoveRange(existingTodos);
 
@@ -114,7 +107,7 @@ public class BulletTaskService
                 }).ToList();
                 
             await db.BulletTaskTodoItems.AddRangeAsync(validTodos);
-            Console.WriteLine($"[Service] ID {item.Id}: Committed {validTodos.Count} non-blank todos.");
+            Console.WriteLine($"[Service] Task {item.Id}: {validTodos.Count} items stored.");
 
             if (validTodos.Any())
             {
