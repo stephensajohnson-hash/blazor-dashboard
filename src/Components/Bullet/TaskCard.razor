@@ -8,33 +8,40 @@
         <button @onclick="HandleDelete" class="p-1 rounded bg-gray-700 hover:bg-red-600 text-red-400 hover:text-white border border-gray-600 shadow-md">✕</button>
     </div>
 
-    <div class="flex w-full">
+    <div class="flex w-full p-3 gap-3">
         @if (!string.IsNullOrEmpty(Item.ImgUrl))
         {
-            <div class="flex-shrink-0 pt-1">
+            @* Column 1: Image wrapper with fixed width and proportional height *@
+            <div class="flex-shrink-0" style="width: @BulletViewConfig.ImgWidthDay;">
                 <img src="@Item.ImgUrl" 
-                    style="width: @BulletViewConfig.ImgWidthDay; height: auto; object-fit: contain;" 
+                    style="width: 100%; height: auto; object-fit: contain;" 
                     class="rounded shadow-lg border border-gray-700" 
                     alt="Task image" />
             </div>
         }
-        <div class="flex-1 flex flex-col p-3 min-w-0 font-black uppercase">
-            <div class="shrink-0 mt-0.5 mb-2 font-black uppercase">
-                <input type="checkbox" checked="@Item.Detail.IsCompleted" @onchange="HandleToggle" class="w-4 h-4 rounded bg-gray-800 border-gray-600 cursor-pointer accent-blue-500 font-black uppercase" />
-            </div>
 
-            <h4 class="text-sm font-bold leading-tight text-white mb-1 @(Item.Detail.IsCompleted ? "line-through text-gray-500" : "") font-black uppercase">
-                @if(!string.IsNullOrEmpty(Item.LinkUrl)) { <a href="@Item.LinkUrl" target="_blank" class="hover:text-blue-400 hover:underline transition font-black uppercase">@Item.Title</a> }
-                else { @Item.Title }
-            </h4>
-            
-            <div class="flex flex-wrap gap-2 items-center text-xs font-black uppercase">
-                @if(!string.IsNullOrEmpty(Item.Detail.Priority) && Item.Detail.Priority != "Normal") {
-                    <span class="px-1.5 rounded font-bold @(Item.Detail.Priority == "High" ? "bg-red-900 text-red-200" : "bg-green-900 text-green-200") font-black uppercase">@Item.Detail.Priority</span>
-                }
-                @if(!string.IsNullOrEmpty(Item.Detail.TicketNumber)) {
-                    <span class="bg-gray-700 text-gray-300 px-1.5 rounded font-mono font-black uppercase">@Item.Detail.TicketNumber</span>
-                }
+        @* Column 2: Content wrapper *@
+        <div class="flex-1 flex flex-col min-w-0 font-black uppercase">
+            <div class="flex items-start gap-3">
+                <div class="shrink-0 mt-0.5 font-black uppercase">
+                    <input type="checkbox" checked="@Item.Detail.IsCompleted" @onchange="HandleToggle" class="w-4 h-4 rounded bg-gray-800 border-gray-600 cursor-pointer accent-blue-500 font-black uppercase" />
+                </div>
+
+                <div class="flex-1 min-w-0">
+                    <h4 class="text-sm font-bold leading-tight text-white mb-1 @(Item.Detail.IsCompleted ? "line-through text-gray-500" : "") font-black uppercase truncate">
+                        @if(!string.IsNullOrEmpty(Item.LinkUrl)) { <a href="@Item.LinkUrl" target="_blank" class="hover:text-blue-400 hover:underline transition font-black uppercase">@Item.Title</a> }
+                        else { @Item.Title }
+                    </h4>
+                    
+                    <div class="flex flex-wrap gap-2 items-center text-xs font-black uppercase">
+                        @if(!string.IsNullOrEmpty(Item.Detail.Priority) && Item.Detail.Priority != "Normal") {
+                            <span class="px-1.5 rounded font-bold @(Item.Detail.Priority == "High" ? "bg-red-900 text-red-200" : "bg-green-900 text-green-200") font-black uppercase">@Item.Detail.Priority</span>
+                        }
+                        @if(!string.IsNullOrEmpty(Item.Detail.TicketNumber)) {
+                            <span class="bg-gray-700 text-gray-300 px-1.5 rounded font-mono font-black uppercase">@Item.Detail.TicketNumber</span>
+                        }
+                    </div>
+                </div>
             </div>
 
             @if(!string.IsNullOrEmpty(Item.Description)) { 
@@ -89,7 +96,18 @@
     
     private async Task HandleToggle(ChangeEventArgs e) 
     {
-        Item.Detail.IsCompleted = (bool)(e.Value ?? false);
+        bool isNowComplete = (bool)(e.Value ?? false);
+        Item.Detail.IsCompleted = isNowComplete;
+
+        // If checking/unchecking the master, sync all sub-items to match
+        if(Item.Todos != null)
+        {
+            foreach(var todo in Item.Todos) 
+            {
+                todo.IsCompleted = isNowComplete;
+            }
+        }
+
         await OnToggle.InvokeAsync(Item);
     }
 
@@ -97,13 +115,10 @@
     {
         todo.IsCompleted = (bool)(e.Value ?? false);
         
-        // Surgical Fix: Recalculate master status based on the checklist
+        // Master status is controlled by the checklist state
         bool allFinished = Item.Todos.All(t => t.IsCompleted);
-        
-        // Update the master task object state
         Item.Detail.IsCompleted = allFinished;
         
-        // Send the updated object to the parent to be saved
         await OnToggle.InvokeAsync(Item);
     }
 }
