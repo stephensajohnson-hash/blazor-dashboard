@@ -96,7 +96,7 @@
                     <div class="bg-gray-800/40 rounded-xl border border-gray-700 flex flex-col h-full overflow-hidden shadow-2xl">
                         <div class="p-3 bg-gray-800/80 border-b border-gray-700 flex justify-between items-center sticky top-0 backdrop-blur z-10">
                             <span class="font-bold text-@cat.Item3-400 uppercase tracking-wider text-sm">@cat.Item1</span>
-                            <button @onclick="() => HandleAddClick(cat.Item2)" 
+                            <button @onclick='async () => await OpenEditor(cat.Item2, cat.Item2 == "health" ? "health" : "task", viewDate)' 
                                     class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition font-bold uppercase tracking-widest shadow-md">＋ Add</button>
                         </div>
                         <div class="p-3 overflow-y-auto flex-1 space-y-3 scrollbar-hide font-bold">
@@ -147,6 +147,13 @@
                 </div>
             </div>
         }
+    </div>
+
+    @* ADMIN SYNC BUTTON *@
+    <div class="fixed bottom-4 left-4 z-[100]">
+        <button @onclick="SyncDatabaseSchema" class="bg-red-600 text-white text-[10px] px-3 py-1 rounded shadow-xl font-black uppercase tracking-widest hover:bg-red-500 transition-colors">
+            ⚠️ Admin: Sync Todo Table
+        </button>
     </div>
 </div>
 
@@ -231,8 +238,8 @@
     RenderFragment RenderItem(BulletTaskService.TaskDTO item) => __builder => {
         <div class="relative group">
             <div class="absolute right-1 top-1/2 -translate-y-1/2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-50">
-                <button @onclick="() => MoveItem(item, -1, true)" @onclick:stopPropagation="true" class="p-1.5 bg-black/60 border border-white/10 rounded hover:bg-blue-600 text-[8px] shadow-2xl">▲</button>
-                <button @onclick="() => MoveItem(item, 1, true)" @onclick:stopPropagation="true" class="p-1.5 bg-black/60 border border-white/10 rounded hover:bg-blue-600 text-[8px] shadow-2xl">▼</button>
+                <button @onclick="() => MoveItem(item, -1)" @onclick:stopPropagation="true" class="p-1.5 bg-black/60 border border-white/10 rounded hover:bg-blue-600 text-[8px] shadow-2xl">▲</button>
+                <button @onclick="() => MoveItem(item, 1)" @onclick:stopPropagation="true" class="p-1.5 bg-black/60 border border-white/10 rounded hover:bg-blue-600 text-[8px] shadow-2xl">▼</button>
             </div>
 
             @if (item.Type == "meeting") { 
@@ -308,12 +315,34 @@
     private DateTime searchEnd = DateTime.Today.AddYears(1);
     private string searchType = "all";
 
-    // Pagination State
     private int currentPage = 1;
     private const int pageSize = 50;
     private int TotalPages => (int)Math.Ceiling(searchResults.Count / (double)pageSize);
 
-    private async Task LogToConsole(string msg) => await JS.InvokeVoidAsync("console.log", $"[CALENDAR] {msg}");
+    private async Task SyncDatabaseSchema()
+    {
+        try 
+        {
+            string sql = @"
+                CREATE TABLE IF NOT EXISTS ""BulletTaskTodoItems"" (
+                    ""Id"" INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ""BulletItemId"" INTEGER NOT NULL,
+                    ""Content"" TEXT NOT NULL,
+                    ""IsCompleted"" BOOLEAN NOT NULL DEFAULT 0,
+                    ""Order"" INTEGER NOT NULL DEFAULT 0,
+                    CONSTRAINT ""FK_BulletTaskTodoItems_BulletItems_BulletItemId"" 
+                    FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems"" (""Id"") ON DELETE CASCADE
+                );";
+
+            await Db.Database.ExecuteSqlRawAsync(sql);
+            await JS.InvokeVoidAsync("alert", "Database Sync Complete: Todo Table Ready.");
+        }
+        catch (Exception ex) 
+        {
+            await LogToConsole($"DB Sync Fail: {ex.Message}");
+            await JS.InvokeVoidAsync("alert", "Error: " + ex.Message);
+        }
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender) {
         if (firstRender) {
@@ -402,7 +431,6 @@
         {
             if (dbItem.SortOrder == dbTarget.SortOrder)
             {
-                // Safety Re-indexing: Assign sequential orders if duplicates found to stop jumping
                 for(int i=0; i<dayItems.Count; i++) {
                     var dItem = await Db.BulletItems.FindAsync(dayItems[i].Id);
                     if(dItem != null) dItem.SortOrder = i * 10;
@@ -431,7 +459,6 @@
 
     private async Task CommitItemToDatabase(BulletTaskService.TaskDTO t)
     {
-        // MASTER SYNC: Update Type and Category in master table to allow identity changes (Task -> Media)
         if (t.Id > 0)
         {
             var dbItem = await Db.BulletItems.FindAsync(t.Id);
@@ -455,7 +482,6 @@
         else if (type == "vacation") {
             string vGroupId = t.VacationDetail?.VacationGroupId;
             if (t.Id > 0 && !string.IsNullOrEmpty(vGroupId)) {
-                // Group Update: Sync metadata to all instances in this vacation group
                 var groupDetails = await Db.BulletVacationDetails.Include(v => v.BulletItem)
                     .Where(v => v.VacationGroupId == vGroupId).ToListAsync();
                 foreach(var vd in groupDetails) {
@@ -466,14 +492,11 @@
                         vd.BulletItem.ImgUrl = t.ImgUrl;
                     }
                 }
-                // Specifically update the instance for instance-specific fields (Notes)
                 await VacationService.SaveVacation(new BulletVacationService.VacationDTO { Id = t.Id, UserId = t.UserId, Type = "vacation", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.VacationDetail ?? new(), Notes = t.Notes ?? new() });
                 await Db.SaveChangesAsync();
             } else if (t.Id > 0) {
-                // Single Instance Update
                 await VacationService.SaveVacation(new BulletVacationService.VacationDTO { Id = t.Id, UserId = t.UserId, Type = "vacation", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.VacationDetail ?? new(), Notes = t.Notes ?? new() });
             } else {
-                // Create New Date Range
                 var start = t.Date.Date;
                 var end = (t.EndDate ?? start).Date;
                 for (var dt = start; dt <= end; dt = dt.AddDays(1)) {
@@ -494,7 +517,7 @@
     private void SwitchView(string view) { currentView = view; _ = LoadData(); }
     private void GoToday() { viewDate = DateTime.UtcNow.AddMinutes(-clientOffset); _ = LoadData(); }
     private void GoToDate(DateTime d) { 
-        isSearching = false; searchQuery = ""; // Clear search results screen
+        isSearching = false; searchQuery = ""; 
         viewDate = d; SwitchView("day"); 
     }
     private string GetHeaderDate() { if(currentView == "day") return viewDate.ToString("D"); return currentView == "week" ? $"Week of {weekStart:MMM d}" : viewDate.ToString("MMMM yyyy"); }
@@ -502,7 +525,6 @@
     private async Task DeleteCurrentTask() { if(editingItem != null && editingItem.Id > 0 && await JS.InvokeAsync<bool>("confirm", "Delete?")) { await BaseService.DeleteItem(editingItem.Id); editingItem = null; await LoadData(); } }
     private async Task ToggleComplete(BulletTaskService.TaskDTO t) { t.Detail.IsCompleted = !t.Detail.IsCompleted; await TaskService.ToggleComplete(t.Id, t.Detail.IsCompleted); }
     private async Task ToggleMeetingComplete(BulletTaskService.TaskDTO t) { if(t.MeetingDetail != null) { 
-        // Parent Sync Fix: MeetingCard already toggled the local object, so we just save the final state
         await MeetingService.ToggleComplete(t.Id, t.MeetingDetail.IsCompleted); 
     } }
     private async Task SaveHabitDirectly(BulletHabitService.HabitDTO h) { await HabitService.SaveHabit(h); }
@@ -514,7 +536,6 @@
     private async Task ReorderItem(int id, int direction) { 
         var item = loadedItems.FirstOrDefault(x => x.Id == id);
         if (item == null) return; 
-        // Force full day scope to allow movement in week/month views
         await MoveItem(item, direction, false);
     }
 
@@ -557,7 +578,6 @@
     private void OpenEdit(BulletTaskService.TaskDTO t) { 
         editingItem = CreateCopy(t); 
         editingItem.Id = t.Id;
-        // Fix binding for specialized details
         editingItem.MeetingDetail ??= new();
         editingItem.HabitDetail ??= new();
         editingItem.MediaDetail ??= new();
@@ -581,9 +601,7 @@
     
     private async Task HandleKeyUp(KeyboardEventArgs e) { if (e.Key == "Enter") await PerformQuickSearch(); }
     private async Task PerformQuickSearch() { 
-        currentPage = 1; 
-        isSearching = true; 
-        // FIX: Sort results earliest-first before pagination
+        currentPage = 1; isSearching = true; 
         searchResults = (await BaseService.SearchItems(userId, searchQuery, searchType, searchStart, searchEnd)).OrderBy(x => x.Date).ToList(); 
     }
     private async Task ExecuteAdvancedSearch() { showAdvancedSearch = false; await PerformQuickSearch(); }

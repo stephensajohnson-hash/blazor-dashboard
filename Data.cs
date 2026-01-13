@@ -37,6 +37,9 @@ public class AppDbContext : DbContext
     public DbSet<BulletAnniversaryDetail> BulletAnniversaryDetails { get; set; }
     public DbSet<BulletVacationDetail> BulletVacationDetails { get; set; }
     
+    // NEW: Sub-task To-do Items
+    public DbSet<BulletTaskTodoItem> BulletTaskTodoItems { get; set; }
+    
     // Health Details
     public DbSet<BulletHealthDetail> BulletHealthDetails { get; set; }
     public DbSet<BulletHealthMeal> BulletHealthMeals { get; set; }
@@ -77,7 +80,7 @@ public class BulletItem
     [Column("Order")] 
     public int SortOrder { get; set; } = 0; 
 
-    // Navigation Properties (Inverse links for SQL Joins)
+    // Navigation Properties
     public virtual BulletTaskDetail? DbTaskDetail { get; set; }
     public virtual BulletMeetingDetail? DbMeetingDetail { get; set; }
     public virtual BulletHabitDetail? DbHabitDetail { get; set; }
@@ -90,8 +93,18 @@ public class BulletItem
     public virtual BulletGameDetail? DbSportsDetail { get; set; }
 
     public virtual ICollection<BulletItemNote> Notes { get; set; } = new List<BulletItemNote>();
+    public virtual ICollection<BulletTaskTodoItem> Todos { get; set; } = new List<BulletTaskTodoItem>();
     public virtual ICollection<BulletHealthMeal> Meals { get; set; } = new List<BulletHealthMeal>();
     public virtual ICollection<BulletHealthWorkout> Workouts { get; set; } = new List<BulletHealthWorkout>();
+}
+
+public class BulletTaskTodoItem 
+{ 
+    public int Id { get; set; } 
+    public int BulletItemId { get; set; } 
+    public string Content { get; set; } = ""; 
+    public bool IsCompleted { get; set; } = false; 
+    public int Order { get; set; } = 0; 
 }
 
 public class BulletItemNote 
