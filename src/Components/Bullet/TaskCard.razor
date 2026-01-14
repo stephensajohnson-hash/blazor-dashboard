@@ -28,7 +28,6 @@
         <div class="flex-1 flex flex-col p-3 min-w-0 font-black">
             <div class="flex items-start gap-3">
                 <div class="shrink-0 mt-0.5 font-black" @onclick:stopPropagation="true">
-                    @* Use @onchange for reliable state management *@
                     <input type="checkbox" checked="@Item.Detail.IsCompleted" @onchange="HandleToggle" class="w-4 h-4 rounded bg-gray-800 border-gray-600 cursor-pointer accent-blue-500 font-black" />
                 </div>
 
@@ -60,6 +59,7 @@
                     @foreach(var todo in Item.Todos.OrderBy(t => t.Order))
                     {
                         <div class="flex items-start gap-3 group/todo font-black">
+                            @* Use checked attribute with onchange for cleanest state transfer *@
                             <input type="checkbox" checked="@todo.IsCompleted" @onchange="(e) => ToggleTodo(todo, e)" class="w-3.5 h-3.5 mt-0.5 rounded bg-gray-900 border-gray-700 accent-blue-500 cursor-pointer font-black" />
                             <span class="text-xs @(todo.IsCompleted ? "text-gray-600 line-through" : "text-gray-300") font-black">
                                 <span class="font-bold text-[9px] text-gray-500 mr-1 font-black">@(todo.Order + 1).</span>
@@ -89,6 +89,8 @@
     }
 </div>
 
+@inject IJSRuntime JS
+
 @code {
     [Parameter] public BulletTaskService.TaskDTO Item { get; set; } = new();
     [Parameter] public EventCallback<BulletTaskService.TaskDTO> OnClick { get; set; }
@@ -101,6 +103,8 @@
     private async Task HandleToggle(ChangeEventArgs e) 
     {
         bool isNowComplete = (bool)(e.Value ?? false);
+        await JS.InvokeVoidAsync("console.log", $"[TaskCard] Main Toggle: {isNowComplete}");
+        
         Item.Detail.IsCompleted = isNowComplete;
 
         if(Item.Todos != null)
@@ -111,18 +115,22 @@
             }
         }
 
-        // Must await the callback to ensure database persistence
         await OnToggle.InvokeAsync(Item);
     }
 
     private async Task ToggleTodo(BulletTaskTodoItem todo, ChangeEventArgs e)
     {
-        todo.IsCompleted = (bool)(e.Value ?? false);
+        bool isTodoComplete = (bool)(e.Value ?? false);
+        await JS.InvokeVoidAsync("console.log", $"[TaskCard] SubTodo '{todo.Content}' Toggle: {isTodoComplete}");
         
-        // Checklist logic: Task is only "Done" if ALL sub-items are checked
-        bool allFinished = Item.Todos.All(t => t.IsCompleted);
+        todo.IsCompleted = isTodoComplete;
+
+        // CHECKLIST LOGIC: Calculate parent based on ALL children
+        bool allFinished = Item.Todos != null && Item.Todos.All(t => t.IsCompleted);
+        await JS.InvokeVoidAsync("console.log", $"[TaskCard] All finished calculation: {allFinished}");
+        
         Item.Detail.IsCompleted = allFinished;
-        
+
         await OnToggle.InvokeAsync(Item);
     }
 }
