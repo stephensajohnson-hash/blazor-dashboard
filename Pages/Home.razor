@@ -393,34 +393,60 @@
                 return; 
             } 
 
+            await LogToConsole("[Derby] Fetching RSS feed...");
             var request = new HttpRequestMessage(HttpMethod.Get, "https://shirt.woot.com/derby/rss"); 
             request.Headers.Add("User-Agent", "Mozilla/5.0"); 
             var response = await Http.SendAsync(request); 
-            if (!response.IsSuccessStatusCode) return; 
+            
+            if (!response.IsSuccessStatusCode) 
+            {
+                await LogToConsole($"[Derby] HTTP Error: {response.StatusCode}");
+                return; 
+            }
 
             var xml = await response.Content.ReadAsStringAsync(); 
             var doc = XDocument.Parse(xml); 
 
+            // 1. Define namespaces found in your RSS data
             XNamespace woot = "http://shirt.woot.com/derby/";
             XNamespace media = "http://search.yahoo.com/mrss/";
 
-            DerbyEntries = doc.Descendants("item")
-                .Where(item => item.Element(woot + "totalvotes") == null)
+            // 2. Log raw total items found
+            var allItems = doc.Descendants("item").ToList();
+            await LogToConsole($"[Derby] Raw items in feed: {allItems.Count}");
+
+            // 3. Filter for 'Fog of War' (Items missing totalvotes in the woot namespace)
+            DerbyEntries = allItems
+                .Where(item => {
+                    var voteElement = item.Element(woot + "totalvotes");
+                    return voteElement == null; // True if it's Fog of War
+                })
                 .Select(item => new DerbyEntry { 
-                    Title = item.Element("title")?.Value ?? "", 
-                    Link = item.Element("link")?.Value ?? "", 
+                    Title = item.Element("title")?.Value ?? "Unknown", 
+                    Link = item.Element("link")?.Value ?? "#", 
+                    // Enhanced image logic: try designimageurl first, then fallbacks
                     ImgUrl = item.Element(woot + "designimageurl")?.Value 
-                             ?? item.Element(media + "thumbnail")?.Attribute("url")?.Value 
-                             ?? item.Element(media + "content")?.Attribute("url")?.Value
-                             ?? ""
+                            ?? item.Element(media + "thumbnail")?.Attribute("url")?.Value 
+                            ?? item.Element(media + "content")?.Attribute("url")?.Value
+                            ?? ""
                 })
                 .Where(x => !string.IsNullOrEmpty(x.ImgUrl))
                 .Take(9)
                 .ToList(); 
 
+            await LogToConsole($"[Derby] Filtered 'Fog of War' items found: {DerbyEntries.Count}");
+            
+            // Log titles of found items to verify
+            foreach(var entry in DerbyEntries) {
+                await LogToConsole($"[Derby] Found: {entry.Title}");
+            }
+
             StateHasChanged(); 
         } 
-        catch {} 
+        catch (Exception ex)
+        {
+            await LogToConsole($"[Derby] Exception: {ex.Message}");
+        } 
     }
 
     private async Task FetchRssFeeds() { if (currentUser == null) return; try { var feeds = await Db.Feeds.Where(f => f.UserId == currentUser.Id && f.IsEnabled && f.Category != "System").ToListAsync(); var results = await Task.WhenAll(feeds.Select(async f => { try { using var request = new HttpRequestMessage(HttpMethod.Get, f.Url); request.Headers.Add("User-Agent", "Mozilla/5.0"); var response = await Http.SendAsync(request); if (!response.IsSuccessStatusCode) return Enumerable.Empty<RssItem>(); var xml = await response.Content.ReadAsStringAsync(); var doc = XDocument.Parse(xml); var items = doc.Descendants().Where(x => x.Name.LocalName == "item").Take(15).Select(i => new RssItem { Source = f.Name, Title = i.Elements().FirstOrDefault(x => x.Name.LocalName == "title")?.Value ?? "No Title", Link = i.Elements().FirstOrDefault(x => x.Name.LocalName == "link")?.Value ?? "#", ImgUrl = ExtractImage(i) }).ToList(); return items.Take(4); } catch { return Enumerable.Empty<RssItem>(); } })); RssItems = results.SelectMany(x => x).ToList(); StateHasChanged(); } catch {} }
