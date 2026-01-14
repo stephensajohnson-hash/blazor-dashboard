@@ -27,11 +27,9 @@
 
 <PageTitle>Calendar | Stephens' Dashboard</PageTitle>
 
-@* SURGICAL FIX: Removed overflow-x-hidden to allow position: sticky to function *@
-<div class="min-h-screen bg-gray-900 text-white pb-40 relative font-sans">
+<div class="min-h-screen bg-gray-900 text-white overflow-x-hidden pb-40 relative font-sans">
     
-    @* STICKY HEADER: Fixed with high z-index and explicit top anchoring *@
-    <div class="sticky top-0 z-50 bg-gray-900 border-b border-gray-800 shadow-2xl">
+    <div class="sticky top-0 z-40 bg-gray-900 border-b border-gray-800 shadow-2xl">
         <BulletHeader 
             ShowControls="true"
             CustomDateText="@GetHeaderDate()"
@@ -59,7 +57,6 @@
         </BulletHeader>
     </div>
 
-    @* MAIN CONTENT AREA *@
     <div class="px-6 pt-4 font-black">
         @if (isSearching)
         {
@@ -105,6 +102,26 @@
                                     class="text-xs bg-gray-700 hover:bg-white hover:text-black px-2 py-0.5 rounded transition font-bold tracking-widest shadow-md font-black ">＋ Add</button>
                         </div>
                         <div class="p-3 space-y-3 font-bold font-black ">
+                            
+                            @* SURGICAL: FAVORITE SPORTS GAME DAY BANNER (Personal Column Only) *@
+                            @if (cat.Item2 == "personal" && !isLoading)
+                            {
+                                var favoriteGames = GetFavoriteGamesForDate(viewDate);
+                                foreach (var game in favoriteGames)
+                                {
+                                    <div class="bg-blue-600/20 border border-blue-500/50 rounded-lg p-2 flex items-center justify-between shadow-lg animate-pulse mb-2">
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-[10px] bg-blue-600 text-white px-1.5 py-0.5 rounded-md font-black tracking-widest">GAME DAY</span>
+                                            <span class="text-xs text-white font-black truncate">@game.Title</span>
+                                        </div>
+                                        @if (game.Detail?.StartTime != null)
+                                        {
+                                            <span class="text-[10px] text-blue-300 font-mono">@game.Detail.StartTime?.ToString("h:mm tt")</span>
+                                        }
+                                    </div>
+                                }
+                            }
+
                             @if(isLoading) { <div class="text-center text-gray-500 text-xs italic mt-4 animate-pulse tracking-widest font-black ">Syncing...</div> }
                             else {
                                 var colItems = GetSortedItems(GetItemsForColumn(viewDate, cat.Item2));
@@ -345,6 +362,15 @@
             } catch (Exception ex) { await LogToConsole($"Init Fail: {ex.Message}"); }
             finally { isLoading = false; StateHasChanged(); }
         }
+    }
+
+    private List<BulletSportsService.GameDTO> GetFavoriteGamesForDate(DateTime d)
+    {
+        var favoriteTeamIds = teams.Where(t => t.IsFavorite).Select(t => t.Id).ToList();
+        return _sports.Where(g => g.Date.Date == d.Date && 
+                                 (favoriteTeamIds.Contains(g.Detail.HomeTeamId) || 
+                                  favoriteTeamIds.Contains(g.Detail.AwayTeamId)))
+                      .ToList();
     }
 
     private async Task LoadData() {
