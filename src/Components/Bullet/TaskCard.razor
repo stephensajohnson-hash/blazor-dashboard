@@ -1,5 +1,6 @@
 @namespace Dashboard.Components.Bullet
 @using Dashboard
+@inject IJSRuntime JS
 
 <div class="bg-gray-800 border border-gray-700 rounded-lg mb-3 relative group shadow-sm flex flex-col transition hover:border-blue-500 font-black">
     
@@ -52,6 +53,7 @@
                 <p class="text-xs text-gray-400 whitespace-pre-wrap mt-2 font-black mb-2">@Item.Description</p> 
             }
 
+            @* CHECKLIST SECTION *@
             @if(Item.Todos != null && Item.Todos.Any())
             {
                 <div class="mt-4 space-y-2 border-t border-gray-700/50 pt-3 font-black">
@@ -59,7 +61,6 @@
                     @foreach(var todo in Item.Todos.OrderBy(t => t.Order))
                     {
                         <div class="flex items-start gap-3 group/todo font-black">
-                            @* Use checked attribute with onchange for cleanest state transfer *@
                             <input type="checkbox" checked="@todo.IsCompleted" @onchange="(e) => ToggleTodo(todo, e)" class="w-3.5 h-3.5 mt-0.5 rounded bg-gray-900 border-gray-700 accent-blue-500 cursor-pointer font-black" />
                             <span class="text-xs @(todo.IsCompleted ? "text-gray-600 line-through" : "text-gray-300") font-black">
                                 <span class="font-bold text-[9px] text-gray-500 mr-1 font-black">@(todo.Order + 1).</span>
@@ -89,8 +90,6 @@
     }
 </div>
 
-@inject IJSRuntime JS
-
 @code {
     [Parameter] public BulletTaskService.TaskDTO Item { get; set; } = new();
     [Parameter] public EventCallback<BulletTaskService.TaskDTO> OnClick { get; set; }
@@ -102,17 +101,14 @@
     
     private async Task HandleToggle(ChangeEventArgs e) 
     {
-        bool isNowComplete = (bool)(e.Value ?? false);
-        await JS.InvokeVoidAsync("console.log", $"[TaskCard] Main Toggle: {isNowComplete}");
+        bool newVal = (bool)(e.Value ?? false);
+        await JS.InvokeVoidAsync("console.log", $"[TASK] Main Checkbox toggled to: {newVal}");
         
-        Item.Detail.IsCompleted = isNowComplete;
+        Item.Detail.IsCompleted = newVal;
 
         if(Item.Todos != null)
         {
-            foreach(var todo in Item.Todos) 
-            {
-                todo.IsCompleted = isNowComplete;
-            }
+            foreach(var todo in Item.Todos) todo.IsCompleted = newVal;
         }
 
         await OnToggle.InvokeAsync(Item);
@@ -120,14 +116,12 @@
 
     private async Task ToggleTodo(BulletTaskTodoItem todo, ChangeEventArgs e)
     {
-        bool isTodoComplete = (bool)(e.Value ?? false);
-        await JS.InvokeVoidAsync("console.log", $"[TaskCard] SubTodo '{todo.Content}' Toggle: {isTodoComplete}");
+        bool newVal = (bool)(e.Value ?? false);
+        todo.IsCompleted = newVal;
         
-        todo.IsCompleted = isTodoComplete;
-
-        // CHECKLIST LOGIC: Calculate parent based on ALL children
+        // CHECKLIST LOGIC: Only complete parent if ALL todos are complete
         bool allFinished = Item.Todos != null && Item.Todos.All(t => t.IsCompleted);
-        await JS.InvokeVoidAsync("console.log", $"[TaskCard] All finished calculation: {allFinished}");
+        await JS.InvokeVoidAsync("console.log", $"[TODO] '{todo.Content}' set to {newVal}. Parent allFinished result: {allFinished}");
         
         Item.Detail.IsCompleted = allFinished;
 

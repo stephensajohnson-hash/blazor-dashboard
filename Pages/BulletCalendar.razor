@@ -500,7 +500,36 @@
     private string GetHeaderDate() { if(currentView == "day") return viewDate.ToString("D"); return currentView == "week" ? $"Week of {weekStart:MMM d}" : viewDate.ToString("MMMM yyyy"); }
     private async Task DeleteTask(int id) { if(await JS.InvokeAsync<bool>("confirm", "Delete item?")) { await BaseService.DeleteItem(id); await LoadData(); } }
     private async Task DeleteCurrentTask() { if(editingItem != null && editingItem.Id > 0 && await JS.InvokeAsync<bool>("confirm", "Delete?")) { await BaseService.DeleteItem(editingItem.Id); editingItem = null; await LoadData(); } }
-    private async Task ToggleComplete(BulletTaskService.TaskDTO t) { t.Detail.IsCompleted = !t.Detail.IsCompleted; await TaskService.ToggleComplete(t.Id, t.Detail.IsCompleted); }
+    @* Find the ToggleComplete method (around Line 368) and replace it with this expanded version *@
+
+    private async Task ToggleComplete(BulletTaskService.TaskDTO t) 
+    { 
+        try 
+        {
+            // LOGGING: See exactly what the child component sent us
+            await JS.InvokeVoidAsync("console.log", $"[CALENDAR] ToggleComplete received for Task: {t.Title}");
+            await JS.InvokeVoidAsync("console.log", $"[CALENDAR] Parent Status: {t.Detail.IsCompleted}");
+            
+            if (t.Todos != null)
+            {
+                await JS.InvokeVoidAsync("console.log", $"[CALENDAR] Sub-task count: {t.Todos.Count}");
+            }
+
+            // SURGICAL FIX 1: Removed the "t.Detail.IsCompleted = !t.Detail.IsCompleted" line.
+            // The TaskCard already set the value correctly. Flipping it here was causing the regression.
+
+            // SURGICAL FIX 2: Use SaveTask instead of ToggleComplete.
+            // ToggleComplete only saves the main checkbox. SaveTask persists the entire 
+            // object graph, including the IsCompleted status of every sub-todo.
+            await TaskService.SaveTask(t);
+
+            await JS.InvokeVoidAsync("console.log", "[CALENDAR] Database update command dispatched successfully.");
+        }
+        catch (Exception ex)
+        {
+            await LogToConsole($"Toggle Fail: {ex.Message}");
+        }
+    }
     private async Task ToggleMeetingComplete(BulletTaskService.TaskDTO t) { if(t.MeetingDetail != null) { 
         await MeetingService.ToggleComplete(t.Id, t.MeetingDetail.IsCompleted); 
     } }
