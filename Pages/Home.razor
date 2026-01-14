@@ -353,7 +353,54 @@
 
     private async Task LoadData() { if (currentUser == null) return; Groups = await Db.LinkGroups.Where(x => x.UserId == currentUser.Id).Include(g => g.Links).OrderBy(g => g.Order).ToListAsync(); Stocks = await Db.Stocks.Where(x => x.UserId == currentUser.Id).OrderBy(s => s.Order).ToListAsync(); Countdowns = await Db.Countdowns.Where(x => x.UserId == currentUser.Id).OrderBy(c => c.Order).ToListAsync(); StateHasChanged(); }
     
-    private async Task FetchDerby() { if (currentUser == null) return; try { var feedObj = await Db.Feeds.FirstOrDefaultAsync(f => f.Url == "https://shirt.woot.com/derby/rss" && f.UserId == currentUser.Id); if (feedObj == null || !feedObj.IsEnabled) { DerbyEntries.Clear(); return; } var request = new HttpRequestMessage(HttpMethod.Get, "https://shirt.woot.com/derby/rss"); request.Headers.Add("User-Agent", "Mozilla/5.0"); var response = await Http.SendAsync(request); if (!response.IsSuccessStatusCode) return; var xml = await response.Content.ReadAsStringAsync(); var doc = XDocument.Parse(xml); DerbyEntries = doc.Descendants().Where(x => x.Name.LocalName == "item").Where(item => !item.Elements().Any(e => e.Name.LocalName == "totalvotes" || e.Name.LocalName == "voterank")).Select(item => new DerbyEntry { Title = item.Elements().FirstOrDefault(x => x.Name.LocalName == "title")?.Value ?? "", Link = item.Elements().FirstOrDefault(x => x.Name.LocalName == "link")?.Value ?? "", ImgUrl = ExtractImage(item) }).Where(x => !string.IsNullOrEmpty(x.ImgUrl)).Take(9).ToList(); StateHasChanged(); } catch {} }
+    private async Task FetchDerby() 
+{ 
+    if (currentUser == null) return; 
+
+    try 
+    { 
+        var feedObj = await Db.Feeds.FirstOrDefaultAsync(f => f.Url == "https://shirt.woot.com/derby/rss" && f.UserId == currentUser.Id); 
+        if (feedObj == null || !feedObj.IsEnabled) 
+        { 
+            DerbyEntries.Clear(); 
+            return; 
+        } 
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://shirt.woot.com/derby/rss"); 
+        request.Headers.Add("User-Agent", "Mozilla/5.0"); 
+        var response = await Http.SendAsync(request); 
+        if (!response.IsSuccessStatusCode) return; 
+
+        var xml = await response.Content.ReadAsStringAsync(); 
+        var doc = XDocument.Parse(xml); 
+
+        // Define namespaces for cleaner querying
+        XNamespace woot = "http://shirt.woot.com/derby/";
+        XNamespace media = "http://search.yahoo.com/mrss/";
+
+        DerbyEntries = doc.Descendants("item")
+            // Criteria: Fog of War designs currently lack the woot:totalvotes element
+            .Where(item => item.Element(woot + "totalvotes") == null)
+            .Select(item => new DerbyEntry { 
+                Title = item.Element("title")?.Value ?? "", 
+                Link = item.Element("link")?.Value ?? "", 
+                // Fallback logic for images: woot:designimageurl is the most reliable
+                ImgUrl = item.Element(woot + "designimageurl")?.Value 
+                         ?? item.Element(media + "thumbnail")?.Attribute("url")?.Value 
+                         ?? item.Element(media + "content")?.Attribute("url")?.Value
+                         ?? ""
+            })
+            .Where(x => !string.IsNullOrEmpty(x.ImgUrl))
+            .Take(9)
+            .ToList(); 
+
+        StateHasChanged(); 
+    } 
+    catch (Exception ex)
+    {
+        // Log error if necessary
+    } 
+}
 
     private async Task FetchRssFeeds() { if (currentUser == null) return; try { var feeds = await Db.Feeds.Where(f => f.UserId == currentUser.Id && f.IsEnabled && f.Category != "System").ToListAsync(); var results = await Task.WhenAll(feeds.Select(async f => { try { using var request = new HttpRequestMessage(HttpMethod.Get, f.Url); request.Headers.Add("User-Agent", "Mozilla/5.0"); var response = await Http.SendAsync(request); if (!response.IsSuccessStatusCode) return Enumerable.Empty<RssItem>(); var xml = await response.Content.ReadAsStringAsync(); var doc = XDocument.Parse(xml); var items = doc.Descendants().Where(x => x.Name.LocalName == "item").Take(15).Select(i => new RssItem { Source = f.Name, Title = i.Elements().FirstOrDefault(x => x.Name.LocalName == "title")?.Value ?? "No Title", Link = i.Elements().FirstOrDefault(x => x.Name.LocalName == "link")?.Value ?? "#", ImgUrl = ExtractImage(i) }).ToList(); return items.Take(4); } catch { return Enumerable.Empty<RssItem>(); } })); RssItems = results.SelectMany(x => x).ToList(); StateHasChanged(); } catch {} }
     
