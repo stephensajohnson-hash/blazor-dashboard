@@ -69,15 +69,17 @@
                     var usage = usageDetails.ContainsKey(img.Id) ? usageDetails[img.Id] : new ImageUsage();
                     var displayPath = $"/db-images/{img.Id}";
 
-                    <div class="group relative bg-[#0f0f0f] border border-gray-800 rounded-xl overflow-hidden shadow-2xl hover:border-blue-500/50 transition-all flex items-start">
+                    <div class="group relative bg-[#0f0f0f] border border-gray-800 rounded-xl shadow-2xl hover:border-blue-500/50 transition-all flex items-start">
                         
-                        @* 2x2 HOVER PREVIEW *@
-                        <div class="pointer-events-none absolute -top-2 -left-2 z-[100] opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                            <div class="bg-black/95 p-1 rounded-lg border border-gray-600 shadow-2xl backdrop-blur-md">
-                                <img src="@displayPath" 
-                                     style="max-width: 192px; max-height: 192px;" 
-                                     class="object-contain rounded" />
-                            </div>
+                        @* SURGICAL: 2x2 Clickable Floating Hover Preview *@
+                        <div class="absolute -top-2 -left-2 z-[100] opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                            <a href="@displayPath" target="_blank" class="block cursor-zoom-in">
+                                <div class="bg-black/95 p-1 rounded-lg border border-gray-600 shadow-2xl backdrop-blur-md">
+                                    <img src="@displayPath" 
+                                         style="max-width: 192px; max-height: 192px;" 
+                                         class="object-contain rounded" />
+                                </div>
+                            </a>
                         </div>
 
                         @* LEFT SIDE: Image *@
@@ -252,7 +254,6 @@
                     userId = p.GetInt32();
             }
 
-            // 1. FETCH FULL REGISTRY FOR SORTING
             var baseQuery = db.StoredImages.AsNoTracking().AsQueryable();
             if (!string.IsNullOrWhiteSpace(searchQuery)) 
                 baseQuery = baseQuery.Where(i => i.OriginalName.Contains(searchQuery));
@@ -260,8 +261,6 @@
             var fullRegistry = await baseQuery.ToListAsync();
             allSystemContexts.Clear();
             
-            // --- EXPANDED SCANNING BLOCKS ---
-
             // 1. CALENDAR
             var bulletItems = await db.BulletItems.AsNoTracking()
                 .Where(x => x.UserId == userId && !string.IsNullOrEmpty(x.ImgUrl))
@@ -275,7 +274,7 @@
                                    select new LinkSource { Url = n.ImgUrl, Area = "Note Log", Title = n.Content, Date = i.Date }).ToListAsync();
             allSystemContexts.AddRange(bulletNotes);
 
-            // 2. RECIPES & CATEGORIES
+            // 2. RECIPES
             var recipes = await db.Recipes.AsNoTracking()
                 .Where(x => x.UserId == userId)
                 .ToListAsync();
@@ -296,7 +295,7 @@
                     allSystemContexts.Add(new LinkSource { Url = $"/db-images/{c.ImageId}", Area = "Recipe Category", Title = c.Name });
             }
 
-            // 3. BUDGET & INCOME
+            // 3. BUDGET
             var budget = await (from bi in db.BudgetItems
                                join bc in db.BudgetCycles on bi.BudgetCycleId equals bc.Id
                                join bp in db.BudgetPeriods on bc.BudgetPeriodId equals bp.Id
@@ -338,17 +337,15 @@
 
             var dashCounts = await db.Countdowns.AsNoTracking()
                 .Where(x => x.UserId == userId && !string.IsNullOrEmpty(x.Img))
-                .Select(x => new LinkSource { Url = x.Img, Area = "Countdown", Title = x.Name })
-                .ToListAsync();
+                .Select(x => new LinkSource { Url = x.Img, Area = "Countdown", Title = x.Name }).ToListAsync();
             allSystemContexts.AddRange(dashCounts);
 
             var stocks = await db.Stocks.AsNoTracking()
                 .Where(x => x.UserId == userId && !string.IsNullOrEmpty(x.ImgUrl))
-                .Select(x => new LinkSource { Url = x.ImgUrl, Area = "Stock", Title = x.Symbol })
-                .ToListAsync();
+                .Select(x => new LinkSource { Url = x.ImgUrl, Area = "Stock", Title = x.Symbol }).ToListAsync();
             allSystemContexts.AddRange(stocks);
 
-            // 6. MAP USAGE
+            // 6. MAPPING
             foreach (var img in fullRegistry) {
                 var path = $"/db-images/{img.Id}";
                 var matches = allSystemContexts.Where(x => x.Url == path).ToList();
@@ -382,7 +379,6 @@
         else if (usage.IsRecipe) Nav.NavigateTo("/recipes");
         else if (usage.IsBudget) Nav.NavigateTo("/budget-tracker");
         else if (usage.IsSports) Nav.NavigateTo("/manage-sports");
-        else Nav.NavigateTo("/");
     }
 
     private void NavigateToSpecific(LinkSource src) {
