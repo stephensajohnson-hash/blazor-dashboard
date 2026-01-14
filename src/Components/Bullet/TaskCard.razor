@@ -11,7 +11,6 @@
     <div class="flex w-full">
         @if (!string.IsNullOrEmpty(Item.ImgUrl))
         {
-            @* Image Container: Flush alignment matching HabitCard *@
             <div class="relative bg-black shrink-0 border-r border-gray-700/50 rounded-l-lg overflow-hidden" style="width: @BulletViewConfig.ImgWidthDay;">
                 @if(!string.IsNullOrEmpty(Item.LinkUrl)) 
                 { 
@@ -26,12 +25,11 @@
             </div>
         }
 
-        @* Content Container: Full description and title without uppercase forced casing *@
         <div class="flex-1 flex flex-col p-3 min-w-0 font-black">
             <div class="flex items-start gap-3">
                 <div class="shrink-0 mt-0.5 font-black" @onclick:stopPropagation="true">
-                    @* SURGICAL FIX: Changed to @bind for two-way persistence and @onclick:stopPropagation to prevent card click *@
-                    <input type="checkbox" @bind="Item.Detail.IsCompleted" @onclick="HandleToggle" class="w-4 h-4 rounded bg-gray-800 border-gray-600 cursor-pointer accent-blue-500 font-black" />
+                    @* Use @onchange for reliable state management *@
+                    <input type="checkbox" checked="@Item.Detail.IsCompleted" @onchange="HandleToggle" class="w-4 h-4 rounded bg-gray-800 border-gray-600 cursor-pointer accent-blue-500 font-black" />
                 </div>
 
                 <div class="flex-1 min-w-0">
@@ -55,7 +53,6 @@
                 <p class="text-xs text-gray-400 whitespace-pre-wrap mt-2 font-black mb-2">@Item.Description</p> 
             }
 
-            @* CHECKLIST SECTION *@
             @if(Item.Todos != null && Item.Todos.Any())
             {
                 <div class="mt-4 space-y-2 border-t border-gray-700/50 pt-3 font-black">
@@ -63,8 +60,7 @@
                     @foreach(var todo in Item.Todos.OrderBy(t => t.Order))
                     {
                         <div class="flex items-start gap-3 group/todo font-black">
-                            @* SURGICAL FIX: Using @onclick instead of @onchange to ensure state updates before callback *@
-                            <input type="checkbox" @bind="todo.IsCompleted" @onclick="(e) => ToggleTodo(todo)" class="w-3.5 h-3.5 mt-0.5 rounded bg-gray-900 border-gray-700 accent-blue-500 cursor-pointer font-black" />
+                            <input type="checkbox" checked="@todo.IsCompleted" @onchange="(e) => ToggleTodo(todo, e)" class="w-3.5 h-3.5 mt-0.5 rounded bg-gray-900 border-gray-700 accent-blue-500 cursor-pointer font-black" />
                             <span class="text-xs @(todo.IsCompleted ? "text-gray-600 line-through" : "text-gray-300") font-black">
                                 <span class="font-bold text-[9px] text-gray-500 mr-1 font-black">@(todo.Order + 1).</span>
                                 @todo.Content
@@ -102,27 +98,31 @@
     private async Task HandleClick() => await OnClick.InvokeAsync(Item);
     private async Task HandleDelete() => await OnDelete.InvokeAsync(Item.Id);
     
-    private async Task HandleToggle() 
+    private async Task HandleToggle(ChangeEventArgs e) 
     {
-        // Toggle the value manually because @bind might trigger after the click logic
-        Item.Detail.IsCompleted = !Item.Detail.IsCompleted;
+        bool isNowComplete = (bool)(e.Value ?? false);
+        Item.Detail.IsCompleted = isNowComplete;
 
         if(Item.Todos != null)
         {
             foreach(var todo in Item.Todos) 
             {
-                todo.IsCompleted = Item.Detail.IsCompleted;
+                todo.IsCompleted = isNowComplete;
             }
         }
 
+        // Must await the callback to ensure database persistence
         await OnToggle.InvokeAsync(Item);
     }
 
-    private async Task ToggleTodo(BulletTaskTodoItem todo)
+    private async Task ToggleTodo(BulletTaskTodoItem todo, ChangeEventArgs e)
     {
-        todo.IsCompleted = !todo.IsCompleted;
+        todo.IsCompleted = (bool)(e.Value ?? false);
+        
+        // Checklist logic: Task is only "Done" if ALL sub-items are checked
         bool allFinished = Item.Todos.All(t => t.IsCompleted);
         Item.Detail.IsCompleted = allFinished;
+        
         await OnToggle.InvokeAsync(Item);
     }
 }
