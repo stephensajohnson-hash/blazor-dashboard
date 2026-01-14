@@ -1,5 +1,7 @@
 @namespace Dashboard.Components.Bullet
 @using Dashboard
+@using System.Text.RegularExpressions
+@inject IJSRuntime JS
 
 <div class="bg-gray-800 border border-gray-700 rounded-lg mb-3 relative group shadow-sm flex flex-col transition hover:border-blue-500 font-black">
     
@@ -41,8 +43,13 @@
                         @if(!string.IsNullOrEmpty(Item.Detail.Priority) && Item.Detail.Priority != "Normal") {
                             <span class="px-1.5 rounded font-bold @(Item.Detail.Priority == "High" ? "bg-red-900 text-red-200" : "bg-green-900 text-green-200") font-black">@Item.Detail.Priority</span>
                         }
+                        
                         @if(!string.IsNullOrEmpty(Item.Detail.TicketNumber)) {
-                            <span class="bg-gray-700 text-gray-300 px-1.5 rounded font-mono font-black">@Item.Detail.TicketNumber</span>
+                            @* SURGICAL: Ticket Number badge is now a clickable link *@
+                            <a href="@GetHaloUrl(Item.Detail.TicketNumber)" target="_blank" @onclick:stopPropagation="true"
+                               class="bg-gray-700 text-blue-300 hover:text-white hover:bg-blue-900 px-1.5 rounded font-mono font-black border border-gray-600 transition shadow-sm">
+                                @Item.Detail.TicketNumber
+                            </a>
                         }
                     </div>
                 </div>
@@ -94,6 +101,23 @@
     [Parameter] public EventCallback<BulletTaskService.TaskDTO> OnToggle { get; set; }
     [Parameter] public EventCallback<int> OnDelete { get; set; }
 
+    // HALO ITSM CONFIGURATION VARIABLES
+    private string HaloBase = "https://pbfcm.haloitsm.com/tickets";
+    private string HaloSuffix = "?area=1&viewid=1&mainview=all&sellevel=1&selparentid=0&selid=-1";
+
+    private string GetHaloUrl(string ticketNumber)
+    {
+        if (string.IsNullOrEmpty(ticketNumber)) return "#";
+        
+        // Extract digits only (e.g. IN-0002982 -> 0002982)
+        string digitsOnly = Regex.Replace(ticketNumber, @"[^\d]", "");
+        
+        // Remove leading zeros for the URL id parameter (0002982 -> 2982)
+        string cleanId = digitsOnly.TrimStart('0');
+        
+        return $"{HaloBase}{HaloSuffix}&id={cleanId}";
+    }
+
     private async Task HandleClick() => await OnClick.InvokeAsync(Item);
     private async Task HandleDelete() => await OnDelete.InvokeAsync(Item.Id);
     
@@ -101,22 +125,18 @@
     {
         bool newVal = (bool)(e.Value ?? false);
         Item.Detail.IsCompleted = newVal;
-
         if(Item.Todos != null)
         {
             foreach(var todo in Item.Todos) todo.IsCompleted = newVal;
         }
-
         await OnToggle.InvokeAsync(Item);
     }
 
     private async Task ToggleTodo(BulletTaskTodoItem todo, ChangeEventArgs e)
     {
         todo.IsCompleted = (bool)(e.Value ?? false);
-        
         bool allFinished = Item.Todos != null && Item.Todos.All(t => t.IsCompleted);
         Item.Detail.IsCompleted = allFinished;
-
         await OnToggle.InvokeAsync(Item);
     }
 }
