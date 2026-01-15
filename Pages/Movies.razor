@@ -32,8 +32,24 @@
             }
         </div>
 
-        <div class="flex flex-wrap gap-2 w-full md:w-auto">
-            <select @bind="selectedYear" class="bg-gray-800 border border-gray-700 text-white text-xs font-bold rounded-lg p-2.5 outline-none focus:border-blue-500">
+        <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+            @* SURGICAL FIX: DYNAMIC QUICK ACTION BUTTONS *@
+            <div class="flex bg-black/40 p-1 rounded-lg border border-gray-700 shadow-inner">
+                <button @onclick="() => selectedYear = DateTime.Today.Year" 
+                        class="px-4 py-1.5 rounded-md text-[10px] font-black tracking-widest transition @(selectedYear == DateTime.Today.Year ? "bg-blue-600 text-white shadow-lg" : "text-gray-500 hover:text-gray-300")">
+                    @DateTime.Today.Year
+                </button>
+                <button @onclick="() => selectedYear = DateTime.Today.Year - 1" 
+                        class="px-4 py-1.5 rounded-md text-[10px] font-black tracking-widest transition @(selectedYear == (DateTime.Today.Year - 1) ? "bg-blue-600 text-white shadow-lg" : "text-gray-500 hover:text-gray-300")">
+                    @(DateTime.Today.Year - 1)
+                </button>
+                <button @onclick="() => selectedYear = 0" 
+                        class="px-4 py-1.5 rounded-md text-[10px] font-black tracking-widest transition @(selectedYear == 0 ? "bg-gray-700 text-white shadow-lg" : "text-gray-500 hover:text-gray-300")">
+                    ALL YEARS
+                </button>
+            </div>
+
+            <select @bind="selectedYear" class="bg-gray-800 border border-gray-700 text-white text-xs font-bold rounded-lg p-2.5 outline-none focus:border-blue-500 min-w-[120px]">
                 <option value="0">All Time</option>
                 @foreach (var y in availableYears)
                 {
@@ -69,8 +85,8 @@
         <div class="text-center py-20 bg-gray-800/30 rounded-xl border-2 border-dashed border-gray-700/50">
             <span class="text-5xl opacity-20">🍿</span>
             <p class="text-gray-500 mt-4 font-bold uppercase tracking-tighter">No media found for @(selectedYear == 0 ? "this filter" : selectedYear.ToString())</p>
-            @if(!string.IsNullOrEmpty(selectedTag)) { 
-                <button @onclick="ClearTag" class="text-blue-400 text-xs font-bold underline mt-4 hover:text-blue-300">Reset Filters</button> 
+            @if(!string.IsNullOrEmpty(selectedTag) || selectedYear != 0) { 
+                <button @onclick="ResetFilters" class="text-blue-400 text-xs font-bold underline mt-4 hover:text-blue-300">Reset Filters</button> 
             }
         </div>
     }
@@ -158,7 +174,7 @@
     private List<BulletMoviesService.MovieDTO> filteredMovies = new();
     private List<int> availableYears = new();
 
-    private int _selectedYear = 0;
+    private int _selectedYear = 0; // Default to All Years
     private int selectedYear 
     { 
         get => _selectedYear; 
@@ -203,12 +219,7 @@
     {
         allMovies = await MoviesService.GetMovies(userId);
         availableYears = allMovies.Select(m => m.DateWatched.Year).Distinct().OrderByDescending(y => y).ToList();
-
-        if (selectedYear == 0 && availableYears.Any())
-        {
-            _selectedYear = availableYears.First(); 
-        }
-
+        
         ApplyFilterAndSort();
     }
 
@@ -236,6 +247,7 @@
 
     private void FilterByTag(string tag) { selectedTag = tag; ApplyFilterAndSort(); }
     private void ClearTag() { selectedTag = ""; ApplyFilterAndSort(); }
+    private void ResetFilters() { selectedTag = ""; selectedYear = 0; ApplyFilterAndSort(); }
 
     private void OpenAddModal() 
     { 
@@ -251,8 +263,6 @@
     
     private void OpenEditModal(BulletMoviesService.MovieDTO m) 
     { 
-        // FIXED: Explicit conversion from string (legacy) to List (new system)
-        // This prevents the compiler from trying to use '??' on incompatible types.
         var detailObj = m.Detail ?? new BulletMediaDetail();
         
         editingTask = new BulletTaskService.TaskDTO 
@@ -266,7 +276,7 @@
             Type = "media",
             Category = "personal", 
             MediaDetail = detailObj,
-            Notes = new List<BulletItemNote>() // Resetting to empty list to match BaseEditor requirements
+            Notes = new List<BulletItemNote>() 
         };
     }
 
@@ -274,7 +284,6 @@
     {
         if(editingTask != null)
         {
-            // Ensure type safety during mapping
             var saveDetail = editingTask.MediaDetail ?? new BulletMediaDetail();
             var saveNotes = editingTask.Notes ?? new List<BulletItemNote>();
 
