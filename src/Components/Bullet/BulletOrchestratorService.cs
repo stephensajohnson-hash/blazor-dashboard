@@ -182,4 +182,47 @@ namespace Dashboard.Services
             }
         }
     }
+
+    public async Task DeepCloneItem(
+        BulletTaskService.TaskDTO source, 
+        DateTime newDate, 
+        bool includeNotes, 
+        bool incompleteTodosOnly)
+    {
+        // 1. Generate the base copy using the existing Mapper
+        var clone = BulletMapper.CreateCopy(source);
+        
+        // 2. Adjust the date and reset ID for a new record
+        clone.Date = newDate;
+        clone.Id = 0;
+
+        // 3. Handle Task-Specific Todo Filtering
+        if (source.Type == "task" && incompleteTodosOnly && source.Todos != null)
+        {
+            clone.Todos = source.Todos
+                .Where(t => !t.IsCompleted)
+                .Select(t => new BulletTaskTodoItem 
+                { 
+                    Content = t.Content, 
+                    IsCompleted = false, 
+                    Order = t.Order 
+                })
+                .ToList();
+                
+            // If we filtered out todos, ensure the parent task isn't marked complete
+            if (clone.Detail != null)
+            {
+                clone.Detail.IsCompleted = false;
+            }
+        }
+
+        // 4. Handle Note Exclusion
+        if (!includeNotes)
+        {
+            clone.Notes = new List<BulletItemNote>();
+        }
+
+        // 5. Commit using the existing pipeline logic
+        await CommitItemToDatabase(clone);
+    }
 }

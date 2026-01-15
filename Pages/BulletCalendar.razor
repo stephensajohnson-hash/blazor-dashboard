@@ -129,6 +129,7 @@
                                                    OnEdit="OpenEdit" 
                                                    OnToggle="ToggleComplete" 
                                                    OnDelete="DeleteTask" 
+                                                   OnCopyRequest="InitiateDeepCopy"
                                                    OnMoveUp="() => MoveItem(item, -1, true)" 
                                                    OnMoveDown="() => MoveItem(item, 1, true)" 
                                                    OnHabitSave="SaveHabitDirectly" />
@@ -158,7 +159,6 @@
                             @if (cat.Item2 == "personal" && showGameBanner && !isLoading)
                             {
                                 var favoriteGames = BulletDataLogic.GetFavoriteGamesForDate(_sports, teams, NavService.ViewDate);
-                                
                                 foreach (var game in favoriteGames)
                                 {
                                     var favTeam = teams.FirstOrDefault(t => t.IsFavorite && (t.Id == game.Detail.HomeTeamId || t.Id == game.Detail.AwayTeamId));
@@ -214,6 +214,7 @@
                                                        OnEdit="OpenEdit" 
                                                        OnToggle="ToggleComplete" 
                                                        OnDelete="DeleteTask" 
+                                                       OnCopyRequest="InitiateDeepCopy"
                                                        OnMoveUp="() => MoveItem(item, -1, true)" 
                                                        OnMoveDown="() => MoveItem(item, 1, true)" 
                                                        OnHabitSave="SaveHabitDirectly" />
@@ -249,6 +250,7 @@
                                                    Mode="Pill" 
                                                    User="currentUser" 
                                                    OnEdit="OpenEdit" 
+                                                   OnCopyRequest="InitiateDeepCopy"
                                                    OnMoveUp="HandlePillReorder" 
                                                    OnMoveDown="HandlePillReorder" />
                             }
@@ -290,6 +292,7 @@
                                                        Mode="Pill" 
                                                        User="currentUser" 
                                                        OnEdit="OpenEdit" 
+                                                       OnCopyRequest="InitiateDeepCopy"
                                                        OnMoveUp="HandlePillReorder" 
                                                        OnMoveDown="HandlePillReorder" />
                                 }
@@ -319,6 +322,12 @@
     @bind-IncludeHolidays="includeHolidays" 
     OnClose="HideCloner" 
     OnCloneRequested="ExecuteClone" />
+
+<BulletCopyModal 
+    IsVisible="showCopyModal" 
+    ItemType="@itemToCopy?.Type" 
+    OnCancel="() => showCopyModal = false" 
+    OnConfirm="ExecuteCopy" />
 
 <BaseEditor Item="editingItem" 
             TaskDetail="editingItem?.Detail ?? new()" 
@@ -362,9 +371,11 @@
     private List<BulletHabitService.HabitDTO> loadedHabits = new();
 
     private BulletTaskService.TaskDTO? editingItem;
+    private BulletTaskService.TaskDTO? itemToCopy;
 
     private bool showAdvancedSearch = false;
     private bool showGameBanner = false;
+    private bool showCopyModal = false;
 
     private bool showTemporalCloneModal = false;
     private int cloneSourceYear = DateTime.Today.Year;
@@ -372,8 +383,6 @@
     private bool includeBirthdays = true;
     private bool includeAnniversaries = true;
     private bool includeHolidays = true;
-
-    private const int pageSize = 50;
 
     #endregion
 
@@ -546,7 +555,7 @@
 
     #endregion
 
-    #region Navigation UI Handlers
+    #region Navigation Handlers
 
     private async Task HandlePrev()
     {
@@ -609,7 +618,7 @@
 
     #endregion
 
-    #region CRUD & Reordering
+    #region CRUD & Deep Copy
 
     private async Task HandleSave(BaseEditor.RecurrenceRequest req)
     {
@@ -627,6 +636,38 @@
         catch (Exception ex) 
         { 
             await LogToConsole($"Save Error: {ex.Message}"); 
+        }
+    }
+
+    private void InitiateDeepCopy(BulletTaskService.TaskDTO item)
+    {
+        itemToCopy = item;
+        showCopyModal = true;
+    }
+
+    private async Task ExecuteCopy((DateTime date, bool notes, bool todos) options)
+    {
+        if (itemToCopy == null) 
+        {
+            return;
+        }
+
+        try
+        {
+            await Orchestrator.DeepCloneItem(
+                itemToCopy, 
+                options.date, 
+                options.notes, 
+                options.todos
+            );
+
+            showCopyModal = false;
+            itemToCopy = null;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            await LogToConsole($"Copy Error: {ex.Message}");
         }
     }
 
@@ -697,7 +738,7 @@
 
         int newIndex = currentIndex + direction;
         
-        if (newIndex < 0 || newIndex >= list.Count) 
+        if (newIndex < 0 || newIndex >= dayItems.Count) 
         {
             return;
         }
@@ -710,7 +751,7 @@
 
     #endregion
 
-    #region Editor Helpers
+    #region Editor Handlers
 
     private void CancelEditing() 
     { 
@@ -744,11 +785,21 @@
     { 
         var newItem = new BulletTaskService.TaskDTO 
         { 
-            UserId = userId, Category = cat, Type = type, 
-            Date = targetDate, Detail = new(), HealthDetail = new(), 
-            MeetingDetail = new(), HabitDetail = new(), HolidayDetail = new(), 
-            BirthdayDetail = new(), AnniversaryDetail = new(), VacationDetail = new(), 
-            MediaDetail = new(), SportsDetail = new(), Notes = new List<BulletItemNote>(), 
+            UserId = userId, 
+            Category = cat, 
+            Type = type, 
+            Date = targetDate, 
+            Detail = new(), 
+            HealthDetail = new(), 
+            MeetingDetail = new(), 
+            HabitDetail = new(), 
+            HolidayDetail = new(), 
+            BirthdayDetail = new(), 
+            AnniversaryDetail = new(), 
+            VacationDetail = new(), 
+            MediaDetail = new(), 
+            SportsDetail = new(), 
+            Notes = new List<BulletItemNote>(), 
             Todos = new List<BulletTaskTodoItem>() 
         }; 
 
@@ -774,7 +825,7 @@
 
     #endregion
 
-    #region Search UI Helpers
+    #region Search Handlers
 
     private async Task HandleKeyUp(KeyboardEventArgs e) 
     { 
@@ -803,16 +854,6 @@
     private void HideAdvancedSearch() 
     { 
         showAdvancedSearch = false; 
-    }
-
-    private void PrevSearchPage() 
-    { 
-        SearchService.MoveToPrevPage();
-    }
-
-    private void NextSearchPage() 
-    { 
-        SearchService.MoveToNextPage();
     }
 
     private async Task HandleExecuteAdvancedSearch() 
