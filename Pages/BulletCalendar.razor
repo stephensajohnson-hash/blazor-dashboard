@@ -6,6 +6,7 @@
 @using Dashboard
 @using Dashboard.Components.Bullet
 @using Dashboard.Helpers
+@using Dashboard.Services
 @using Microsoft.EntityFrameworkCore
 @using System.IO
 @using Microsoft.JSInterop
@@ -23,6 +24,7 @@
 @inject BulletVacationService VacationService
 @inject BulletHealthService HealthService
 @inject BulletSportsService SportsService
+@inject BulletOrchestratorService Orchestrator
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 
@@ -39,7 +41,7 @@
             OnNext="Next"
             OnGoToday="GoToday"
             OnViewChanged="SwitchView"
-            OnCloneRequest="() => showTemporalCloneModal = true">
+            OnCloneRequest="HandleShowCloner">
             
             <div class="flex items-center gap-2 ml-4 font-black">
                 <div class="relative flex items-center bg-black/40 border border-gray-700 rounded-lg px-2 focus-within:border-blue-500 transition-all font-black shadow-inner">
@@ -127,7 +129,7 @@
                                         </div>
                                         <div class="flex-1 p-2 flex flex-col justify-center min-w-0">
                                             <div class="flex items-center justify-between">
-                                                <span class="text-[9px] bg-blue-600 text-white px-1.5 py-0.5 rounded font-black tracking-widest">Game Day</span>
+                                                <span class="text-[9px] bg-blue-600 text-white px-1.5 py-0.5 rounded font-black tracking-widest uppercase">Game Day</span>
                                                 @if (game.Detail?.StartTime != null) { <span class="text-[9px] text-blue-300 font-mono">⏰ @game.Detail.StartTime?.ToString("h:mm tt")</span> }
                                             </div>
                                             <div class="text-xs text-white font-black truncate mt-1">@game.Title</div>
@@ -214,7 +216,7 @@
     @bind-IncludeBirthdays="includeBirthdays" 
     @bind-IncludeAnniversaries="includeAnniversaries" 
     @bind-IncludeHolidays="includeHolidays" 
-    OnClose="() => showTemporalCloneModal = false" 
+    OnClose="HideCloner" 
     OnCloneRequested="ExecuteClone" />
 
 <BaseEditor Item="editingItem" 
@@ -585,100 +587,13 @@
         }
         try 
         { 
-            await CommitItemToDatabase(editingItem); 
+            await Orchestrator.CommitItemToDatabase(editingItem); 
             editingItem = null; 
             await LoadData(); 
         }
         catch (Exception ex) 
         { 
             await LogToConsole($"Save Error: {ex.Message}"); 
-        }
-    }
-
-    private async Task CommitItemToDatabase(BulletTaskService.TaskDTO t)
-    {
-        if (t.Id > 0)
-        {
-            var dbItem = await Db.BulletItems.FindAsync(t.Id);
-            if (dbItem != null) 
-            { 
-                dbItem.Type = t.Type; 
-                dbItem.Category = t.Category; 
-                dbItem.Description = t.Description; 
-                await Db.SaveChangesAsync(); 
-            }
-        }
-
-        string type = t.Type?.ToLower().Trim() ?? "task";
-
-        if (type == "meeting") 
-        {
-            await MeetingService.SaveMeeting(new BulletMeetingService.MeetingDTO { Id = t.Id, UserId = t.UserId, Type = "meeting", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, LinkUrl = t.LinkUrl, MeetingDetail = t.MeetingDetail ?? new(), Notes = t.Notes ?? new List<BulletItemNote>() });
-        }
-        else if (type == "habit") 
-        {
-            await HabitService.SaveHabit(new BulletHabitService.HabitDTO { Id = t.Id, UserId = t.UserId, Type = "habit", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.HabitDetail ?? new(), Notes = t.Notes ?? new List<BulletItemNote>() });
-        }
-        else if (type == "media") 
-        {
-            await MediaService.SaveMedia(new BulletMediaService.MediaDTO { Id = t.Id, UserId = t.UserId, Type = "media", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.MediaDetail ?? new(), Notes = t.Notes ?? new List<BulletItemNote>() });
-        }
-        else if (type == "holiday") 
-        {
-            await HolidayService.SaveHoliday(new BulletHolidayService.HolidayDTO { Id = t.Id, UserId = t.UserId, Type = "holiday", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, LinkUrl = t.LinkUrl, Detail = t.HolidayDetail ?? new() });
-        }
-        else if (type == "birthday") 
-        {
-            await BirthdayService.SaveBirthday(new BulletBirthdayService.BirthdayDTO { Id = t.Id, UserId = t.UserId, Type = "birthday", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, LinkUrl = t.LinkUrl, Detail = t.BirthdayDetail ?? new() });
-        }
-        else if (type == "anniversary") 
-        {
-            await AnniversaryService.SaveAnniversary(new BulletAnniversaryService.AnniversaryDTO { Id = t.Id, UserId = t.UserId, Type = "anniversary", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, LinkUrl = t.LinkUrl, Detail = t.AnniversaryDetail ?? new() });
-        }
-        else if (type == "vacation")
-        {
-            string vGroupId = t.VacationDetail?.VacationGroupId;
-            if (t.Id > 0 && !string.IsNullOrEmpty(vGroupId))
-            {
-                var groupDetails = await Db.BulletVacationDetails.Include(v => v.BulletItem).Where(v => v.VacationGroupId == vGroupId).ToListAsync();
-                foreach (var vd in groupDetails) 
-                {
-                    if (vd.BulletItem != null) 
-                    { 
-                        vd.BulletItem.Title = t.Title; 
-                        vd.BulletItem.Category = t.Category; 
-                        vd.BulletItem.Description = t.Description; 
-                        vd.BulletItem.ImgUrl = t.ImgUrl; 
-                    }
-                }
-                await VacationService.SaveVacation(new BulletVacationService.VacationDTO { Id = t.Id, UserId = t.UserId, Type = "vacation", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.VacationDetail ?? new(), Notes = t.Notes ?? new List<BulletItemNote>() });
-                await Db.SaveChangesAsync();
-            }
-            else if (t.Id > 0) 
-            {
-                await VacationService.SaveVacation(new BulletVacationService.VacationDTO { Id = t.Id, UserId = t.UserId, Type = "vacation", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.VacationDetail ?? new(), Notes = t.Notes ?? new List<BulletItemNote>() });
-            }
-            else
-            {
-                var start = t.Date.Date; 
-                var end = (t.EndDate ?? start).Date;
-                for (var dt = start; dt <= end; dt = dt.AddDays(1)) 
-                {
-                    await VacationService.SaveVacation(new BulletVacationService.VacationDTO { Id = 0, UserId = t.UserId, Type = "vacation", Category = t.Category, Date = dt, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.VacationDetail ?? new(), Notes = t.Notes ?? new List<BulletItemNote>() });
-                }
-            }
-        }
-        else if (type == "health") 
-        {
-            await HealthService.SaveHealth(new BulletHealthService.HealthDTO { Id = t.Id, UserId = t.UserId, Date = t.Date, Title = t.Title, Description = t.Description, Category = t.Category, Detail = t.HealthDetail ?? new(), Meals = t.Meals ?? new List<BulletHealthMeal>(), Workouts = t.Workouts ?? new List<BulletHealthWorkout>(), Notes = t.Notes ?? new List<BulletItemNote>() });
-        }
-        else if (type == "sports") 
-        {
-            await SportsService.SaveGame(new BulletSportsService.GameDTO { Id = t.Id, UserId = t.UserId, Type = "sports", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.SportsDetail ?? new() });
-        }
-        else 
-        {
-            await TaskService.SaveTask(t);
         }
     }
 
@@ -705,20 +620,12 @@
     { 
         try 
         { 
-            await TaskService.SaveTask(t); 
+            await Orchestrator.CommitItemToDatabase(t); 
         } 
         catch (Exception ex) 
         { 
             await LogToConsole($"Toggle Fail: {ex.Message}"); 
         } 
-    }
-
-    private async Task ToggleMeetingComplete(BulletTaskService.TaskDTO t) 
-    { 
-        if (t.MeetingDetail != null) 
-        {
-            await MeetingService.ToggleComplete(t.Id, t.MeetingDetail.IsCompleted); 
-        }
     }
 
     private async Task SaveHabitDirectly(BulletHabitService.HabitDTO h) 
@@ -730,31 +637,19 @@
     {
         var dayItems = useCategory ? GetSortedItems(GetItemsForColumn(item.Date, item.Category)) : GetSortedItems(GetItemsForDate(item.Date));
         int currentIndex = dayItems.FindIndex(x => x.Id == item.Id && x.Type == item.Type);
-        if (currentIndex == -1) return;
-        int newIndex = currentIndex + direction;
-        if (newIndex < 0 || newIndex >= dayItems.Count) return;
-        var targetItem = dayItems[newIndex];
-        var dbItem = await Db.BulletItems.FindAsync(item.Id);
-        var dbTarget = await Db.BulletItems.FindAsync(targetItem.Id);
-        if (dbItem != null && dbTarget != null)
+        if (currentIndex == -1) 
         {
-            if (dbItem.SortOrder == dbTarget.SortOrder) 
-            { 
-                for (int i = 0; i < dayItems.Count; i++) 
-                { 
-                    var dItem = await Db.BulletItems.FindAsync(dayItems[i].Id); 
-                    if (dItem != null) dItem.SortOrder = i * 10; 
-                } 
-                await Db.SaveChangesAsync(); 
-                dbItem = await Db.BulletItems.FindAsync(item.Id); 
-                dbTarget = await Db.BulletItems.FindAsync(targetItem.Id); 
-            }
-            int temp = dbItem.SortOrder; 
-            dbItem.SortOrder = dbTarget.SortOrder; 
-            dbTarget.SortOrder = temp;
-            await Db.SaveChangesAsync(); 
-            await LoadData();
+            return;
         }
+        int newIndex = currentIndex + direction;
+        if (newIndex < 0 || newIndex >= dayItems.Count) 
+        {
+            return;
+        }
+        
+        var targetItem = dayItems[newIndex];
+        await Orchestrator.SwapSortOrders(item.Id, targetItem.Id, dayItems);
+        await LoadData();
     }
 
     #endregion
@@ -768,7 +663,7 @@
 
     private void OpenEdit(BulletTaskService.TaskDTO t) 
     { 
-        editingItem = CreateCopy(t); 
+        editingItem = BulletMapper.CreateCopy(t); 
         editingItem.Id = t.Id; 
         editingItem.MeetingDetail ??= new(); 
         editingItem.HabitDetail ??= new(); 
@@ -792,21 +687,11 @@
     { 
         var newItem = new BulletTaskService.TaskDTO 
         { 
-            UserId = userId, 
-            Category = cat, 
-            Type = type, 
-            Date = targetDate, 
-            Detail = new(), 
-            HealthDetail = new(), 
-            MeetingDetail = new(), 
-            HabitDetail = new(), 
-            HolidayDetail = new(), 
-            BirthdayDetail = new(), 
-            AnniversaryDetail = new(), 
-            VacationDetail = new(), 
-            MediaDetail = new(), 
-            SportsDetail = new(), 
-            Notes = new List<BulletItemNote>(), 
+            UserId = userId, Category = cat, Type = type, 
+            Date = targetDate, Detail = new(), HealthDetail = new(), 
+            MeetingDetail = new(), HabitDetail = new(), HolidayDetail = new(), 
+            BirthdayDetail = new(), AnniversaryDetail = new(), VacationDetail = new(), 
+            MediaDetail = new(), SportsDetail = new(), Notes = new List<BulletItemNote>(), 
             Todos = new List<BulletTaskTodoItem>() 
         }; 
 
@@ -830,74 +715,9 @@
         editingItem = newItem; 
     }
 
-    private BulletTaskService.TaskDTO CreateCopy(BulletTaskService.TaskDTO t)
-    {
-        var newItem = new BulletTaskService.TaskDTO 
-        { 
-            Id = 0, 
-            UserId = t.UserId, 
-            Type = t.Type, 
-            Category = t.Category, 
-            Date = t.Date, 
-            EndDate = t.EndDate, 
-            Title = t.Title, 
-            Description = t.Description, 
-            ImgUrl = t.ImgUrl, 
-            LinkUrl = t.LinkUrl, 
-            OriginalStringId = t.OriginalStringId, 
-            SortOrder = t.SortOrder, 
-            Notes = t.Notes?.Select(n => new BulletItemNote { Content = n.Content, ImgUrl = n.ImgUrl, LinkUrl = n.LinkUrl }).ToList() ?? new List<BulletItemNote>(), 
-            Todos = t.Todos?.Select(x => new BulletTaskTodoItem { Content = x.Content, IsCompleted = x.IsCompleted, Order = x.Order }).ToList() ?? new List<BulletTaskTodoItem>(), 
-            Meals = t.Meals?.ToList() ?? new List<BulletHealthMeal>(), 
-            Workouts = t.Workouts?.ToList() ?? new List<BulletHealthWorkout>() 
-        };
-
-        if (t.Detail != null) 
-        {
-            newItem.Detail = new BulletTaskDetail { DueDate = t.Detail.DueDate, IsCompleted = t.Detail.IsCompleted, Priority = t.Detail.Priority, Status = t.Detail.Status, TicketNumber = t.Detail.TicketNumber, TicketUrl = t.Detail.TicketUrl };
-        }
-        if (t.MeetingDetail != null) 
-        {
-            newItem.MeetingDetail = new BulletMeetingDetail { StartTime = t.MeetingDetail.StartTime, DurationMinutes = t.MeetingDetail.DurationMinutes, ActualDurationMinutes = t.MeetingDetail.ActualDurationMinutes, IsCompleted = t.MeetingDetail.IsCompleted };
-        }
-        if (t.HabitDetail != null) 
-        {
-            newItem.HabitDetail = new BulletHabitDetail { StreakCount = t.HabitDetail.StreakCount, IsCompleted = t.HabitDetail.IsCompleted };
-        }
-        if (t.VacationDetail != null) 
-        {
-            newItem.VacationDetail = new BulletVacationDetail { VacationGroupId = t.VacationDetail.VacationGroupId };
-        }
-        if (t.HealthDetail != null) 
-        {
-            newItem.HealthDetail = new BulletHealthDetail { WeightLbs = t.HealthDetail.WeightLbs, CalculatedTDEE = t.HealthDetail.CalculatedTDEE };
-        }
-        if (t.MediaDetail != null) 
-        {
-            newItem.MediaDetail = new BulletMediaDetail { Rating = t.MediaDetail.Rating, ReleaseYear = t.MediaDetail.ReleaseYear, Tags = t.MediaDetail.Tags };
-        }
-        if (t.HolidayDetail != null) 
-        {
-            newItem.HolidayDetail = new BulletHolidayDetail { IsWorkHoliday = t.HolidayDetail.IsWorkHoliday };
-        }
-        if (t.BirthdayDetail != null) 
-        {
-            newItem.BirthdayDetail = new BulletBirthdayDetail { DOB_Year = t.BirthdayDetail.DOB_Year };
-        }
-        if (t.AnniversaryDetail != null) 
-        {
-            newItem.AnniversaryDetail = new BulletAnniversaryDetail { AnniversaryType = t.AnniversaryDetail.AnniversaryType, FirstYear = t.AnniversaryDetail.FirstYear };
-        }
-        if (t.SportsDetail != null) 
-        {
-            newItem.SportsDetail = new BulletGameDetail { LeagueId = t.SportsDetail.LeagueId, HomeTeamId = t.SportsDetail.HomeTeamId, AwayTeamId = t.SportsDetail.AwayTeamId, HomeScore = t.SportsDetail.HomeScore, AwayScore = t.SportsDetail.AwayScore, StartTime = t.SportsDetail.StartTime, IsComplete = t.SportsDetail.IsComplete, TvChannel = t.SportsDetail.TvChannel, SeasonId = t.SportsDetail.SeasonId };
-        }
-        return newItem;
-    }
-
     #endregion
 
-    #region Search & Filtering
+    #region Search & Cloning
 
     private async Task HandleKeyUp(KeyboardEventArgs e) 
     { 
@@ -955,6 +775,16 @@
     { 
         showAdvancedSearch = false; 
         await PerformQuickSearch(); 
+    }
+
+    private void HandleShowCloner()
+    {
+        showTemporalCloneModal = true;
+    }
+
+    private void HideCloner()
+    {
+        showTemporalCloneModal = false;
     }
 
     private async Task ExecuteClone() 
