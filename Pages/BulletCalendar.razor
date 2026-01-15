@@ -26,6 +26,7 @@
 @inject BulletSportsService SportsService
 @inject BulletOrchestratorService Orchestrator
 @inject BulletNavigationService NavService
+@inject BulletSearchService SearchService
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 
@@ -46,15 +47,15 @@
             
             <div class="flex items-center gap-2 ml-4 font-black">
                 <div class="relative flex items-center bg-black/40 border border-gray-700 rounded-lg px-2 focus-within:border-blue-500 transition-all font-black shadow-inner">
-                    <input @bind="searchQuery" 
+                    <input @bind="SearchService.Query" 
                            @bind:event="oninput" 
                            @onkeyup="HandleKeyUp" 
                            placeholder="Search..." 
                            class="bg-transparent border-none text-xs py-1.5 px-2 w-24 md:w-32 outline-none text-white font-black" />
                     
-                    @if (!string.IsNullOrEmpty(searchQuery))
+                    @if (!string.IsNullOrEmpty(SearchService.Query))
                     {
-                        <button @onclick="ClearSearch" 
+                        <button @onclick="HandleClearSearch" 
                                 class="p-1 text-gray-500 hover:text-red-400 transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12" />
@@ -79,34 +80,34 @@
     </div>
 
     <div class="px-6 pt-4 font-black">
-        @if (isSearching)
+        @if (SearchService.IsSearching)
         {
             <div class="h-full flex flex-col font-black">
                 <div class="flex justify-between items-center mb-4">
                     <div class="flex items-center gap-4">
-                        <h2 class="text-sm font-black text-blue-400">Search Results (@searchResults.Count)</h2>
-                        
-                        @if (TotalPages > 1)
+                        <h2 class="text-sm font-black text-blue-400">
+                            Search Results (@SearchService.Results.Count)
+                        </h2>
+                        @if (SearchService.TotalPages > 1)
                         {
                             <div class="flex items-center gap-2 bg-black/40 px-2 py-1 rounded-lg border border-gray-800 shadow-xl">
-                                <button @onclick="PrevSearchPage" 
-                                        disabled="@(currentPage == 1)" 
+                                <button @onclick="HandleSearchPrevPage" 
+                                        disabled="@(SearchService.CurrentPage == 1)" 
                                         class="text-[10px] text-gray-400 hover:text-white disabled:opacity-30">
                                     PREV
                                 </button>
                                 <span class="text-[10px] text-gray-600 font-black">
-                                    Page @currentPage of @TotalPages
+                                    Page @SearchService.CurrentPage of @SearchService.TotalPages
                                 </span>
-                                <button @onclick="NextSearchPage" 
-                                        disabled="@(currentPage == TotalPages)" 
+                                <button @onclick="HandleSearchNextPage" 
+                                        disabled="@(SearchService.CurrentPage == SearchService.TotalPages)" 
                                         class="text-[10px] text-gray-400 hover:text-white disabled:opacity-30">
                                     NEXT
                                 </button>
                             </div>
                         }
                     </div>
-                    
-                    <button @onclick="ClearSearch" 
+                    <button @onclick="HandleClearSearch" 
                             class="text-[10px] font-bold text-gray-400 hover:text-red-400 tracking-widest transition-colors">
                         Close Results
                     </button>
@@ -114,7 +115,7 @@
 
                 <div class="pb-20">
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                        @foreach (var item in searchResults.Skip((currentPage - 1) * pageSize).Take(pageSize)) 
+                        @foreach (var item in SearchService.GetPagedResults()) 
                         {
                             <div class="h-full border border-gray-800 rounded-xl overflow-hidden bg-gray-800/20 p-1 relative shadow-2xl">
                                 <button @onclick="() => HandleGoToDate(item.Date)" 
@@ -302,12 +303,12 @@
 </div>
 
 <BulletSearchModal 
-    @bind-SearchStart="searchStart" 
-    @bind-SearchEnd="searchEnd" 
-    @bind-SearchType="searchType" 
+    @bind-SearchStart="SearchService.Start" 
+    @bind-SearchEnd="SearchService.End" 
+    @bind-SearchType="SearchService.Type" 
     IsVisible="showAdvancedSearch" 
     OnClose="HideAdvancedSearch" 
-    OnSearchRequested="ExecuteAdvancedSearch" />
+    OnSearchRequested="HandleExecuteAdvancedSearch" />
 
 <BulletClonerModal 
     IsVisible="showTemporalCloneModal" 
@@ -362,18 +363,8 @@
 
     private BulletTaskService.TaskDTO? editingItem;
 
-    private string searchQuery = "";
-    private bool isSearching = false;
-    private List<BulletTaskService.TaskDTO> searchResults = new();
     private bool showAdvancedSearch = false;
-    private DateTime searchStart = DateTime.Today.AddYears(-1);
-    private DateTime searchEnd = DateTime.Today.AddYears(1);
-    private string searchType = "all";
     private bool showGameBanner = false;
-
-    private int currentPage = 1;
-    private const int pageSize = 50;
-    private int TotalPages => (int)Math.Ceiling(searchResults.Count / (double)pageSize);
 
     private bool showTemporalCloneModal = false;
     private int cloneSourceYear = DateTime.Today.Year;
@@ -381,6 +372,8 @@
     private bool includeBirthdays = true;
     private bool includeAnniversaries = true;
     private bool includeHolidays = true;
+
+    private const int pageSize = 50;
 
     #endregion
 
@@ -557,30 +550,28 @@
 
     private async Task HandlePrev()
     {
-        isSearching = false; 
+        SearchService.IsSearching = false; 
         NavService.MovePrev();
         await LoadData();
     }
 
     private async Task HandleNext()
     {
-        isSearching = false; 
+        SearchService.IsSearching = false; 
         NavService.MoveNext();
         await LoadData();
     }
 
     private async Task HandleGoToday()
     {
-        searchQuery = ""; 
-        isSearching = false; 
+        SearchService.ClearSearch(); 
         NavService.GoToday();
         await LoadData();
     }
 
     private async Task HandleGoToDate(DateTime d)
     {
-        isSearching = false; 
-        searchQuery = ""; 
+        SearchService.ClearSearch(); 
         NavService.SetViewDate(d);
         NavService.SetView("day");
         await LoadData();
@@ -588,7 +579,7 @@
 
     private async Task HandleSwitchView(string view)
     {
-        isSearching = false; 
+        SearchService.IsSearching = false; 
         NavService.SetView(view);
         await LoadData();
     }
@@ -618,7 +609,7 @@
 
     #endregion
 
-    #region CRUD & Helpers
+    #region CRUD & Reordering
 
     private async Task HandleSave(BaseEditor.RecurrenceRequest req)
     {
@@ -688,11 +679,13 @@
 
         if (useCategory)
         {
-            list = BulletDataLogic.GetSortedItems(BulletDataLogic.GetItemsForColumn(loadedItems, item.Date, item.Category));
+            var rawList = BulletDataLogic.GetItemsForColumn(loadedItems, item.Date, item.Category);
+            list = BulletDataLogic.GetSortedItems(rawList);
         }
         else
         {
-            list = BulletDataLogic.GetSortedItems(BulletDataLogic.GetItemsForDate(loadedItems, item.Date));
+            var rawList = BulletDataLogic.GetItemsForDate(loadedItems, item.Date);
+            list = BulletDataLogic.GetSortedItems(rawList);
         }
 
         int currentIndex = list.FindIndex(x => x.Id == item.Id && x.Type == item.Type);
@@ -714,6 +707,10 @@
         await Orchestrator.SwapSortOrders(item.Id, targetItem.Id, list);
         await LoadData();
     }
+
+    #endregion
+
+    #region Editor Helpers
 
     private void CancelEditing() 
     { 
@@ -747,21 +744,11 @@
     { 
         var newItem = new BulletTaskService.TaskDTO 
         { 
-            UserId = userId, 
-            Category = cat, 
-            Type = type, 
-            Date = targetDate, 
-            Detail = new(), 
-            HealthDetail = new(), 
-            MeetingDetail = new(), 
-            HabitDetail = new(), 
-            HolidayDetail = new(), 
-            BirthdayDetail = new(), 
-            AnniversaryDetail = new(), 
-            VacationDetail = new(), 
-            MediaDetail = new(), 
-            SportsDetail = new(), 
-            Notes = new List<BulletItemNote>(), 
+            UserId = userId, Category = cat, Type = type, 
+            Date = targetDate, Detail = new(), HealthDetail = new(), 
+            MeetingDetail = new(), HabitDetail = new(), HolidayDetail = new(), 
+            BirthdayDetail = new(), AnniversaryDetail = new(), VacationDetail = new(), 
+            MediaDetail = new(), SportsDetail = new(), Notes = new List<BulletItemNote>(), 
             Todos = new List<BulletTaskTodoItem>() 
         }; 
 
@@ -787,40 +774,24 @@
 
     #endregion
 
-    #region Search & Cloning
+    #region Search UI Helpers
 
     private async Task HandleKeyUp(KeyboardEventArgs e) 
     { 
         if (e.Key == "Enter") 
         {
-            await PerformQuickSearch(); 
+            await SearchService.ExecuteSearch(userId); 
         }
 
         if (e.Key == "Escape") 
         {
-            ClearSearch(); 
+            HandleClearSearch(); 
         }
     }
 
-    private async Task PerformQuickSearch() 
+    private void HandleClearSearch() 
     { 
-        if (string.IsNullOrWhiteSpace(searchQuery)) 
-        { 
-            ClearSearch(); 
-            return; 
-        } 
-
-        currentPage = 1; 
-        isSearching = true; 
-        
-        var results = await BaseService.SearchItems(userId, searchQuery, searchType, searchStart, searchEnd);
-        searchResults = results.OrderBy(x => x.Date).ToList(); 
-    }
-
-    private void ClearSearch() 
-    { 
-        searchQuery = ""; 
-        isSearching = false; 
+        SearchService.ClearSearch(); 
         _ = LoadData(); 
     }
 
@@ -836,25 +807,33 @@
 
     private void PrevSearchPage() 
     { 
-        if (currentPage > 1)
-        {
-            currentPage = currentPage - 1;
-        }
+        SearchService.MoveToPrevPage();
     }
 
     private void NextSearchPage() 
     { 
-        if (currentPage < TotalPages)
-        {
-            currentPage = currentPage + 1;
-        }
+        SearchService.MoveToNextPage();
     }
 
-    private async Task ExecuteAdvancedSearch() 
+    private async Task HandleExecuteAdvancedSearch() 
     { 
         showAdvancedSearch = false; 
-        await PerformQuickSearch(); 
+        await SearchService.ExecuteSearch(userId); 
     }
+
+    private void HandleSearchPrevPage()
+    {
+        SearchService.MoveToPrevPage();
+    }
+
+    private void HandleSearchNextPage()
+    {
+        SearchService.MoveToNextPage();
+    }
+
+    #endregion
+
+    #region Cloning Logic
 
     private void HandleShowCloner()
     {
