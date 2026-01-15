@@ -14,6 +14,82 @@ public class BulletBaseService
         _db = db;
     }
 
+    public async Task<int> CloneYearlyItems(int userId, int sourceYear, int targetYear, bool includeBirthdays, bool includeAnniversaries, bool includeHolidays)
+    {
+        int count = 0;
+        var typesToCopy = new List<string>();
+        if (includeBirthdays) typesToCopy.Add("birthday");
+        if (includeAnniversaries) typesToCopy.Add("anniversary");
+        if (includeHolidays) typesToCopy.Add("holiday");
+
+        if (!typesToCopy.Any()) return 0;
+
+        // 1. Get all source items
+        var sourceItems = await _db.BulletItems
+            .Where(x => x.UserId == userId && 
+                        typesToCopy.Contains(x.Type) && 
+                        x.Date.Year == sourceYear)
+            .ToListAsync();
+
+        foreach (var item in sourceItems)
+        {
+            // Calculate new date (keeping month and day)
+            DateTime newDate;
+            try 
+            {
+                newDate = new DateTime(targetYear, item.Date.Month, item.Date.Day);
+            } 
+            catch 
+            {
+                // Handle Feb 29th cases for non-leap years - move to Feb 28
+                newDate = new DateTime(targetYear, 2, 28);
+            }
+
+            // 2. Create the new Base Item
+            var newItem = new BulletItem
+            {
+                UserId = userId,
+                Type = item.Type,
+                Category = item.Category,
+                Title = item.Title,
+                Description = item.Description,
+                Date = newDate,
+                ImgUrl = item.ImgUrl,
+                LinkUrl = item.LinkUrl,
+                SortOrder = item.SortOrder,
+                OriginalStringId = item.OriginalStringId // Keep metadata
+            };
+
+            _db.BulletItems.Add(newItem);
+            await _db.SaveChangesAsync(); // Save to get the new ID for FKs
+
+            // 3. Clone the Specific Details based on Type
+            if (item.Type == "birthday")
+            {
+                var detail = await _db.BulletBirthdayDetails.FirstOrDefaultAsync(d => d.BulletItemId == item.Id);
+                if (detail != null) 
+                    _db.BulletBirthdayDetails.Add(new BulletBirthdayDetail { BulletItemId = newItem.Id, DOB_Year = detail.DOB_Year });
+            }
+            else if (item.Type == "anniversary")
+            {
+                var detail = await _db.BulletAnniversaryDetails.FirstOrDefaultAsync(d => d.BulletItemId == item.Id);
+                if (detail != null) 
+                    _db.BulletAnniversaryDetails.Add(new BulletAnniversaryDetail { BulletItemId = newItem.Id, FirstYear = detail.FirstYear, AnniversaryType = detail.AnniversaryType });
+            }
+            else if (item.Type == "holiday")
+            {
+                var detail = await _db.BulletHolidayDetails.FirstOrDefaultAsync(d => d.BulletItemId == item.Id);
+                if (detail != null) 
+                    _db.BulletHolidayDetails.Add(new BulletHolidayDetail { BulletItemId = newItem.Id, IsWorkHoliday = detail.IsWorkHoliday });
+            }
+
+            count++;
+        }
+
+        await _db.SaveChangesAsync();
+        return count;
+    }
+
     public async Task CreateBaseTablesIfMissing()
     {
         // 1. User Goals
@@ -54,7 +130,6 @@ public class BulletBaseService
             var baseQuery = _db.BulletItems.AsNoTracking()
                 .Where(x => x.UserId == userId && x.Date >= start && x.Date <= end);
 
-            // Filter by Title or Description
             if (!string.IsNullOrWhiteSpace(query))
             {
                 var lowerQuery = query.ToLower();
@@ -63,13 +138,11 @@ public class BulletBaseService
                     x.Description.ToLower().Contains(lowerQuery));
             }
 
-            // Filter by Type
             if (!string.IsNullOrWhiteSpace(type) && type != "all")
             {
                 baseQuery = baseQuery.Where(x => x.Type == type);
             }
 
-            // JOIN every sub-detail table using corrected Navigation Property names
             var items = await baseQuery
                 .Include(x => x.DbTaskDetail)
                 .Include(x => x.DbMeetingDetail)
@@ -87,7 +160,6 @@ public class BulletBaseService
                 .OrderByDescending(x => x.Date)
                 .ToListAsync();
 
-            // Map Database Entities to TaskDTO for UI Cards
             return items.Select(t => new BulletTaskService.TaskDTO
             {
                 Id = t.Id,
@@ -101,8 +173,6 @@ public class BulletBaseService
                 LinkUrl = t.LinkUrl,
                 OriginalStringId = t.OriginalStringId,
                 SortOrder = t.SortOrder,
-                
-                // Navigation Mappings
                 Detail = t.DbTaskDetail ?? new(),
                 MeetingDetail = t.DbMeetingDetail,
                 HabitDetail = t.DbHabitDetail,
@@ -113,7 +183,6 @@ public class BulletBaseService
                 VacationDetail = t.DbVacationDetail,
                 HealthDetail = t.DbHealthDetail,
                 SportsDetail = t.DbSportsDetail,
-                
                 Notes = t.Notes?.OrderBy(n => n.Order).ToList() ?? new(),
                 Meals = t.Meals?.ToList() ?? new(),
                 Workouts = t.Workouts?.ToList() ?? new()

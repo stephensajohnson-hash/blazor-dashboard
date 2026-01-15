@@ -41,7 +41,14 @@
             OnViewChanged="SwitchView">
             
             <div class="flex items-center gap-2 ml-4 font-black">
-                @* SEARCH CONTAINER *@
+                @* TEMPORAL CLONE TRIGGER *@
+                <button @onclick="() => showTemporalCloneModal = true" 
+                        class="p-1.5 text-gray-500 hover:text-purple-400 transition-colors" title="Clone Yearly Items">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                    </svg>
+                </button>
+
                 <div class="relative flex items-center bg-black/40 border border-gray-700 rounded-lg px-2 focus-within:border-blue-500 transition-all font-black shadow-inner">
                     <input @bind="searchQuery" 
                            @bind:event="oninput" 
@@ -66,7 +73,6 @@
                     </button>
                 </div>
 
-                @* TEMPORAL JUMP GRID *@
                 <TemporalJumpGrid SelectedDate="viewDate" UserId="userId" OnDateSelected="GoToDate" />
             </div>
         </BulletHeader>
@@ -79,7 +85,7 @@
             <div class="h-full flex flex-col font-black">
                 <div class="flex justify-between items-center mb-4">
                     <div class="flex items-center gap-4">
-                        <h2 class="text-sm font-black text-blue-400">Search Results (@searchResults.Count)</h2>
+                        <h2 class="text-sm font-black text-blue-400 tracking-widest">Search Results (@searchResults.Count)</h2>
                         @if (TotalPages > 1)
                         {
                             <div class="flex items-center gap-2 bg-black/40 px-2 py-1 rounded-lg border border-gray-800 shadow-xl">
@@ -273,6 +279,49 @@
     </div>
 }
 
+@if (showTemporalCloneModal)
+{
+    <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 font-black">
+        <div class="bg-gray-900 border border-purple-500/50 w-full max-w-md rounded-2xl shadow-2xl p-6 space-y-6">
+            <div>
+                <h3 class="text-purple-400 text-xs tracking-widest mb-1">Temporal Cloner</h3>
+                <p class="text-gray-500 text-[10px]">Copy recurring events to a new year.</p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-[10px] text-gray-500 mb-1">Source Year</label>
+                    <input type="number" @bind="cloneSourceYear" class="w-full bg-black border border-gray-700 rounded p-2 text-sm text-white" />
+                </div>
+                <div>
+                    <label class="block text-[10px] text-gray-500 mb-1">Target Year</label>
+                    <input type="number" @bind="cloneTargetYear" class="w-full bg-black border border-gray-700 rounded p-2 text-sm text-white" />
+                </div>
+            </div>
+
+            <div class="space-y-2 bg-black/40 p-4 rounded-xl border border-gray-800">
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" @bind="includeBirthdays" class="accent-purple-500" />
+                    <span class="text-xs text-gray-300">Include Birthdays</span>
+                </label>
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" @bind="includeAnniversaries" class="accent-purple-500" />
+                    <span class="text-xs text-gray-300">Include Anniversaries</span>
+                </label>
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" @bind="includeHolidays" class="accent-purple-500" />
+                    <span class="text-xs text-gray-300">Include Holidays</span>
+                </label>
+            </div>
+
+            <div class="pt-4 flex gap-2">
+                <button @onclick="() => showTemporalCloneModal = false" class="flex-1 py-2 text-[10px] text-gray-500">Cancel</button>
+                <button @onclick="ExecuteClone" class="flex-1 bg-purple-600 py-2 rounded-lg text-[10px] text-white shadow-lg tracking-widest">Start Cloning</button>
+            </div>
+        </div>
+    </div>
+}
+
 <BaseEditor Item="editingItem" 
             TaskDetail="editingItem?.Detail ?? new()" 
             MeetingDetail="editingItem?.MeetingDetail ?? new()"
@@ -399,6 +448,14 @@
     private int currentPage = 1;
     private const int pageSize = 50;
     private int TotalPages => (int)Math.Ceiling(searchResults.Count / (double)pageSize);
+
+    // CLONE STATE
+    private bool showTemporalCloneModal = false;
+    private int cloneSourceYear = DateTime.Today.Year;
+    private int cloneTargetYear = DateTime.Today.Year + 1;
+    private bool includeBirthdays = true;
+    private bool includeAnniversaries = true;
+    private bool includeHolidays = true;
 
     #endregion
 
@@ -922,12 +979,6 @@
         searchResults = (await BaseService.SearchItems(userId, searchQuery, searchType, searchStart, searchEnd)).OrderBy(x => x.Date).ToList();
     }
 
-    private async Task ExecuteAdvancedSearch()
-    {
-        showAdvancedSearch = false;
-        await PerformQuickSearch();
-    }
-
     private void ClearSearch()
     {
         searchQuery = "";
@@ -955,6 +1006,12 @@
         currentPage = Math.Min(TotalPages, currentPage + 1);
     }
 
+    private async Task ExecuteAdvancedSearch()
+    {
+        showAdvancedSearch = false;
+        await PerformQuickSearch();
+    }
+
     private void OnSearchPresetChanged(ChangeEventArgs e)
     {
         SetDateRange(e.Value?.ToString());
@@ -975,6 +1032,18 @@
             case "last-year": searchStart = new DateTime(today.Year - 1, 1, 1); searchEnd = new DateTime(today.Year - 1, 12, 31); break;
             case "next-year": searchStart = new DateTime(today.Year + 1, 1, 1); searchEnd = new DateTime(today.Year + 1, 12, 31); break;
         }
+    }
+
+    #endregion
+
+    #region Cloning Logic
+
+    private async Task ExecuteClone()
+    {
+        var count = await BaseService.CloneYearlyItems(userId, cloneSourceYear, cloneTargetYear, includeBirthdays, includeAnniversaries, includeHolidays);
+        showTemporalCloneModal = false;
+        await JS.InvokeVoidAsync("alert", $"Successfully created {count} new items for {cloneTargetYear}!");
+        await LoadData();
     }
 
     #endregion
