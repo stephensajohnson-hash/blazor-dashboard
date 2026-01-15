@@ -45,7 +45,6 @@
                         }
                         
                         @if(!string.IsNullOrEmpty(Item.Detail.TicketNumber)) {
-                            @* SURGICAL: Ticket Number badge is now a clickable link *@
                             <a href="@GetHaloUrl(Item.Detail.TicketNumber)" target="_blank" @onclick:stopPropagation="true"
                                class="bg-gray-700 text-blue-300 hover:text-white hover:bg-blue-900 px-1.5 rounded font-mono font-black border border-gray-600 transition shadow-sm">
                                 @Item.Detail.TicketNumber
@@ -59,10 +58,12 @@
                 <p class="text-xs text-gray-400 whitespace-pre-wrap mt-2 font-black mb-2">@Item.Description</p> 
             }
 
-            @if(Item.Todos != null && Item.Todos.Any())
-            {
-                <div class="mt-4 space-y-2 border-t border-gray-700/50 pt-3 font-black">
-                    <div class="text-[10px] text-blue-400 tracking-widest mb-2 font-black">Checklist</div>
+            @* CHECKLIST SECTION *@
+            <div class="mt-4 space-y-2 border-t border-gray-700/50 pt-3 font-black">
+                <div class="text-[10px] text-blue-400 tracking-widest mb-2 font-black uppercase">Checklist</div>
+                
+                @if(Item.Todos != null)
+                {
                     @foreach(var todo in Item.Todos.OrderBy(t => t.Order))
                     {
                         <div class="flex items-start gap-3 group/todo font-black">
@@ -73,8 +74,17 @@
                             </span>
                         </div>
                     }
+                }
+
+                @* SURGICAL: In-line Quick Add Input *@
+                <div class="flex items-center gap-3 pt-1" @onclick:stopPropagation="true">
+                    <div class="w-3.5 h-3.5 rounded border border-dashed border-gray-600 shrink-0"></div>
+                    <input @bind="newTodoContent" 
+                           @onkeyup="HandleKeyUp" 
+                           placeholder="Add item..." 
+                           class="bg-transparent border-none text-xs text-gray-500 focus:text-blue-400 outline-none w-full font-black placeholder:text-gray-700 transition-colors" />
                 </div>
-            }
+            </div>
         </div>
     </div>
 
@@ -101,21 +111,45 @@
     [Parameter] public EventCallback<BulletTaskService.TaskDTO> OnToggle { get; set; }
     [Parameter] public EventCallback<int> OnDelete { get; set; }
 
-    // HALO ITSM CONFIGURATION VARIABLES
+    private string newTodoContent = "";
+
     private string HaloBase = "https://pbfcm.haloitsm.com/tickets";
     private string HaloSuffix = "?area=1&viewid=1&mainview=all&sellevel=1&selparentid=0&selid=-1";
 
     private string GetHaloUrl(string ticketNumber)
     {
         if (string.IsNullOrEmpty(ticketNumber)) return "#";
-        
-        // Extract digits only (e.g. IN-0002982 -> 0002982)
         string digitsOnly = Regex.Replace(ticketNumber, @"[^\d]", "");
-        
-        // Remove leading zeros for the URL id parameter (0002982 -> 2982)
         string cleanId = digitsOnly.TrimStart('0');
-        
         return $"{HaloBase}{HaloSuffix}&id={cleanId}";
+    }
+
+    private async Task HandleKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(newTodoContent))
+        {
+            await AddQuickTodo();
+        }
+    }
+
+    private async Task AddQuickTodo()
+    {
+        Item.Todos ??= new List<BulletTaskTodoItem>();
+        
+        var newItem = new BulletTaskTodoItem 
+        { 
+            Content = newTodoContent, 
+            IsCompleted = false, 
+            Order = Item.Todos.Any() ? Item.Todos.Max(t => t.Order) + 1 : 0 
+        };
+
+        Item.Todos.Add(newItem);
+        newTodoContent = ""; // Clear input
+        
+        // Force the card to re-evaluate the IsCompleted state (a new todo makes it not finished)
+        Item.Detail.IsCompleted = false;
+
+        await OnToggle.InvokeAsync(Item); // Save to DB
     }
 
     private async Task HandleClick() => await OnClick.InvokeAsync(Item);
