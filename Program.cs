@@ -32,6 +32,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddScoped(sp => 
 {
     var navMan = sp.GetRequiredService<NavigationManager>();
+    
     return new HttpClient 
     { 
         BaseAddress = new Uri(navMan.BaseUri) 
@@ -54,7 +55,10 @@ builder.Services.AddScoped<BulletSportsService>();
 builder.Services.AddScoped<BulletMoviesService>();
 builder.Services.AddScoped<BudgetService>();
 builder.Services.AddScoped<ImageService>();
+
+// Orchestration and Navigation Services
 builder.Services.AddScoped<BulletOrchestratorService>();
+builder.Services.AddScoped<BulletNavigationService>();
 
 // --- DATABASE REGISTRATION ---
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -95,18 +99,18 @@ app.UseAntiforgery();
 // 3. API ROUTES (Image Uploads)
 // =========================================================
 
-// --- IMAGE ENDPOINT (DIRECTLY MAPPED) ---
 app.MapGet("/db-images/{id}", async (int id, AppDbContext db) =>
 {
     var img = await db.StoredImages.FindAsync(id);
+    
     if (img == null) 
     {
         return Results.NotFound();
     }
+    
     return Results.File(img.Data, img.ContentType);
 });
 
-// Endpoint to Upload Images: /api/images/upload
 app.MapPost("/api/images/upload", async (HttpRequest request, AppDbContext db) =>
 {
     if (!request.HasFormContentType) 
@@ -152,6 +156,7 @@ using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
     var logger = services.GetRequiredService<ILogger<Program>>();
+    
     try
     {
         var factory = services.GetRequiredService<IDbContextFactory<AppDbContext>>();
