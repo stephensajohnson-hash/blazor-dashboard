@@ -1,4 +1,5 @@
 using Dashboard;
+using Dashboard.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -31,7 +32,8 @@ builder.Services.AddHttpClient();
 builder.Services.AddScoped(sp => 
 {
     var navMan = sp.GetRequiredService<NavigationManager>();
-    return new HttpClient { 
+    return new HttpClient 
+    { 
         BaseAddress = new Uri(navMan.BaseUri) 
     };
 });
@@ -54,22 +56,19 @@ builder.Services.AddScoped<BudgetService>();
 builder.Services.AddScoped<ImageService>();
 builder.Services.AddScoped<BulletOrchestratorService>();
 
-// --- DATABASE REGISTRATION (UPDATED) ---
+// --- DATABASE REGISTRATION ---
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
 if (!string.IsNullOrEmpty(connectionString))
 {
-    // Changed from AddDbContext to AddDbContextFactory
     builder.Services.AddDbContextFactory<AppDbContext>(options => 
         options.UseNpgsql(connectionString));
 }
 else
 {
-    // Changed from AddDbContext to AddDbContextFactory
     builder.Services.AddDbContextFactory<AppDbContext>(options => 
         options.UseInMemoryDatabase("TempDb"));
 }
-// ----------------------------------------
 
 var app = builder.Build();
 
@@ -100,20 +99,28 @@ app.UseAntiforgery();
 app.MapGet("/db-images/{id}", async (int id, AppDbContext db) =>
 {
     var img = await db.StoredImages.FindAsync(id);
-    if (img == null) return Results.NotFound();
+    if (img == null) 
+    {
+        return Results.NotFound();
+    }
     return Results.File(img.Data, img.ContentType);
 });
-// ----------------------------------------
 
 // Endpoint to Upload Images: /api/images/upload
 app.MapPost("/api/images/upload", async (HttpRequest request, AppDbContext db) =>
 {
-    if (!request.HasFormContentType) return Results.BadRequest("Not a form upload");
+    if (!request.HasFormContentType) 
+    {
+        return Results.BadRequest("Not a form upload");
+    }
     
     var form = await request.ReadFormAsync();
     var file = form.Files.FirstOrDefault();
     
-    if (file == null || file.Length == 0) return Results.BadRequest("No file found");
+    if (file == null || file.Length == 0) 
+    {
+        return Results.BadRequest("No file found");
+    }
     
     using var ms = new MemoryStream();
     await file.CopyToAsync(ms);
@@ -129,7 +136,6 @@ app.MapPost("/api/images/upload", async (HttpRequest request, AppDbContext db) =
     db.StoredImages.Add(img);
     await db.SaveChangesAsync();
     
-    // Return JSON with the new URL
     return Results.Ok(new { Id = img.Id, Url = $"/api/images/{img.Id}" });
 }).DisableAntiforgery();
 
@@ -148,7 +154,6 @@ using (var scope = app.Services.CreateScope())
     var logger = services.GetRequiredService<ILogger<Program>>();
     try
     {
-        // Resolving the Factory to create a context for initialization
         var factory = services.GetRequiredService<IDbContextFactory<AppDbContext>>();
         using var context = factory.CreateDbContext();
         
