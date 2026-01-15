@@ -9,7 +9,6 @@
 
     @if (isVisible)
     {
-        @* SURGICAL FIX: Changed md:left-0 to md:right-0 to anchor to the right side of the button *@
         <div class="fixed md:absolute top-12 right-4 md:right-0 z-[100] bg-gray-900 border border-gray-700 rounded-2xl shadow-[0_0_60px_rgba(0,0,0,0.9)] p-4 w-[92vw] md:w-[850px] backdrop-blur-xl">
             
             @* NAVIGATION HEADER *@
@@ -31,12 +30,25 @@
                             @monthDate.ToString("MMMM yyyy")
                         </div>
                         
-                        <div class="bg-black/40 border @(IsCurrentMonth(monthDate) ? "border-blue-500/30 shadow-[0_0_15px_rgba(59,130,246,0.1)]" : "border-gray-800") rounded-lg p-1.5 grid grid-cols-7 gap-0.5">
+                        <div class="bg-black/40 border @(IsCurrentMonth(monthDate) ? "border-blue-500/30" : "border-gray-800") rounded-lg p-1 grid grid-cols-7 gap-0.5">
+                            @* Day Headers *@
+                            @foreach (var dayName in new[] { "M", "T", "W", "T", "F", "S", "S" })
+                            {
+                                <div class="text-[6px] text-gray-700 font-black text-center">@dayName</div>
+                            }
+
+                            @* Empty Padding Cells for Monday Start *@
+                            @for (int p = 0; p < GetEmptyStartCells(monthDate); p++)
+                            {
+                                <div class="w-full aspect-square"></div>
+                            }
+
                             @foreach (var day in GetDaysInMonth(monthDate))
                             {
+                                var isHoliday = Holidays.Any(h => h.Date.Date == day.Date);
                                 <button @onclick="() => SelectDate(day)" 
-                                        class="text-[7px] p-0.5 rounded transition-all @GetDayClass(day)"
-                                        title="@day.ToShortDateString()">
+                                        class="text-[7px] p-0.5 rounded transition-all @GetDayClass(day, isHoliday)"
+                                        title="@(isHoliday ? "Holiday: " + Holidays.First(h => h.Date.Date == day.Date).Title : day.ToShortDateString())">
                                     @day.Day
                                 </button>
                             }
@@ -53,14 +65,11 @@
     }
 </div>
 
-<style>
-    .custom-scroll::-webkit-scrollbar { width: 4px; }
-    .custom-scroll::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
-</style>
-
 @code {
     [Parameter] public DateTime SelectedDate { get; set; }
     [Parameter] public EventCallback<DateTime> OnDateSelected { get; set; }
+    @* SURGICAL: Accept holidays as a parameter *@
+    [Parameter] public List<BulletHolidayService.HolidayDTO> Holidays { get; set; } = new();
 
     private bool isVisible = false;
     private DateTime gridCenterDate = DateTime.Today;
@@ -72,7 +81,6 @@
     }
 
     private void ShiftGrid(int months) => gridCenterDate = gridCenterDate.AddMonths(months);
-
     private void JumpToToday() => gridCenterDate = DateTime.Today;
 
     private async Task SelectDate(DateTime date)
@@ -89,25 +97,41 @@
         return months;
     }
 
+    @* SURGICAL: Monday Start Logic *@
+    private int GetEmptyStartCells(DateTime monthDate)
+    {
+        var firstDay = new DateTime(monthDate.Year, monthDate.Month, 1);
+        // DayOfWeek: Sun=0, Mon=1...
+        // We want: Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5, Sun=6
+        int value = ((int)firstDay.DayOfWeek + 6) % 7;
+        return value;
+    }
+
     private IEnumerable<DateTime> GetDaysInMonth(DateTime monthDate)
     {
         var days = DateTime.DaysInMonth(monthDate.Year, monthDate.Month);
         for (int i = 1; i <= days; i++) { yield return new DateTime(monthDate.Year, monthDate.Month, i); }
     }
 
-    private string GetRangeText() 
-    {
-        var months = GetGridMonths();
-        return $"{months.First():MMM yyyy} - {months.Last():MMM yyyy}";
-    }
+    private string GetRangeText() => $"{GetGridMonths().First():MMM yyyy} - {GetGridMonths().Last():MMM yyyy}";
 
     private bool IsCurrentMonth(DateTime dt) => dt.Month == DateTime.Today.Month && dt.Year == DateTime.Today.Year;
 
-    private string GetDayClass(DateTime day)
+    private string GetDayClass(DateTime day, bool isHoliday)
     {
-        if (day.Date == DateTime.Today) return "bg-blue-600 text-white font-black z-10 scale-110 shadow-lg";
-        if (day.Date == SelectedDate.Date) return "bg-gray-700 text-blue-300 font-black";
-        if (day.DayOfWeek == DayOfWeek.Saturday || day.DayOfWeek == DayOfWeek.Sunday) return "text-gray-600 hover:bg-gray-800 hover:text-white";
-        return "text-gray-400 hover:bg-gray-700 hover:text-white";
+        var css = "";
+        
+        // Holiday Style
+        if (isHoliday) css = "outline outline-1 outline-blue-500 text-red-500 font-black z-20";
+        // Today Style (Overrides holiday text color but keeps outline)
+        else if (day.Date == DateTime.Today) css = "bg-blue-600 text-white font-black z-10 scale-110 shadow-lg";
+        // Selected Date Style
+        else if (day.Date == SelectedDate.Date) css = "bg-gray-700 text-blue-300 font-black";
+        // Weekend Style
+        else if (day.DayOfWeek == DayOfWeek.Saturday || day.DayOfWeek == DayOfWeek.Sunday) css = "text-gray-600 hover:bg-gray-800 hover:text-white";
+        // Standard Day
+        else css = "text-gray-400 hover:bg-gray-700 hover:text-white";
+
+        return css;
     }
 }
