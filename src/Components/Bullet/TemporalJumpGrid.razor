@@ -1,5 +1,6 @@
 @namespace Dashboard.Components.Bullet
 @using System.Globalization
+@inject BulletHolidayService HolidayService
 
 <div class="relative inline-block">
     <button @onclick="ToggleGrid" 
@@ -45,10 +46,10 @@
 
                             @foreach (var day in GetDaysInMonth(monthDate))
                             {
-                                var isHoliday = Holidays.Any(h => h.Date.Date == day.Date);
+                                var holiday = internalHolidays.FirstOrDefault(h => h.Date.Date == day.Date);
                                 <button @onclick="() => SelectDate(day)" 
-                                        class="text-[7px] p-0.5 rounded transition-all @GetDayClass(day, isHoliday)"
-                                        title="@(isHoliday ? "Holiday: " + Holidays.First(h => h.Date.Date == day.Date).Title : day.ToShortDateString())">
+                                        class="text-[7px] p-0.5 rounded transition-all @GetDayClass(day, holiday != null)"
+                                        title="@(holiday?.Title ?? day.ToShortDateString())">
                                     @day.Day
                                 </button>
                             }
@@ -68,20 +69,42 @@
 @code {
     [Parameter] public DateTime SelectedDate { get; set; }
     [Parameter] public EventCallback<DateTime> OnDateSelected { get; set; }
-    @* SURGICAL: Accept holidays as a parameter *@
-    [Parameter] public List<BulletHolidayService.HolidayDTO> Holidays { get; set; } = new();
+    [Parameter] public int UserId { get; set; }
 
     private bool isVisible = false;
     private DateTime gridCenterDate = DateTime.Today;
+    private List<BulletHolidayService.HolidayDTO> internalHolidays = new();
 
-    private void ToggleGrid() 
+    private async Task ToggleGrid() 
     { 
         isVisible = !isVisible; 
-        if(isVisible) gridCenterDate = SelectedDate; 
+        if(isVisible) 
+        {
+            gridCenterDate = SelectedDate;
+            await LoadInternalHolidays();
+        }
     }
 
-    private void ShiftGrid(int months) => gridCenterDate = gridCenterDate.AddMonths(months);
-    private void JumpToToday() => gridCenterDate = DateTime.Today;
+    private async Task LoadInternalHolidays()
+    {
+        // Fetch a wide range: 2 years back, 3 years forward from the center
+        // This covers the entire 25-month grid effectively.
+        var start = gridCenterDate.AddYears(-2);
+        var end = gridCenterDate.AddYears(3);
+        internalHolidays = await HolidayService.GetHolidaysForRange(UserId, start, end);
+    }
+
+    private async Task ShiftGrid(int months) 
+    {
+        gridCenterDate = gridCenterDate.AddMonths(months);
+        await LoadInternalHolidays();
+    }
+
+    private async Task JumpToToday() 
+    {
+        gridCenterDate = DateTime.Today;
+        await LoadInternalHolidays();
+    }
 
     private async Task SelectDate(DateTime date)
     {
@@ -97,14 +120,10 @@
         return months;
     }
 
-    @* SURGICAL: Monday Start Logic *@
     private int GetEmptyStartCells(DateTime monthDate)
     {
         var firstDay = new DateTime(monthDate.Year, monthDate.Month, 1);
-        // DayOfWeek: Sun=0, Mon=1...
-        // We want: Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5, Sun=6
-        int value = ((int)firstDay.DayOfWeek + 6) % 7;
-        return value;
+        return ((int)firstDay.DayOfWeek + 6) % 7;
     }
 
     private IEnumerable<DateTime> GetDaysInMonth(DateTime monthDate)
@@ -119,18 +138,30 @@
 
     private string GetDayClass(DateTime day, bool isHoliday)
     {
-        var css = "";
+        // Base classes
+        var css = "relative ";
         
-        // Holiday Style
-        if (isHoliday) css = "outline outline-1 outline-blue-500 text-red-500 font-black z-20";
-        // Today Style (Overrides holiday text color but keeps outline)
-        else if (day.Date == DateTime.Today) css = "bg-blue-600 text-white font-black z-10 scale-110 shadow-lg";
-        // Selected Date Style
-        else if (day.Date == SelectedDate.Date) css = "bg-gray-700 text-blue-300 font-black";
-        // Weekend Style
-        else if (day.DayOfWeek == DayOfWeek.Saturday || day.DayOfWeek == DayOfWeek.Sunday) css = "text-gray-600 hover:bg-gray-800 hover:text-white";
-        // Standard Day
-        else css = "text-gray-400 hover:bg-gray-700 hover:text-white";
+        if (isHoliday) 
+        {
+            // Bright blue outline and red text as requested
+            css += "outline outline-1 outline-blue-500 text-red-500 font-black z-20 shadow-[0_0_5px_rgba(59,130,246,0.5)] ";
+        }
+        else if (day.Date == DateTime.Today) 
+        {
+            css += "bg-blue-600 text-white font-black z-10 scale-110 shadow-lg ";
+        }
+        else if (day.Date == SelectedDate.Date) 
+        {
+            css += "bg-gray-700 text-blue-300 font-black ";
+        }
+        else if (day.DayOfWeek == DayOfWeek.Saturday || day.DayOfWeek == DayOfWeek.Sunday) 
+        {
+            css += "text-gray-600 hover:bg-gray-800 hover:text-white ";
+        }
+        else 
+        {
+            css += "text-gray-400 hover:bg-gray-700 hover:text-white ";
+        }
 
         return css;
     }
