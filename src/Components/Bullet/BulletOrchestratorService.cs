@@ -52,11 +52,13 @@ namespace Dashboard.Services
             if (t.Id > 0)
             {
                 var dbItem = await _db.BulletItems.FindAsync(t.Id);
+                
                 if (dbItem != null)
                 {
                     dbItem.Type = t.Type;
                     dbItem.Category = t.Category;
                     dbItem.Description = t.Description;
+                    
                     await _db.SaveChangesAsync();
                 }
             }
@@ -108,6 +110,7 @@ namespace Dashboard.Services
         private async Task HandleVacationSave(BulletTaskService.TaskDTO t)
         {
             string vGroupId = t.VacationDetail?.VacationGroupId;
+            
             if (t.Id > 0 && !string.IsNullOrEmpty(vGroupId))
             {
                 var groupDetails = await _db.BulletVacationDetails
@@ -125,7 +128,9 @@ namespace Dashboard.Services
                         vd.BulletItem.ImgUrl = t.ImgUrl;
                     }
                 }
+                
                 await _vacationService.SaveVacation(new BulletVacationService.VacationDTO { Id = t.Id, UserId = t.UserId, Type = "vacation", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.VacationDetail ?? new(), Notes = t.Notes ?? new List<BulletItemNote>() });
+                
                 await _db.SaveChangesAsync();
             }
             else if (t.Id > 0)
@@ -136,6 +141,7 @@ namespace Dashboard.Services
             {
                 var start = t.Date.Date;
                 var end = (t.EndDate ?? start).Date;
+                
                 for (var dt = start; dt <= end; dt = dt.AddDays(1))
                 {
                     await _vacationService.SaveVacation(new BulletVacationService.VacationDTO { Id = 0, UserId = t.UserId, Type = "vacation", Category = t.Category, Date = dt, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.VacationDetail ?? new(), Notes = t.Notes ?? new List<BulletItemNote>() });
@@ -155,12 +161,15 @@ namespace Dashboard.Services
                     for (int i = 0; i < currentList.Count; i++)
                     {
                         var dItem = await _db.BulletItems.FindAsync(currentList[i].Id);
+                        
                         if (dItem != null)
                         {
                             dItem.SortOrder = i * 10;
                         }
                     }
+                    
                     await _db.SaveChangesAsync();
+                    
                     dbItem = await _db.BulletItems.FindAsync(sourceId);
                     dbTarget = await _db.BulletItems.FindAsync(targetId);
                 }
@@ -168,6 +177,7 @@ namespace Dashboard.Services
                 int temp = dbItem.SortOrder;
                 dbItem.SortOrder = dbTarget.SortOrder;
                 dbTarget.SortOrder = temp;
+                
                 await _db.SaveChangesAsync();
             }
         }

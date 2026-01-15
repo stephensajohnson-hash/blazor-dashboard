@@ -18,7 +18,7 @@ namespace Dashboard.Services
             CurrentView = view;
         }
 
-        public void GoToToday()
+        public void GoToday()
         {
             ViewDate = DateTime.UtcNow.AddMinutes(-ClientOffsetMinutes).Date;
             CurrentView = "day";
@@ -59,6 +59,7 @@ namespace Dashboard.Services
         public DateTime GetWeekStart()
         {
             int diff = (7 + (ViewDate.DayOfWeek - DayOfWeek.Monday)) % 7;
+            
             return ViewDate.AddDays(-1 * diff).Date;
         }
 
@@ -72,6 +73,7 @@ namespace Dashboard.Services
             if (CurrentView == "week")
             {
                 var start = GetWeekStart();
+                
                 return $"Week of {start.ToString("MMM d")}";
             }
 
