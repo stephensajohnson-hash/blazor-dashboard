@@ -225,7 +225,7 @@ namespace Dashboard.Services
             {
                 var dbSource = await _db.BulletItems
                     .Include(i => i.Todos)
-                    .Include(i => i.Detail)
+                    .Include(i => i.BulletTaskDetail) 
                     .FirstOrDefaultAsync(i => i.Id == source.Id);
 
                 if (dbSource != null)
@@ -234,10 +234,9 @@ namespace Dashboard.Services
                         .Where(t => t.IsCompleted)
                         .ToList();
 
-                    // Access the database navigation property (assuming it is BulletTaskDetail)
                     if (dbSource.BulletTaskDetail != null) 
                     {
-                        dbSource.BulletTaskDetail.IsCompleted = true;
+                        dbSource.BulletTaskDetail.IsCompleted = true; 
                     }
 
                     await _db.SaveChangesAsync();
