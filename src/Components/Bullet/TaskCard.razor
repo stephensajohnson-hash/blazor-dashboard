@@ -6,6 +6,11 @@
 <div class="bg-gray-800 border border-gray-700 rounded-lg mb-3 relative group shadow-sm flex flex-col transition hover:border-blue-500 font-black">
     
     <div class="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition z-30 font-black">
+        @* NEW: HOVER BUTTON TO ADD TODO *@
+        @if (Item.Todos == null || !Item.Todos.Any() || Item.Detail.IsCompleted)
+        {
+            <button @onclick="() => showForcedInput = true" @onclick:stopPropagation="true" class="p-1 rounded bg-gray-700 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-gray-600 shadow-md" title="Add Todo">＋✅</button>
+        }
         <button @onclick="HandleClick" @onclick:stopPropagation="true" class="p-1 rounded bg-gray-700 hover:bg-blue-600 text-gray-300 hover:text-white border border-gray-600 shadow-md">✏️</button>
         <button @onclick="HandleDelete" @onclick:stopPropagation="true" class="p-1 rounded bg-gray-700 hover:bg-red-600 text-red-400 hover:text-white border border-gray-600 shadow-md">✕</button>
     </div>
@@ -58,42 +63,48 @@
                 <p class="text-xs text-gray-400 whitespace-pre-wrap mt-2 font-black mb-2">@Item.Description</p> 
             }
 
-            @* CHECKLIST SECTION *@
-            <div class="mt-4 space-y-2 border-t border-gray-700/50 pt-3 font-black">
-                <div class="text-[10px] text-blue-400 tracking-widest mb-2 font-black uppercase">Checklist</div>
-                
-                @if(Item.Todos != null)
-                {
-                    @foreach(var todo in Item.Todos.OrderBy(t => t.Order))
+            @* CHECKLIST SECTION: Only shows if todos exist OR if hover-button was clicked *@
+            @if((Item.Todos != null && Item.Todos.Any()) || showForcedInput)
+            {
+                <div class="mt-4 space-y-2 border-t border-gray-700/50 pt-3 font-black">
+                    <div class="text-[10px] text-blue-400 tracking-widest mb-2 font-black uppercase">Checklist</div>
+                    
+                    @if(Item.Todos != null)
                     {
-                        <div class="flex items-start justify-between group/todo font-black hover:bg-black/20 px-1 rounded transition">
-                            <div class="flex items-start gap-3 flex-1 min-w-0 py-1">
-                                <input type="checkbox" checked="@todo.IsCompleted" @onchange="(e) => ToggleTodo(todo, e)" class="w-3.5 h-3.5 mt-0.5 rounded bg-gray-900 border-gray-700 accent-blue-500 cursor-pointer font-black" />
-                                <span class="text-xs @(todo.IsCompleted ? "text-gray-600 line-through" : "text-gray-300") font-black break-words">
-                                    <span class="font-bold text-[9px] text-gray-500 mr-1 font-black">@(Item.Todos.OrderBy(x=>x.Order).ToList().IndexOf(todo) + 1).</span>
-                                    @todo.Content
-                                </span>
+                        @foreach(var todo in Item.Todos.OrderBy(t => t.Order))
+                        {
+                            <div class="flex items-start justify-between group/todo font-black hover:bg-black/20 px-1 rounded transition">
+                                <div class="flex items-start gap-3 flex-1 min-w-0 py-1">
+                                    <input type="checkbox" checked="@todo.IsCompleted" @onchange="(e) => ToggleTodo(todo, e)" class="w-3.5 h-3.5 mt-0.5 rounded bg-gray-900 border-gray-700 accent-blue-500 cursor-pointer font-black" />
+                                    <span class="text-xs @(todo.IsCompleted ? "text-gray-600 line-through" : "text-gray-300") font-black break-words">
+                                        <span class="font-bold text-[9px] text-gray-500 mr-1 font-black">@(Item.Todos.OrderBy(x=>x.Order).ToList().IndexOf(todo) + 1).</span>
+                                        @todo.Content
+                                    </span>
+                                </div>
+                                
+                                @* REORDER CONTROLS *@
+                                <div class="flex gap-1 opacity-0 group-hover/todo:opacity-100 transition shrink-0 ml-2" @onclick:stopPropagation="true">
+                                    <button @onclick="() => MoveTodo(todo, -1)" class="text-[10px] text-gray-500 hover:text-blue-400">▲</button>
+                                    <button @onclick="() => MoveTodo(todo, 1)" class="text-[10px] text-gray-500 hover:text-blue-400">▼</button>
+                                    <button @onclick="() => DeleteTodo(todo)" class="text-[10px] text-gray-600 hover:text-red-400 ml-1">✕</button>
+                                </div>
                             </div>
-                            
-                            @* REORDER CONTROLS *@
-                            <div class="flex gap-1 opacity-0 group-hover/todo:opacity-100 transition shrink-0 ml-2" @onclick:stopPropagation="true">
-                                <button @onclick="() => MoveTodo(todo, -1)" class="text-[10px] text-gray-500 hover:text-blue-400">▲</button>
-                                <button @onclick="() => MoveTodo(todo, 1)" class="text-[10px] text-gray-500 hover:text-blue-400">▼</button>
-                                <button @onclick="() => DeleteTodo(todo)" class="text-[10px] text-gray-600 hover:text-red-400 ml-1">✕</button>
-                            </div>
+                        }
+                    }
+
+                    @* In-line Quick Add Input: Hidden if Task is Complete unless Forced *@
+                    @if(!Item.Detail.IsCompleted || showForcedInput)
+                    {
+                        <div class="flex items-center gap-3 pt-1" @onclick:stopPropagation="true">
+                            <div class="w-3.5 h-3.5 rounded border border-dashed border-gray-600 shrink-0"></div>
+                            <input @bind="newTodoContent" 
+                                   @onkeyup="HandleKeyUp" 
+                                   placeholder="Add item..." 
+                                   class="bg-transparent border-none text-xs text-gray-500 focus:text-blue-400 outline-none w-full font-black placeholder:text-gray-700 transition-colors" />
                         </div>
                     }
-                }
-
-                @* In-line Quick Add Input *@
-                <div class="flex items-center gap-3 pt-1" @onclick:stopPropagation="true">
-                    <div class="w-3.5 h-3.5 rounded border border-dashed border-gray-600 shrink-0"></div>
-                    <input @bind="newTodoContent" 
-                           @onkeyup="HandleKeyUp" 
-                           placeholder="Add item..." 
-                           class="bg-transparent border-none text-xs text-gray-500 focus:text-blue-400 outline-none w-full font-black placeholder:text-gray-700 transition-colors" />
                 </div>
-            </div>
+            }
         </div>
     </div>
 
@@ -121,6 +132,7 @@
     [Parameter] public EventCallback<int> OnDelete { get; set; }
 
     private string newTodoContent = "";
+    private bool showForcedInput = false;
 
     private string HaloBase = "https://pbfcm.haloitsm.com/tickets";
     private string HaloSuffix = "?area=1&viewid=1&mainview=all&sellevel=1&selparentid=0&selid=-1";
@@ -154,6 +166,7 @@
 
         Item.Todos.Add(newItem);
         newTodoContent = ""; // Clear input
+        showForcedInput = false; // Reset force flag
         
         Item.Detail.IsCompleted = false;
         await OnToggle.InvokeAsync(Item); // Save to DB
@@ -170,13 +183,10 @@
         if (newIndex >= 0 && newIndex < list.Count)
         {
             var other = list[newIndex];
-            
-            // Swap integers
             int temp = todo.Order;
             todo.Order = other.Order;
             other.Order = temp;
-
-            await OnToggle.InvokeAsync(Item); // Trigger Save
+            await OnToggle.InvokeAsync(Item); 
         }
     }
 
