@@ -47,7 +47,7 @@
                         @if(!string.IsNullOrEmpty(Item.Detail.TicketNumber)) {
                             <a href="@GetHaloUrl(Item.Detail.TicketNumber)" target="_blank" @onclick:stopPropagation="true"
                                class="bg-gray-700 text-blue-300 hover:text-white hover:bg-blue-900 px-1.5 rounded font-mono font-black border border-gray-600 transition shadow-sm">
-                                @Item.Detail.TicketNumber
+                                 @Item.Detail.TicketNumber
                             </a>
                         }
                     </div>
@@ -66,12 +66,21 @@
                 {
                     @foreach(var todo in Item.Todos.OrderBy(t => t.Order))
                     {
-                        <div class="flex items-start gap-3 group/todo font-black">
-                            <input type="checkbox" checked="@todo.IsCompleted" @onchange="(e) => ToggleTodo(todo, e)" class="w-3.5 h-3.5 mt-0.5 rounded bg-gray-900 border-gray-700 accent-blue-500 cursor-pointer font-black" />
-                            <span class="text-xs @(todo.IsCompleted ? "text-gray-600 line-through" : "text-gray-300") font-black">
-                                <span class="font-bold text-[9px] text-gray-500 mr-1 font-black">@(todo.Order + 1).</span>
-                                @todo.Content
-                            </span>
+                        <div class="flex items-center justify-between group/todo font-black hover:bg-black/20 px-1 rounded transition">
+                            <div class="flex items-start gap-3 flex-1 min-w-0 py-1">
+                                <input type="checkbox" checked="@todo.IsCompleted" @onchange="(e) => ToggleTodo(todo, e)" class="w-3.5 h-3.5 mt-0.5 rounded bg-gray-900 border-gray-700 accent-blue-500 cursor-pointer font-black" />
+                                <span class="text-xs @(todo.IsCompleted ? "text-gray-600 line-through" : "text-gray-300") font-black truncate">
+                                    <span class="font-bold text-[9px] text-gray-500 mr-1 font-black">@(Item.Todos.OrderBy(x=>x.Order).ToList().IndexOf(todo) + 1).</span>
+                                    @todo.Content
+                                </span>
+                            </div>
+                            
+                            @* NEW: REORDER CONTROLS *@
+                            <div class="flex gap-1 opacity-0 group-hover/todo:opacity-100 transition shrink-0 ml-2" @onclick:stopPropagation="true">
+                                <button @onclick="() => MoveTodo(todo, -1)" class="text-[10px] text-gray-500 hover:text-blue-400">▲</button>
+                                <button @onclick="() => MoveTodo(todo, 1)" class="text-[10px] text-gray-500 hover:text-blue-400">▼</button>
+                                <button @onclick="() => DeleteTodo(todo)" class="text-[10px] text-gray-600 hover:text-red-400 ml-1">✕</button>
+                            </div>
                         </div>
                     }
                 }
@@ -146,10 +155,36 @@
         Item.Todos.Add(newItem);
         newTodoContent = ""; // Clear input
         
-        // Force the card to re-evaluate the IsCompleted state (a new todo makes it not finished)
         Item.Detail.IsCompleted = false;
-
         await OnToggle.InvokeAsync(Item); // Save to DB
+    }
+
+    // NEW: MOVED TODO LOGIC
+    private async Task MoveTodo(BulletTaskTodoItem todo, int direction)
+    {
+        if (Item.Todos == null) return;
+
+        var list = Item.Todos.OrderBy(t => t.Order).ToList();
+        int index = list.IndexOf(todo);
+        int newIndex = index + direction;
+
+        if (newIndex >= 0 && newIndex < list.Count)
+        {
+            var other = list[newIndex];
+            
+            // Swap integers
+            int temp = todo.Order;
+            todo.Order = other.Order;
+            other.Order = temp;
+
+            await OnToggle.InvokeAsync(Item); // Trigger Save
+        }
+    }
+
+    private async Task DeleteTodo(BulletTaskTodoItem todo)
+    {
+        Item.Todos?.Remove(todo);
+        await OnToggle.InvokeAsync(Item);
     }
 
     private async Task HandleClick() => await OnClick.InvokeAsync(Item);

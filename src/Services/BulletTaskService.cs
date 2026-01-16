@@ -40,6 +40,8 @@ public class BulletTaskService
     public async Task<List<TaskDTO>> GetTasksForRange(int userId, DateTime start, DateTime end)
     {
         using var db = _factory.CreateDbContext();
+        
+        // Retrieval: Explicitly order Todos by the 'Order' column so the UI stays consistent
         var items = await (from baseItem in db.BulletItems.Include(x => x.Todos)
                            join detail in db.BulletTaskDetails on baseItem.Id equals detail.BulletItemId
                            where baseItem.UserId == userId 
@@ -58,7 +60,7 @@ public class BulletTaskService
         }).ToList();
     }
 
-public async Task SaveTask(TaskDTO dto)
+    public async Task SaveTask(TaskDTO dto)
     {
         using var db = _factory.CreateDbContext();
 
@@ -77,10 +79,10 @@ public async Task SaveTask(TaskDTO dto)
         item.LinkUrl = dto.LinkUrl;
         item.Type = dto.Type; 
         
-        // Must save here so new items have an Id for the children to reference
+        // Save first so new items have an ID for the details/todos to reference
         await db.SaveChangesAsync();
 
-        // 2. Update the specific Task details (Priority, Due Date, etc.)
+        // 2. Update the specific Task details
         var detail = await db.BulletTaskDetails.FindAsync(item.Id);
         if (detail == null)
         {
@@ -93,27 +95,27 @@ public async Task SaveTask(TaskDTO dto)
         detail.TicketUrl = dto.Detail.TicketUrl;
         detail.IsCompleted = dto.Detail.IsCompleted;
 
-        // 3. PERSIST THE CHECKLIST
-        // Clear existing items to prevent duplicates or orphaned rows
+        // 3. PERSIST THE CHECKLIST (Handle Reordering)
+        // We remove existing rows and recreate them to ensure the 'Order' integers are fresh
         var existingTodos = db.BulletTaskTodoItems.Where(x => x.BulletItemId == item.Id);
         db.BulletTaskTodoItems.RemoveRange(existingTodos);
 
         if (dto.Todos != null)
         {
-            // Only save items that actually have text content
+            // We map the DTO items back to the DB model, respecting the 'Order' property
             var validTodos = dto.Todos
                 .Where(t => !string.IsNullOrWhiteSpace(t.Content))
-                .Select((t, index) => new BulletTaskTodoItem
+                .Select(t => new BulletTaskTodoItem
                 {
                     BulletItemId = item.Id,
                     Content = t.Content,
                     IsCompleted = t.IsCompleted,
-                    Order = index 
+                    Order = t.Order 
                 }).ToList();
                 
             await db.BulletTaskTodoItems.AddRangeAsync(validTodos);
 
-            // Final safety sync: Ensure master status matches the checklist
+            // Sync master status: if all items are checked, the task is complete
             if (validTodos.Any())
             {
                 detail.IsCompleted = validTodos.All(x => x.IsCompleted);
