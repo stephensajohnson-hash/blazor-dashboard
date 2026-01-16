@@ -41,26 +41,50 @@ namespace Dashboard.Services
 
         public async Task ExecuteSearch(int userId)
         {
-            if (string.IsNullOrWhiteSpace(Query))
+            // 1. Remove the 'if (string.IsNullOrWhiteSpace(Query)) return;' line
+            
+            IsSearching = true;
+            Results.Clear();
+            CurrentPage = 1;
+
+            using var db = _factory.CreateDbContext();
+
+            // Start with a base query for the user
+            var query = db.BulletItems
+                .Include(i => i.Todos)
+                .Include(i => i.DbTaskDetail)
+                .Include(i => i.DbHabitDetail)
+                .Include(i => i.DbHealthDetail)
+                .Include(i => i.DbMeetingDetail)
+                .Where(i => i.UserId == userId);
+
+            // Filter by Text (Only if Query is provided)
+            if (!string.IsNullOrWhiteSpace(Query))
             {
-                ClearSearch();
-                return;
+                query = query.Where(i => EF.Functions.Like(i.Title, $"%{Query}%") 
+                                    || EF.Functions.Like(i.Description, $"%{Query}%"));
             }
 
-            CurrentPage = 1;
-            IsSearching = true;
+            // Filter by Type (Advanced)
+            if (!string.IsNullOrWhiteSpace(Type) && Type != "all")
+            {
+                query = query.Where(i => i.Type == Type);
+            }
 
-            var results = await _baseService.SearchItems(
-                userId, 
-                Query, 
-                Type, 
-                Start, 
-                End
-            );
+            // Filter by Date Range (Advanced)
+            if (Start.HasValue) query = query.Where(i => i.Date >= Start.Value);
+            if (End.HasValue) query = query.Where(i => i.Date <= End.Value);
 
-            Results = results
-                .OrderBy(x => x.Date)
-                .ToList();
+            // Order and Execute
+            var dbItems = await query
+                .OrderByDescending(i => i.Date)
+                .ToListAsync();
+
+            // Map to DTOs for the UI
+            foreach (var item in dbItems)
+            {
+                Results.Add(BulletMapper.MapAny(item));
+            }
         }
 
         public void ClearSearch()
