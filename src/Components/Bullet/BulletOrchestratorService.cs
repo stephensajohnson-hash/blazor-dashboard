@@ -111,7 +111,7 @@ namespace Dashboard.Services
                     LinkUrl = existingItem.LinkUrl,
                     Meals = existingItem.Meals.ToList(),
                     Workouts = existingItem.Workouts.ToList(),
-                    HealthDetail = new BulletHealthService.HealthDetailDTO
+                    HealthDetail = new() // Using target-typed new to avoid CS0426
                     {
                         WeightLbs = existingItem.DbHealthDetail?.WeightLbs ?? 0,
                         CalculatedTDEE = existingItem.DbHealthDetail?.CalculatedTDEE ?? 0
@@ -127,7 +127,7 @@ namespace Dashboard.Services
                     Category = "health",
                     Date = targetDate.Date,
                     Title = "Daily Health Log",
-                    HealthDetail = new BulletHealthService.HealthDetailDTO { WeightLbs = 0 },
+                    HealthDetail = new(),
                     Meals = new List<BulletHealthMeal>(),
                     Workouts = new List<BulletHealthWorkout>(),
                     Notes = new List<BulletItemNote>()
