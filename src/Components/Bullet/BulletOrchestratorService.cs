@@ -187,41 +187,62 @@ namespace Dashboard.Services
             BulletTaskService.TaskDTO source, 
             DateTime newDate, 
             bool includeNotes, 
-            bool incompleteTodosOnly)
+            bool incompleteTodosOnly,
+            bool removeFromSource)
         {
-            // 1. Generate the base copy using the existing Mapper
             var clone = BulletMapper.CreateCopy(source);
             
-            // 2. Adjust the date and reset ID for a new record
             clone.Date = newDate;
             clone.Id = 0;
 
-            // 3. Handle Task-Specific Todo Filtering
-            if (source.Type == "task" && incompleteTodosOnly && source.Todos != null)
+            if (source.Type == "task" && source.Todos != null)
             {
-                clone.Todos = source.Todos
-                    .Where(t => !t.IsCompleted)
-                    .Select(t => new BulletTaskTodoItem 
-                    { 
-                        Content = t.Content, 
-                        IsCompleted = false, 
-                        Order = t.Order 
-                    })
-                    .ToList();
-                    
+                if (incompleteTodosOnly)
+                {
+                    clone.Todos = source.Todos
+                        .Where(t => !t.IsCompleted)
+                        .Select(t => new BulletTaskTodoItem 
+                        { 
+                            Content = t.Content, 
+                            IsCompleted = false, 
+                            Order = t.Order 
+                        })
+                        .ToList();
+                }
+
                 if (clone.Detail != null)
                 {
                     clone.Detail.IsCompleted = false;
                 }
             }
 
-            // 4. Handle Note Exclusion
             if (!includeNotes)
             {
                 clone.Notes = new List<BulletItemNote>();
             }
 
-            // 5. Commit using the existing pipeline logic
+            if (source.Type == "task" && removeFromSource && source.Id > 0)
+            {
+                var dbSource = await _db.BulletItems
+                    .Include(i => i.Todos)
+                    .Include(i => i.Detail)
+                    .FirstOrDefaultAsync(i => i.Id == source.Id);
+
+                if (dbSource != null)
+                {
+                    dbSource.Todos = dbSource.Todos
+                        .Where(t => t.IsCompleted)
+                        .ToList();
+
+                    if (dbSource.Detail != null)
+                    {
+                        dbSource.Detail.IsCompleted = true;
+                    }
+
+                    await _db.SaveChangesAsync();
+                }
+            }
+
             await CommitItemToDatabase(clone);
         }
     }
