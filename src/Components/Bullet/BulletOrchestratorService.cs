@@ -222,10 +222,10 @@ namespace Dashboard.Services
             }
 
             if (source.Type == "task" && removeFromSource && source.Id > 0)
-            {
+            {                
                 var dbSource = await _db.BulletItems
                     .Include(i => i.Todos)
-                    .Include(i => i.BulletTaskDetail) 
+                    .Include(i => i.DbTaskDetail) 
                     .FirstOrDefaultAsync(i => i.Id == source.Id);
 
                 if (dbSource != null)
@@ -234,9 +234,9 @@ namespace Dashboard.Services
                         .Where(t => t.IsCompleted)
                         .ToList();
 
-                    if (dbSource.BulletTaskDetail != null) 
+                    if (dbSource.DbTaskDetail != null) 
                     {
-                        dbSource.BulletTaskDetail.IsCompleted = true; 
+                        dbSource.DbTaskDetail.IsCompleted = true; 
                     }
 
                     await _db.SaveChangesAsync();
