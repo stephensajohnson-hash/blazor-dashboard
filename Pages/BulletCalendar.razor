@@ -131,7 +131,9 @@
                                                    OnCopyRequest="InitiateDeepCopy"
                                                    OnMoveUp="() => MoveItem(item, -1, true)" 
                                                    OnMoveDown="() => MoveItem(item, 1, true)" 
-                                                   OnHabitSave="SaveHabitDirectly" />
+                                                   OnHabitSave="SaveHabitDirectly"
+                                                   OnCopyMeal="@(m => HandleMealCopy(item, m))"
+                                                   OnCopyWorkout="@(w => HandleWorkoutCopy(item, w))" />
                             </div>
                         }
                     </div>
@@ -216,7 +218,9 @@
                                                        OnCopyRequest="InitiateDeepCopy"
                                                        OnMoveUp="() => MoveItem(item, -1, true)" 
                                                        OnMoveDown="() => MoveItem(item, 1, true)" 
-                                                       OnHabitSave="SaveHabitDirectly" />
+                                                       OnHabitSave="SaveHabitDirectly"
+                                                       OnCopyMeal="@(m => HandleMealCopy(item, m))"
+                                                       OnCopyWorkout="@(w => HandleWorkoutCopy(item, w))" />
                                 }
                             }
                         </div>
@@ -330,9 +334,9 @@
     OnCloneRequested="ExecuteClone" />
 
 <BulletCopyModal 
-    IsVisible="@showCopyModal" 
+    IsVisible="showCopyModal" 
     ItemType="@itemToCopy?.Type" 
-    OnCancel="@(() => showCopyModal = false)" 
+    OnCancel="() => showCopyModal = false" 
     OnConfirm="@(async (options) => await ExecuteCopy((options.date, options.notes, options.todos, false)))" />
 
 <BaseEditor Item="editingItem" 
@@ -378,6 +382,7 @@
 
     private BulletTaskService.TaskDTO? editingItem;
     private BulletTaskService.TaskDTO? itemToCopy;
+    private object? pendingSubItem; // NEW: Holds the meal/workout during copy
 
     private bool showAdvancedSearch = false;
     private bool showGameBanner = false;
@@ -608,9 +613,7 @@
 
         try 
         { 
-            // We now call ProcessSaveRequest instead of CommitItemToDatabase
             await Orchestrator.ProcessSaveRequest(editingItem, req); 
-            
             editingItem = null; 
             await LoadData(); 
         }
@@ -623,44 +626,55 @@
     private void InitiateDeepCopy(BulletTaskService.TaskDTO item)
     {
         itemToCopy = item;
+        pendingSubItem = null; // Clear any pending meal/workout
         showCopyModal = true;
     }
 
-    private object? pendingSubItem;
-
-    private void HandleSubItemCopy(BulletTaskService.TaskDTO parent, object subItem)
+    private void HandleMealCopy(BulletTaskService.TaskDTO parent, BulletHealthMeal meal)
     {
         itemToCopy = parent;
-        pendingSubItem = subItem;
-        showCopyModal = true; 
+        pendingSubItem = meal;
+        showCopyModal = true;
     }
 
-    // Ensure your ExecuteCopy handles the sub-item if it exists
+    private void HandleWorkoutCopy(BulletTaskService.TaskDTO parent, BulletHealthWorkout workout)
+    {
+        itemToCopy = parent;
+        pendingSubItem = workout;
+        showCopyModal = true;
+    }
+
     private async Task ExecuteCopy((DateTime date, bool notes, bool todos, bool move) options)
     {
         if (itemToCopy == null) return;
 
-        try 
+        try
         {
             if (pendingSubItem != null)
             {
-                // NEW MERGE LOGIC
+                // Logic to merge into target day's Health record (or create one)
                 await Orchestrator.CloneHealthSubItem(itemToCopy, options.date, pendingSubItem);
                 pendingSubItem = null;
             }
             else
             {
-                // EXISTING FULL ITEM LOGIC
-                await Orchestrator.DeepCloneItem(itemToCopy, options.date, options.notes, options.todos, options.move);
+                // Standard deep copy
+                await Orchestrator.DeepCloneItem(
+                    itemToCopy, 
+                    options.date, 
+                    options.notes, 
+                    options.todos,
+                    options.move
+                );
             }
 
             showCopyModal = false;
             itemToCopy = null;
             await LoadData();
         }
-        catch (Exception ex) 
+        catch (Exception ex)
         {
-            await LogToConsole($"Copy Fail: {ex.Message}");
+            await LogToConsole($"Copy Error: {ex.Message}");
         }
     }
 
@@ -696,14 +710,9 @@
     { 
         if (editingItem != null && editingItem.Id > 0)
         {
-            var confirmed = await JS.InvokeAsync<bool>("confirm", "Delete?");
-            
-            if (confirmed)
-            {
-                await BaseService.DeleteItem(editingItem.Id); 
-                editingItem = null; 
-                await LoadData(); 
-            }
+            await BaseService.DeleteItem(editingItem.Id); 
+            editingItem = null; 
+            await LoadData(); 
         }
     }
 
@@ -738,21 +747,12 @@
         }
 
         int currentIndex = list.FindIndex(x => x.Id == item.Id && x.Type == item.Type);
-        
-        if (currentIndex == -1) 
-        {
-            return;
-        }
+        if (currentIndex == -1) return;
 
         int newIndex = currentIndex + direction;
-        
-        if (newIndex < 0 || newIndex >= list.Count) 
-        {
-            return;
-        }
+        if (newIndex < 0 || newIndex >= list.Count) return;
         
         var targetItem = list[newIndex];
-        
         await Orchestrator.SwapSortOrders(item.Id, targetItem.Id, list);
         await LoadData();
     }
@@ -827,15 +827,8 @@
 
     private async Task HandleKeyUp(KeyboardEventArgs e) 
     { 
-        if (e.Key == "Enter") 
-        {
-            await SearchService.ExecuteSearch(userId); 
-        }
-
-        if (e.Key == "Escape") 
-        {
-            HandleClearSearch(); 
-        }
+        if (e.Key == "Enter") await SearchService.ExecuteSearch(userId); 
+        if (e.Key == "Escape") HandleClearSearch(); 
     }
 
     private void HandleClearSearch() 
@@ -844,15 +837,8 @@
         _ = LoadData(); 
     }
 
-    private void ToggleAdvancedSearch() 
-    { 
-        showAdvancedSearch = !showAdvancedSearch; 
-    }
-
-    private void HideAdvancedSearch() 
-    { 
-        showAdvancedSearch = false; 
-    }
+    private void ToggleAdvancedSearch() { showAdvancedSearch = !showAdvancedSearch; }
+    private void HideAdvancedSearch() { showAdvancedSearch = false; }
 
     private async Task HandleExecuteAdvancedSearch() 
     { 
@@ -860,67 +846,32 @@
         await SearchService.ExecuteSearch(userId); 
     }
 
-    private void HandleSearchPrevPage()
-    {
-        SearchService.MoveToPrevPage();
-    }
-
-    private void HandleSearchNextPage()
-    {
-        SearchService.MoveToNextPage();
-    }
+    private void HandleSearchPrevPage() { SearchService.MoveToPrevPage(); }
+    private void HandleSearchNextPage() { SearchService.MoveToNextPage(); }
 
     #endregion
 
     #region Cloning Logic
 
-    private void HandleShowCloner()
-    {
-        showTemporalCloneModal = true;
-    }
-
-    private void HideCloner()
-    {
-        showTemporalCloneModal = false;
-    }
+    private void HandleShowCloner() { showTemporalCloneModal = true; }
+    private void HideCloner() { showTemporalCloneModal = false; }
 
     private async Task ExecuteClone() 
     { 
-        var count = await BaseService.CloneYearlyItems(
-            userId, 
-            cloneSourceYear, 
-            cloneTargetYear, 
-            includeBirthdays, 
-            includeAnniversaries, 
-            includeHolidays
-        ); 
-
+        var count = await BaseService.CloneYearlyItems(userId, cloneSourceYear, cloneTargetYear, includeBirthdays, includeAnniversaries, includeHolidays); 
         showTemporalCloneModal = false; 
-        
-        await JS.InvokeVoidAsync(
-            "alert", 
-            $"Successfully created {count} new items for {cloneTargetYear}!"
-        ); 
-        
+        await JS.InvokeVoidAsync("alert", $"Successfully created {count} new items for {cloneTargetYear}!"); 
         await LoadData(); 
     }
 
     private async Task HandlePillReorder(int id) 
     { 
         var item = loadedItems.FirstOrDefault(x => x.Id == id); 
-        
-        if (item == null) 
-        {
-            return; 
-        }
-
+        if (item == null) return; 
         await MoveItem(item, 0, false); 
     }
 
-    private async Task LogToConsole(string msg) 
-    { 
-        await JS.InvokeVoidAsync("console.log", $"[CALENDAR] {msg}"); 
-    }
+    private async Task LogToConsole(string msg) { await JS.InvokeVoidAsync("console.log", $"[CALENDAR] {msg}"); }
 
     #endregion
 }
