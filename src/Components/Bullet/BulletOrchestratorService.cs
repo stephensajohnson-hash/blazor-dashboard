@@ -234,7 +234,8 @@ namespace Dashboard.Services
                         .Where(t => t.IsCompleted)
                         .ToList();
 
-                    if (dbSource.BulletTaskDetail != null)
+                    // Access the database navigation property (assuming it is BulletTaskDetail)
+                    if (dbSource.BulletTaskDetail != null) 
                     {
                         dbSource.BulletTaskDetail.IsCompleted = true;
                     }
