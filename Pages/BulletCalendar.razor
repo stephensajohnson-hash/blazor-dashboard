@@ -626,30 +626,41 @@
         showCopyModal = true;
     }
 
+    private object? pendingSubItem;
+
+    private void HandleSubItemCopy(BulletTaskService.TaskDTO parent, object subItem)
+    {
+        itemToCopy = parent;
+        pendingSubItem = subItem;
+        showCopyModal = true; 
+    }
+
+    // Ensure your ExecuteCopy handles the sub-item if it exists
     private async Task ExecuteCopy((DateTime date, bool notes, bool todos, bool move) options)
     {
-        if (itemToCopy == null) 
-        {
-            return;
-        }
+        if (itemToCopy == null) return;
 
-        try
+        try 
         {
-            await Orchestrator.DeepCloneItem(
-                itemToCopy, 
-                options.date, 
-                options.notes, 
-                options.todos,
-                options.move
-            );
+            if (pendingSubItem != null)
+            {
+                // NEW MERGE LOGIC
+                await Orchestrator.CloneHealthSubItem(itemToCopy, options.date, pendingSubItem);
+                pendingSubItem = null;
+            }
+            else
+            {
+                // EXISTING FULL ITEM LOGIC
+                await Orchestrator.DeepCloneItem(itemToCopy, options.date, options.notes, options.todos, options.move);
+            }
 
             showCopyModal = false;
             itemToCopy = null;
             await LoadData();
         }
-        catch (Exception ex)
+        catch (Exception ex) 
         {
-            await LogToConsole($"Copy Error: {ex.Message}");
+            await LogToConsole($"Copy Fail: {ex.Message}");
         }
     }
 

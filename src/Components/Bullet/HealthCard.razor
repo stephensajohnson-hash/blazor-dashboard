@@ -163,6 +163,7 @@
                             </div>
                             <div class="flex gap-2 items-center">
                                 <span class="font-mono text-white font-bold bg-gray-700 px-1.5 rounded text-[10px]">@meal.Calories Cals</span>
+                                <button @onclick="() => OnCopyMeal.InvokeAsync(meal)" @onclick:stopPropagation="true" class="text-blue-400 hover:text-white transition" title="Copy to another day">＋📋</button>
                                 <button @onclick="() => DeleteMeal(meal)" @onclick:stopPropagation="true" class="text-gray-600 hover:text-red-500 px-1">✕</button>
                             </div>
                         </div>
@@ -220,6 +221,7 @@
                         </div>
                         <div class="flex items-center gap-3">
                             <span class="font-mono text-orange-400 font-bold">-@wo.CaloriesBurned</span>
+                            <button @onclick="() => OnCopyWorkout.InvokeAsync(wo)" @onclick:stopPropagation="true" class="text-blue-400 hover:text-white transition" title="Copy to another day">＋📋</button>
                             <button @onclick="() => DeleteWorkout(wo)" class="text-gray-600 hover:text-red-500 opacity-0 group-hover/item:opacity-100 transition">✕</button>
                         </div>
                     </div>
@@ -236,6 +238,8 @@
     [Parameter] public User User { get; set; } = new();
     [Parameter] public EventCallback<BulletTaskService.TaskDTO> OnClick { get; set; }
     [Parameter] public EventCallback<int> OnDelete { get; set; }
+    [Parameter] public EventCallback<BulletHealthMeal> OnCopyMeal { get; set; }
+    [Parameter] public EventCallback<BulletHealthWorkout> OnCopyWorkout { get; set; }
 
     private bool isAddingMeal = false;
     private bool isAddingWorkout = false;
@@ -250,9 +254,6 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        // HYBRID CALCULATION LOGIC:
-        // Accumulate locally first to prevent race condition/UI flickering where value doubles.
-        // Uses DB data for past days, and In-Memory data for the current day being edited.
         double tempWeeklyDeficit = 0; 
 
         using (var scope = ScopeFactory.CreateScope())
@@ -277,7 +278,6 @@
 
                     if (day.Id == Item.Id)
                     {
-                        // CURRENT DAY: Use In-Memory (Live) Data
                         double currentWeight = Item.HealthDetail?.WeightLbs ?? 0;
                         dayTDEE = (Item.HealthDetail?.CalculatedTDEE > 0) ? Item.HealthDetail.CalculatedTDEE : CalculateFallbackTDEE(currentWeight);
                         dayFood = Item.Meals.Sum(m => m.Calories);
@@ -285,7 +285,6 @@
                     }
                     else
                     {
-                        // PAST DAYS: Use Database (Saved) Data
                         var details = await db.BulletHealthDetails.FirstOrDefaultAsync(d => d.BulletItemId == day.Id);
                         double dbWeight = details?.WeightLbs ?? 0;
                         dayTDEE = (details != null && details.CalculatedTDEE > 0) ? details.CalculatedTDEE : CalculateFallbackTDEE(dbWeight);
@@ -299,7 +298,6 @@
             }
         }
         
-        // Atomic update to avoid UI jitter
         WeeklyDeficit = tempWeeklyDeficit;
         StateHasChanged();
     }

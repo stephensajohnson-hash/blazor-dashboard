@@ -245,4 +245,76 @@ namespace Dashboard.Services
             await CommitItemToDatabase(clone);
         }
     }
+
+   public async Task CloneHealthSubItem(BulletTaskService.TaskDTO source, DateTime targetDate, object subItem)
+    {
+        // 1. Check if a Health record already exists for this user on the target date
+        var existingItem = await _db.BulletItems
+            .Include(i => i.Meals)
+            .Include(i => i.Workouts)
+            .Include(i => i.DbHealthDetail)
+            .FirstOrDefaultAsync(i => i.UserId == source.UserId 
+                                && i.Type == "health" 
+                                && i.Date.Date == targetDate.Date);
+
+        BulletTaskService.TaskDTO targetDto;
+
+        if (existingItem != null)
+        {
+            // Use the existing record
+            targetDto = BulletMapper.MapHealth(await _healthService.GetHealthItem(existingItem.Id));
+        }
+        else
+        {
+            // Create a new fresh record container
+            targetDto = new BulletTaskService.TaskDTO
+            {
+                UserId = source.UserId,
+                Type = "health",
+                Category = "health",
+                Date = targetDate.Date,
+                Title = "Daily Health Log",
+                HealthDetail = new BulletHealthDetail { WeightLbs = 0 },
+                Meals = new List<BulletHealthMeal>(),
+                Workouts = new List<BulletHealthWorkout>(),
+                Notes = new List<BulletItemNote>()
+            };
+
+            // Optional: Pull the most recent weight for the new record
+            var lastHealth = await _db.BulletHealthDetails
+                .Include(d => d.BulletItem)
+                .Where(h => h.BulletItem.UserId == source.UserId && h.BulletItem.Date < targetDate.Date)
+                .OrderByDescending(h => h.BulletItem.Date)
+                .FirstOrDefaultAsync();
+
+            if (lastHealth != null) targetDto.HealthDetail.WeightLbs = lastHealth.WeightLbs;
+        }
+
+        // 2. Add the specific sub-item to the target DTO
+        if (subItem is BulletHealthMeal meal)
+        {
+            targetDto.Meals.Add(new BulletHealthMeal
+            {
+                MealType = meal.MealType,
+                Name = meal.Name,
+                Calories = meal.Calories,
+                Protein = meal.Protein,
+                Carbs = meal.Carbs,
+                Fat = meal.Fat,
+                Fiber = meal.Fiber
+            });
+        }
+        else if (subItem is BulletHealthWorkout workout)
+        {
+            targetDto.Workouts.Add(new BulletHealthWorkout
+            {
+                Name = workout.Name,
+                CaloriesBurned = workout.CaloriesBurned,
+                TimeSpentMinutes = workout.TimeSpentMinutes
+            });
+        }
+
+        // 3. Commit (This will update if ID > 0, or Insert if ID == 0)
+        await CommitItemToDatabase(targetDto);
+    }
 }
