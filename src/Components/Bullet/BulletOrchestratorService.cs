@@ -50,41 +50,45 @@ namespace Dashboard.Services
 
         public async Task ProcessSaveRequest(BulletTaskService.TaskDTO item, BaseEditor.RecurrenceRequest? recur = null)
         {
-            // 1. Save the initial item
+            // 1. Save the initial item (new or existing)
             await CommitItemToDatabase(item);
 
-            // 2. Generate recurring timeline items
-            if (recur != null && recur.Frequency != "None" && recur.RepeatUntil.HasValue)
+            // 2. Handle Timeline Generation (Recursive Logic)
+            // Note: matching Frequency and ThruDate from your BaseEditor.razor
+            if (recur != null && recur.Frequency != "none" && recur.ThruDate != default)
             {
                 DateTime currentTarget = item.Date;
                 int currentStreak = item.HabitDetail?.StreakCount ?? 0;
 
                 while (true)
                 {
-                    currentTarget = recur.Frequency switch
+                    // Advance based on your dropdown values
+                    currentTarget = recur.Frequency.ToLower() switch
                     {
-                        "Daily" => currentTarget.AddDays(1),
-                        "Weekly" => currentTarget.AddDays(7),
-                        "Monthly" => currentTarget.AddMonths(1),
-                        "TwiceMonthly" => currentTarget.AddDays(15),
+                        "daily" => currentTarget.AddDays(1),
+                        "weekly" => currentTarget.AddDays(7),
+                        "biweekly" => currentTarget.AddDays(14),
+                        "monthly" => currentTarget.AddMonths(1),
                         _ => currentTarget.AddDays(1)
                     };
 
-                    if (currentTarget.Date > recur.RepeatUntil.Value.Date) 
+                    // Stop if we pass the "Stop Date"
+                    if (currentTarget.Date > recur.ThruDate.Date) 
                     {
                         break;
                     }
 
+                    // Create the clone
                     var clone = BulletMapper.CreateCopy(item);
-                    clone.Id = 0;
+                    clone.Id = 0; // Ensures a new database record
                     clone.Date = currentTarget;
 
-                    // Handle Habit Streaks
-                    if (clone.Type == "habit" && clone.HabitDetail != null)
+                    // Handle Habit Streaks if requested
+                    if (clone.Type == "habit" && clone.HabitDetail != null && recur.IncrementHabitStreak)
                     {
                         currentStreak++;
                         clone.HabitDetail.StreakCount = currentStreak;
-                        clone.HabitDetail.IsCompleted = false;
+                        clone.HabitDetail.IsCompleted = false; // Reset completion for future dates
                     }
 
                     await CommitItemToDatabase(clone);
@@ -102,6 +106,9 @@ namespace Dashboard.Services
                     dbItem.Type = t.Type;
                     dbItem.Category = t.Category;
                     dbItem.Description = t.Description;
+                    dbItem.Title = t.Title;
+                    dbItem.ImgUrl = t.ImgUrl;
+                    dbItem.LinkUrl = t.LinkUrl;
                     await _db.SaveChangesAsync();
                 }
             }
