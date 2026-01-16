@@ -236,7 +236,7 @@ namespace Dashboard.Services
 
                     if (dbSource.DbTaskDetail != null) 
                     {
-                        dbSource.DbTaskDetail.IsCompleted = true; 
+                        dbSource.DbTaskDetail.IsCompleted = true;
                     }
 
                     await _db.SaveChangesAsync();
