@@ -317,4 +317,37 @@ namespace Dashboard.Services
             await CommitItemToDatabase(clone);
         }
     }
+
+    public async Task SkipHabitInstance(BulletTaskService.TaskDTO item)
+    {
+        // 1. Mark current instance as "Skipped" (using Status field)
+        var currentDbItem = await _db.BulletHabitDetails.FindAsync(item.Id);
+        if (currentDbItem != null)
+        {
+            currentDbItem.Status = "Skipped";
+            currentDbItem.IsCompleted = false;
+            await _db.SaveChangesAsync();
+        }
+
+        // 2. Find all future instances of this habit for this user
+        var futureHabits = await _db.BulletItems
+            .Include(i => i.DbHabitDetail)
+            .Where(i => i.UserId == item.UserId 
+                    && i.Type == "habit" 
+                    && i.Title == item.Title 
+                    && i.Date > item.Date)
+            .OrderBy(i => i.Date)
+            .ToListAsync();
+
+        // 3. Decrement the streak for the entire future chain
+        foreach (var habit in futureHabits)
+        {
+            if (habit.DbHabitDetail != null)
+            {
+                habit.DbHabitDetail.StreakCount -= 1;
+            }
+        }
+
+        await _db.SaveChangesAsync();
+    }
 }
