@@ -127,7 +127,7 @@
                                                    ShowControls="false"
                                                    OnEdit="OpenEdit" 
                                                    OnToggle="ToggleComplete" 
-                                                   OnDelete="DeleteTask" 
+                                                   OnDelete="async (id) => await DeleteTask(id)" 
                                                    OnCopyRequest="InitiateDeepCopy"
                                                    OnMoveUp="() => MoveItem(item, -1, true)" 
                                                    OnMoveDown="() => MoveItem(item, 1, true)" 
@@ -186,7 +186,7 @@
                                                 }
                                             </div>
                                             <div class="text-xs text-white font-black truncate mt-1">
-                                                <span>@game.Title</span>
+                                                @game.Title
                                             </div>
                                         </div>
                                     </div>
@@ -212,8 +212,8 @@
                                                        User="currentUser" 
                                                        OnEdit="OpenEdit" 
                                                        OnToggle="ToggleComplete" 
-                                                       OnDelete="async (id) => await DeleteTask(id)"
-                                                       RefRequest="InitiateDeepCopy"
+                                                       OnDelete="DeleteTask" 
+                                                       OnCopyRequest="InitiateDeepCopy"
                                                        OnMoveUp="() => MoveItem(item, -1, true)" 
                                                        OnMoveDown="() => MoveItem(item, 1, true)" 
                                                        OnHabitSave="SaveHabitDirectly" />
@@ -235,7 +235,7 @@
                         <div class="p-2 text-center border-b border-gray-700/50 bg-gray-800/60 cursor-pointer hover:bg-gray-700 transition" 
                              @onclick="() => HandleGoToDate(d)">
                             <div class="text-[10px] font-black text-gray-500 font-black ">@d.ToString("ddd")</div>
-                            <div class="text-lg font-black text-white font-black "><span>@d.Day</span></div>
+                            <div class="text-lg font-black text-white font-black ">@d.Day</div>
                         </div>
                         <div class="p-1 space-y-1 font-black ">
                             @{
@@ -364,7 +364,7 @@
 
     private List<League> leagues = new();
     private List<Season> seasons = new();
-   private List<Team> teams = new();
+    private List<Team> teams = new();
 
     private List<BulletMeetingService.MeetingDTO> _meetings = new();
     private List<BulletBirthdayService.BirthdayDTO> _bdays = new();
@@ -438,7 +438,7 @@
 
                         leagues = await Db.Leagues.OrderBy(x => x.Name).ToListAsync() ?? new();
                         seasons = await Db.Seasons.ToListAsync() ?? new();
-                        teams = await Db.Teams.ToListAsync() ?? new();
+                       teams = await Db.Teams.ToListAsync() ?? new();
                         
                         await LoadData();
                     }
@@ -543,6 +543,7 @@
             { 
                 loadedItems.Add(BulletMapper.MapHabit(h)); 
             }
+
             if (BulletDataLogic.GetFavoriteGamesForDate(_sports, teams, NavService.ViewDate).Any())
             {
                 showGameBanner = true;
@@ -684,7 +685,6 @@
     { 
         var item = loadedItems.FirstOrDefault(x => x.Id == id) 
                    ?? SearchService.Results.FirstOrDefault(x => x.Id == id);
-        
         var title = item?.Title ?? "Item";
 
         await BaseService.DeleteItem(id); 
@@ -746,11 +746,13 @@
 
         if (useCategory)
         {
-            list = BulletDataLogic.GetSortedItems(BulletDataLogic.GetItemsForColumn(loadedItems, item.Date, item.Category));
+            var rawList = BulletDataLogic.GetItemsForColumn(loadedItems, item.Date, item.Category);
+            list = BulletDataLogic.GetSortedItems(rawList);
         }
         else
         {
-            list = BulletDataLogic.GetSortedItems(BulletDataLogic.GetItemsForDate(loadedItems, item.Date));
+            var rawList = BulletDataLogic.GetItemsForDate(loadedItems, item.Date);
+            list = BulletDataLogic.GetSortedItems(rawList);
         }
 
         int currentIndex = list.FindIndex(x => x.Id == item.Id && x.Type == item.Type);
@@ -795,7 +797,7 @@
         editingItem.AnniversaryDetail ??= new(); 
         editingItem.VacationDetail ??= new(); 
         editingItem.HealthDetail ??= new(); 
-       editingItem.SportsDetail ??= new(); 
+        editingItem.SportsDetail ??= new(); 
         editingItem.Notes ??= new List<BulletItemNote>(); 
         editingItem.Todos ??= new List<BulletTaskTodoItem>(); 
     }

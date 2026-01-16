@@ -234,9 +234,9 @@ namespace Dashboard.Services
                         .Where(t => t.IsCompleted)
                         .ToList();
 
-                    if (dbSource.Detail != null)
+                    if (dbSource.BulletTaskDetail != null)
                     {
-                        dbSource.Detail.IsCompleted = true;
+                        dbSource.BulletTaskDetail.IsCompleted = true;
                     }
 
                     await _db.SaveChangesAsync();
