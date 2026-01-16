@@ -30,60 +30,25 @@ namespace Dashboard.Services
         {
             get
             {
-                if (Results.Count == 0)
-                {
-                    return 1;
-                }
-
+                if (Results.Count == 0) return 1;
                 return (int)Math.Ceiling(Results.Count / (double)PageSize);
             }
         }
 
         public async Task ExecuteSearch(int userId)
         {
-            // 1. Remove the 'if (string.IsNullOrWhiteSpace(Query)) return;' line
-            
+            // Removed the "if Query is empty return" guard.
+            // We now proceed regardless of text, allowing date/type scans.
             IsSearching = true;
             Results.Clear();
             CurrentPage = 1;
 
-            using var db = _factory.CreateDbContext();
-
-            // Start with a base query for the user
-            var query = db.BulletItems
-                .Include(i => i.Todos)
-                .Include(i => i.DbTaskDetail)
-                .Include(i => i.DbHabitDetail)
-                .Include(i => i.DbHealthDetail)
-                .Include(i => i.DbMeetingDetail)
-                .Where(i => i.UserId == userId);
-
-            // Filter by Text (Only if Query is provided)
-            if (!string.IsNullOrWhiteSpace(Query))
+            // We delegate the heavy lifting to the existing SearchItems method in BaseService
+            var searchResults = await _baseService.SearchItems(userId, Query, Type, Start, End);
+            
+            if (searchResults != null)
             {
-                query = query.Where(i => EF.Functions.Like(i.Title, $"%{Query}%") 
-                                    || EF.Functions.Like(i.Description, $"%{Query}%"));
-            }
-
-            // Filter by Type (Advanced)
-            if (!string.IsNullOrWhiteSpace(Type) && Type != "all")
-            {
-                query = query.Where(i => i.Type == Type);
-            }
-
-            // Filter by Date Range (Advanced)
-            if (Start.HasValue) query = query.Where(i => i.Date >= Start.Value);
-            if (End.HasValue) query = query.Where(i => i.Date <= End.Value);
-
-            // Order and Execute
-            var dbItems = await query
-                .OrderByDescending(i => i.Date)
-                .ToListAsync();
-
-            // Map to DTOs for the UI
-            foreach (var item in dbItems)
-            {
-                Results.Add(BulletMapper.MapAny(item));
+                Results.AddRange(searchResults);
             }
         }
 
@@ -104,18 +69,12 @@ namespace Dashboard.Services
 
         public void MoveToPrevPage()
         {
-            if (CurrentPage > 1)
-            {
-                CurrentPage = CurrentPage - 1;
-            }
+            if (CurrentPage > 1) CurrentPage--;
         }
 
         public void MoveToNextPage()
         {
-            if (CurrentPage < TotalPages)
-            {
-                CurrentPage = CurrentPage + 1;
-            }
+            if (CurrentPage < TotalPages) CurrentPage++;
         }
     }
 }
