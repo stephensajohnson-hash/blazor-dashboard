@@ -86,6 +86,39 @@ namespace Dashboard.Services
             }
         }
 
+        public async Task SkipHabitInstance(BulletTaskService.TaskDTO item)
+        {
+            // 1. Mark current instance as Skipped
+            var detail = await _db.BulletHabitDetails.FindAsync(item.Id);
+            if (detail != null)
+            {
+                detail.Status = "Skipped";
+                detail.IsCompleted = false;
+                await _db.SaveChangesAsync();
+            }
+
+            // 2. Find all future instances of this specific habit (by Title and User)
+            var futureHabits = await _db.BulletItems
+                .Include(i => i.DbHabitDetail)
+                .Where(i => i.UserId == item.UserId 
+                         && i.Type == "habit" 
+                         && i.Title == item.Title 
+                         && i.Date > item.Date)
+                .OrderBy(i => i.Date)
+                .ToListAsync();
+
+            // 3. Decrement the streak count for the entire future chain
+            foreach (var fh in futureHabits)
+            {
+                if (fh.DbHabitDetail != null)
+                {
+                    fh.DbHabitDetail.StreakCount--;
+                }
+            }
+
+            await _db.SaveChangesAsync();
+        }
+
         public async Task CloneHealthSubItem(BulletTaskService.TaskDTO source, DateTime targetDate, object subItem)
         {
             var existingItem = await _db.BulletItems
@@ -111,7 +144,7 @@ namespace Dashboard.Services
                     LinkUrl = existingItem.LinkUrl,
                     Meals = existingItem.Meals.ToList(),
                     Workouts = existingItem.Workouts.ToList(),
-                    HealthDetail = new() // Using target-typed new to avoid CS0426
+                    HealthDetail = new BulletHealthDetail
                     {
                         WeightLbs = existingItem.DbHealthDetail?.WeightLbs ?? 0,
                         CalculatedTDEE = existingItem.DbHealthDetail?.CalculatedTDEE ?? 0
@@ -127,7 +160,7 @@ namespace Dashboard.Services
                     Category = "health",
                     Date = targetDate.Date,
                     Title = "Daily Health Log",
-                    HealthDetail = new(),
+                    HealthDetail = new BulletHealthDetail { WeightLbs = 0 },
                     Meals = new List<BulletHealthMeal>(),
                     Workouts = new List<BulletHealthWorkout>(),
                     Notes = new List<BulletItemNote>()
@@ -316,38 +349,5 @@ namespace Dashboard.Services
             }
             await CommitItemToDatabase(clone);
         }
-    }
-
-    public async Task SkipHabitInstance(BulletTaskService.TaskDTO item)
-    {
-        // 1. Mark current instance as "Skipped" (using Status field)
-        var currentDbItem = await _db.BulletHabitDetails.FindAsync(item.Id);
-        if (currentDbItem != null)
-        {
-            currentDbItem.Status = "Skipped";
-            currentDbItem.IsCompleted = false;
-            await _db.SaveChangesAsync();
-        }
-
-        // 2. Find all future instances of this habit for this user
-        var futureHabits = await _db.BulletItems
-            .Include(i => i.DbHabitDetail)
-            .Where(i => i.UserId == item.UserId 
-                    && i.Type == "habit" 
-                    && i.Title == item.Title 
-                    && i.Date > item.Date)
-            .OrderBy(i => i.Date)
-            .ToListAsync();
-
-        // 3. Decrement the streak for the entire future chain
-        foreach (var habit in futureHabits)
-        {
-            if (habit.DbHabitDetail != null)
-            {
-                habit.DbHabitDetail.StreakCount -= 1;
-            }
-        }
-
-        await _db.SaveChangesAsync();
     }
 }
