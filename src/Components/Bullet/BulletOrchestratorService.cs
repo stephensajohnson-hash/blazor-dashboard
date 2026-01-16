@@ -48,59 +48,114 @@ namespace Dashboard.Services
             _sportsService = sportsService;
         }
 
-    public async Task ProcessSaveRequest(BulletTaskService.TaskDTO item, BaseEditor.RecurrenceRequest? recur = null)
-    {
-        // 1. Always save the initial item first
-        await CommitItemToDatabase(item);
-
-        // 2. Check if we need to generate more items
-        if (recur != null && recur.Type != "None" && recur.EndDate.HasValue)
+        public async Task ProcessSaveRequest(BulletTaskService.TaskDTO item, BaseEditor.RecurrenceRequest? recur = null)
         {
-            DateTime currentTarget = item.Date;
-            int currentStreak = item.HabitDetail?.StreakCount ?? 0;
+            // 1. Save the initial item
+            await CommitItemToDatabase(item);
 
-            while (true)
+            // 2. Generate recurring timeline items
+            if (recur != null && recur.Frequency != "None" && recur.RepeatUntil.HasValue)
             {
-                // Advance the date based on frequency
-                currentTarget = recur.Type switch
+                DateTime currentTarget = item.Date;
+                int currentStreak = item.HabitDetail?.StreakCount ?? 0;
+
+                while (true)
                 {
-                    "Daily" => currentTarget.AddDays(1),
-                    "Weekly" => currentTarget.AddDays(7),
-                    "Monthly" => currentTarget.AddMonths(1),
-                    "TwiceMonthly" => currentTarget.AddDays(15), // Approximate or custom logic
-                    _ => currentTarget.AddDays(1)
-                };
+                    currentTarget = recur.Frequency switch
+                    {
+                        "Daily" => currentTarget.AddDays(1),
+                        "Weekly" => currentTarget.AddDays(7),
+                        "Monthly" => currentTarget.AddMonths(1),
+                        "TwiceMonthly" => currentTarget.AddDays(15),
+                        _ => currentTarget.AddDays(1)
+                    };
 
-                if (currentTarget.Date > recur.EndDate.Value.Date) break;
+                    if (currentTarget.Date > recur.RepeatUntil.Value.Date) 
+                    {
+                        break;
+                    }
 
-                // Create the clone for the next occurrence
-                var clone = BulletMapper.CreateCopy(item);
-                clone.Id = 0;
-                clone.Date = currentTarget;
+                    var clone = BulletMapper.CreateCopy(item);
+                    clone.Id = 0;
+                    clone.Date = currentTarget;
 
-                // Increment streak if it's a habit
-                if (clone.Type == "habit" && clone.HabitDetail != null)
-                {
-                    currentStreak++;
-                    clone.HabitDetail.StreakCount = currentStreak;
-                    clone.HabitDetail.IsCompleted = false; // New occurrences shouldn't start completed
+                    // Handle Habit Streaks
+                    if (clone.Type == "habit" && clone.HabitDetail != null)
+                    {
+                        currentStreak++;
+                        clone.HabitDetail.StreakCount = currentStreak;
+                        clone.HabitDetail.IsCompleted = false;
+                    }
+
+                    await CommitItemToDatabase(clone);
                 }
-
-                await CommitItemToDatabase(clone);
             }
         }
-    }
+
+        public async Task CommitItemToDatabase(BulletTaskService.TaskDTO t)
+        {
+            if (t.Id > 0)
+            {
+                var dbItem = await _db.BulletItems.FindAsync(t.Id);
+                if (dbItem != null)
+                {
+                    dbItem.Type = t.Type;
+                    dbItem.Category = t.Category;
+                    dbItem.Description = t.Description;
+                    await _db.SaveChangesAsync();
+                }
+            }
+
+            string type = t.Type?.ToLower().Trim() ?? "task";
+
+            if (type == "meeting")
+            {
+                await _meetingService.SaveMeeting(new BulletMeetingService.MeetingDTO { Id = t.Id, UserId = t.UserId, Type = "meeting", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, LinkUrl = t.LinkUrl, MeetingDetail = t.MeetingDetail ?? new(), Notes = t.Notes ?? new List<BulletItemNote>() });
+            }
+            else if (type == "habit")
+            {
+                await _habitService.SaveHabit(new BulletHabitService.HabitDTO { Id = t.Id, UserId = t.UserId, Type = "habit", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.HabitDetail ?? new(), Notes = t.Notes ?? new List<BulletItemNote>() });
+            }
+            else if (type == "media")
+            {
+                await _mediaService.SaveMedia(new BulletMediaService.MediaDTO { Id = t.Id, UserId = t.UserId, Type = "media", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.MediaDetail ?? new(), Notes = t.Notes ?? new List<BulletItemNote>() });
+            }
+            else if (type == "holiday")
+            {
+                await _holidayService.SaveHoliday(new BulletHolidayService.HolidayDTO { Id = t.Id, UserId = t.UserId, Type = "holiday", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, LinkUrl = t.LinkUrl, Detail = t.HolidayDetail ?? new() });
+            }
+            else if (type == "birthday")
+            {
+                await _birthdayService.SaveBirthday(new BulletBirthdayService.BirthdayDTO { Id = t.Id, UserId = t.UserId, Type = "birthday", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, LinkUrl = t.LinkUrl, Detail = t.BirthdayDetail ?? new() });
+            }
+            else if (type == "anniversary")
+            {
+                await _anniversaryService.SaveAnniversary(new BulletAnniversaryService.AnniversaryDTO { Id = t.Id, UserId = t.UserId, Type = "anniversary", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, LinkUrl = t.LinkUrl, Detail = t.AnniversaryDetail ?? new() });
+            }
+            else if (type == "vacation")
+            {
+                await HandleVacationSave(t);
+            }
+            else if (type == "health")
+            {
+                await _healthService.SaveHealth(new BulletHealthService.HealthDTO { Id = t.Id, UserId = t.UserId, Date = t.Date, Title = t.Title, Description = t.Description, Category = t.Category, Detail = t.HealthDetail ?? new(), Meals = t.Meals ?? new List<BulletHealthMeal>(), Workouts = t.Workouts ?? new List<BulletHealthWorkout>(), Notes = t.Notes ?? new List<BulletItemNote>() });
+            }
+            else if (type == "sports")
+            {
+                await _sportsService.SaveGame(new BulletSportsService.GameDTO { Id = t.Id, UserId = t.UserId, Type = "sports", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.SportsDetail ?? new() });
+            }
+            else
+            {
+                await _taskService.SaveTask(t);
+            }
+        }
+
         private async Task HandleVacationSave(BulletTaskService.TaskDTO t)
         {
             string vGroupId = t.VacationDetail?.VacationGroupId;
-            
             if (t.Id > 0 && !string.IsNullOrEmpty(vGroupId))
             {
-                var groupDetails = await _db.BulletVacationDetails
-                    .Include(v => v.BulletItem)
-                    .Where(v => v.VacationGroupId == vGroupId)
-                    .ToListAsync();
-
+                var groupDetails = await _db.BulletVacationDetails.Include(v => v.BulletItem).Where(v => v.VacationGroupId == vGroupId).ToListAsync();
                 foreach (var vd in groupDetails)
                 {
                     if (vd.BulletItem != null)
@@ -111,9 +166,7 @@ namespace Dashboard.Services
                         vd.BulletItem.ImgUrl = t.ImgUrl;
                     }
                 }
-                
                 await _vacationService.SaveVacation(new BulletVacationService.VacationDTO { Id = t.Id, UserId = t.UserId, Type = "vacation", Category = t.Category, Date = t.Date, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.VacationDetail ?? new(), Notes = t.Notes ?? new List<BulletItemNote>() });
-                
                 await _db.SaveChangesAsync();
             }
             else if (t.Id > 0)
@@ -124,7 +177,6 @@ namespace Dashboard.Services
             {
                 var start = t.Date.Date;
                 var end = (t.EndDate ?? start).Date;
-                
                 for (var dt = start; dt <= end; dt = dt.AddDays(1))
                 {
                     await _vacationService.SaveVacation(new BulletVacationService.VacationDTO { Id = 0, UserId = t.UserId, Type = "vacation", Category = t.Category, Date = dt, Title = t.Title, Description = t.Description, ImgUrl = t.ImgUrl, Detail = t.VacationDetail ?? new(), Notes = t.Notes ?? new List<BulletItemNote>() });
@@ -136,7 +188,6 @@ namespace Dashboard.Services
         {
             var dbItem = await _db.BulletItems.FindAsync(sourceId);
             var dbTarget = await _db.BulletItems.FindAsync(targetId);
-
             if (dbItem != null && dbTarget != null)
             {
                 if (dbItem.SortOrder == dbTarget.SortOrder)
@@ -144,36 +195,22 @@ namespace Dashboard.Services
                     for (int i = 0; i < currentList.Count; i++)
                     {
                         var dItem = await _db.BulletItems.FindAsync(currentList[i].Id);
-                        
-                        if (dItem != null)
-                        {
-                            dItem.SortOrder = i * 10;
-                        }
+                        if (dItem != null) dItem.SortOrder = i * 10;
                     }
-                    
                     await _db.SaveChangesAsync();
-                    
                     dbItem = await _db.BulletItems.FindAsync(sourceId);
                     dbTarget = await _db.BulletItems.FindAsync(targetId);
                 }
-
                 int temp = dbItem.SortOrder;
                 dbItem.SortOrder = dbTarget.SortOrder;
                 dbTarget.SortOrder = temp;
-                
                 await _db.SaveChangesAsync();
             }
         }
 
-        public async Task DeepCloneItem(
-            BulletTaskService.TaskDTO source, 
-            DateTime newDate, 
-            bool includeNotes, 
-            bool incompleteTodosOnly,
-            bool removeFromSource)
+        public async Task DeepCloneItem(BulletTaskService.TaskDTO source, DateTime newDate, bool includeNotes, bool incompleteTodosOnly, bool removeFromSource)
         {
             var clone = BulletMapper.CreateCopy(source);
-            
             clone.Date = newDate;
             clone.Id = 0;
 
@@ -181,50 +218,23 @@ namespace Dashboard.Services
             {
                 if (incompleteTodosOnly)
                 {
-                    clone.Todos = source.Todos
-                        .Where(t => !t.IsCompleted)
-                        .Select(t => new BulletTaskTodoItem 
-                        { 
-                            Content = t.Content, 
-                            IsCompleted = false, 
-                            Order = t.Order 
-                        })
-                        .ToList();
+                    clone.Todos = source.Todos.Where(t => !t.IsCompleted).Select(t => new BulletTaskTodoItem { Content = t.Content, IsCompleted = false, Order = t.Order }).ToList();
                 }
-
-                if (clone.Detail != null)
-                {
-                    clone.Detail.IsCompleted = false;
-                }
+                if (clone.DbTaskDetail != null) clone.DbTaskDetail.IsCompleted = false;
             }
 
-            if (!includeNotes)
-            {
-                clone.Notes = new List<BulletItemNote>();
-            }
+            if (!includeNotes) clone.Notes = new List<BulletItemNote>();
 
             if (source.Type == "task" && removeFromSource && source.Id > 0)
             {
-                var dbSource = await _db.BulletItems
-                    .Include(i => i.Todos)
-                    .Include(i => i.DbTaskDetail)
-                    .FirstOrDefaultAsync(i => i.Id == source.Id);
-
+                var dbSource = await _db.BulletItems.Include(i => i.Todos).Include(i => i.DbTaskDetail).FirstOrDefaultAsync(i => i.Id == source.Id);
                 if (dbSource != null)
                 {
-                    dbSource.Todos = dbSource.Todos
-                        .Where(t => t.IsCompleted)
-                        .ToList();
-
-                    if (dbSource.DbTaskDetail != null)
-                    {
-                        dbSource.DbTaskDetail.IsCompleted = true;
-                    }
-
+                    dbSource.Todos = dbSource.Todos.Where(t => t.IsCompleted).ToList();
+                    if (dbSource.DbTaskDetail != null) dbSource.DbTaskDetail.IsCompleted = true;
                     await _db.SaveChangesAsync();
                 }
             }
-
             await CommitItemToDatabase(clone);
         }
     }
