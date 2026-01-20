@@ -22,6 +22,11 @@
         /* Debug Console specific styles */
         #debug-console-ui { display: none; }
         #debug-console-ui.visible { display: flex; }
+
+        /* Print optimization to hide dashboard UI on PDF export if using browser print */
+        @media print {
+            #debug-console-ui, .📟-toggle, button { display: none !important; }
+        }
     </style>
     <HeadOutlet @rendermode="@(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode(prerender: false))" />
 </head>
@@ -52,6 +57,19 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-treemap@3.0.0/dist/chartjs-chart-treemap.min.js"></script>
     
     <script>
+        // PDF DOWNLOAD INTEROP
+        window.downloadFileFromStream = async (fileName, contentStreamReference) => {
+            const arrayBuffer = await contentStreamReference.arrayBuffer();
+            const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+            const anchorElement = document.createElement('a');
+            anchorElement.href = url;
+            anchorElement.download = fileName ?? 'Stephens_Dashboard_Export.pdf';
+            anchorElement.click();
+            anchorElement.remove();
+            URL.revokeObjectURL(url);
+        };
+
         window.systemConsole = {
             init: function() {
                 const output = document.getElementById('debug-log-output');
@@ -91,24 +109,19 @@
             }
         };
 
-        // SURGICAL: Modal Dragging Logic
         window.initDraggable = (element, handle) => {
             if (!element || !handle) return;
             let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
 
             handle.onmousedown = (e) => {
-                // Ensure we aren't clicking a button inside the handle
                 if (e.target.tagName === 'BUTTON') return;
-
                 e.preventDefault();
                 pos3 = e.clientX;
                 pos4 = e.clientY;
-
                 document.onmouseup = () => {
                     document.onmouseup = null;
                     document.onmousemove = null;
                 };
-
                 document.onmousemove = (e) => {
                     e.preventDefault();
                     pos1 = pos3 - e.clientX;
@@ -119,15 +132,13 @@
                     element.style.left = (element.offsetLeft - pos1) + "px";
                     element.style.position = 'fixed';
                     element.style.margin = '0';
-                    element.style.transform = 'none'; // Clear any CSS centering
+                    element.style.transform = 'none';
                 };
             };
         }
 
-        // Initialize Console
         systemConsole.init();
 
-        // Your existing Blazor Start logic
         Blazor.start({
             circuit: {
                 reconnectionHandler: {
@@ -138,9 +149,7 @@
                 }
             }
         });
-    </script>
 
-    <script>
         window.startLocalClock = function() {
             function update() {
                 const el = document.getElementById('local-clock');
@@ -158,9 +167,6 @@
             const tryDrawing = () => {
                 const ctx = document.getElementById(canvasId);
                 if (!ctx) return false;
-                
-                // (Existing Treemap drawing logic would go here)
-                
                 return true;
             };
             if (!tryDrawing()) {

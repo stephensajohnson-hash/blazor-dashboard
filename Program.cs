@@ -60,6 +60,7 @@ builder.Services.AddScoped<ImageService>();
 builder.Services.AddScoped<BulletOrchestratorService>();
 builder.Services.AddScoped<BulletNavigationService>();
 builder.Services.AddScoped<BulletSearchService>();
+builder.Services.AddScoped<BulletPrintService>();
 
 // --- DATABASE REGISTRATION ---
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");

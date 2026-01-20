@@ -27,6 +27,7 @@
 @inject BulletOrchestratorService Orchestrator
 @inject BulletNavigationService NavService
 @inject BulletSearchService SearchService
+@inject BulletPrintService PrintService
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 
@@ -44,7 +45,8 @@
             OnGoToday="HandleGoToday"
             OnViewChanged="HandleSwitchView"
             OnCloneRequest="HandleShowCloner"
-            OnToggleCompact="HandleToggleMonthCompact">
+            OnToggleCompact="HandleToggleMonthCompact"
+            OnExportPdf="HandleExportPdf">
             
             <div class="flex items-center gap-2 ml-4 font-black">
                 <div class="relative flex items-center bg-black/40 border border-gray-700 rounded-lg px-2 focus-within:border-blue-500 transition-all font-black shadow-inner">
@@ -245,7 +247,6 @@
                     {
                         var currentDay = new DateTime(NavService.ViewDate.Year, NavService.ViewDate.Month, d);
                         
-                        @* SURGICAL: Conditional height and overflow based on compact mode *@
                         <div class="relative flex flex-col rounded-lg border @GetDayBorderClass(currentDay) p-1 hover:bg-gray-800 transition cursor-pointer bg-gray-900/50 shadow-inner font-black 
                              @(NavService.IsMonthCompact ? "h-36 overflow-hidden" : "min-h-[120px]")" 
                              @onclick="() => HandleGoToDate(currentDay)">
@@ -257,7 +258,6 @@
                                     var sortedMonthItems = BulletDataLogic.GetSortedItems(monthItems);
                                 }
                                 
-                                @* Logic: Show top 3 in compact mode, otherwise show all *@
                                 @foreach(var item in sortedMonthItems.Take(NavService.IsMonthCompact ? 3 : 999)) 
                                 { 
                                     <BulletItemSwitcher @key="@($"{item.Type}_{item.Id}")" 
@@ -548,6 +548,37 @@
     {
         NavService.ToggleMonthCompact();
         StateHasChanged();
+    }
+
+    private async Task HandleExportPdf()
+    {
+        try
+        {
+            isLoading = true;
+            StateHasChanged();
+
+            // Export logic for the current year in view
+            var pdfBytes = await PrintService.GenerateYearlyCalendarAsync(NavService.ViewDate.Year);
+
+            using var stream = new MemoryStream(pdfBytes);
+            var fileName = $"Bullet_Calendar_{NavService.ViewDate.Year}_{DateTime.Now:yyyyMMdd}.pdf";
+
+            using var streamRef = new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("downloadFileFromStream", fileName, streamRef);
+            
+            toastMessage = "✓ PDF Export Successful";
+        }
+        catch (Exception ex)
+        {
+            await LogToConsole($"Export Fail: {ex.Message}");
+            toastMessage = "✕ Export Failed";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+            _ = Task.Delay(3000).ContinueWith(_ => { toastMessage = ""; InvokeAsync(StateHasChanged); });
+        }
     }
 
     private int GetDaysInMonth()
