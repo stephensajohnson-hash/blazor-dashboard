@@ -11,47 +11,38 @@
 @layout EmptyLayout
 @rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode(prerender: false))
 
-@* Use Factory to prevent concurrency errors when printing 12 months at once *@
 @inject IDbContextFactory<AppDbContext> DbFactory
-@inject BulletTaskService TaskService
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
-<PageTitle>Year Book Export | Stephens' Dashboard</PageTitle>
-
-<div class="print-container bg-white text-black min-h-screen font-sans">
+<div class="month-chapter">
     @if (isLoading)
     {
-        <div class="p-20 text-center text-2xl font-black italic text-gray-400">Preparing Chapter: @CurrentMonthName...</div>
+        <div class="print-page flex items-center justify-center text-gray-300 italic font-black">
+            Syncing @CurrentMonthName...
+        </div>
     }
     else
     {
-        @* --- 1. THE MONTHLY OVERVIEW PAGES (LEFT) --- *@
+        @* --- SPREAD PAGE 1 (LEFT SIDE: MON-WED) --- *@
         <div class="print-page page-left">
             <div class="flex h-full">
                 <div class="month-vertical-label">@CurrentMonthName.ToUpper()</div>
                 <div class="flex-1 grid grid-cols-3 gap-2 p-6 border-l border-gray-100">
-                    @for (int dayOfWeek = 1; dayOfWeek <= 3; dayOfWeek++)
+                    @foreach (var day in CalendarGrid.Where(x => x.DayOfWeek >= 1 && x.DayOfWeek <= 3))
                     {
-                        <div class="flex flex-col gap-2">
-                            @foreach (var slot in GetCalendarSlots(dayOfWeek))
+                        <div class="border border-gray-300 rounded p-2 min-h-[140px] bg-gray-50/30 @(day.IsPlaceholder ? "opacity-0 border-none" : "")">
+                            @if (!day.IsPlaceholder)
                             {
-                                <div class="border border-gray-300 rounded p-2 min-h-[120px] bg-gray-50/30 @(slot.IsEmpty ? "opacity-0" : "")">
-                                    @if (!slot.IsEmpty)
+                                <span class="text-[10px] font-black border-b border-gray-200 mb-1 pb-1 block">@day.Date.ToString("ddd d")</span>
+                                <div class="space-y-1">
+                                    @foreach (var item in GetItemsForDay(day.Date).Take(5))
                                     {
-                                        <span class="text-[10px] font-black border-b border-gray-200 mb-1 pb-1 block">@slot.Date.ToString("ddd d")</span>
-                                        <div class="space-y-1">
-                                            @foreach (var item in GetItemsForDay(slot.Date).Take(6))
-                                            {
-                                                <div class="text-[8px] leading-tight truncate flex items-center gap-1">
-                                                    @GetIcon(item) <span>@item.Title</span>
-                                                </div>
-                                            }
-                                            @if (!string.IsNullOrEmpty(GetImageForDay(slot.Date)))
-                                            {
-                                                <img src="@GetImageForDay(slot.Date)" class="mt-1 rounded w-full h-12 object-cover border border-gray-200" />
-                                            }
-                                        </div>
+                                        <div class="text-[8px] leading-tight truncate">@GetIcon(item) @item.Title</div>
+                                    }
+                                    @if (!string.IsNullOrEmpty(GetImageForDay(day.Date)))
+                                    {
+                                        <img src="@GetImageForDay(day.Date)" class="mt-1 rounded w-full h-14 object-cover grayscale opacity-80" />
                                     }
                                 </div>
                             }
@@ -61,30 +52,25 @@
             </div>
         </div>
 
+        @* --- SPREAD PAGE 2 (RIGHT SIDE: THU-SUN) --- *@
         <div class="print-page page-right">
             <div class="flex flex-col h-full">
                 <div class="flex-1 grid grid-cols-4 gap-2 p-6 pb-2">
-                    @for (int dayOfWeek = 4; dayOfWeek <= 7; dayOfWeek++)
+                    @foreach (var day in CalendarGrid.Where(x => x.DayOfWeek == 0 || x.DayOfWeek >= 4))
                     {
-                        <div class="flex flex-col gap-2">
-                            @foreach (var slot in GetCalendarSlots(dayOfWeek))
+                        @* Sort Sunday (0) to the end of the line if you prefer Mon-Sun layout *@
+                        <div class="border border-gray-300 rounded p-2 min-h-[140px] bg-gray-50/30 @(day.IsPlaceholder ? "opacity-0 border-none" : "")">
+                            @if (!day.IsPlaceholder)
                             {
-                                <div class="border border-gray-300 rounded p-2 min-h-[120px] bg-gray-50/30 @(slot.IsEmpty ? "opacity-0" : "")">
-                                    @if (!slot.IsEmpty)
+                                <span class="text-[10px] font-black border-b border-gray-200 mb-1 pb-1 block">@day.Date.ToString("ddd d")</span>
+                                <div class="space-y-1">
+                                    @foreach (var item in GetItemsForDay(day.Date).Take(5))
                                     {
-                                        <span class="text-[10px] font-black border-b border-gray-200 mb-1 pb-1 block">@slot.Date.ToString("ddd d")</span>
-                                        <div class="space-y-1">
-                                            @foreach (var item in GetItemsForDay(slot.Date).Take(6))
-                                            {
-                                                <div class="text-[8px] leading-tight truncate flex items-center gap-1">
-                                                    @GetIcon(item) <span>@item.Title</span>
-                                                </div>
-                                            }
-                                            @if (!string.IsNullOrEmpty(GetImageForDay(slot.Date)))
-                                            {
-                                                <img src="@GetImageForDay(slot.Date)" class="mt-1 rounded w-full h-12 object-cover border border-gray-200" />
-                                            }
-                                        </div>
+                                        <div class="text-[8px] leading-tight truncate">@GetIcon(item) @item.Title</div>
+                                    }
+                                    @if (!string.IsNullOrEmpty(GetImageForDay(day.Date)))
+                                    {
+                                        <img src="@GetImageForDay(day.Date)" class="mt-1 rounded w-full h-14 object-cover grayscale opacity-80" />
                                     }
                                 </div>
                             }
@@ -92,45 +78,47 @@
                     }
                 </div>
                 <div class="h-24 border-t border-dashed border-gray-300 m-6 mt-0 p-4 rounded-lg bg-gray-50">
-                    <div class="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Monthly Goals & Focus</div>
+                    <div class="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Monthly Goals & Focus (@CurrentMonthName)</div>
+                    <div class="border-b border-gray-100 w-full mb-3 h-4"></div>
+                    <div class="border-b border-gray-100 w-full mb-3 h-4"></div>
                 </div>
             </div>
         </div>
 
-        @* --- 2. DAILY DETAIL PAGES (Elastic Layout) --- *@
+        @* --- DAILY DETAIL PAGES (Elastic Layout) --- *@
         @foreach (var dayDate in AllDays)
         {
             var items = GetItemsForDay(dayDate);
             <div class="print-page daily-detail @(GetSideClass())">
-                <div class="p-10 relative flex flex-col h-full">
-                    <div class="flex justify-between items-end mb-6 border-b-4 border-black pb-2">
-                        <h3 class="text-3xl font-black tracking-tighter uppercase">@dayDate.ToString("dddd")</h3>
+                <div class="p-12 relative flex flex-col h-full">
+                    <div class="flex justify-between items-end mb-8 border-b-8 border-black pb-2">
+                        <h3 class="text-4xl font-black tracking-tighter uppercase leading-none">@dayDate.ToString("dddd")</h3>
                         <div class="text-right">
-                            <div class="text-xl font-black">@dayDate.ToString("MMMM d")</div>
-                            <div class="text-[10px] font-bold text-gray-400 tracking-[0.2em]">YEAR @Year</div>
+                            <div class="text-2xl font-black leading-none">@dayDate.ToString("MMMM d")</div>
+                            <div class="text-[10px] font-bold text-gray-400 tracking-[0.3em] uppercase">Stephens' Journal</div>
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-12 gap-10">
-                        <div class="col-span-8 space-y-8">
+                    <div class="grid grid-cols-12 gap-12">
+                        <div class="col-span-8 space-y-10">
                             @foreach (var t in items)
                             {
                                 <div class="item-entry">
-                                    <div class="flex items-start gap-3">
-                                        <div class="text-lg mt-0.5">@GetIcon(t)</div>
+                                    <div class="flex items-start gap-4">
+                                        <div class="text-xl">@GetIcon(t)</div>
                                         <div class="flex-1">
-                                            <div class="text-sm font-black uppercase tracking-tight">@t.Title</div>
+                                            <div class="text-base font-black uppercase tracking-tight">@t.Title</div>
                                             @if (!string.IsNullOrEmpty(t.Description))
                                             {
-                                                <div class="text-[11px] text-gray-600 mt-1 leading-relaxed border-l-2 border-gray-100 pl-3 italic">@t.Description</div>
+                                                <div class="text-xs text-gray-600 mt-2 leading-relaxed border-l-4 border-gray-100 pl-4">@t.Description</div>
                                             }
                                             @if (t.Todos?.Any() == true)
                                             {
-                                                <div class="mt-2 space-y-1 ml-1">
+                                                <div class="mt-4 space-y-2 ml-1">
                                                     @foreach (var todo in t.Todos)
                                                     {
-                                                        <div class="text-[10px] flex items-center gap-2">
-                                                            <div class="w-2.5 h-2.5 border border-black rounded-sm shrink-0 @(todo.IsCompleted ? "bg-black" : "")"></div>
+                                                        <div class="text-xs flex items-center gap-3">
+                                                            <div class="w-3 h-3 border-2 border-black rounded-sm shrink-0 @(todo.IsCompleted ? "bg-black" : "")"></div>
                                                             <span class="@(todo.IsCompleted ? "line-through text-gray-400" : "")">@todo.Content</span>
                                                         </div>
                                                     }
@@ -142,30 +130,30 @@
                             }
                         </div>
 
-                        <div class="col-span-4 flex flex-col gap-6">
-                            @foreach(var imgItem in items.Where(x => !string.IsNullOrEmpty(x.ImgUrl)))
+                        <div class="col-span-4 flex flex-col gap-8">
+                            @foreach(var img in items.Where(x => !string.IsNullOrEmpty(x.ImgUrl)))
                             {
-                                <div class="rounded-lg overflow-hidden border border-gray-200 shadow-sm">
-                                    <img src="@imgItem.ImgUrl" class="w-full h-auto" />
+                                <div class="rounded-xl overflow-hidden border border-gray-200 shadow-xl">
+                                    <img src="@img.ImgUrl" class="w-full h-auto" />
                                 </div>
                             }
 
                             @{ var health = items.FirstOrDefault(x => x.Type == "health"); }
                             @if (health != null)
                             {
-                                <div class="bg-gray-900 text-white p-4 rounded-xl shadow-lg">
-                                    <div class="text-[9px] uppercase font-black text-emerald-400 mb-2 tracking-widest border-b border-emerald-900 pb-1">Health Snapshot</div>
-                                    <div class="space-y-3">
+                                <div class="bg-black text-white p-6 rounded-2xl shadow-2xl">
+                                    <div class="text-[10px] uppercase font-black text-emerald-400 mb-4 tracking-[0.2em] border-b border-emerald-900 pb-2">Daily Health Log</div>
+                                    <div class="space-y-4">
                                         <div class="flex justify-between items-baseline">
-                                            <span class="text-[10px] opacity-70">Weight:</span>
-                                            <span class="text-sm font-black">@(health.DbHealthDetail?.WeightLbs ?? 0) lbs</span>
+                                            <span class="text-xs opacity-60 uppercase">Weight</span>
+                                            <span class="text-xl font-black">@(health.DbHealthDetail?.WeightLbs ?? 0) <small class="text-[10px] opacity-50">LBS</small></span>
                                         </div>
                                         @if(health.Meals?.Any() == true) {
-                                            <div class="space-y-2 mt-2">
+                                            <div class="space-y-3 mt-4">
                                                 @foreach(var meal in health.Meals) {
-                                                    <div class="text-[9px] leading-tight">
-                                                        <div class="font-bold text-emerald-300">@meal.MealType: @meal.Name</div>
-                                                        <div class="opacity-60">@meal.Calories cal | P: @meal.Protein | C: @meal.Carbs</div>
+                                                    <div class="text-[10px] leading-tight">
+                                                        <div class="font-bold text-emerald-300 uppercase tracking-tighter">@meal.MealType: @meal.Name</div>
+                                                        <div class="opacity-50 mt-0.5">@meal.Calories CAL | P:@meal.Protein C:@meal.Carbs F:@meal.Fat</div>
                                                     </div>
                                                 }
                                             </div>
@@ -186,8 +174,11 @@
     .daily-detail { height: auto; min-height: 11in; overflow: visible; }
     .page-left { padding-right: 0.8in; padding-left: 0.4in; }
     .page-right { padding-left: 0.8in; padding-right: 0.4in; }
-    .month-vertical-label { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 5rem; font-weight: 900; color: #f3f4f6; display: flex; align-items: center; padding-top: 2rem; line-height: 1; }
-    @@media screen { .print-page { border: 1px solid #ddd; margin: 40px auto; box-shadow: 0 0 20px rgba(0,0,0,0.1); height: 11in; overflow-y: auto; } }
+    .month-vertical-label { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 5rem; font-weight: 900; color: #f9fafb; display: flex; align-items: center; padding-top: 2rem; line-height: 1; }
+    @@media screen { 
+        .print-page { border: 1px solid #ddd; margin: 40px auto; box-shadow: 0 0 20px rgba(0,0,0,0.1); height: 11in; overflow-y: auto; } 
+        .print-container { background: #f3f4f6; padding: 20px 0; }
+    }
 </style>
 
 @code {
@@ -197,13 +188,17 @@
     private bool isLoading = true;
     private List<BulletItem> monthItems = new();
     private List<DateTime> AllDays = new();
-    private string CurrentMonthName => new DateTime(Year > 0 ? Year : 2026, Month > 0 ? Month : 1, 1).ToString("MMMM");
+    private List<CalendarSlot> CalendarGrid = new();
+    private string CurrentMonthName => new DateTime(Year, Month, 1).ToString("MMMM");
     private int pageCounter = 0;
 
-    protected override async Task OnParametersSetAsync()
-    {
-        await LoadMonthData();
+    public class CalendarSlot {
+        public DateTime Date { get; set; }
+        public bool IsPlaceholder { get; set; }
+        public int DayOfWeek { get; set; } // 0=Sun, 1=Mon...
     }
+
+    protected override async Task OnParametersSetAsync() { await LoadMonthData(); }
 
     private async Task LoadMonthData()
     {
@@ -211,9 +206,7 @@
         var start = new DateTime(Year, Month, 1);
         var end = start.AddMonths(1).AddDays(-1);
 
-        // THREAD SAFE: Create a dedicated DB context for this component instance
         using var db = await DbFactory.CreateDbContextAsync();
-
         monthItems = await db.BulletItems
             .Include(x => x.DbTaskDetail).Include(x => x.DbHabitDetail).Include(x => x.DbHealthDetail)
             .Include(x => x.Todos).Include(x => x.Notes).Include(x => x.Meals).Include(x => x.Workouts)
@@ -223,22 +216,28 @@
         
         AllDays.Clear();
         for (var dt = start; dt <= end; dt = dt.AddDays(1)) { AllDays.Add(dt); }
-        isLoading = false;
-    }
 
-    private IEnumerable<(DateTime Date, bool IsEmpty)> GetCalendarSlots(int targetDayOfWeek)
-    {
-        var firstOfMonth = new DateTime(Year, Month, 1);
-        int startOffset = ((int)firstOfMonth.DayOfWeek + 6) % 7 + 1; 
+        // BUILD THE GRID
+        CalendarGrid.Clear();
+        int daysInMonth = DateTime.DaysInMonth(Year, Month);
+        int offset = ((int)start.DayOfWeek + 6) % 7; // Monday-based offset
 
-        for (int week = 0; week < 6; week++)
-        {
-            int dayNumber = (week * 7) + targetDayOfWeek - startOffset + 1;
-            if (dayNumber >= 1 && dayNumber <= DateTime.DaysInMonth(Year, Month))
-                yield return (new DateTime(Year, Month, dayNumber), false);
-            else
-                yield return (DateTime.MinValue, true);
+        // 1. Pre-padding (Placeholders for days before the 1st)
+        for (int i = 0; i < offset; i++) {
+            CalendarGrid.Add(new CalendarSlot { IsPlaceholder = true, DayOfWeek = (i + 1) });
         }
+        // 2. Real Days
+        for (int d = 1; d <= daysInMonth; d++) {
+            var date = new DateTime(Year, Month, d);
+            int dw = (int)date.DayOfWeek;
+            CalendarGrid.Add(new CalendarSlot { Date = date, DayOfWeek = dw == 0 ? 7 : dw });
+        }
+        // 3. Post-padding to complete the weeks
+        while (CalendarGrid.Count % 7 != 0) {
+            CalendarGrid.Add(new CalendarSlot { IsPlaceholder = true });
+        }
+
+        isLoading = false;
     }
 
     private string GetImageForDay(DateTime d) => 
@@ -250,9 +249,8 @@
     private string GetSideClass() { pageCounter++; return pageCounter % 2 == 0 ? "page-left" : "page-right"; }
 
     private string GetIcon(BulletItem item) => item.Type switch {
-        "habit" => "🔥", "meeting" => "⏰", "health" => "💪", "media" => "🎬", "birthday" => "🎂", _ => "•"
+        "habit" => "🔥", "meeting" => "⏰", "health" => "💪", "media" => "🎬", _ => "•"
     };
 
-    private bool IsDone(BulletItem t) => 
-        (t.DbTaskDetail?.IsCompleted ?? false) || (t.DbHabitDetail?.IsCompleted ?? false);
+    private bool IsDone(BulletItem t) => (t.DbTaskDetail?.IsCompleted ?? false) || (t.DbHabitDetail?.IsCompleted ?? false);
 }
