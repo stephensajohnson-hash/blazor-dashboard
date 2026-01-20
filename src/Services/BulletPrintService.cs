@@ -23,32 +23,33 @@ namespace Dashboard.Services
                     "--no-sandbox", 
                     "--disable-setuid-sandbox",
                     "--disable-dev-shm-usage", 
-                    "--disable-web-security", // Added to help internal navigation
-                    "--single-process" 
+                    "--disable-web-security",
+                    "--single-process",
+                    // SURGICAL FIX: Force the policy at the browser startup level
+                    "--referrer-policy=no-referrer" 
                 }
             };
 
             await using var browser = await Puppeteer.LaunchAsync(options);
             await using var page = await browser.NewPageAsync();
 
-            // SURGICAL FIX: Bypass CSP to prevent the Referrer Policy protocol error
+            // Additional safety to prevent the protocol from tripping over CSP
             await page.SetBypassCSPAsync(true);
-            
             await page.SetViewportAsync(new ViewPortOptions { Width = 816, Height = 1056 });
 
             for (int month = 1; month <= 12; month++)
             {
-                // Clean URL string to avoid object-based encoding issues
+                // Cleanest possible URL construction
                 string targetUrl = $"{cleanBaseUrl}/year-book-export?year={year}&month={month}";
                 
-                // Use 'Load' instead of 'Networkidle2' to avoid timeouts on Render.com
+                // Switch to 'WaitUntilNavigation.Load' for maximum compatibility with Render.com's memory limits
                 await page.GoToAsync(targetUrl, new NavigationOptions { 
                     WaitUntil = new[] { WaitUntilNavigation.Load },
                     Timeout = 60000 
                 });
 
-                // Wait an extra second for Tailwind/JS to settle
-                await Task.Delay(1000);
+                // Let the server-side components finish their lifecycle
+                await Task.Delay(1500);
                 
                 var monthPdfData = await page.PdfDataAsync(new PdfOptions { 
                     Format = PuppeteerSharp.Media.PaperFormat.Letter, 
