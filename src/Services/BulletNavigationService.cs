@@ -7,6 +7,12 @@ namespace Dashboard.Services
         public DateTime ViewDate { get; private set; } = DateTime.Today;
         public string CurrentView { get; private set; } = "day";
         public int ClientOffsetMinutes { get; set; } = 0;
+        public bool IsMonthCompact { get; set; } = false;
+
+        public void ToggleMonthCompact()
+        {
+            IsMonthCompact = !IsMonthCompact;
+        }
 
         public void SetViewDate(DateTime date)
         {
