@@ -14,6 +14,9 @@ namespace Dashboard.Services
         {
             using var finalDocument = new PdfDocument();
             
+            // Clean the base URL to ensure no trailing slashes interfere with the path
+            var cleanBaseUrl = baseUrl.TrimEnd('/');
+
             var options = new LaunchOptions
             {
                 ExecutablePath = "/usr/bin/chromium", 
@@ -29,33 +32,33 @@ namespace Dashboard.Services
             await using var browser = await Puppeteer.LaunchAsync(options);
             await using var page = await browser.NewPageAsync();
 
-            // Set viewport to match Letter size for consistent rendering
+            // Set viewport to standard Letter size (at 96 DPI)
             await page.SetViewportAsync(new ViewPortOptions { Width = 816, Height = 1056 });
 
             for (int month = 1; month <= 12; month++)
             {
-                // Construct URL safely to avoid Protocol Errors
-                var uriBuilder = new UriBuilder(baseUrl.TrimEnd('/'));
-                uriBuilder.Path = "/year-book-export";
-                uriBuilder.Query = $"year={year}&month={month}";
-                string targetUrl = uriBuilder.ToString();
+                // SURGICAL: Simplified URL construction to avoid protocol parsing errors
+                string targetUrl = $"{cleanBaseUrl}/year-book-export?year={year}&month={month}";
                 
-                // Increase timeout to 60s for Render.com stability
+                // Use Networkidle2 to wait for all background API calls and images to load
                 await page.GoToAsync(targetUrl, new NavigationOptions { 
-                    WaitUntil = new[] { WaitUntilNavigation.Networkidle0 },
+                    WaitUntil = new[] { WaitUntilNavigation.Networkidle2 },
                     Timeout = 60000 
                 });
                 
                 var monthPdfData = await page.PdfDataAsync(new PdfOptions { 
                     Format = PuppeteerSharp.Media.PaperFormat.Letter, 
                     PrintBackground = true,
-                    MarginOptions = new PuppeteerSharp.Media.MarginOptions { Top = "0in", Bottom = "0in", Left = "0in", Right = "0in" }
+                    MarginOptions = new PuppeteerSharp.Media.MarginOptions
+                    {
+                        Top = "0in", Bottom = "0in", Left = "0in", Right = "0in"
+                    }
                 });
 
                 using var monthStream = new MemoryStream(monthPdfData);
                 using var monthDoc = PdfReader.Open(monthStream, PdfDocumentOpenMode.Import);
                 
-                // Handle spreads: ensure month starts on even page (Left side)
+                // Ensure Monthly Spread starts on an even page (Left side)
                 if (finalDocument.PageCount > 0 && finalDocument.PageCount % 2 != 0)
                 {
                     finalDocument.AddPage(); 
