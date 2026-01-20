@@ -158,44 +158,6 @@
                         </div>
                         <div class="p-3 space-y-3 font-bold font-black ">
                             
-                            @if (cat.Item2 == "personal" && showGameBanner && !isLoading)
-                            {
-                                var favoriteGames = BulletDataLogic.GetFavoriteGamesForDate(_sports, teams, NavService.ViewDate);
-                                foreach (var game in favoriteGames)
-                                {
-                                    var favTeam = teams.FirstOrDefault(t => t.IsFavorite && (t.Id == game.Detail.HomeTeamId || t.Id == game.Detail.AwayTeamId));
-                                    
-                                    <div class="bg-blue-600/20 border border-blue-500/50 rounded-lg flex items-stretch shadow-lg animate-pulse mb-4 overflow-hidden">
-                                        <div class="bg-black/40 flex items-center justify-center p-2 border-r border-blue-500/30" style="width: @BulletViewConfig.ImgWidthDay;">
-                                            @if (!string.IsNullOrEmpty(favTeam?.LogoUrl)) 
-                                            { 
-                                                <img src="@favTeam.LogoUrl" class="w-full h-auto object-contain max-h-12" /> 
-                                            }
-                                            else 
-                                            { 
-                                                <span class="text-xl">🏆</span> 
-                                            }
-                                        </div>
-                                        <div class="flex-1 p-2 flex flex-col justify-center min-w-0">
-                                            <div class="flex items-center justify-between">
-                                                <span class="text-[9px] bg-blue-600 text-white px-1.5 py-0.5 rounded font-black tracking-widest uppercase">
-                                                    Game Day
-                                                </span>
-                                                @if (game.Detail?.StartTime != null) 
-                                                { 
-                                                    <span class="text-[9px] text-blue-300 font-mono">
-                                                        ⏰ @game.Detail.StartTime?.ToString("h:mm tt")
-                                                    </span> 
-                                                }
-                                            </div>
-                                            <div class="text-xs text-white font-black truncate mt-1">
-                                                @game.Title
-                                            </div>
-                                        </div>
-                                    </div>
-                                }
-                            }
-
                             @if(isLoading) 
                             { 
                                 <div class="text-center text-gray-500 text-xs italic mt-4 animate-pulse tracking-widest font-black ">
@@ -384,10 +346,9 @@
 
     private BulletTaskService.TaskDTO? editingItem;
     private BulletTaskService.TaskDTO? itemToCopy;
-    private object? pendingSubItem; // Holds the meal/workout during copy
+    private object? pendingSubItem;
 
     private bool showAdvancedSearch = false;
-    private bool showGameBanner = false;
     private bool showCopyModal = false;
     private string toastMessage = "";
 
@@ -469,10 +430,7 @@
 
     private async Task LoadData()
     {
-        if (currentUser == null)
-        {
-            return;
-        }
+        if (currentUser == null) return;
 
         isLoading = true;
         StateHasChanged();
@@ -523,15 +481,6 @@
 
             loadedHabits = await HabitService.GetHabits(userId);
             foreach (var h in loadedHabits.Where(x => x.Date.Date >= s.Date && x.Date.Date <= e.Date)) { loadedItems.Add(BulletMapper.MapHabit(h)); }
-
-            if (BulletDataLogic.GetFavoriteGamesForDate(_sports, teams, NavService.ViewDate).Any())
-            {
-                showGameBanner = true;
-                
-                await Task.Delay(5000);
-                showGameBanner = false; 
-                StateHasChanged();
-            }
         }
         catch (Exception ex) 
         { 
@@ -596,12 +545,7 @@
     private string GetDayBorderClass(DateTime date)
     {
         var today = DateTime.UtcNow.AddMinutes(-NavService.ClientOffsetMinutes).Date;
-        
-        if (date.Date == today)
-        {
-            return "border-yellow-500 shadow-lg";
-        }
-
+        if (date.Date == today) return "border-yellow-500 shadow-lg";
         return "border-gray-700";
     }
 
@@ -612,23 +556,19 @@
     private async Task HandleSave(BaseEditor.RecurrenceRequest req)
     {
         if (editingItem == null) return;
-
         try 
         { 
             await Orchestrator.ProcessSaveRequest(editingItem, req); 
             editingItem = null; 
             await LoadData(); 
         }
-        catch (Exception ex) 
-        { 
-            await LogToConsole($"Save Error: {ex.Message}"); 
-        }
+        catch (Exception ex) { await LogToConsole($"Save Error: {ex.Message}"); }
     }
 
     private void InitiateDeepCopy(BulletTaskService.TaskDTO item)
     {
         itemToCopy = item;
-        pendingSubItem = null; // Clear any pending meal/workout
+        pendingSubItem = null;
         showCopyModal = true;
     }
 
@@ -646,7 +586,6 @@
         showCopyModal = true;
     }
 
-    // NEW: Logic to handle habit skips
     private async Task HandleHabitSkip(BulletTaskService.TaskDTO item)
     {
         try 
@@ -662,60 +601,35 @@
     private async Task ExecuteCopy((DateTime date, bool notes, bool todos, bool move) options)
     {
         if (itemToCopy == null) return;
-
         try
         {
             if (pendingSubItem != null)
             {
-                // Logic to merge into target day's Health record (or create one)
                 await Orchestrator.CloneHealthSubItem(itemToCopy, options.date, pendingSubItem);
                 pendingSubItem = null;
             }
             else
             {
-                // Standard deep copy
-                await Orchestrator.DeepCloneItem(
-                    itemToCopy, 
-                    options.date, 
-                    options.notes, 
-                    options.todos,
-                    options.move
-                );
+                await Orchestrator.DeepCloneItem(itemToCopy, options.date, options.notes, options.todos, options.move);
             }
-
             showCopyModal = false;
             itemToCopy = null;
             await LoadData();
         }
-        catch (Exception ex)
-        {
-            await LogToConsole($"Copy Error: {ex.Message}");
-        }
+        catch (Exception ex) { await LogToConsole($"Copy Error: {ex.Message}"); }
     }
 
     private async Task DeleteTask(int id) 
     { 
-        var item = loadedItems.FirstOrDefault(x => x.Id == id) 
-                ?? SearchService.Results.FirstOrDefault(x => x.Id == id);
-        
+        var item = loadedItems.FirstOrDefault(x => x.Id == id) ?? SearchService.Results.FirstOrDefault(x => x.Id == id);
         var title = item?.Title ?? "Item";
-
         await BaseService.DeleteItem(id); 
-
         toastMessage = $"✕ {title} deleted";
         StateHasChanged();
+        if (SearchService.IsSearching) await SearchService.ExecuteSearch(userId);
+        else await LoadData(); 
 
-        if (SearchService.IsSearching)
-        {
-            await SearchService.ExecuteSearch(userId);
-        }
-        else
-        {
-            await LoadData(); 
-        }
-
-        _ = Task.Delay(2000).ContinueWith(_ => 
-        {
+        _ = Task.Delay(2000).ContinueWith(_ => {
             toastMessage = "";
             InvokeAsync(StateHasChanged);
         });
@@ -733,14 +647,8 @@
 
     private async Task ToggleComplete(BulletTaskService.TaskDTO t) 
     { 
-        try 
-        { 
-            await Orchestrator.CommitItemToDatabase(t); 
-        } 
-        catch (Exception ex) 
-        { 
-            await LogToConsole($"Toggle Fail: {ex.Message}"); 
-        } 
+        try { await Orchestrator.CommitItemToDatabase(t); } 
+        catch (Exception ex) { await LogToConsole($"Toggle Fail: {ex.Message}"); } 
     }
 
     private async Task SaveHabitDirectly(BulletHabitService.HabitDTO h) 
@@ -751,15 +659,8 @@
     private async Task MoveItem(BulletTaskService.TaskDTO item, int direction, bool useCategory = false)
     {
         List<BulletTaskService.TaskDTO> list;
-
-        if (useCategory)
-        {
-            list = BulletDataLogic.GetSortedItems(BulletDataLogic.GetItemsForColumn(loadedItems, item.Date, item.Category));
-        }
-        else
-        {
-            list = BulletDataLogic.GetSortedItems(BulletDataLogic.GetItemsForDate(loadedItems, item.Date));
-        }
+        if (useCategory) list = BulletDataLogic.GetSortedItems(BulletDataLogic.GetItemsForColumn(loadedItems, item.Date, item.Category));
+        else list = BulletDataLogic.GetSortedItems(BulletDataLogic.GetItemsForDate(loadedItems, item.Date));
 
         int currentIndex = list.FindIndex(x => x.Id == item.Id && x.Type == item.Type);
         if (currentIndex == -1) return;
@@ -776,15 +677,11 @@
 
     #region Editor Handlers
 
-    private void CancelEditing() 
-    { 
-        editingItem = null; 
-    }
+    private void CancelEditing() { editingItem = null; }
 
     private void OpenEdit(BulletTaskService.TaskDTO t) 
     { 
         editingItem = BulletMapper.CreateCopy(t); 
-        
         editingItem.Id = t.Id; 
         editingItem.MeetingDetail ??= new(); 
         editingItem.HabitDetail ??= new(); 
@@ -825,14 +722,10 @@
                     .OrderByDescending(h => h.BulletItem.Date)
                     .FirstOrDefaultAsync(); 
 
-                if (lastHealth != null && lastHealth.WeightLbs > 0) 
-                {
-                    newItem.HealthDetail.WeightLbs = lastHealth.WeightLbs; 
-                }
+                if (lastHealth != null && lastHealth.WeightLbs > 0) newItem.HealthDetail.WeightLbs = lastHealth.WeightLbs; 
             } 
             catch { } 
         } 
-
         editingItem = newItem; 
     }
 
@@ -842,16 +735,8 @@
 
     private async Task HandleKeyUp(KeyboardEventArgs e) 
     { 
-        if (e.Key == "Enter") 
-        {
-            // execute to catch advanced filters
-            await SearchService.ExecuteSearch(userId); 
-        }
-
-        if (e.Key == "Escape") 
-        {
-            HandleClearSearch(); 
-        }
+        if (e.Key == "Enter") await SearchService.ExecuteSearch(userId); 
+        if (e.Key == "Escape") HandleClearSearch(); 
     }
 
     private void HandleClearSearch() 
