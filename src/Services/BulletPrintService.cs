@@ -14,7 +14,6 @@ namespace Dashboard.Services
         {
             using var finalDocument = new PdfDocument();
             
-            // Ensure baseUrl is not empty and has no trailing slash to prevent double-slashes
             if (string.IsNullOrWhiteSpace(baseUrl)) baseUrl = "http://localhost";
             var cleanBaseUrl = baseUrl.TrimEnd('/');
 
@@ -33,17 +32,15 @@ namespace Dashboard.Services
             await using var browser = await Puppeteer.LaunchAsync(options);
             await using var page = await browser.NewPageAsync();
 
-            // Set a default Referrer Policy to avoid the "Invalid referrerPolicy" error
-            await page.SetExtraHTTPHeadersAsync(new Dictionary<string, string> {
+            // FIXED: Corrected casing from HTTPHeaders to HttpHeaders
+            await page.SetExtraHttpHeadersAsync(new Dictionary<string, string> {
                 { "Referrer-Policy", "no-referrer" }
             });
 
             for (int month = 1; month <= 12; month++)
             {
-                // SURGICAL: Build URL explicitly to avoid protocol parsing errors
                 string targetUrl = $"{cleanBaseUrl}/year-book-export?year={year}&month={month}";
                 
-                // Use WaitUntil.Networkidle0 for more reliable Tailwind/CSS loading
                 await page.GoToAsync(targetUrl, new NavigationOptions { 
                     WaitUntil = new[] { WaitUntilNavigation.Networkidle0 } 
                 });
