@@ -14,6 +14,7 @@ ENV ASPNETCORE_HTTP_PORTS=8080
 
 # --- SURGICAL ADDITION: Install Chromium and Linux dependencies ---
 RUN apt-get update && apt-get install -y \
+    libgdiplus \
     chromium \
     libnss3 \
     libatk1.0-0 \
@@ -26,7 +27,9 @@ RUN apt-get update && apt-get install -y \
     libxrandr2 \
     libgbm1 \
     libasound2 \
-    && rm -rf /var/lib/apt/lists/*
+    fonts-liberation \
+    --no-install-recommends && \
+    rm -rf /var/lib/apt/lists/*
 # ------------------------------------------------------------------
 
 COPY --from=build /app/publish .
