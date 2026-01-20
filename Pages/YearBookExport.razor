@@ -25,6 +25,7 @@
     }
     else
     {
+        @* --- 1. THE MONTHLY OVERVIEW PAGES (LEFT) --- *@
         <div class="print-page page-left">
             <div class="flex h-full">
                 <div class="month-vertical-label">@CurrentMonthName.ToUpper()</div>
@@ -40,6 +41,10 @@
                                         @GetIcon(item) @item.Title
                                     </div>
                                 }
+                                @if(GetItemsForDay(day.Date).Count > 8)
+                                {
+                                    <div class="text-[7px] text-blue-500 font-bold">+ @(GetItemsForDay(day.Date).Count - 8) more</div>
+                                }
                             </div>
                         </div>
                     }
@@ -47,6 +52,7 @@
             </div>
         </div>
 
+        @* --- 2. THE MONTHLY OVERVIEW PAGES (RIGHT) --- *@
         <div class="print-page page-right">
             <div class="flex flex-col h-full">
                 <div class="flex-1 grid grid-cols-4 gap-2 p-6 pb-2">
@@ -61,6 +67,10 @@
                                         @GetIcon(item) @item.Title
                                     </div>
                                 }
+                                @if(GetItemsForDay(day.Date).Count > 8)
+                                {
+                                    <div class="text-[7px] text-blue-500 font-bold">+ @(GetItemsForDay(day.Date).Count - 8) more</div>
+                                }
                             </div>
                         </div>
                     }
@@ -69,10 +79,12 @@
                     <div class="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Monthly Goals & Focus</div>
                     <div class="border-b border-gray-200 w-full mb-3"></div>
                     <div class="border-b border-gray-200 w-full mb-3"></div>
+                    <div class="border-b border-gray-200 w-full mb-3"></div>
                 </div>
             </div>
         </div>
 
+        @* --- 3. THE DAILY DETAIL CHUNKS (2 per page) --- *@
         @foreach (var dayGroup in AllDays.Chunk(2))
         {
             <div class="print-page @(GetSideClass())">
@@ -98,12 +110,28 @@
                                         </div>
                                         <div class="flex-1">
                                             <span class="font-bold @(IsDone(t) ? "line-through text-gray-400" : "")">@t.Title</span>
+                                            @if(t.Todos != null && t.Todos.Any())
+                                            {
+                                                <div class="pl-4 mt-1 space-y-1">
+                                                    @foreach(var todo in t.Todos.Take(3))
+                                                    {
+                                                        <div class="text-[10px] text-gray-500">• @todo.Content</div>
+                                                    }
+                                                </div>
+                                            }
                                         </div>
                                     </div>
                                 }
                             </div>
 
                             <div class="col-span-5 flex flex-col gap-6">
+                                @if (items.Any(x => !string.IsNullOrEmpty(x.ImgUrl)))
+                                {
+                                    <div class="rounded-xl overflow-hidden border-2 border-gray-100 shadow-sm">
+                                        <img src="@items.First(x => !string.IsNullOrEmpty(x.ImgUrl)).ImgUrl" class="w-full h-auto object-cover max-h-48" />
+                                    </div>
+                                }
+
                                 @{ var health = items.FirstOrDefault(x => x.Type == "health"); }
                                 @if (health != null)
                                 {
@@ -113,6 +141,20 @@
                                             <span class="text-xs">Weight:</span>
                                             <span class="text-lg font-black">@(health.HealthDetail?.WeightLbs ?? 0) lbs</span>
                                         </div>
+                                        <div class="flex justify-between items-baseline mt-1">
+                                            <span class="text-xs">Meals:</span>
+                                            <span class="text-lg font-black">@health.Meals.Count</span>
+                                        </div>
+                                    </div>
+                                }
+                                
+                                @if (items.Any(x => x.Notes != null && x.Notes.Any()))
+                                {
+                                    <div class="p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded-r-lg italic text-[10px] text-gray-700">
+                                        @foreach(var note in items.Where(x => x.Notes != null).SelectMany(x => x.Notes).Take(2))
+                                        {
+                                            <div class="mb-1">“@note.Content”</div>
+                                        }
                                     </div>
                                 }
                             </div>
@@ -141,11 +183,15 @@
     private List<DateTime> AllDays = new();
     private List<DateTime> LeftDays = new();
     private List<DateTime> RightDays = new();
-    private string CurrentMonthName => new DateTime(Year, Month, 1).ToString("MMMM");
+    private string CurrentMonthName => new DateTime(Year > 0 ? Year : 2026, Month > 0 ? Month : 1, 1).ToString("MMMM");
     private int pageCounter = 0;
 
     protected override async Task OnInitializedAsync()
     {
+        // Fallback for direct navigation if query strings are missing
+        if (Year == 0) Year = DateTime.Now.Year;
+        if (Month == 0) Month = DateTime.Now.Month;
+
         await LoadMonthData();
     }
 
@@ -154,6 +200,8 @@
         isLoading = true;
         var start = new DateTime(Year, Month, 1);
         var end = start.AddMonths(1).AddDays(-1);
+
+        // Fetch data for the system default user
         monthItems = await TaskService.GetTasksForRange(1, start, end);
         
         AllDays.Clear(); LeftDays.Clear(); RightDays.Clear();
@@ -171,11 +219,20 @@
     private List<BulletTaskService.TaskDTO> GetItemsForDay(DateTime d) => 
         monthItems.Where(x => x.Date.Date == d.Date).OrderBy(x => x.SortOrder).ToList();
 
-    private string GetSideClass() { pageCounter++; return pageCounter % 2 == 0 ? "page-left" : "page-right"; }
+    private string GetSideClass()
+    {
+        pageCounter++;
+        return pageCounter % 2 == 0 ? "page-left" : "page-right";
+    }
 
     private string GetIcon(BulletTaskService.TaskDTO item) => item.Type switch {
-        "habit" => "🔥", "meeting" => "⏰", "health" => "💪", "media" => "🎬", _ => "•"
+        "habit" => "🔥",
+        "meeting" => "⏰",
+        "health" => "💪",
+        "media" => "🎬",
+        _ => "•"
     };
 
-    private bool IsDone(BulletTaskService.TaskDTO t) => (t.Detail?.IsCompleted ?? false) || (t.HabitDetail?.IsCompleted ?? false);
+    private bool IsDone(BulletTaskService.TaskDTO t) => 
+        (t.Detail?.IsCompleted ?? false) || (t.HabitDetail?.IsCompleted ?? false);
 }
