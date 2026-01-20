@@ -13,8 +13,6 @@ namespace Dashboard.Services
         public async Task<byte[]> GenerateYearlyCalendarAsync(int year, string baseUrl = "http://localhost")
         {
             using var finalDocument = new PdfDocument();
-            
-            // Clean the base URL to ensure no trailing slashes interfere with the path
             var cleanBaseUrl = baseUrl.TrimEnd('/');
 
             var options = new LaunchOptions
@@ -25,6 +23,7 @@ namespace Dashboard.Services
                     "--no-sandbox", 
                     "--disable-setuid-sandbox",
                     "--disable-dev-shm-usage", 
+                    "--disable-web-security", // Added to help internal navigation
                     "--single-process" 
                 }
             };
@@ -32,33 +31,34 @@ namespace Dashboard.Services
             await using var browser = await Puppeteer.LaunchAsync(options);
             await using var page = await browser.NewPageAsync();
 
-            // Set viewport to standard Letter size (at 96 DPI)
+            // SURGICAL FIX: Bypass CSP to prevent the Referrer Policy protocol error
+            await page.SetBypassCSPAsync(true);
+            
             await page.SetViewportAsync(new ViewPortOptions { Width = 816, Height = 1056 });
 
             for (int month = 1; month <= 12; month++)
             {
-                // SURGICAL: Simplified URL construction to avoid protocol parsing errors
+                // Clean URL string to avoid object-based encoding issues
                 string targetUrl = $"{cleanBaseUrl}/year-book-export?year={year}&month={month}";
                 
-                // Use Networkidle2 to wait for all background API calls and images to load
+                // Use 'Load' instead of 'Networkidle2' to avoid timeouts on Render.com
                 await page.GoToAsync(targetUrl, new NavigationOptions { 
-                    WaitUntil = new[] { WaitUntilNavigation.Networkidle2 },
+                    WaitUntil = new[] { WaitUntilNavigation.Load },
                     Timeout = 60000 
                 });
+
+                // Wait an extra second for Tailwind/JS to settle
+                await Task.Delay(1000);
                 
                 var monthPdfData = await page.PdfDataAsync(new PdfOptions { 
                     Format = PuppeteerSharp.Media.PaperFormat.Letter, 
                     PrintBackground = true,
-                    MarginOptions = new PuppeteerSharp.Media.MarginOptions
-                    {
-                        Top = "0in", Bottom = "0in", Left = "0in", Right = "0in"
-                    }
+                    MarginOptions = new PuppeteerSharp.Media.MarginOptions { Top = "0in", Bottom = "0in", Left = "0in", Right = "0in" }
                 });
 
                 using var monthStream = new MemoryStream(monthPdfData);
                 using var monthDoc = PdfReader.Open(monthStream, PdfDocumentOpenMode.Import);
                 
-                // Ensure Monthly Spread starts on an even page (Left side)
                 if (finalDocument.PageCount > 0 && finalDocument.PageCount % 2 != 0)
                 {
                     finalDocument.AddPage(); 
