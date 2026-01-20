@@ -1,15 +1,17 @@
 @page "/year-book-export"
-@* proven namespaces from your working files *@
+@* Match the working calendar's proven using style exactly *@
+@using Dashboard
 @using Dashboard.Services
+@using Dashboard.Components.Bullet
 @using Dashboard.Components.Layout
 @using Microsoft.EntityFrameworkCore
 @using System.IO
 @using System.Globalization
+@using Microsoft.JSInterop
 
 @layout EmptyLayout
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 
-@* Use the short names here. Docker's compiler is choking on long-paths *@
 @inject AppDbContext Db
 @inject BulletTaskService TaskService
 @inject NavigationManager Nav
@@ -24,6 +26,7 @@
     }
     else
     {
+        @* 1. THE MONTHLY OVERVIEW PAGES (LEFT) *@
         <div class="print-page page-left">
             <div class="flex h-full">
                 <div class="month-vertical-label">@CurrentMonthName.ToUpper()</div>
@@ -39,6 +42,10 @@
                                         @GetIcon(item) @item.Title
                                     </div>
                                 }
+                                @if(GetItemsForDay(day.Date).Count > 8)
+                                {
+                                    <div class="text-[7px] text-blue-500 font-bold">+ @(GetItemsForDay(day.Date).Count - 8) more</div>
+                                }
                             </div>
                         </div>
                     }
@@ -46,6 +53,7 @@
             </div>
         </div>
 
+        @* 2. THE MONTHLY OVERVIEW PAGES (RIGHT) *@
         <div class="print-page page-right">
             <div class="flex flex-col h-full">
                 <div class="flex-1 grid grid-cols-4 gap-2 p-6 pb-2">
@@ -60,13 +68,24 @@
                                         @GetIcon(item) @item.Title
                                     </div>
                                 }
+                                @if(GetItemsForDay(day.Date).Count > 8)
+                                {
+                                    <div class="text-[7px] text-blue-500 font-bold">+ @(GetItemsForDay(day.Date).Count - 8) more</div>
+                                }
                             </div>
                         </div>
                     }
                 </div>
+                <div class="h-24 border-t border-dashed border-gray-300 m-6 mt-0 p-4 rounded-lg bg-gray-50">
+                    <div class="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Monthly Goals & Focus</div>
+                    <div class="border-b border-gray-200 w-full mb-3"></div>
+                    <div class="border-b border-gray-200 w-full mb-3"></div>
+                    <div class="border-b border-gray-200 w-full mb-3"></div>
+                </div>
             </div>
         </div>
 
+        @* 3. THE DAILY DETAIL CHUNKS (2 per page) *@
         @foreach (var dayGroup in AllDays.Chunk(2))
         {
             <div class="print-page @(GetSideClass())">
@@ -78,9 +97,69 @@
                             <h3 class="text-3xl font-black tracking-tighter uppercase">@dayDate.ToString("dddd")</h3>
                             <div class="text-right">
                                 <div class="text-xl font-black">@dayDate.ToString("MMMM d")</div>
+                                <div class="text-[10px] font-bold text-gray-400 tracking-[0.2em]">YEAR @Year</div>
                             </div>
                         </div>
-                        @* Logic for task display goes here... *@
+
+                        <div class="grid grid-cols-12 gap-10 h-[calc(100%-80px)]">
+                            <div class="col-span-7 space-y-4">
+                                @foreach (var t in items.Where(x => x.Type == "task" || x.Type == "meeting" || x.Type == "habit").Take(12))
+                                {
+                                    <div class="flex items-start gap-3 text-xs">
+                                        <div class="w-4 h-4 border-2 border-black rounded-sm shrink-0 mt-0.5 @(IsDone(t) ? "bg-black" : "")">
+                                            @if(IsDone(t)) { <span class="text-white text-[10px] flex items-center justify-center">✓</span> }
+                                        </div>
+                                        <div class="flex-1">
+                                            <span class="font-bold @(IsDone(t) ? "line-through text-gray-400" : "")">@t.Title</span>
+                                            @if(t.Todos != null && t.Todos.Any())
+                                            {
+                                                <div class="pl-4 mt-1 space-y-1">
+                                                    @foreach(var todo in t.Todos.Take(3))
+                                                    {
+                                                        <div class="text-[10px] text-gray-500">• @todo.Content</div>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+
+                            <div class="col-span-5 flex flex-col gap-6">
+                                @if (items.Any(x => !string.IsNullOrEmpty(x.ImgUrl)))
+                                {
+                                    <div class="rounded-xl overflow-hidden border-2 border-gray-100 shadow-sm">
+                                        <img src="@items.First(x => !string.IsNullOrEmpty(x.ImgUrl)).ImgUrl" class="w-full h-auto object-cover max-h-48" />
+                                    </div>
+                                }
+
+                                @{ var health = items.FirstOrDefault(x => x.Type == "health"); }
+                                @if (health != null)
+                                {
+                                    <div class="bg-black text-white p-4 rounded-xl shadow-lg">
+                                        <div class="text-[9px] uppercase font-black tracking-widest text-emerald-400 mb-2">Daily Stats</div>
+                                        <div class="flex justify-between items-baseline">
+                                            <span class="text-xs">Weight:</span>
+                                            <span class="text-lg font-black">@(health.DbHealthDetail?.WeightLbs ?? 0) lbs</span>
+                                        </div>
+                                        <div class="flex justify-between items-baseline mt-1">
+                                            <span class="text-xs">Meals:</span>
+                                            <span class="text-lg font-black">@health.Meals.Count</span>
+                                        </div>
+                                    </div>
+                                }
+                                
+                                @if (items.Any(x => x.Notes != null && x.Notes.Any()))
+                                {
+                                    <div class="p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded-r-lg italic text-[10px] text-gray-700">
+                                        @foreach(var note in items.Where(x => x.Notes != null).SelectMany(x => x.Notes).Take(2))
+                                        {
+                                            <div class="mb-1">“@note.Content”</div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
                     </div>
                 }
             </div>
@@ -101,7 +180,6 @@
     [Parameter] public int Month { get; set; }
 
     private bool isLoading = true;
-    // Using simple names to avoid shadow conflict
     private List<BulletTaskService.TaskDTO> monthItems = new();
     private List<DateTime> AllDays = new();
     private List<DateTime> LeftDays = new();
@@ -119,6 +197,8 @@
         isLoading = true;
         var start = new DateTime(Year, Month, 1);
         var end = start.AddMonths(1).AddDays(-1);
+        
+        // Pass userId 1 as the default for the system export
         monthItems = await TaskService.GetTasksForRange(1, start, end);
         
         for (var dt = start; dt <= end; dt = dt.AddDays(1))
@@ -137,7 +217,13 @@
 
     private string GetSideClass() { pageCounter++; return pageCounter % 2 == 0 ? "page-left" : "page-right"; }
 
-    private string GetIcon(BulletTaskService.TaskDTO item) => "•";
+    private string GetIcon(BulletTaskService.TaskDTO item) => item.Type switch {
+        "habit" => "🔥",
+        "meeting" => "⏰",
+        "health" => "💪",
+        "media" => "🎬",
+        _ => "•"
+    };
 
     private bool IsDone(BulletTaskService.TaskDTO t) => (t.Detail?.IsCompleted ?? false);
 }
