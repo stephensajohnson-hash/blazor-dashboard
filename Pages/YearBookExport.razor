@@ -11,7 +11,8 @@
 @layout EmptyLayout
 @rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode(prerender: false))
 
-@inject AppDbContext Db
+@* Use Factory to prevent concurrency errors when printing 12 months at once *@
+@inject IDbContextFactory<AppDbContext> DbFactory
 @inject BulletTaskService TaskService
 @inject NavigationManager Nav
 @inject IJSRuntime JS
@@ -25,12 +26,12 @@
     }
     else
     {
-        @* --- 1. MONTHLY OVERVIEW SPREAD (Fixed Grid Logic) --- *@
+        @* --- 1. THE MONTHLY OVERVIEW PAGES (LEFT) --- *@
         <div class="print-page page-left">
             <div class="flex h-full">
                 <div class="month-vertical-label">@CurrentMonthName.ToUpper()</div>
                 <div class="flex-1 grid grid-cols-3 gap-2 p-6 border-l border-gray-100">
-                    @for (int dayOfWeek = 1; dayOfWeek <= 3; dayOfWeek++) @* Mon, Tue, Wed *@
+                    @for (int dayOfWeek = 1; dayOfWeek <= 3; dayOfWeek++)
                     {
                         <div class="flex flex-col gap-2">
                             @foreach (var slot in GetCalendarSlots(dayOfWeek))
@@ -63,7 +64,7 @@
         <div class="print-page page-right">
             <div class="flex flex-col h-full">
                 <div class="flex-1 grid grid-cols-4 gap-2 p-6 pb-2">
-                    @for (int dayOfWeek = 4; dayOfWeek <= 7; dayOfWeek++) @* Thu, Fri, Sat, Sun *@
+                    @for (int dayOfWeek = 4; dayOfWeek <= 7; dayOfWeek++)
                     {
                         <div class="flex flex-col gap-2">
                             @foreach (var slot in GetCalendarSlots(dayOfWeek))
@@ -119,15 +120,11 @@
                                         <div class="text-lg mt-0.5">@GetIcon(t)</div>
                                         <div class="flex-1">
                                             <div class="text-sm font-black uppercase tracking-tight">@t.Title</div>
-                                            
                                             @if (!string.IsNullOrEmpty(t.Description))
                                             {
-                                                <div class="text-[11px] text-gray-600 mt-1 leading-relaxed border-l-2 border-gray-100 pl-3 italic">
-                                                    @t.Description
-                                                </div>
+                                                <div class="text-[11px] text-gray-600 mt-1 leading-relaxed border-l-2 border-gray-100 pl-3 italic">@t.Description</div>
                                             }
-                                            
-                                            @if (t.Todos != null && t.Todos.Any())
+                                            @if (t.Todos?.Any() == true)
                                             {
                                                 <div class="mt-2 space-y-1 ml-1">
                                                     @foreach (var todo in t.Todos)
@@ -135,18 +132,6 @@
                                                         <div class="text-[10px] flex items-center gap-2">
                                                             <div class="w-2.5 h-2.5 border border-black rounded-sm shrink-0 @(todo.IsCompleted ? "bg-black" : "")"></div>
                                                             <span class="@(todo.IsCompleted ? "line-through text-gray-400" : "")">@todo.Content</span>
-                                                        </div>
-                                                    }
-                                                </div>
-                                            }
-
-                                            @if (t.Notes != null && t.Notes.Any())
-                                            {
-                                                <div class="mt-3 space-y-2">
-                                                    @foreach(var note in t.Notes)
-                                                    {
-                                                        <div class="p-2 bg-yellow-50/50 rounded text-[10px] text-gray-700 border-l-2 border-yellow-200">
-                                                            @note.Content
                                                         </div>
                                                     }
                                                 </div>
@@ -162,9 +147,6 @@
                             {
                                 <div class="rounded-lg overflow-hidden border border-gray-200 shadow-sm">
                                     <img src="@imgItem.ImgUrl" class="w-full h-auto" />
-                                    @if(!string.IsNullOrEmpty(imgItem.Title)) {
-                                        <div class="bg-gray-50 p-1 text-[8px] text-center border-t border-gray-200">@imgItem.Title</div>
-                                    }
                                 </div>
                             }
 
@@ -172,30 +154,18 @@
                             @if (health != null)
                             {
                                 <div class="bg-gray-900 text-white p-4 rounded-xl shadow-lg">
-                                    <div class="text-[9px] uppercase font-black text-emerald-400 mb-2 tracking-widest border-b border-emerald-900 pb-1">Health & Nutrition</div>
+                                    <div class="text-[9px] uppercase font-black text-emerald-400 mb-2 tracking-widest border-b border-emerald-900 pb-1">Health Snapshot</div>
                                     <div class="space-y-3">
                                         <div class="flex justify-between items-baseline">
                                             <span class="text-[10px] opacity-70">Weight:</span>
                                             <span class="text-sm font-black">@(health.DbHealthDetail?.WeightLbs ?? 0) lbs</span>
                                         </div>
-                                        
-                                        @if(health.Meals != null && health.Meals.Any()) {
+                                        @if(health.Meals?.Any() == true) {
                                             <div class="space-y-2 mt-2">
                                                 @foreach(var meal in health.Meals) {
                                                     <div class="text-[9px] leading-tight">
                                                         <div class="font-bold text-emerald-300">@meal.MealType: @meal.Name</div>
-                                                        <div class="opacity-60">@meal.Calories cal | P: @meal.Protein | C: @meal.Carbs | F: @meal.Fat</div>
-                                                    </div>
-                                                }
-                                            </div>
-                                        }
-
-                                        @if(health.Workouts != null && health.Workouts.Any()) {
-                                            <div class="space-y-2 mt-2 pt-2 border-t border-gray-800">
-                                                @foreach(var workout in health.Workouts) {
-                                                    <div class="text-[9px] leading-tight">
-                                                        <div class="font-bold text-blue-300">@workout.Name</div>
-                                                        <div class="opacity-60">@workout.CaloriesBurned kcal | @workout.TimeSpentMinutes mins</div>
+                                                        <div class="opacity-60">@meal.Calories cal | P: @meal.Protein | C: @meal.Carbs</div>
                                                     </div>
                                                 }
                                             </div>
@@ -241,15 +211,12 @@
         var start = new DateTime(Year, Month, 1);
         var end = start.AddMonths(1).AddDays(-1);
 
-        // Map directly to your BulletItem entities with full includes
-        monthItems = await Db.BulletItems
-            .Include(x => x.DbTaskDetail)
-            .Include(x => x.DbHabitDetail)
-            .Include(x => x.DbHealthDetail)
-            .Include(x => x.Todos)
-            .Include(x => x.Notes)
-            .Include(x => x.Meals)
-            .Include(x => x.Workouts)
+        // THREAD SAFE: Create a dedicated DB context for this component instance
+        using var db = await DbFactory.CreateDbContextAsync();
+
+        monthItems = await db.BulletItems
+            .Include(x => x.DbTaskDetail).Include(x => x.DbHabitDetail).Include(x => x.DbHealthDetail)
+            .Include(x => x.Todos).Include(x => x.Notes).Include(x => x.Meals).Include(x => x.Workouts)
             .Where(x => x.UserId == 1 && x.Date >= start && x.Date <= end)
             .OrderBy(x => x.Date).ThenBy(x => x.SortOrder)
             .ToListAsync();
@@ -262,20 +229,15 @@
     private IEnumerable<(DateTime Date, bool IsEmpty)> GetCalendarSlots(int targetDayOfWeek)
     {
         var firstOfMonth = new DateTime(Year, Month, 1);
-        // Map DayOfWeek (Sun=0...Sat=6) to Mon=1...Sun=7
         int startOffset = ((int)firstOfMonth.DayOfWeek + 6) % 7 + 1; 
 
         for (int week = 0; week < 6; week++)
         {
             int dayNumber = (week * 7) + targetDayOfWeek - startOffset + 1;
             if (dayNumber >= 1 && dayNumber <= DateTime.DaysInMonth(Year, Month))
-            {
                 yield return (new DateTime(Year, Month, dayNumber), false);
-            }
             else
-            {
                 yield return (DateTime.MinValue, true);
-            }
         }
     }
 
@@ -288,9 +250,9 @@
     private string GetSideClass() { pageCounter++; return pageCounter % 2 == 0 ? "page-left" : "page-right"; }
 
     private string GetIcon(BulletItem item) => item.Type switch {
-        "habit" => "🔥", "meeting" => "⏰", "health" => "💪", "media" => "🎬", "birthday" => "🎂", "vacation" => "✈️", _ => "•"
+        "habit" => "🔥", "meeting" => "⏰", "health" => "💪", "media" => "🎬", "birthday" => "🎂", _ => "•"
     };
 
     private bool IsDone(BulletItem t) => 
-        (t.DbTaskDetail?.IsCompleted ?? false) || (t.DbHabitDetail?.IsCompleted ?? false) || (t.DbMeetingDetail?.IsCompleted ?? false);
+        (t.DbTaskDetail?.IsCompleted ?? false) || (t.DbHabitDetail?.IsCompleted ?? false);
 }
