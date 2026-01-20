@@ -13,6 +13,8 @@ namespace Dashboard.Services
         public async Task<byte[]> GenerateYearlyCalendarAsync(int year, string baseUrl = "http://localhost")
         {
             using var finalDocument = new PdfDocument();
+            
+            // Clean baseUrl to ensure it's just the domain
             var cleanBaseUrl = baseUrl.TrimEnd('/');
 
             var options = new LaunchOptions
@@ -22,34 +24,26 @@ namespace Dashboard.Services
                 Args = new[] { 
                     "--no-sandbox", 
                     "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage", 
-                    "--disable-web-security",
-                    "--single-process",
-                    // SURGICAL FIX: Force the policy at the browser startup level
-                    "--referrer-policy=no-referrer" 
+                    "--disable-dev-shm-usage"
                 }
             };
 
             await using var browser = await Puppeteer.LaunchAsync(options);
             await using var page = await browser.NewPageAsync();
 
-            // Additional safety to prevent the protocol from tripping over CSP
-            await page.SetBypassCSPAsync(true);
+            // DO NOT set extra headers here - that is what triggered the ReferrerPolicy error.
             await page.SetViewportAsync(new ViewPortOptions { Width = 816, Height = 1056 });
 
             for (int month = 1; month <= 12; month++)
             {
-                // Cleanest possible URL construction
-                string targetUrl = $"{cleanBaseUrl}/year-book-export?year={year}&month={month}";
+                // We use a simple string for the URL to avoid any object-encoding issues
+                string targetUrl = cleanBaseUrl + "/year-book-export?year=" + year + "&month=" + month;
                 
-                // Switch to 'WaitUntilNavigation.Load' for maximum compatibility with Render.com's memory limits
-                await page.GoToAsync(targetUrl, new NavigationOptions { 
-                    WaitUntil = new[] { WaitUntilNavigation.Load },
-                    Timeout = 60000 
-                });
+                // Navigate using the most basic 'Load' event
+                await page.GoToAsync(targetUrl, WaitUntilNavigation.Load);
 
-                // Let the server-side components finish their lifecycle
-                await Task.Delay(1500);
+                // Give the Blazor Server-side data a moment to actually populate the HTML
+                await Task.Delay(2000);
                 
                 var monthPdfData = await page.PdfDataAsync(new PdfOptions { 
                     Format = PuppeteerSharp.Media.PaperFormat.Letter, 
@@ -60,6 +54,7 @@ namespace Dashboard.Services
                 using var monthStream = new MemoryStream(monthPdfData);
                 using var monthDoc = PdfReader.Open(monthStream, PdfDocumentOpenMode.Import);
                 
+                // Layout spread logic: ensure Left/Right pages align
                 if (finalDocument.PageCount > 0 && finalDocument.PageCount % 2 != 0)
                 {
                     finalDocument.AddPage(); 
