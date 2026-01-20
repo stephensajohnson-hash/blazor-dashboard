@@ -21,11 +21,13 @@
 <div class="print-container bg-white text-black min-h-screen font-sans">
     @if (isLoading)
     {
-        <div class="p-20 text-center text-2xl font-black italic">Preparing Chapter: @CurrentMonthName...</div>
+        <div class="p-20 text-center text-2xl font-black italic text-gray-400">
+            Preparing Chapter: @CurrentMonthName...
+        </div>
     }
     else
     {
-        @* --- 1. THE MONTHLY OVERVIEW PAGES (LEFT) --- *@
+        @* --- 1. MONTHLY OVERVIEW PAGES --- *@
         <div class="print-page page-left">
             <div class="flex h-full">
                 <div class="month-vertical-label">@CurrentMonthName.ToUpper()</div>
@@ -41,10 +43,6 @@
                                         @GetIcon(item) @item.Title
                                     </div>
                                 }
-                                @if(GetItemsForDay(day.Date).Count > 8)
-                                {
-                                    <div class="text-[7px] text-blue-500 font-bold">+ @(GetItemsForDay(day.Date).Count - 8) more</div>
-                                }
                             </div>
                         </div>
                     }
@@ -52,7 +50,6 @@
             </div>
         </div>
 
-        @* --- 2. THE MONTHLY OVERVIEW PAGES (RIGHT) --- *@
         <div class="print-page page-right">
             <div class="flex flex-col h-full">
                 <div class="flex-1 grid grid-cols-4 gap-2 p-6 pb-2">
@@ -67,10 +64,6 @@
                                         @GetIcon(item) @item.Title
                                     </div>
                                 }
-                                @if(GetItemsForDay(day.Date).Count > 8)
-                                {
-                                    <div class="text-[7px] text-blue-500 font-bold">+ @(GetItemsForDay(day.Date).Count - 8) more</div>
-                                }
                             </div>
                         </div>
                     }
@@ -79,12 +72,11 @@
                     <div class="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Monthly Goals & Focus</div>
                     <div class="border-b border-gray-200 w-full mb-3"></div>
                     <div class="border-b border-gray-200 w-full mb-3"></div>
-                    <div class="border-b border-gray-200 w-full mb-3"></div>
                 </div>
             </div>
         </div>
 
-        @* --- 3. THE DAILY DETAIL CHUNKS (2 per page) --- *@
+        @* --- 2. DAILY DETAIL CHUNKS --- *@
         @foreach (var dayGroup in AllDays.Chunk(2))
         {
             <div class="print-page @(GetSideClass())">
@@ -147,16 +139,6 @@
                                         </div>
                                     </div>
                                 }
-                                
-                                @if (items.Any(x => x.Notes != null && x.Notes.Any()))
-                                {
-                                    <div class="p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded-r-lg italic text-[10px] text-gray-700">
-                                        @foreach(var note in items.Where(x => x.Notes != null).SelectMany(x => x.Notes).Take(2))
-                                        {
-                                            <div class="mb-1">“@note.Content”</div>
-                                        }
-                                    </div>
-                                }
                             </div>
                         </div>
                     </div>
@@ -170,13 +152,13 @@
     .print-page { width: 8.5in; height: 11in; position: relative; overflow: hidden; page-break-after: always; background: white; }
     .page-left { padding-right: 0.8in; padding-left: 0.4in; }
     .page-right { padding-left: 0.8in; padding-right: 0.4in; }
-    .month-vertical-label { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 5rem; font-weight: 900; color: #f3f4f6; display: flex; align-items: center; padding-top: 2rem; line-height: 1; }
+    .month-vertical-label { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 5rem; font-weight: 900; color: #f3f4f6; display: flex; align-items: center; padding-top: 2rem; }
     @@media screen { .print-page { border: 1px solid #ddd; margin: 40px auto; box-shadow: 0 0 20px rgba(0,0,0,0.1); } .print-container { background: #f0f0f0; padding: 20px 0; } }
 </style>
 
 @code {
-    [Parameter][SupplyParameterFromQuery] public int Year { get; set; } = DateTime.Now.Year;
-    [Parameter][SupplyParameterFromQuery] public int Month { get; set; } = DateTime.Now.Month;
+    [Parameter][SupplyParameterFromQuery] public int Year { get; set; } = 2026;
+    [Parameter][SupplyParameterFromQuery] public int Month { get; set; } = 1;
 
     private bool isLoading = true;
     private List<BulletTaskService.TaskDTO> monthItems = new();
@@ -188,10 +170,6 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // Fallback for direct navigation if query strings are missing
-        if (Year == 0) Year = DateTime.Now.Year;
-        if (Month == 0) Month = DateTime.Now.Month;
-
         await LoadMonthData();
     }
 
@@ -200,8 +178,6 @@
         isLoading = true;
         var start = new DateTime(Year, Month, 1);
         var end = start.AddMonths(1).AddDays(-1);
-
-        // Fetch data for the system default user
         monthItems = await TaskService.GetTasksForRange(1, start, end);
         
         AllDays.Clear(); LeftDays.Clear(); RightDays.Clear();
@@ -219,20 +195,11 @@
     private List<BulletTaskService.TaskDTO> GetItemsForDay(DateTime d) => 
         monthItems.Where(x => x.Date.Date == d.Date).OrderBy(x => x.SortOrder).ToList();
 
-    private string GetSideClass()
-    {
-        pageCounter++;
-        return pageCounter % 2 == 0 ? "page-left" : "page-right";
-    }
+    private string GetSideClass() { pageCounter++; return pageCounter % 2 == 0 ? "page-left" : "page-right"; }
 
     private string GetIcon(BulletTaskService.TaskDTO item) => item.Type switch {
-        "habit" => "🔥",
-        "meeting" => "⏰",
-        "health" => "💪",
-        "media" => "🎬",
-        _ => "•"
+        "habit" => "🔥", "meeting" => "⏰", "health" => "💪", "media" => "🎬", _ => "•"
     };
 
-    private bool IsDone(BulletTaskService.TaskDTO t) => 
-        (t.Detail?.IsCompleted ?? false) || (t.HabitDetail?.IsCompleted ?? false);
+    private bool IsDone(BulletTaskService.TaskDTO t) => (t.Detail?.IsCompleted ?? false) || (t.HabitDetail?.IsCompleted ?? false);
 }
