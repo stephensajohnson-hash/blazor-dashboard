@@ -121,11 +121,14 @@
                     <div class="grid grid-cols-1 gap-4">
                         @foreach (var t in items)
                         {
-                            <div class="border border-gray-200 rounded-xl p-4 flex gap-4 items-start bg-white relative overflow-hidden">
-                                @* Stamps for Habits/Sports *@
+                            @* Skip rendering if item is a placeholder/metadata without a title *@
+                            if (string.IsNullOrWhiteSpace(t.Title)) continue;
+
+                            <div class="border border-gray-200 rounded-xl p-4 flex gap-4 items-start bg-white relative overflow-hidden shadow-sm">
+                                @* STAMPS *@
                                 @if (t.Type == "habit" && (t.DbHabitDetail?.Status == "Skipped" || t.DbHabitDetail?.IsCompleted == true))
                                 {
-                                    <div class="absolute -right-2 -top-1 rotate-12 opacity-20 text-[40px] font-black pointer-events-none uppercase">
+                                    <div class="absolute -right-2 top-0 rotate-12 opacity-10 text-[32px] font-black pointer-events-none uppercase">
                                         @(t.DbHabitDetail.Status == "Skipped" ? "SKIPPED" : "DONE")
                                     </div>
                                 }
@@ -138,12 +141,25 @@
                                             @if(t.Type == "habit" && t.DbHabitDetail?.IsCompleted == true) {
                                                 <span class="text-[9px] font-black text-orange-600 uppercase">🔥 STREAK: @t.DbHabitDetail.StreakCount</span>
                                             }
+                                            @if(t.Type == "habit" && t.DbHabitDetail?.Status == "Skipped") {
+                                                <span class="text-[9px] font-black text-gray-400 uppercase tracking-widest">SKIPPED</span>
+                                            }
                                         </div>
                                         
-                                        @if(t.Type == "sports" && t.DbSportsDetail != null && t.DbSportsDetail.IsComplete) {
+                                        @if(t.Type == "sports" && t.DbSportsDetail != null) {
                                             <div class="flex flex-col items-end">
-                                                <span class="text-[12px] font-black text-black">@t.DbSportsDetail.AwayScore - @t.DbSportsDetail.HomeScore</span>
-                                                <span class="text-[9px] font-black @GetScoreColor(t)">@GetScoreStatus(t)</span>
+                                                <div class="flex items-center gap-2">
+                                                    @if(allTeams.TryGetValue(t.DbSportsDetail.AwayTeamId, out var away)) {
+                                                        <img src="@away.LogoUrl" class="w-5 h-5 object-contain" />
+                                                    }
+                                                    <span class="text-[12px] font-black text-black">@t.DbSportsDetail.AwayScore - @t.DbSportsDetail.HomeScore</span>
+                                                    @if(allTeams.TryGetValue(t.DbSportsDetail.HomeTeamId, out var home)) {
+                                                        <img src="@home.LogoUrl" class="w-5 h-5 object-contain" />
+                                                    }
+                                                </div>
+                                                @if(t.DbSportsDetail.IsComplete) {
+                                                    <span class="text-[9px] font-black @GetScoreColor(t)">@GetScoreStatus(t)</span>
+                                                }
                                             </div>
                                         }
                                         @if(t.Type == "meeting" && t.DbMeetingDetail?.StartTime != null) {
@@ -195,6 +211,16 @@
     }
 </div>
 
+<style>
+    .print-page { width: 8.5in; min-height: 11in; position: relative; background: white; page-break-after: always; display: flex; flex-direction: column; }
+    .page-left { padding-right: 0.6in; padding-left: 0.2in; }
+    .page-right { padding-left: 0.6in; padding-right: 0.2in; }
+    .month-vertical-label { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 5rem; font-weight: 900; line-height: 1; padding-top: 2rem; }
+    @@media screen { 
+        .print-page { border: 1px solid #ddd; margin: 40px auto; box-shadow: 0 0 20px rgba(0,0,0,0.1); height: 11in; overflow-y: auto; } 
+    }
+</style>
+
 @code {
     [Parameter] public int Year { get; set; }
     [Parameter] public int Month { get; set; }
@@ -202,9 +228,10 @@
 
     private bool isLoading = true;
     private List<BulletItem> monthItems = new();
+    private Dictionary<int, Team> allTeams = new();
     private List<DateTime> AllDays = new();
     private List<CalendarSlot> CalendarGrid = new();
-    private string CurrentMonthName => new DateTime(Year, Month, 1).ToString("MMMM");
+    private string CurrentMonthName => new DateTime(Year > 0 ? Year : 2026, Month > 0 ? Month : 1, 1).ToString("MMMM");
     private int localPageCounter = 0;
 
     public class CalendarSlot { public DateTime Date { get; set; } public bool IsPlaceholder { get; set; } public int DayOfWeek { get; set; } }
@@ -217,11 +244,16 @@
         var start = new DateTime(Year, Month, 1);
         var end = start.AddMonths(1).AddDays(-1);
         using var db = await DbFactory.CreateDbContextAsync();
+        
         monthItems = await db.BulletItems
             .Include(x => x.DbTaskDetail).Include(x => x.DbMeetingDetail).Include(x => x.DbHabitDetail)
             .Include(x => x.DbHealthDetail).Include(x => x.DbSportsDetail).Include(x => x.Todos)
             .Include(x => x.Meals).Where(x => x.UserId == 1 && x.Date >= start && x.Date <= end)
             .OrderBy(x => x.Date).ThenBy(x => x.SortOrder).ToListAsync();
+
+        // Load Teams for Logo Lookups
+        var teams = await db.Teams.Where(x => x.UserId == 1).ToListAsync();
+        allTeams = teams.ToDictionary(x => x.Id, x => x);
         
         AllDays.Clear();
         for (var dt = start; dt <= end; dt = dt.AddDays(1)) AllDays.Add(dt);
@@ -248,10 +280,24 @@
 
     private string GetScoreStatus(BulletItem t) {
         if (t.DbSportsDetail == null || !t.DbSportsDetail.IsComplete) return "";
-        // Logic: Home Team is usually the user's primary focus in this context
-        if (t.DbSportsDetail.HomeScore > t.DbSportsDetail.AwayScore) return "WIN";
-        if (t.DbSportsDetail.AwayScore > t.DbSportsDetail.HomeScore) return "LOSS";
-        return "TIE";
+        
+        // Find the favorite team in this game
+        allTeams.TryGetValue(t.DbSportsDetail.HomeTeamId, out var homeTeam);
+        allTeams.TryGetValue(t.DbSportsDetail.AwayTeamId, out var awayTeam);
+
+        bool homeIsFav = homeTeam?.IsFavorite ?? false;
+        bool awayIsFav = awayTeam?.IsFavorite ?? false;
+
+        if (homeIsFav) {
+            if (t.DbSportsDetail.HomeScore > t.DbSportsDetail.AwayScore) return "WIN";
+            if (t.DbSportsDetail.AwayScore > t.DbSportsDetail.HomeScore) return "LOSS";
+        } 
+        else if (awayIsFav) {
+            if (t.DbSportsDetail.AwayScore > t.DbSportsDetail.HomeScore) return "WIN";
+            if (t.DbSportsDetail.HomeScore > t.DbSportsDetail.AwayScore) return "LOSS";
+        }
+
+        return t.DbSportsDetail.HomeScore == t.DbSportsDetail.AwayScore ? "TIE" : "GAME";
     }
 
     private string GetScoreColor(BulletItem t) {
@@ -262,7 +308,7 @@
     private string GetImageForDay(DateTime d) => monthItems.FirstOrDefault(x => x.Date.Date == d.Date && !string.IsNullOrEmpty(x.ImgUrl))?.ImgUrl ?? "";
     private List<BulletItem> GetItemsForDay(DateTime d) => monthItems.Where(x => x.Date.Date == d.Date).OrderBy(x => x.SortOrder).ToList();
     private string GetSideClass() { localPageCounter++; return localPageCounter % 2 == 0 ? "page-left" : "page-right"; }
-    private string GetIcon(BulletItem item) => item.Type switch { "habit" => "🔥", "meeting" => "⏰", "health" => "💪", "sports" => "🏀", _ => "•" };
+    private string GetIcon(BulletItem item) => item.Type switch { "habit" => "🔥", "meeting" => "⏰", "health" => "💪", "sports" => "🏆", _ => "•" };
 
     private RenderFragment RenderFooter() => builder => {
         builder.OpenElement(0, "div");
