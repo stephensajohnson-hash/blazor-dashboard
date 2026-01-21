@@ -22,7 +22,7 @@
     }
     else
     {
-        @* --- 1. MONTHLY OVERVIEW SPREAD --- *@
+        @* --- 1. MONTHLY OVERVIEW SPREAD (Preserved Structure) --- *@
         <div class="print-page page-left">
             <div class="flex h-full flex-col">
                 <div class="header-bar flex justify-between items-center border-b-2 border-black pb-2 mb-4">
@@ -90,7 +90,7 @@
             </div>
         </div>
 
-        @* --- 2. DAILY DETAIL GRID (5-COLUMN ARCHIVE) --- *@
+        @* --- 2. DAILY DETAIL GRID (FIXED 4-COLUMN WITH EXPANSION) --- *@
         @foreach (var chunk in AllDays.Chunk(3))
         {
             <div class="print-page @(GetSideClass())">
@@ -109,41 +109,74 @@
                                 <div class="text-[8px] font-bold text-gray-300">@CurrentMonthName.ToUpper()</div>
                             </div>
 
-                            <div class="grid grid-cols-5 gap-2">
+                            <div class="grid grid-cols-4 gap-2">
                                 @foreach (var t in items)
                                 {
-                                    <div class="archive-card border border-gray-100 rounded shadow-sm flex flex-col bg-white relative break-inside-avoid h-fit overflow-hidden">
+                                    <div class="archive-card border border-gray-100 rounded-lg shadow-sm flex flex-col bg-white relative break-inside-avoid h-fit overflow-hidden">
                                         <div class="flex flex-1 min-w-0 h-full">
+                                            @* IMAGE LEFT (25% Width) *@
                                             @if (!string.IsNullOrEmpty(t.ImgUrl))
                                             {
                                                 <div class="w-[25%] bg-gray-50 border-r border-gray-50 flex items-start overflow-hidden shrink-0">
                                                     <img src="@t.ImgUrl" class="w-full h-auto object-contain" />
                                                 </div>
                                             }
-                                            <div class="@(string.IsNullOrEmpty(t.ImgUrl) ? "w-full" : "w-[75%]") p-1.5 flex flex-col z-10 min-w-0">
-                                                <h4 class="text-[9px] font-black uppercase leading-tight text-black truncate">@t.Title</h4>
+
+                                            @* CONTENT AREA (Growing Vertically) *@
+                                            <div class="@(string.IsNullOrEmpty(t.ImgUrl) ? "w-full" : "w-[75%]") p-2 flex flex-col z-10 min-w-0">
+                                                <h4 class="text-[10px] font-black uppercase leading-tight text-black break-words mb-1">@t.Title</h4>
                                                 
-                                                <div class="space-y-1 mt-1">
+                                                @* Full Description *@
+                                                @if (!string.IsNullOrWhiteSpace(t.Description))
+                                                {
+                                                    <div class="text-[8px] text-gray-600 italic leading-snug mb-2 break-words border-l-2 border-gray-100 pl-1">
+                                                        @t.Description
+                                                    </div>
+                                                }
+
+                                                <div class="space-y-1.5 mt-1">
                                                     @if (t.Type == "health")
                                                     {
-                                                        <div class="text-[8px] leading-tight border-l-2 border-emerald-400 pl-1">
-                                                            <div class="font-black">@(t.DbHealthDetail?.WeightLbs ?? 0) lbs</div>
-                                                            <div class="text-emerald-700 font-bold uppercase text-[6px]">Σ @(t.Meals?.Sum(x => x.Calories) ?? 0) cal</div>
+                                                        <div class="text-[9px] leading-tight border-l-2 border-emerald-400 pl-1.5">
+                                                            <div class="font-black text-black">@(t.DbHealthDetail?.WeightLbs ?? 0) lbs</div>
+                                                            <div class="text-emerald-700 font-bold uppercase text-[7px]">Σ @(t.Meals?.Sum(x => x.Calories) ?? 0) cal</div>
+                                                            @foreach(var m in t.Meals) { <div class="text-[7px] text-gray-500 leading-none">• @m.Name (@m.Calories)</div> }
                                                         </div>
                                                     }
                                                     @if (t.Type == "sports" && t.DbSportsDetail != null)
                                                     {
                                                         <div class="flex items-center justify-center gap-1 py-1">
                                                             @if(allTeams.TryGetValue(t.DbSportsDetail.AwayTeamId, out var away)) { <img src="@away.LogoUrl" class="w-4 h-4" /> }
-                                                            <span class="text-[9px] font-black">@t.DbSportsDetail.AwayScore:@t.DbSportsDetail.HomeScore</span>
+                                                            <span class="text-[10px] font-black">@t.DbSportsDetail.AwayScore:@t.DbSportsDetail.HomeScore</span>
                                                             @if(allTeams.TryGetValue(t.DbSportsDetail.HomeTeamId, out var home)) { <img src="@home.LogoUrl" class="w-4 h-4" /> }
                                                         </div>
                                                     }
-                                                    @if (t.Type == "media" && t.DbMediaDetail != null)
+                                                    @if (t.Todos?.Any() == true)
                                                     {
-                                                        <div class="text-[7px] font-black flex items-center gap-1">
-                                                            <span class="bg-black text-white px-1 rounded">@t.DbMediaDetail.ReleaseYear</span>
-                                                            <span class="text-yellow-700">★ @(t.DbMediaDetail.Rating / 10.0)</span>
+                                                        <div class="space-y-1 border-t border-gray-50 pt-1">
+                                                            @foreach (var todo in t.Todos) {
+                                                                <div class="text-[8px] flex items-start gap-1">
+                                                                    <div class="w-1.5 h-1.5 border border-black @(todo.IsCompleted ? "bg-black" : "") mt-0.5 shrink-0"></div>
+                                                                    <span class="@(todo.IsCompleted ? "line-through opacity-50" : "") break-words">@todo.Content</span>
+                                                                </div>
+                                                            }
+                                                        </div>
+                                                    }
+                                                    @if (t.Notes?.Any() == true)
+                                                    {
+                                                        <div class="mt-2 space-y-2 border-t border-gray-100 pt-1.5">
+                                                            @foreach(var note in t.Notes)
+                                                            {
+                                                                <div class="note-item">
+                                                                    <div class="text-[8px] text-gray-500 italic leading-tight mb-1 break-words">@note.Content</div>
+                                                                    @if(!string.IsNullOrEmpty(note.ImgUrl))
+                                                                    {
+                                                                        <div class="rounded border border-gray-50 overflow-hidden mb-1">
+                                                                            <img src="@note.ImgUrl" class="w-full h-auto" />
+                                                                        </div>
+                                                                    }
+                                                                </div>
+                                                            }
                                                         </div>
                                                     }
                                                 </div>
@@ -164,7 +197,6 @@
 <style>
     @@media print {
         body { margin: 0; padding: 0; background: white; }
-        .no-print { display: none !important; }
         @@page { size: 8.5in 11in; margin: 0; }
     }
 
@@ -182,12 +214,15 @@
     .page-left { padding: 0.5in 0.6in 0.5in 0.3in; }
     .page-right { padding: 0.5in 0.3in 0.5in 0.6in; }
 
-    .grid-cols-5 {
+    /* FIXED 4-COLUMN GRID */
+    .grid-cols-4 {
         display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
     }
 
-    .archive-card { min-height: 80px; }
+    .day-section { page-break-inside: avoid; }
+    .archive-card { height: fit-content; min-height: 80px; }
+
     .month-vertical-label { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 5rem; font-weight: 900; line-height: 1; }
 
     @@media screen { 
