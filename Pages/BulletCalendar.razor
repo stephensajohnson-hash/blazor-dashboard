@@ -464,15 +464,19 @@
 
         try
         {
-            // --- DIAGNOSTIC RAW QUERY START ---
-            var debugJan1 = await Db.BulletItems
-                .Where(x => x.UserId == userId && x.Date.Month == 1 && x.Date.Day == 1 && x.Date.Year == 2026)
-                .AsNoTracking().ToListAsync();
-            
-            foreach(var d in debugJan1) {
-                await LogToConsole($"RAW_DB_JAN_1: ID:{d.Id} | TYPE:{d.Type} | TITLE:{d.Title} | CAT:{d.Category}");
+            // --- TEMPORARY DIAGNOSTIC GLOBAL QUERY ---
+            // Scans everything to find orphaned items without categories
+            var orphans = await Db.BulletItems
+                .Where(x => x.UserId == userId && (x.Category == null || x.Category == ""))
+                .OrderBy(x => x.Date)
+                .AsNoTracking()
+                .ToListAsync();
+
+            foreach(var o in orphans)
+            {
+                await LogToConsole($"ORPHAN_FOUND: Date:{o.Date:MM/dd/yyyy} | ID:{o.Id} | TYPE:{o.Type} | TITLE:{o.Title}");
             }
-            // --- DIAGNOSTIC RAW QUERY END ---
+            // -------------------------------------------
 
             loadedItems.Clear();
 
@@ -505,18 +509,10 @@
             loadedHabits = await HabitService.GetHabits(userId);
             foreach (var h in loadedHabits.Where(x => x.Date.Date >= s.Date && x.Date.Date <= e.Date)) { loadedItems.Add(BulletMapper.MapHabit(h)); }
 
-            // FIX: Normalize category and log Jan 1st data
+            // FIX: Ensure items without categories are forced into 'personal' column
             foreach (var item in loadedItems)
             {
-                if (string.IsNullOrWhiteSpace(item.Category)) 
-                {
-                    item.Category = "personal";
-                }
-
-                if (item.Date.Month == 1 && item.Date.Day == 1)
-                {
-                    await LogToConsole($"JAN_1_FOUND: {item.Title} | Type: {item.Type} | ID: {item.Id}");
-                }
+                if (string.IsNullOrWhiteSpace(item.Category)) item.Category = "personal";
             }
         }
         catch (Exception ex) 
@@ -808,7 +804,7 @@
 
     #endregion
 
-    #region Cloning & Diagnostics
+    #region Helpers & Diagnostics
 
     private void HandleShowCloner() { showTemporalCloneModal = true; }
     private void HideCloner() { showTemporalCloneModal = false; }
