@@ -1,0 +1,132 @@
+@page "/manage-orphans"
+@using Dashboard
+@using Dashboard.Services
+@using Microsoft.EntityFrameworkCore
+@using System.Text.Json
+@inject AppDbContext Db
+@inject BulletBaseService BaseService
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+<PageTitle>Manage Orphans | Stephens' Dashboard</PageTitle>
+
+<div class="min-h-screen bg-[#0d1117] text-gray-300 p-8 font-sans">
+    <div class="max-w-6xl mx-auto">
+        <div class="flex justify-between items-center mb-8 border-b border-gray-800 pb-6">
+            <div>
+                <h1 class="text-3xl font-black text-white uppercase tracking-tighter">Manage Orphaned Items</h1>
+                <p class="text-sm text-gray-500 mt-1 uppercase font-bold tracking-widest">Database Maintenance Console</p>
+            </div>
+            <div class="flex gap-4">
+                <button @onclick="() => Nav.NavigateTo(\"/bullet-calendar\")" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded text-xs font-black uppercase transition shadow-lg">← Back to Calendar</button>
+                <button @onclick="DeleteAllOrphans" disabled="@(!orphans.Any())" class="px-6 py-2 bg-red-600 hover:bg-red-500 text-white rounded text-xs font-black uppercase transition shadow-xl disabled:opacity-30">⚠ Delete All Orphans</button>
+            </div>
+        </div>
+
+        @if (isLoading)
+        {
+            <div class="flex justify-center items-center py-20 animate-pulse text-gray-500 font-black uppercase tracking-[0.5em]">Scanning Database...</div>
+        }
+        else if (!orphans.Any())
+        {
+            <div class="bg-gray-800/20 border-2 border-dashed border-gray-800 rounded-2xl py-20 text-center">
+                <span class="text-5xl">✅</span>
+                <h3 class="text-white font-black uppercase mt-4 tracking-widest">No Orphans Found</h3>
+                <p class="text-gray-500 text-xs mt-2">All records have a valid category assigned.</p>
+            </div>
+        }
+        else
+        {
+            <div class="bg-[#161b22] border border-gray-800 rounded-xl overflow-hidden shadow-2xl">
+                <table class="w-full text-left text-xs font-bold border-collapse">
+                    <thead>
+                        <tr class="bg-black/40 text-gray-500 uppercase tracking-widest border-b border-gray-800">
+                            <th class="p-4">ID</th>
+                            <th class="p-4">Date</th>
+                            <th class="p-4">Type</th>
+                            <th class="p-4">Title</th>
+                            <th class="p-4 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-800">
+                        @foreach (var o in orphans)
+                        {
+                            <tr class="hover:bg-blue-900/10 transition-colors">
+                                <td class="p-4 font-mono text-blue-400">@o.Id</td>
+                                <td class="p-4 text-gray-400">@o.Date.ToString("MM/dd/yyyy")</td>
+                                <td class="p-4"><span class="bg-gray-800 px-2 py-0.5 rounded uppercase text-[10px] tracking-tighter">@o.Type</span></td>
+                                <td class="p-4 text-white">@(string.IsNullOrWhiteSpace(o.Title) ? "[NO TITLE]" : o.Title)</td>
+                                <td class="p-4 text-right space-x-2">
+                                    <button @onclick="() => OpenEditor(o)" class="text-blue-400 hover:text-white transition">✎ Edit</button>
+                                    <button @onclick="() => DeleteOrphan(o)" class="text-red-500 hover:text-white transition font-black ml-4">✕ Delete</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<BulletItem> orphans = new();
+    private bool isLoading = true;
+    private int userId = 0;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var json = await JS.InvokeAsync<string>("localStorage.getItem", "dashboard_session");
+            if (!string.IsNullOrEmpty(json))
+            {
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("UserId", out var p) || doc.RootElement.TryGetProperty("userId", out p))
+                {
+                    userId = p.GetInt32();
+                    await LoadOrphans();
+                }
+            }
+        }
+    }
+
+    private async Task LoadOrphans()
+    {
+        isLoading = true;
+        StateHasChanged();
+        orphans = await Db.BulletItems
+            .Where(x => x.UserId == userId && (x.Category == null || x.Category == ""))
+            .OrderByDescending(x => x.Date)
+            .ToListAsync();
+        isLoading = false;
+        StateHasChanged();
+    }
+
+    private void OpenEditor(BulletItem o)
+    {
+        // Navigate back to calendar focusing on that specific date so user can use standard editor
+        Nav.NavigateTo($"/bullet-calendar?date={o.Date:yyyy-MM-dd}");
+    }
+
+    private async Task DeleteOrphan(BulletItem o)
+    {
+        if (await JS.InvokeAsync<bool>("confirm", $"Permanently delete ID {o.Id}?"))
+        {
+            await BaseService.DeleteItem(o.Id);
+            await LoadOrphans();
+        }
+    }
+
+    private async Task DeleteAllOrphans()
+    {
+        if (await JS.InvokeAsync<bool>("confirm", "This will permanently delete ALL items missing categories. Continue?"))
+        {
+            foreach(var o in orphans)
+            {
+                await BaseService.DeleteItem(o.Id);
+            }
+            await LoadOrphans();
+        }
+    }
+}
