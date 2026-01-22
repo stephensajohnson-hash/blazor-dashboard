@@ -43,10 +43,9 @@
                 <table class="w-full text-left text-xs font-bold border-collapse">
                     <thead>
                         <tr class="bg-black/40 text-gray-500 uppercase tracking-widest border-b border-gray-800">
-                            <th class="p-4">ID</th>
-                            <th class="p-4">Date</th>
-                            <th class="p-4">Type</th>
-                            <th class="p-4">Title</th>
+                            <th class="p-4">ID / Date</th>
+                            <th class="p-4">Type / Title</th>
+                            <th class="p-4">Attached Data</th>
                             <th class="p-4 text-right">Actions</th>
                         </tr>
                     </thead>
@@ -54,13 +53,31 @@
                         @foreach (var o in orphans)
                         {
                             <tr class="hover:bg-blue-900/10 transition-colors">
-                                <td class="p-4 font-mono text-blue-400">@o.Id</td>
-                                <td class="p-4 text-gray-400">@o.Date.ToString("MM/dd/yyyy")</td>
-                                <td class="p-4"><span class="bg-gray-800 px-2 py-0.5 rounded uppercase text-[10px] tracking-tighter">@o.Type</span></td>
-                                <td class="p-4 text-white">@(string.IsNullOrWhiteSpace(o.Title) ? "[NO TITLE]" : o.Title)</td>
+                                <td class="p-4">
+                                    <div class="font-mono text-blue-400">#@o.Id</div>
+                                    <div class="text-gray-500 mt-1">@o.Date.ToString("MM/dd/yyyy")</div>
+                                </td>
+                                <td class="p-4">
+                                    <span class="bg-gray-800 px-2 py-0.5 rounded uppercase text-[10px] tracking-tighter text-gray-300">@o.Type</span>
+                                    <div class="text-white mt-1">@(string.IsNullOrWhiteSpace(o.Title) ? "[Untitled]" : o.Title)</div>
+                                </td>
+                                <td class="p-4">
+                                    <div class="flex flex-wrap gap-2">
+                                        @if (o.DbHealthDetail != null) { <span class="text-emerald-400">⚖️ Weight: @o.DbHealthDetail.WeightLbs</span> }
+                                        @if (o.Meals.Any()) { <span class="text-orange-400">🍴 @o.Meals.Count Meals</span> }
+                                        @if (o.Workouts.Any()) { <span class="text-blue-400">💪 @o.Workouts.Count Workouts</span> }
+                                        @if (o.Notes.Any()) { <span class="text-gray-400">📝 @o.Notes.Count Notes</span> }
+                                        @if (o.Todos.Any()) { <span class="text-purple-400">✅ @o.Todos.Count Tasks</span> }
+                                        
+                                        @if (o.DbHealthDetail == null && !o.Meals.Any() && !o.Workouts.Any() && !o.Notes.Any() && !o.Todos.Any())
+                                        {
+                                            <span class="text-red-500 italic">No Data Found (Safe to Delete)</span>
+                                        }
+                                    </div>
+                                </td>
                                 <td class="p-4 text-right space-x-2">
-                                    <button @onclick="() => OpenEditor(o)" class="text-blue-400 hover:text-white transition">✎ Edit</button>
-                                    <button @onclick="() => DeleteOrphan(o)" class="text-red-500 hover:text-white transition font-black ml-4">✕ Delete</button>
+                                    <button @onclick="() => OpenEditor(o)" class="px-3 py-1 bg-blue-600/20 text-blue-400 rounded hover:bg-blue-600 hover:text-white transition">✎ Edit</button>
+                                    <button @onclick="() => DeleteOrphan(o)" class="px-3 py-1 bg-red-600/20 text-red-500 rounded hover:bg-red-600 hover:text-white transition font-black ml-4">✕ Delete</button>
                                 </td>
                             </tr>
                         }
@@ -106,10 +123,18 @@
     {
         isLoading = true;
         StateHasChanged();
+
+        // Querying orphans and explicitly including all sub-tables to see if data exists
         orphans = await Db.BulletItems
+            .Include(x => x.DbHealthDetail)
+            .Include(x => x.Meals)
+            .Include(x => x.Workouts)
+            .Include(x => x.Notes)
+            .Include(x => x.Todos)
             .Where(x => x.UserId == userId && (x.Category == null || x.Category == ""))
             .OrderByDescending(x => x.Date)
             .ToListAsync();
+
         isLoading = false;
         StateHasChanged();
     }
@@ -130,7 +155,7 @@
 
     private async Task DeleteAllOrphans()
     {
-        if (await JS.InvokeAsync<bool>("confirm", "This will permanently delete ALL items missing categories. Continue?"))
+        if (await JS.InvokeAsync<bool>("confirm", "This will permanently delete ALL items listed here. Continue?"))
         {
             foreach (var o in orphans)
             {
