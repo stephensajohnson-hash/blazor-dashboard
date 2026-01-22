@@ -221,20 +221,10 @@
                 </div>
             </div>
         </div>
-
-        <div class="bg-[#282b30] rounded-xl border border-gray-700 shadow-2xl mt-6 p-6 font-black">
-            <div class="flex justify-between items-center mb-6">
-                <div class="flex items-center gap-3"><h3 class="text-xs font-black text-blue-400 uppercase tracking-widest font-mono">Liquidity Treemap Analysis</h3><button @onclick="UpdateChart" class="text-gray-500 hover:text-white transition text-sm" title="Redraw Chart">🔄</button></div>
-                <div class="text-[9px] text-gray-600 font-black uppercase tracking-widest">Size = Allocation ($) | Yellow = Balanced | Green = Remaining | Red = Overspent</div>
-            </div>
-            <div class="h-64 w-full bg-black/40 rounded-xl p-4 border border-gray-800 shadow-inner">
-                <canvas id="budgetTreemap"></canvas>
-            </div>
-        </div>
     }
 
     @if (EditingPeriod != null) {
-        <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm text-gray-800 font-black"><div class="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border border-gray-200"><div class="bg-gray-100 px-4 py-3 border-b font-black text-gray-700 flex justify-between items-center text-sm uppercase font-mono"><span>Period Settings</span><button @onclick="() => { EditingPeriod = null; }" class="text-gray-400 text-xl font-bold">&times;</button></div><div class="p-6 space-y-4 font-black"><div><label class="block text-[10px] text-gray-400 uppercase mb-1">Display Title</label><input @bind="EditingPeriod.DisplayName" class="w-full border rounded p-2 text-sm font-black" /></div><div><label class="block text-[10px] text-gray-400 uppercase mb-1">Initial Bank Balance ($)</label><input type="number" @bind="EditingPeriod.InitialBankBalance" step="0.01" class="w-full border rounded p-2 text-sm font-mono font-black" /></div><button @onclick="DeletePeriod" class="w-full py-2 bg-red-50 text-red-600 rounded text-[10px] uppercase font-black">Delete Month</button></div><div class="bg-gray-50 px-4 py-3 flex justify-end gap-2 border-t font-black"><button @onclick="() => { EditingPeriod = null; }" class="px-4 py-2 text-xs text-gray-600 font-bold">Cancel</button><button @onclick="SavePeriodChanges" class="bg-blue-600 text-white px-8 py-2 rounded text-xs shadow font-black tracking-widest uppercase">Save</button></div></div></div>
+        <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm text-gray-800 font-black"><div class="bg-white rounded-xl shadow-2xl w-full max-sm overflow-hidden border border-gray-200"><div class="bg-gray-100 px-4 py-3 border-b font-black text-gray-700 flex justify-between items-center text-sm uppercase font-mono"><span>Period Settings</span><button @onclick="() => { EditingPeriod = null; }" class="text-gray-400 text-xl font-bold">&times;</button></div><div class="p-6 space-y-4 font-black"><div><label class="block text-[10px] text-gray-400 uppercase mb-1">Display Title</label><input @bind="EditingPeriod.DisplayName" class="w-full border rounded p-2 text-sm font-black" /></div><div><label class="block text-[10px] text-gray-400 uppercase mb-1">Initial Bank Balance ($)</label><input type="number" @bind="EditingPeriod.InitialBankBalance" step="0.01" class="w-full border rounded p-2 text-sm font-mono font-black" /></div><button @onclick="DeletePeriod" class="w-full py-2 bg-red-50 text-red-600 rounded text-[10px] uppercase font-black">Delete Month</button></div><div class="bg-gray-50 px-4 py-3 flex justify-end gap-2 border-t font-black"><button @onclick="() => { EditingPeriod = null; }" class="px-4 py-2 text-xs text-gray-600 font-bold">Cancel</button><button @onclick="SavePeriodChanges" class="bg-blue-600 text-white px-8 py-2 rounded text-xs shadow font-black tracking-widest uppercase">Save</button></div></div></div>
     }
 
     @if (EditingTransaction != null) {
@@ -324,57 +314,14 @@
         try { 
             periods = await BudgetService.GetPeriods(userId); 
             incomeSources = await Db.BudgetIncomeSources.Where(x => x.UserId == userId || x.UserId == 0).ToListAsync(); 
-            await RefreshAndChart(); 
+            RefreshFlatList();
+            StateHasChanged();
         } catch { } finally { isLoading = false; StateHasChanged(); } 
-    }
-
-    private async Task RefreshAndChart() { 
-        RefreshFlatList(); 
-        StateHasChanged(); 
-        await Task.Delay(150); 
-        await UpdateChart(); 
     }
 
     private void RefreshFlatList() { 
         FlatBudgetList.Clear(); 
         if(CurrentPeriod != null) foreach(var c in CurrentPeriod.Cycles) FlatBudgetList.AddRange(c.Items); 
-    }
-
-    private async Task UpdateChart() {
-        if (CurrentPeriod == null) return;
-        RefreshFlatList();
-
-        var dataPoints = new List<object>();
-
-        foreach (var item in FlatBudgetList) {
-            decimal totalAllocated = item.PlannedAmount + item.CarriedOver;
-            if (totalAllocated == 0) continue;
-
-            decimal currentSpent = GetSpentForBudgetItem(item.Id);
-            decimal currentRem = totalAllocated - currentSpent;
-
-            decimal upcomingBills = CurrentPeriod.WatchList?
-                .Where(w => w.ResolvedBudgetItemId == item.Id)
-                .Sum(w => w.Amount) ?? 0;
-                
-            decimal projectedRem = currentRem - upcomingBills;
-
-            dataPoints.Add(new { 
-                l = item.Name, 
-                v = (double)Math.Abs(totalAllocated), 
-                r = (double)Math.Round(currentRem, 2),
-                p = (double)Math.Round(projectedRem, 2)
-            });
-        }
-
-        decimal unacc = Unaccounted;
-        dataPoints.Add(new { l = "Unaccounted", v = (double)Math.Max(1, Math.Abs(unacc)), r = (double)Math.Round(unacc, 2), p = (double)Math.Round(unacc, 2) });
-
-        if (dataPoints.Any()) {
-            var options = new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = null };
-            var json = System.Text.Json.JsonSerializer.Serialize(dataPoints, options);
-            await JS.InvokeVoidAsync("renderBudgetTreemap", "budgetTreemap", json);
-        }
     }
 
     private void AddSplit() { 
@@ -398,12 +345,13 @@
             if(pendingIncomeToDelete != null) { Db.BudgetExpectedIncome.Remove(pendingIncomeToDelete); await Db.SaveChangesAsync(); pendingIncomeToDelete = null; } 
             
             EditingTransaction = null; 
-            await RefreshAndChart(); 
+            RefreshFlatList();
+            StateHasChanged();
         } 
     }
 
-    private void NextPeriod() { if (CanGoNext) { currentIndex--; _ = RefreshAndChart(); } }
-    private void PrevPeriod() { if (CanGoBack) { currentIndex++; _ = RefreshAndChart(); } }
+    private void NextPeriod() { if (CanGoNext) { currentIndex--; RefreshFlatList(); StateHasChanged(); } }
+    private void PrevPeriod() { if (CanGoBack) { currentIndex++; RefreshFlatList(); StateHasChanged(); } }
     private bool CanGoBack => currentIndex < (periods?.Count ?? 0) - 1;
     private bool CanGoNext => currentIndex > 0;
 
@@ -435,16 +383,16 @@
         return list.OrderBy(x => x.Date).ToList(); 
     }
 
-    private async Task SaveTransfer() { if(EditingTransfer != null && EditingTransfer.Amount > 0) { Db.BudgetTransfers.Add(EditingTransfer); await Db.SaveChangesAsync(); EditingTransfer = null; await RefreshAndChart(); } }
+    private async Task SaveTransfer() { if(EditingTransfer != null && EditingTransfer.Amount > 0) { Db.BudgetTransfers.Add(EditingTransfer); await Db.SaveChangesAsync(); EditingTransfer = null; RefreshFlatList(); StateHasChanged(); } }
     private void OpenTransferModal() { RefreshFlatList(); EditingTransfer = new BudgetTransfer { BudgetPeriodId = CurrentPeriod?.Id ?? 0, Date = DateTime.Today, Amount = 0 }; }
     private void QuickAddWatchItem(BudgetItem item) { decimal rawSpent = GetSpentForBudgetItem(item.Id); decimal total = item.PlannedAmount + item.CarriedOver; decimal rem = total - rawSpent; RefreshFlatList(); EditingWatch = new BudgetWatchItem { BudgetPeriodId = CurrentPeriod?.Id ?? 0, Description = item.Name, Amount = Math.Max(0, rem), DueDate = DateTime.Today.AddDays(1), ResolvedBudgetItemId = item.Id }; }
-    private async Task SaveEditItem() { if(EditingItem != null) { if(EditingItem.Id == 0) Db.BudgetItems.Add(EditingItem); else Db.BudgetItems.Update(EditingItem); await Db.SaveChangesAsync(); EditingItem = null; await RefreshAndChart(); } }
-    private async Task SaveWatchItem() { if(EditingWatch != null) { if(EditingWatch.Id == 0) Db.BudgetWatchItems.Add(EditingWatch); else Db.BudgetWatchItems.Update(EditingWatch); await Db.SaveChangesAsync(); EditingWatch = null; await RefreshAndChart(); } }
-    private async Task SaveIncome() { if(EditingIncome != null) { if(EditingIncome.Id == 0) Db.BudgetExpectedIncome.Add(EditingIncome); else Db.BudgetExpectedIncome.Update(EditingIncome); await Db.SaveChangesAsync(); EditingIncome = null; await RefreshAndChart(); } }
-    private async Task DeleteTransaction(BudgetTransaction t) { if (await JS.InvokeAsync<bool>("confirm", "Delete?")) { Db.BudgetTransactions.Remove(t); await Db.SaveChangesAsync(); await RefreshAndChart(); } }
-    private async Task DeleteBudgetItem(BudgetItem i) { if (await JS.InvokeAsync<bool>("confirm", "Delete?")) { Db.BudgetItems.Remove(i); await Db.SaveChangesAsync(); await RefreshAndChart(); } }
-    private async Task DeleteExpectedIncome(BudgetExpectedIncome i) { if (await JS.InvokeAsync<bool>("confirm", "Delete?")) { Db.BudgetExpectedIncome.Remove(i); await Db.SaveChangesAsync(); await RefreshAndChart(); } }
-    private async Task DeleteWatchItem(BudgetWatchItem i) { if (await JS.InvokeAsync<bool>("confirm", "Delete?")) { Db.BudgetWatchItems.Remove(i); await Db.SaveChangesAsync(); await RefreshAndChart(); } }
+    private async Task SaveEditItem() { if(EditingItem != null) { if(EditingItem.Id == 0) Db.BudgetItems.Add(EditingItem); else Db.BudgetItems.Update(EditingItem); await Db.SaveChangesAsync(); EditingItem = null; RefreshFlatList(); StateHasChanged(); } }
+    private async Task SaveWatchItem() { if(EditingWatch != null) { if(EditingWatch.Id == 0) Db.BudgetWatchItems.Add(EditingWatch); else Db.BudgetWatchItems.Update(EditingWatch); await Db.SaveChangesAsync(); EditingWatch = null; RefreshFlatList(); StateHasChanged(); } }
+    private async Task SaveIncome() { if(EditingIncome != null) { if(EditingIncome.Id == 0) Db.BudgetExpectedIncome.Add(EditingIncome); else Db.BudgetExpectedIncome.Update(EditingIncome); await Db.SaveChangesAsync(); EditingIncome = null; RefreshFlatList(); StateHasChanged(); } }
+    private async Task DeleteTransaction(BudgetTransaction t) { if (await JS.InvokeAsync<bool>("confirm", "Delete?")) { Db.BudgetTransactions.Remove(t); await Db.SaveChangesAsync(); RefreshFlatList(); StateHasChanged(); } }
+    private async Task DeleteBudgetItem(BudgetItem i) { if (await JS.InvokeAsync<bool>("confirm", "Delete?")) { Db.BudgetItems.Remove(i); await Db.SaveChangesAsync(); RefreshFlatList(); StateHasChanged(); } }
+    private async Task DeleteExpectedIncome(BudgetExpectedIncome i) { if (await JS.InvokeAsync<bool>("confirm", "Delete?")) { Db.BudgetExpectedIncome.Remove(i); await Db.SaveChangesAsync(); RefreshFlatList(); StateHasChanged(); } }
+    private async Task DeleteWatchItem(BudgetWatchItem i) { if (await JS.InvokeAsync<bool>("confirm", "Delete?")) { Db.BudgetWatchItems.Remove(i); await Db.SaveChangesAsync(); RefreshFlatList(); StateHasChanged(); } }
     private async Task DeleteCycle(BudgetCycle c) { if (await JS.InvokeAsync<bool>("confirm", "Delete?")) { Db.BudgetCycles.Remove(c); await Db.SaveChangesAsync(); await LoadData(); } }
     
     private async Task HandleCategoryFileUpload(InputFileChangeEventArgs e) { 
