@@ -137,7 +137,7 @@
                                         }
 
                                         <div class="space-y-3 clear-none">
-                                            @* HEALTH CARDS - EXPLICIT RESTORATION *@
+                                            @* HEALTH CARDS *@
                                             @if (t.Type == "health" && t.DbHealthDetail != null)
                                             {
                                                 <div class="text-[12pt] leading-tight border-l-4 border-emerald-400 pl-2">
@@ -272,40 +272,44 @@
     private async Task LoadMonthData()
     {
         isLoading = true;
-        var start = new DateTime(Year, Month, 1);
-        var end = start.AddMonths(1).AddDays(-1);
-        using var db = await DbFactory.CreateDbContextAsync();
-        
-        monthItems = await db.BulletItems
-            .Include(x => x.DbHealthDetail).Include(x => x.DbSportsDetail).Include(x => x.DbMediaDetail)
-            .Include(x => x.DbMeetingDetail).Include(x => x.DbHabitDetail).Include(x => x.Todos)
-            .Include(x => x.Notes).Include(x => x.Meals)
-            .Where(x => x.UserId == 1 && x.Date >= start && x.Date <= end)
-            .OrderBy(x => x.Date).ThenBy(x => x.SortOrder).ToListAsync();
+        try {
+            var start = new DateTime(Year, Month, 1);
+            var end = start.AddMonths(1).AddDays(-1);
+            using var db = await DbFactory.CreateDbContextAsync();
+            
+            monthItems = await db.BulletItems
+                .Include(x => x.DbHealthDetail).Include(x => x.DbSportsDetail).Include(x => x.DbMediaDetail)
+                .Include(x => x.DbMeetingDetail).Include(x => x.DbHabitDetail).Include(x => x.Todos)
+                .Include(x => x.Notes).Include(x => x.Meals)
+                .Where(x => x.UserId == 1 && x.Date >= start && x.Date <= end)
+                .OrderBy(x => x.Date).ThenBy(x => x.SortOrder).ToListAsync();
 
-        var teams = await db.Teams.Where(x => x.UserId == 1).ToListAsync();
-        allTeams = teams.ToDictionary(x => x.Id, x => x);
+            var teams = await db.Teams.Where(x => x.UserId == 1).ToListAsync();
+            allTeams = teams.ToDictionary(x => x.Id, x => x);
 
-        // FIX: Load games starting from July of the PREVIOUS year to capture split-year seasons (NFL/NBA)
-        var seasonStart = new DateTime(Year - 1, 7, 1);
-        seasonGames = await db.BulletGameDetails
-            .Include(x => x.BulletItem)
-            .Where(x => x.IsComplete && x.BulletItem.Date >= seasonStart && x.BulletItem.Date <= end)
-            .ToListAsync();
-        
-        AllDays.Clear();
-        for (var dt = start; dt <= end; dt = dt.AddDays(1)) AllDays.Add(dt);
+            var seasonStart = new DateTime(Year - 1, 7, 1);
+            seasonGames = await db.BulletGameDetails
+                .Include(x => x.BulletItem)
+                .Where(x => x.IsComplete && x.BulletItem.Date >= seasonStart && x.BulletItem.Date <= end)
+                .ToListAsync();
+            
+            AllDays.Clear();
+            for (var dt = start; dt <= end; dt = dt.AddDays(1)) AllDays.Add(dt);
 
-        CalendarGrid.Clear();
-        int offset = ((int)start.DayOfWeek + 6) % 7; 
-        for (int i = 0; i < offset; i++) CalendarGrid.Add(new CalendarSlot { IsPlaceholder = true, DayOfWeek = (i + 1) });
-        for (int d = 1; d <= DateTime.DaysInMonth(Year, Month); d++) {
-            var date = new DateTime(Year, Month, d);
-            int dw = (int)date.DayOfWeek;
-            CalendarGrid.Add(new CalendarSlot { Date = date, DayOfWeek = dw == 0 ? 7 : dw });
+            CalendarGrid.Clear();
+            int offset = ((int)start.DayOfWeek + 6) % 7; 
+            for (int i = 0; i < offset; i++) CalendarGrid.Add(new CalendarSlot { IsPlaceholder = true, DayOfWeek = (i + 1) });
+            for (int d = 1; d <= DateTime.DaysInMonth(Year, Month); d++) {
+                var date = new DateTime(Year, Month, d);
+                int dw = (int)date.DayOfWeek;
+                CalendarGrid.Add(new CalendarSlot { Date = date, DayOfWeek = dw == 0 ? 7 : dw });
+            }
+            while (CalendarGrid.Count % 7 != 0) CalendarGrid.Add(new CalendarSlot { IsPlaceholder = true });
+        } catch (Exception ex) {
+            Console.WriteLine($"LOAD_ERROR: {ex.Message}");
+        } finally {
+            isLoading = false;
         }
-        while (CalendarGrid.Count % 7 != 0) CalendarGrid.Add(new CalendarSlot { IsPlaceholder = true });
-        isLoading = false;
     }
 
     private List<BulletItem> GetItemsForDay(DateTime d) => monthItems.Where(x => x.Date.Date == d.Date).OrderBy(x => x.SortOrder).ToList();
