@@ -90,7 +90,7 @@
             </div>
         </div>
 
-        @* --- 2. DAILY DETAIL PAGES (ONE DAY PER PAGE) --- *@
+        @* --- 2. DAILY DETAIL PAGES --- *@
         @foreach (var dayDate in AllDays)
         {
             var items = GetItemsForDay(dayDate).Where(x => !string.IsNullOrWhiteSpace(x.Title)).ToList();
@@ -103,13 +103,13 @@
                         </div>
                         <div class="text-right uppercase">
                             <div class="text-2xl font-black leading-none text-gray-800">@CurrentMonthName</div>
-                            <div class="text-[12pt] font-bold text-gray-300 tracking-[0.2em] mt-1">YEAR_ARCHIVE_@Year</div>
+                            <div class="text-lg font-bold text-gray-300 tracking-widest mt-1">@Year</div>
                         </div>
                     </div>
 
                     @if (items.Any())
                     {
-                        <div class="grid grid-cols-3 gap-4 items-start">
+                        <div class="grid grid-cols-3 gap-6 items-start">
                             @foreach (var t in items)
                             {
                                 <div class="archive-card border-2 border-gray-100 rounded-2xl shadow-sm bg-white relative break-inside-avoid h-fit overflow-hidden p-3">
@@ -121,16 +121,14 @@
                                         </div>
                                     }
 
-                                    @* IMAGE FLOAT LEFT (TEXT WRAPS AROUND) *@
                                     @if (!string.IsNullOrEmpty(t.ImgUrl))
                                     {
-                                        <div class="float-left w-[35%] mr-3 mb-2 rounded-xl border-2 border-gray-50 overflow-hidden bg-gray-50">
+                                        <div class="float-left w-[35%] mr-3 mb-2 rounded-lg border-2 border-gray-50 overflow-hidden bg-gray-50 shadow-inner">
                                             <img src="@t.ImgUrl" class="w-full h-auto object-contain" />
                                         </div>
                                     }
 
                                     <div class="z-10 relative">
-                                        @* TITLE: 12pt Bold, Mixed Case, Wrapping *@
                                         <h4 class="text-[12pt] font-bold leading-tight text-black break-words mb-1">@t.Title</h4>
                                         
                                         @if (!string.IsNullOrWhiteSpace(t.Description))
@@ -152,7 +150,7 @@
                                                     </div>
                                                 </div>
                                             }
-                                            @* SPORTS CARDS *@
+                                            @* SPORTS CARDS (Season Record Logic) *@
                                             @if (t.Type == "sports" && t.DbSportsDetail != null)
                                             {
                                                 <div class="flex flex-col items-center gap-1 py-2 border-y border-gray-50 font-bold">
@@ -162,7 +160,16 @@
                                                         @if(allTeams.TryGetValue(t.DbSportsDetail.HomeTeamId, out var home)) { <img src="@home.LogoUrl" class="w-12 h-12 object-contain" /> }
                                                     </div>
                                                     <div class="text-[18pt]">@t.DbSportsDetail.AwayScore - @t.DbSportsDetail.HomeScore</div>
-                                                    <div class="text-[10pt] text-blue-600 uppercase tracking-[0.2em]">Record: @GetScoreStatus(t)</div>
+                                                    
+                                                    @{
+                                                        var favId = GetFavoriteTeamId(t);
+                                                        if (favId > 0)
+                                                        {
+                                                            <div class="text-[10pt] text-blue-600 uppercase tracking-widest">
+                                                                Record: @GetSeasonRecord(favId, t.DbSportsDetail.LeagueId, t.Date, t.Id)
+                                                            </div>
+                                                        }
+                                                    }
                                                 </div>
                                             }
                                             @* MEDIA CARDS *@
@@ -192,7 +199,7 @@
                                             {
                                                 <div class="bg-blue-50/50 p-2 rounded-lg border border-blue-100 flex justify-between items-center font-bold">
                                                     @if(t.DbMeetingDetail.StartTime.HasValue) { <span class="text-[12pt] text-blue-700">⏰ @t.DbMeetingDetail.StartTime.Value.ToString("h:mm tt")</span> }
-                                                    @if(t.DbMeetingDetail.ActualDurationMinutes > 0) { <span class="text-[11pt] text-blue-900/40">⏱ @(t.DbMeetingDetail.ActualDurationMinutes) mins</span> }
+                                                    @if(t.DbMeetingDetail.ActualDurationMinutes > 0) { <span class="text-[11pt] text-blue-900/40">⏱ @t.DbMeetingDetail.ActualDurationMinutes mins</span> }
                                                 </div>
                                             }
 
@@ -205,16 +212,6 @@
                                                             <div class="w-3 h-3 border-2 border-black @(todo.IsCompleted ? "bg-black" : "") shrink-0"></div>
                                                             <span class="truncate">@todo.Content</span>
                                                         </div>
-                                                    }
-                                                </div>
-                                            }
-
-                                            @if (t.Notes?.Any() == true)
-                                            {
-                                                <div class="mt-2 space-y-1 border-t border-gray-50 pt-2">
-                                                    @foreach(var note in t.Notes.OrderBy(n => n.Order))
-                                                    {
-                                                        <div class="text-[12pt] text-gray-600 truncate">— @note.Content</div>
                                                     }
                                                 </div>
                                             }
@@ -233,28 +230,20 @@
 </div>
 
 <style>
-    /* PHYSICAL PAGE STANDARDS */
     @@media print {
         body { margin: 0; padding: 0; background: white; }
         @@page { size: 8.5in 11in; margin: 0; }
-        .no-print { display: none !important; }
     }
-
     .print-page { 
         width: 8.5in; height: 11in; position: relative; background: white; 
         page-break-after: always; display: flex; flex-direction: column; overflow: hidden; 
     }
-
     .page-left { padding: 0.5in 0.6in 0.5in 0.4in; }
     .page-right { padding: 0.5in 0.4in 0.5in 0.6in; }
-
     .grid-cols-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .archive-card { height: fit-content; min-height: 120px; page-break-inside: avoid; }
     .month-vertical-label { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 5rem; font-weight: 900; line-height: 1; }
-
-    @@media screen { 
-        .print-page { border: 1px solid #ddd; margin: 40px auto; box-shadow: 0 0 15px rgba(0,0,0,0.1); } 
-    }
+    @@media screen { .print-page { border: 1px solid #ddd; margin: 40px auto; box-shadow: 0 0 15px rgba(0,0,0,0.1); } }
 </style>
 
 @code {
@@ -264,6 +253,7 @@
 
     private bool isLoading = true;
     private List<BulletItem> monthItems = new();
+    private List<BulletGameDetail> seasonGames = new();
     private Dictionary<int, Team> allTeams = new();
     private List<DateTime> AllDays = new();
     private List<CalendarSlot> CalendarGrid = new();
@@ -281,22 +271,22 @@
         var end = start.AddMonths(1).AddDays(-1);
         using var db = await DbFactory.CreateDbContextAsync();
         
-        // Comprehensive fetch of all detail tables
         monthItems = await db.BulletItems
-            .Include(x => x.DbTaskDetail)
-            .Include(x => x.DbMeetingDetail)
-            .Include(x => x.DbHabitDetail)
-            .Include(x => x.DbMediaDetail)
-            .Include(x => x.DbHealthDetail)
-            .Include(x => x.DbSportsDetail)
-            .Include(x => x.Todos)
-            .Include(x => x.Notes)
-            .Include(x => x.Meals)
+            .Include(x => x.DbHealthDetail).Include(x => x.DbSportsDetail).Include(x => x.DbMediaDetail)
+            .Include(x => x.DbMeetingDetail).Include(x => x.DbHabitDetail).Include(x => x.Todos)
+            .Include(x => x.Notes).Include(x => x.Meals)
             .Where(x => x.UserId == 1 && x.Date >= start && x.Date <= end)
             .OrderBy(x => x.Date).ThenBy(x => x.SortOrder).ToListAsync();
 
         var teams = await db.Teams.Where(x => x.UserId == 1).ToListAsync();
         allTeams = teams.ToDictionary(x => x.Id, x => x);
+
+        // Load ALL completed games for the year to calculate records correctly
+        var yearStart = new DateTime(Year, 1, 1);
+        seasonGames = await db.BulletGameDetails
+            .Include(x => x.BulletItem)
+            .Where(x => x.IsComplete && x.BulletItem.Date >= yearStart && x.BulletItem.Date <= end)
+            .ToListAsync();
         
         AllDays.Clear();
         for (var dt = start; dt <= end; dt = dt.AddDays(1)) AllDays.Add(dt);
@@ -315,20 +305,43 @@
 
     private List<BulletItem> GetItemsForDay(DateTime d) => monthItems.Where(x => x.Date.Date == d.Date).OrderBy(x => x.SortOrder).ToList();
 
+    private int GetFavoriteTeamId(BulletItem t) {
+        if (t.DbSportsDetail == null) return 0;
+        allTeams.TryGetValue(t.DbSportsDetail.HomeTeamId, out var home);
+        if (home?.IsFavorite == true) return home.Id;
+        allTeams.TryGetValue(t.DbSportsDetail.AwayTeamId, out var away);
+        if (away?.IsFavorite == true) return away.Id;
+        return 0;
+    }
+
+    private string GetSeasonRecord(int teamId, int leagueId, DateTime pointInTime, int itemId)
+    {
+        var games = seasonGames
+            .Where(g => g.LeagueId == leagueId && (g.HomeTeamId == teamId || g.AwayTeamId == teamId))
+            .Where(g => g.BulletItem.Date < pointInTime || (g.BulletItem.Date == pointInTime && g.BulletItemId <= itemId))
+            .ToList();
+
+        int w = 0, l = 0, t = 0;
+        foreach (var g in games) {
+            bool isHome = g.HomeTeamId == teamId;
+            int myScore = isHome ? g.HomeScore : g.AwayScore;
+            int oppScore = isHome ? g.AwayScore : g.HomeScore;
+            if (myScore > oppScore) w++; else if (myScore < oppScore) l++; else t++;
+        }
+        return t > 0 ? $"{w}-{l}-{t}" : $"{w}-{l}";
+    }
+
     private string GetScoreStatus(BulletItem t) {
         if (t.DbSportsDetail == null || !t.DbSportsDetail.IsComplete) return "";
-        allTeams.TryGetValue(t.DbSportsDetail.HomeTeamId, out var homeTeam);
-        allTeams.TryGetValue(t.DbSportsDetail.AwayTeamId, out var awayTeam);
-        bool homeIsFav = homeTeam?.IsFavorite ?? false;
-        bool awayIsFav = awayTeam?.IsFavorite ?? false;
+        int favId = GetFavoriteTeamId(t);
+        if (favId == 0) return "FINAL";
+        
+        bool isHome = t.DbSportsDetail.HomeTeamId == favId;
+        int myScore = isHome ? t.DbSportsDetail.HomeScore : t.DbSportsDetail.AwayScore;
+        int oppScore = isHome ? t.DbSportsDetail.AwayScore : t.DbSportsDetail.HomeScore;
 
-        if (homeIsFav) {
-            if (t.DbSportsDetail.HomeScore > t.DbSportsDetail.AwayScore) return "WIN";
-            if (t.DbSportsDetail.AwayScore > t.DbSportsDetail.HomeScore) return "LOSS";
-        } else if (awayIsFav) {
-            if (t.DbSportsDetail.AwayScore > t.DbSportsDetail.HomeScore) return "WIN";
-            if (t.DbSportsDetail.HomeScore > t.DbSportsDetail.AwayScore) return "LOSS";
-        }
+        if (myScore > oppScore) return "WIN";
+        if (myScore < oppScore) return "LOSS";
         return "TIE";
     }
 
