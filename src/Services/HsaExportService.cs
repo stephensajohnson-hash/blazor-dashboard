@@ -1,8 +1,10 @@
 using PuppeteerSharp;
+using PuppeteerSharp.Media; // Required for PaperFormat
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
 using PdfSharp.Drawing;
 using System.Text;
+using Dashboard;
 
 namespace Dashboard.Services;
 
@@ -10,21 +12,25 @@ public class HsaExportService
 {
     public async Task<byte[]> CreateSubmissionPdf(List<HsaReceipt> receipts)
     {
-        // 1. GENERATE THE LEDGER PAGE VIA PUPPETEER (HTML TO PDF)
+        // 1. GENERATE THE LEDGER PAGE VIA PUPPETEER
         var html = BuildLedgerHtml(receipts);
         
-        using var browserFetcher = new BrowserFetcher();
+        // Fix for CS1674: BrowserFetcher in newer versions isn't used with 'using' 
+        var browserFetcher = new BrowserFetcher();
         await browserFetcher.DownloadAsync();
+        
         using var browser = await Puppeteer.LaunchAsync(new LaunchOptions { Headless = true });
         using var page = await browser.NewPageAsync();
         await page.SetContentAsync(html);
+        
+        // Use the explicit Media namespace for PaperFormat
         var ledgerPdfBytes = await page.PdfDataAsync(new PdfOptions { Format = PaperFormat.A4 });
         await browser.CloseAsync();
 
         // 2. MERGE EVERYTHING VIA PDFSHARP
         using var outputDocument = new PdfDocument();
         
-        // Add the Ledger first
+        // Add the Ledger
         using (var ledgerStream = new MemoryStream(ledgerPdfBytes))
         {
             var ledgerDoc = PdfReader.Open(ledgerStream, PdfDocumentOpenMode.Import);
@@ -36,24 +42,31 @@ public class HsaExportService
         {
             try 
             {
-                if (r.ContentType?.Contains("pdf") == true)
+                if (r.ContentType != null && r.ContentType.Contains("pdf"))
                 {
-                    using var ms = new MemoryStream(r.FileData);
+                    using var ms = new MemoryStream(r.FileData!);
                     var attachment = PdfReader.Open(ms, PdfDocumentOpenMode.Import);
                     CopyPages(attachment, outputDocument);
                 }
-                else if (r.ContentType?.Contains("image") == true)
+                else if (r.ContentType != null && r.ContentType.Contains("image"))
                 {
                     var newPage = outputDocument.AddPage();
-                    using var ms = new MemoryStream(r.FileData);
+                    using var ms = new MemoryStream(r.FileData!);
                     using var img = XImage.FromStream(ms);
                     
-                    // Basic scaling to fit page
                     var graphics = XGraphics.FromPdfPage(newPage);
-                    graphics.DrawImage(img, 0, 0, newPage.Width, (newPage.Width / img.PixelWidth) * img.PixelHeight);
+                    
+                    // Fix for CS0618: Use .Point property for conversion in 6.1
+                    double pageWidth = newPage.Width.Point;
+                    double imageHeight = (pageWidth / img.PixelWidth) * img.PixelHeight;
+                    
+                    graphics.DrawImage(img, 0, 0, pageWidth, imageHeight);
                 }
             }
-            catch { /* Log failure for specific attachment if needed */ }
+            catch (Exception ex) 
+            { 
+                Console.WriteLine($"ATTACHMENT_ERR for {r.Provider}: {ex.Message}");
+            }
         }
 
         using var finalMs = new MemoryStream();
@@ -70,13 +83,13 @@ public class HsaExportService
     {
         var sb = new StringBuilder();
         sb.Append(@"<html><head><style>
-            body { font-family: sans-serif; padding: 40px; }
-            h1 { color: #2563eb; margin-bottom: 5px; }
+            body { font-family: sans-serif; padding: 40px; color: #333; }
+            h1 { color: #2563eb; margin-bottom: 5px; font-size: 24px; }
             table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th { text-align: left; border-bottom: 2px solid #000; padding: 10px; font-size: 12px; text-transform: uppercase; }
-            td { padding: 10px; border-bottom: 1px solid #eee; font-size: 11px; }
+            th { text-align: left; border-bottom: 2px solid #000; padding: 12px 8px; font-size: 12px; }
+            td { padding: 10px 8px; border-bottom: 1px solid #eee; font-size: 11px; }
             .amt { text-align: right; font-family: monospace; }
-            .total { font-weight: bold; background: #f8fafc; }
+            .total { font-weight: bold; background: #f8fafc; border-top: 2px solid #333; }
         </style></head><body>");
 
         sb.Append("<h1>HSA Reimbursement Submission</h1>");
