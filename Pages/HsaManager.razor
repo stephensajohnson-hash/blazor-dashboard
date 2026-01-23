@@ -1,31 +1,20 @@
 @page "/hsa"
-@using Dashboard
-@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Web
 @rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode(prerender: false))
 
-@inject IDbContextFactory<AppDbContext> DbFactory
+<div style="background:#000; color:#fff; min-height:100vh; padding:50px; font-family:sans-serif;">
+    <h1 style="color:#3b82f6;">CIRCUIT TEST</h1>
 
-<div style="background-color: #000; color: #fff; min-height: 100vh; padding: 40px; font-family: sans-serif;">
-    <h1 style="color: #3b82f6; font-size: 2rem; font-weight: 900; margin-bottom: 20px;">HSA DEBUG CONSOLE</h1>
+    @* DAMN BUTTON *@
+    <button @onclick="LogToConsole" 
+            style="background:#2563eb; color:#fff; padding:20px 40px; border:none; border-radius:10px; font-weight:bold; cursor:pointer; font-size:1.5rem;">
+        LOG
+    </button>
 
-    <div style="display: flex; gap: 20px; margin-bottom: 30px;">
-        <button @onclick="CreateHsaTable" 
-                style="background-color: #2563eb; color: white; padding: 15px 30px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer;">
-            1. INITIALIZE TABLE
-        </button>
-
-        <button @onclick="CheckIfTableExists" 
-                style="background-color: #4b5563; color: white; padding: 15px 30px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer;">
-            2. VERIFY TABLE EXISTS
-        </button>
-    </div>
-
-    <div style="background-color: #111; border: 1px solid #333; border-radius: 12px; padding: 20px;">
-        <div style="color: #666; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px; border-bottom: 1px solid #222; pb-5">
-            Console Output
-        </div>
-        <pre style="font-family: monospace; font-size: 0.85rem; color: #10b981; line-height: 1.5; height: 500px; overflow-y: auto;">
-@foreach (var line in debugLines)
+    <div style="margin-top:30px; background:#111; border:1px solid #333; padding:20px; border-radius:10px;">
+        <div style="color:#666; font-size:0.8rem; margin-bottom:10px; border-bottom:1px solid #222;">UI LOG OUTPUT</div>
+        <pre style="color:#10b981; font-family:monospace;">
+@foreach (var line in testLogs)
 {
 @line
 }
@@ -34,74 +23,25 @@
 </div>
 
 @code {
-    private List<string> debugLines = new();
+    private List<string> testLogs = new();
 
     protected override void OnInitialized()
     {
-        AddLine("SYSTEM: Page Initialized. Interactive circuit established.");
+        // This proves the page loaded
+        string msg = "SYSTEM: Initialized at " + DateTime.Now.ToString("HH:mm:ss");
+        testLogs.Add(msg);
+        Console.WriteLine(msg);
     }
 
-    private async Task CheckIfTableExists()
+    private void LogToConsole()
     {
-        AddLine("CHECK: Verifying if 'HsaReceipts' exists in information_schema...");
-        try
-        {
-            using var db = await DbFactory.CreateDbContextAsync();
-            var sql = "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'HsaReceipts');";
-            
-            using var command = db.Database.GetDbConnection().CreateCommand();
-            command.CommandText = sql;
-            await db.Database.OpenConnectionAsync();
-            
-            var exists = (bool?)await command.ExecuteScalarAsync();
-            AddLine(exists == true ? "RESULT: [CONFIRMED] Table exists in database." : "RESULT: [MISSING] Table does not exist.");
-        }
-        catch (Exception ex)
-        {
-            AddLine("CHECK ERROR: " + ex.Message);
-        }
-    }
-
-    private async Task CreateHsaTable()
-    {
-        AddLine("SQL: Attempting 'CREATE TABLE' sequence...");
-        try
-        {
-            using var db = await DbFactory.CreateDbContextAsync();
-            var sql = @"
-                CREATE TABLE IF NOT EXISTS ""HsaReceipts"" (
-                    ""Id"" SERIAL PRIMARY KEY,
-                    ""UserId"" INTEGER NOT NULL,
-                    ""Type"" TEXT NOT NULL,
-                    ""Provider"" TEXT NOT NULL,
-                    ""ServiceDate"" TIMESTAMP NOT NULL,
-                    ""Amount"" DECIMAL(18,2) NOT NULL,
-                    ""Note"" TEXT,
-                    ""FileName"" TEXT,
-                    ""ContentType"" TEXT,
-                    ""FileData"" BYTEA,
-                    ""IsReimbursed"" BOOLEAN NOT NULL DEFAULT FALSE,
-                    ""ReimbursedAt"" TIMESTAMP,
-                    ""TaxYear"" INTEGER NOT NULL,
-                    ""CreatedAt"" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-                );";
-
-            await db.Database.ExecuteSqlRawAsync(sql);
-            AddLine("SQL SUCCESS: Create command executed successfully.");
-            await CheckIfTableExists();
-        }
-        catch (Exception ex)
-        {
-            AddLine("SQL CRITICAL FAILURE: " + ex.Message);
-            if (ex.InnerException != null) AddLine("INNER: " + ex.InnerException.Message);
-        }
+        // This proves the button click traveled from browser to server and back
+        string msg = "CLICK: 'log' at " + DateTime.Now.ToString("HH:mm:ss");
+        testLogs.Add(msg);
+        
+        // This will show up in your Render Logs
+        Console.WriteLine("HSA_TEST_DEBUG: " + msg);
+        
         StateHasChanged();
-    }
-
-    private void AddLine(string msg)
-    {
-        var timestamp = DateTime.Now.ToString("HH:mm:ss");
-        debugLines.Add($"[{timestamp}] {msg}\n");
-        Console.WriteLine($"HSA_DEBUG: {msg}");
     }
 }
