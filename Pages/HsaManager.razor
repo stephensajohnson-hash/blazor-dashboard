@@ -11,10 +11,8 @@
 @inject IJSRuntime JS
 
 <div class="min-h-screen bg-[#0a0a0a] text-white font-sans overflow-x-hidden">
-    @* 1. MAIN HEADER (Frozen) *@
     <BulletHeader ShowControls="false" CustomDateText="HSA Ledger" />
 
-    @* 2. STICKY SUB-HEADER *@
     <div class="sticky top-[73px] z-30 bg-[#0c0c0c]/95 backdrop-blur-md border-b border-gray-800 p-4 shadow-2xl">
         <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
             <div class="flex items-center gap-2 bg-black/50 p-1 rounded-xl border border-gray-800">
@@ -38,13 +36,12 @@
         </div>
     </div>
 
-    @* 3. LEDGER DISPLAY *@
     <div class="max-w-7xl mx-auto p-6 pb-40">
         @if (isLoading)
         {
             <div class="flex flex-col items-center justify-center py-20 opacity-30">
                 <div class="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                <div class="text-[10px] font-black uppercase tracking-widest">Loading Ledger...</div>
+                <div class="text-[10px] font-black uppercase tracking-widest">Accessing Ledger...</div>
             </div>
         }
         else
@@ -55,13 +52,14 @@
                         <tr>
                             <th class="p-4 w-32">Date</th>
                             <th class="p-4 w-1/4">Provider</th>
-                            <th class="p-4 w-32">Category</th>
+                            <th class="p-4 w-48">Category</th>
                             <th class="p-4">Note</th>
+                            <th class="p-4 w-20 text-center">Doc</th>
                             <th class="p-4 w-32 text-right">Amount</th>
                             <th class="p-4 w-40 text-right pr-6">Refund Bal</th>
                         </tr>
                     </thead>
-                    <tbody class="text-sm font-medium">
+                    <tbody class="text-sm">
                         @{
                             decimal runningTotal = 0;
                             @foreach (var r in filteredReceipts)
@@ -69,26 +67,34 @@
                                 if (!r.IsReimbursed) { runningTotal += r.Amount; }
                                 
                                 <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition group relative">
-                                    <td class="p-4 font-mono text-xs text-gray-500">@r.ServiceDate.ToString("yyyy-MM-dd")</td>
-                                    <td class="p-4 text-white font-bold uppercase tracking-tight truncate">
+                                    <td class="p-4 font-mono text-sm text-gray-500">@r.ServiceDate.ToString("yyyy-MM-dd")</td>
+                                    <td class="p-4 text-white font-bold tracking-tight truncate text-sm">
                                         @(string.IsNullOrEmpty(r.Provider) ? "---" : r.Provider)
                                         
-                                        @* HOVER ACTIONS (Surgically moved to provider cell for visibility) *@
                                         <div class="absolute inset-y-0 left-0 flex items-center gap-2 px-2 bg-gray-900 opacity-0 group-hover:opacity-100 transition-opacity">
                                             <button @onclick="() => OpenEditModal(r)" class="bg-blue-600 p-1.5 rounded hover:bg-blue-500 text-[10px]">✏️</button>
                                             <button @onclick="() => DeleteReceipt(r.Id)" class="bg-red-600 p-1.5 rounded hover:bg-red-500 text-[10px]">✕</button>
                                         </div>
                                     </td>
-                                    <td class="p-4">
-                                        <span class="text-[9px] font-black px-2 py-0.5 rounded border border-gray-700 bg-gray-800/50 text-blue-400">
-                                            @(string.IsNullOrEmpty(r.Type) ? "MED" : r.Type.ToUpper().Substring(0, Math.Min(3, r.Type.Length)))
-                                        </span>
+                                    <td class="p-4 text-sm text-blue-400 truncate">
+                                        @(string.IsNullOrEmpty(r.Type) ? "Medical" : r.Type)
                                     </td>
-                                    <td class="p-4 text-gray-500 italic text-xs truncate">@(string.IsNullOrEmpty(r.Note) ? "---" : r.Note)</td>
-                                    <td class="p-4 text-right font-mono @(r.IsReimbursed ? "line-through text-gray-600" : "text-emerald-400 font-bold")">
+                                    <td class="p-4 text-gray-400 italic text-sm truncate">
+                                        @(string.IsNullOrEmpty(r.Note) ? "---" : r.Note)
+                                    </td>
+                                    <td class="p-4 text-center">
+                                        @if (r.FileData != null && r.FileData.Length > 0)
+                                        {
+                                            <button @onclick="() => ViewFile(r)" class="hover:scale-110 transition-transform inline-block">
+                                                @if (r.ContentType?.Contains("pdf") == true) { <span class="text-2xl" title="View PDF">📄</span> }
+                                                else { <span class="text-2xl" title="View Image">🖼️</span> }
+                                            </button>
+                                        }
+                                    </td>
+                                    <td class="p-4 text-right font-mono text-sm @(r.IsReimbursed ? "line-through text-gray-600" : "text-emerald-400 font-bold")">
                                         $@r.Amount.ToString("N2")
                                     </td>
-                                    <td class="p-4 text-right pr-6 font-black font-mono text-blue-400">
+                                    <td class="p-4 text-right pr-6 font-black font-mono text-sm text-blue-400">
                                         $@runningTotal.ToString("N2")
                                     </td>
                                 </tr>
@@ -96,18 +102,11 @@
                         }
                     </tbody>
                 </table>
-                @if (!filteredReceipts.Any())
-                {
-                    <div class="p-20 text-center text-gray-600 font-black uppercase tracking-widest text-xs italic">
-                        Empty Ledger
-                    </div>
-                }
             </div>
         }
     </div>
 </div>
 
-@* MODAL CODE REMAINS IDENTICAL TO PREVIOUS VERSION *@
 @if (showModal)
 {
     <div class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
@@ -125,15 +124,21 @@
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-[10px] font-black text-gray-500 uppercase mb-1 ml-1 tracking-widest">Amount ($)</label>
-                        <InputNumber @bind-Value="tempReceipt.Amount" class="w-full bg-gray-900 border border-gray-700 rounded-xl p-3 text-white text-sm focus:border-blue-500 outline-none" />
+                        <InputNumber @bind-Value="tempReceipt.Amount" class="w-full bg-gray-900 border border-gray-700 rounded-xl p-3 text-white text-sm focus:border-blue-500 outline-none font-mono" />
                     </div>
                     <div>
                         <label class="block text-[10px] font-black text-gray-500 uppercase mb-1 ml-1 tracking-widest">Category</label>
                         <InputSelect @bind-Value="tempReceipt.Type" class="w-full bg-gray-900 border border-gray-700 rounded-xl p-3 text-white text-sm focus:border-blue-500 outline-none">
+                            <option value="Chiropractic">Chiropractic</option>
                             <option value="Medical">Medical</option>
+                            <option value="Laboratory">Laboratory</option>
+                            <option value="Pharmacy">Pharmacy</option>
                             <option value="Dental">Dental</option>
-                            <option value="Eye Care">Eye Care</option>
-                            <option value="Chiropractor">Chiropractor</option>
+                            <option value="Dental Insurance Premium">Dental Insurance Premium</option>
+                            <option value="Vision">Vision</option>
+                            <option value="Healthcare Insurance Premium">Healthcare Insurance Premium</option>
+                            <option value="Vision Insurance Premium">Vision Insurance Premium</option>
+                            <option value="Ancillary Insurance Premium">Ancillary Insurance Premium</option>
                             <option value="Other">Other</option>
                         </InputSelect>
                     </div>
@@ -148,6 +153,18 @@
                         <label for="reimbursed" class="text-[10px] font-black text-gray-400 uppercase cursor-pointer tracking-widest">Reimbursed</label>
                     </div>
                 </div>
+                
+                <div class="bg-black/30 p-4 rounded-2xl border border-gray-700">
+                    <label class="block text-[10px] font-black text-gray-500 uppercase mb-2 ml-1 tracking-widest">Receipt Document</label>
+                    <div class="flex items-center gap-4">
+                        <InputFile OnChange="HandleFileSelected" class="text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-black file:uppercase file:bg-blue-600 file:text-white hover:file:bg-blue-500" />
+                        @if (!string.IsNullOrEmpty(tempReceipt.FileName))
+                        {
+                            <span class="text-[10px] text-emerald-400 truncate max-w-[150px]">✔ @tempReceipt.FileName</span>
+                        }
+                    </div>
+                </div>
+
                 <div>
                     <label class="block text-[10px] font-black text-gray-500 uppercase mb-1 ml-1 tracking-widest">Notes</label>
                     <InputTextArea @bind-Value="tempReceipt.Note" class="w-full bg-gray-900 border border-gray-700 rounded-xl p-3 text-white text-sm h-24 focus:border-blue-500 outline-none" />
@@ -183,7 +200,6 @@
         try
         {
             using var db = await DbFactory.CreateDbContextAsync();
-            // Requirement: Oldest first for ledger logic
             allReceipts = await db.HsaReceipts.OrderBy(x => x.ServiceDate).ToListAsync();
             availableYears = allReceipts.Select(x => x.ServiceDate.Year).Distinct().OrderByDescending(x => x).ToList();
             ApplyFilter();
@@ -214,12 +230,37 @@
         tempReceipt = new HsaReceipt {
             Id = r.Id, UserId = r.UserId, Provider = r.Provider ?? "", Amount = r.Amount,
             Type = r.Type ?? "Medical", ServiceDate = r.ServiceDate, Note = r.Note ?? "", 
-            IsReimbursed = r.IsReimbursed
+            IsReimbursed = r.IsReimbursed, FileData = r.FileData, ContentType = r.ContentType, FileName = r.FileName
         };
         showModal = true;
     }
 
     private void CloseModal() { showModal = false; }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+        try
+        {
+            using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            tempReceipt.FileData = ms.ToArray();
+            tempReceipt.FileName = file.Name;
+            tempReceipt.ContentType = file.ContentType;
+            StateHasChanged();
+        }
+        catch { await JS.InvokeVoidAsync("alert", "File error."); }
+    }
+
+    private async Task ViewFile(HsaReceipt r)
+    {
+        if (r.FileData == null || r.FileData.Length == 0) return;
+        var base64 = Convert.ToBase64String(r.FileData);
+        var dataUrl = $"data:{r.ContentType};base64,{base64}";
+        await JS.InvokeVoidAsync("open", dataUrl, "_blank");
+    }
 
     private async Task SaveReceipt()
     {
@@ -230,8 +271,15 @@
             tempReceipt.UserId = 1;
 
             if (editingId == 0) db.HsaReceipts.Add(tempReceipt);
-            else db.HsaReceipts.Update(tempReceipt);
-
+            else {
+                var existing = await db.HsaReceipts.FindAsync(editingId);
+                if (existing != null) {
+                    db.Entry(existing).CurrentValues.SetValues(tempReceipt);
+                    existing.FileData = tempReceipt.FileData;
+                    existing.FileName = tempReceipt.FileName;
+                    existing.ContentType = tempReceipt.ContentType;
+                }
+            }
             await db.SaveChangesAsync();
             showModal = false;
             await LoadData();
@@ -241,7 +289,7 @@
 
     private async Task DeleteReceipt(int id)
     {
-        if (!await JS.InvokeAsync<bool>("confirm", "Delete this record?")) return;
+        if (!await JS.InvokeAsync<bool>("confirm", "Delete record?")) return;
         try
         {
             using var db = await DbFactory.CreateDbContextAsync();
