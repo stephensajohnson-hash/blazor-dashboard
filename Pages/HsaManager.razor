@@ -4,67 +4,133 @@
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.JSInterop
-@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode(prerender: false))
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
 
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject IJSRuntime JS
 
-<div class="min-h-screen bg-[#0a0a0a] text-white font-sans overflow-x-hidden">
-    <BulletHeader ShowControls="false" CustomDateText="HSA Archive" />
+<div class="min-h-screen bg-gray-900 text-white font-sans">
+    <BulletHeader ShowControls="false" CustomDateText="HSA Manager" />
 
-    <div class="max-w-4xl mx-auto p-10 flex flex-col items-center">
+    <main class="p-10 flex flex-col items-center gap-8">
         
-        @* BUTTON - Absolute simplest declaration possible *@
-        <button @onclick="HandleClick" 
-                class="bg-blue-600 hover:bg-blue-500 text-white px-12 py-6 rounded-2xl font-black text-lg uppercase tracking-[0.3em] shadow-lg transition-all active:scale-95 mb-12">
-            Add Receipt
+        @* THE ADD BUTTON *@
+        <button type="button" 
+                @onclick="OpenAddModal" 
+                class="bg-blue-600 hover:bg-blue-500 text-white px-12 py-6 rounded-2xl font-black text-xl uppercase tracking-widest shadow-2xl transition active:scale-95">
+            ＋ Add Receipt
         </button>
 
-        @* VERIFICATION CONSOLE *@
-        <div class="w-full bg-gray-900 border border-gray-800 p-6 rounded-3xl h-64 overflow-y-auto shadow-2xl font-mono text-[10px] text-emerald-500">
-            <div class="text-gray-600 uppercase font-black mb-2 border-b border-gray-800 pb-1">System Trace</div>
+        @* SYSTEM LOG CONSOLE - This must update on every click *@
+        <div class="w-full max-w-2xl bg-black border border-gray-800 p-6 rounded-3xl h-64 overflow-y-auto shadow-2xl font-mono text-[10px] text-emerald-500">
+            <div class="text-gray-600 uppercase font-black mb-2 border-b border-gray-800 pb-1">System Trace Console</div>
             @foreach (var log in logs)
             {
                 <div class="mb-1">@log</div>
             }
         </div>
-    </div>
+    </main>
 </div>
 
-@* MODAL *@
-@if (isModalVisible)
+@* THE MODAL CODE - Built directly here so it's easy to see *@
+@if (showModal)
 {
-    <div class="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md">
-        <div class="bg-[#111] border border-gray-800 w-full max-w-lg rounded-[2rem] shadow-2xl overflow-hidden p-10 text-center">
-            <h2 class="text-white font-black uppercase tracking-widest mb-8">Receipt Entry</h2>
-            
-            <button @onclick="() => isModalVisible = false" class="bg-white text-black px-10 py-3 rounded-full font-black uppercase text-xs tracking-widest hover:bg-gray-200 transition">
-                Close Modal
-            </button>
+    <div class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
+        <div class="bg-gray-800 border-2 border-gray-700 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden p-8">
+            <div class="flex justify-between items-center mb-6 border-b border-gray-700 pb-4">
+                <h2 class="text-lg font-black uppercase tracking-widest text-white">New Receipt Record</h2>
+                <button @onclick="CloseModal" class="text-gray-500 hover:text-white text-2xl font-bold">✕</button>
+            </div>
+
+            <EditForm Model="tempReceipt" OnValidSubmit="SaveReceipt" class="space-y-6">
+                <div>
+                    <label class="block text-[10px] font-black text-gray-500 uppercase mb-1 ml-1">Provider</label>
+                    <InputText @bind-Value="tempReceipt.Provider" class="w-full bg-gray-900 border border-gray-700 rounded-xl p-3 text-white text-sm focus:border-blue-500 outline-none" />
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-[10px] font-black text-gray-500 uppercase mb-1 ml-1">Amount ($)</label>
+                        <InputNumber @bind-Value="tempReceipt.Amount" class="w-full bg-gray-900 border border-gray-700 rounded-xl p-3 text-white text-sm focus:border-blue-500 outline-none" />
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-black text-gray-500 uppercase mb-1 ml-1">Service Date</label>
+                        <InputDate @bind-Value="tempReceipt.ServiceDate" class="w-full bg-gray-900 border border-gray-700 rounded-xl p-3 text-white text-sm focus:border-blue-500 outline-none" />
+                    </div>
+                </div>
+
+                <div class="flex gap-3 pt-4">
+                    <button type="button" @onclick="CloseModal" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-black py-4 rounded-2xl uppercase text-[10px] tracking-widest transition">Cancel</button>
+                    <button type="submit" class="flex-[2] bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-2xl uppercase text-[10px] tracking-widest transition shadow-lg">Save Record</button>
+                </div>
+            </EditForm>
         </div>
     </div>
 }
 
 @code {
     private List<string> logs = new();
-    private bool isModalVisible = false;
+    private bool showModal = false;
+    private HsaReceipt tempReceipt = new();
 
     protected override void OnInitialized()
     {
-        AddLog("SYSTEM: Circuit connected.");
+        AddLog("BOOT: Circuit Established. Page Ready.");
     }
 
-    private void HandleClick()
+    private void OpenAddModal()
     {
-        AddLog("EVENT: 'Add Receipt' was clicked.");
-        isModalVisible = true;
+        // This is where we catch the click
+        AddLog("CLICK_EVENT: 'Add Receipt' button pressed.");
+        
+        // Initialize the object exactly like the budget tracker does
+        tempReceipt = new HsaReceipt 
+        { 
+            ServiceDate = DateTime.Today, 
+            Provider = "", 
+            Type = "Medical" 
+        };
+        
+        showModal = true;
+        AddLog("STATE_CHANGE: showModal set to TRUE.");
+        
+        // Manually tell the UI to refresh
         StateHasChanged();
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+        AddLog("STATE_CHANGE: showModal set to FALSE.");
+        StateHasChanged();
+    }
+
+    private async Task SaveReceipt()
+    {
+        AddLog("DB_ACTION: Saving to Postgres...");
+        try 
+        {
+            using var db = await DbFactory.CreateDbContextAsync();
+            tempReceipt.UserId = 1;
+            tempReceipt.TaxYear = tempReceipt.ServiceDate.Year;
+            
+            db.HsaReceipts.Add(tempReceipt);
+            await db.SaveChangesAsync();
+            
+            AddLog("DB_SUCCESS: Row committed.");
+            CloseModal();
+        }
+        catch (Exception ex) 
+        {
+            AddLog($"DB_ERROR: {ex.Message}");
+        }
     }
 
     private void AddLog(string msg)
     {
-        logs.Insert(0, $"[{DateTime.Now:HH:mm:ss}] {msg}");
-        // This will verify the click in your Render Logs (F12 equivalent for server)
-        Console.WriteLine($"HSA_CLICK_LOG: {msg}");
+        var time = DateTime.Now.ToString("HH:mm:ss.fff");
+        logs.Insert(0, $"[{time}] {msg}");
+        // Also log to the server console (Render Logs)
+        Console.WriteLine($"HSA_DEBUG: {msg}");
     }
 }
