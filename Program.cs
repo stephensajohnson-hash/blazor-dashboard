@@ -61,6 +61,7 @@ builder.Services.AddScoped<BulletOrchestratorService>();
 builder.Services.AddScoped<BulletNavigationService>();
 builder.Services.AddScoped<BulletSearchService>();
 builder.Services.AddScoped<BulletPrintService>();
+builder.Services.AddScoped<HsaExportService>();
 
 // --- DATABASE REGISTRATION ---
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
