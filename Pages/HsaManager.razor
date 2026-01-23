@@ -1,7 +1,9 @@
 @page "/hsa"
 @using Dashboard.Components.Bullet
+@using Dashboard @* Add this to find HsaReceipt *@
+@using Microsoft.EntityFrameworkCore @* Add this to find IDbContextFactory *@
 @using Microsoft.AspNetCore.Components.Forms
-@inject IDbContextFactory<Dashboard.AppDbContext> DbFactory
+@inject IDbContextFactory<AppDbContext> DbFactory
 
 <BulletHeader ShowControls="false" CustomDateText="HSA Receipt Manager" />
 
@@ -24,11 +26,11 @@
                     <div>
                         <label class="block text-[10px] font-black text-gray-500 uppercase mb-1">Type</label>
                         <InputSelect @bind-Value="newReceipt.Type" class="w-full bg-black border border-gray-800 rounded-lg p-2 text-white text-sm">
-                            <option value="medical">Medical</option>
-                            <option value="dental">Dental</option>
-                            <option value="eye care">Eye Care</option>
-                            <option value="chiropractor">Chiropractor</option>
-                            <option value="other">Other</option>
+                            <option value="Medical">Medical</option>
+                            <option value="Dental">Dental</option>
+                            <option value="Eye Care">Eye Care</option>
+                            <option value="Chiropractor">Chiropractor</option>
+                            <option value="Other">Other</option>
                         </InputSelect>
                     </div>
                 </div>
@@ -88,17 +90,38 @@
 </div>
 
 @code {
-    private HsaReceipt newReceipt = new() { ServiceDate = DateTime.Now, Type = "medical" };
+    private HsaReceipt newReceipt = new() { ServiceDate = DateTime.Now, Type = "Medical" };
     private List<HsaReceipt> receipts = new();
     private decimal totalAmount => receipts.Sum(x => x.Amount);
     private decimal unreimbursedAmount => receipts.Where(x => !x.IsReimbursed).Sum(x => x.Amount);
 
     protected override async Task OnInitializedAsync()
     {
-        // For now, load dummy data. You will replace this with DB call later.
-        receipts = new List<HsaReceipt>(); 
+        await LoadReceipts();
     }
 
-    private void HandleFileSelected(InputFileChangeEventArgs e) { /* Logic to handle file stream */ }
-    private async Task HandleSubmit() { /* Logic to save to DB */ }
+    private async Task LoadReceipts()
+    {
+        using var db = await DbFactory.CreateDbContextAsync();
+        receipts = await db.HsaReceipts
+            .OrderByDescending(x => x.ServiceDate)
+            .ToListAsync();
+    }
+
+    private void HandleFileSelected(InputFileChangeEventArgs e) 
+    { 
+        // Logic for file handling
+    }
+
+    private async Task HandleSubmit() 
+    { 
+        using var db = await DbFactory.CreateDbContextAsync();
+        newReceipt.UserId = 1; // Assuming default user for now
+        newReceipt.TaxYear = newReceipt.ServiceDate.Year;
+        db.HsaReceipts.Add(newReceipt);
+        await db.SaveChangesAsync();
+        
+        newReceipt = new HsaReceipt { ServiceDate = DateTime.Now, Type = "Medical" };
+        await LoadReceipts();
+    }
 }
