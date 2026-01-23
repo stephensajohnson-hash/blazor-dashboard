@@ -13,6 +13,7 @@
 <div class="min-h-screen bg-[#0a0a0a] text-white font-sans overflow-x-hidden">
     <BulletHeader ShowControls="false" CustomDateText="HSA Ledger" />
 
+    @* 1. STICKY SUB-HEADER *@
     <div class="sticky top-[73px] z-30 bg-[#0c0c0c]/95 backdrop-blur-md border-b border-gray-800 p-4 shadow-2xl">
         <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
             <div class="flex items-center gap-2 bg-black/50 p-1 rounded-xl border border-gray-800">
@@ -36,6 +37,7 @@
         </div>
     </div>
 
+    @* 2. LEDGER DISPLAY *@
     <div class="max-w-7xl mx-auto p-6 pb-40">
         @if (isLoading)
         {
@@ -54,9 +56,9 @@
                             <th class="p-4 w-1/4">Provider</th>
                             <th class="p-4 w-48">Category</th>
                             <th class="p-4">Note</th>
-                            <th class="p-4 w-20 text-center">Doc</th>
+                            <th class="p-4 w-20 text-center">File</th> @* UPDATED: DOC -> File *@
                             <th class="p-4 w-32 text-right">Amount</th>
-                            <th class="p-4 w-40 text-right pr-6">Refund Bal</th>
+                            <th class="p-4 w-40 text-right pr-6">Refund Available</th>
                         </tr>
                     </thead>
                     <tbody class="text-sm">
@@ -85,7 +87,7 @@
                                     <td class="p-4 text-center">
                                         @if (r.FileData != null && r.FileData.Length > 0)
                                         {
-                                            <button @onclick="() => ViewFile(r)" class="hover:scale-110 transition-transform inline-block">
+                                            <button @onclick="() => ViewFile(r)" class="hover:scale-110 transition-transform inline-block cursor-pointer">
                                                 @if (r.ContentType?.Contains("pdf") == true) { <span class="text-2xl" title="View PDF">📄</span> }
                                                 else { <span class="text-2xl" title="View Image">🖼️</span> }
                                             </button>
@@ -178,6 +180,25 @@
     </div>
 }
 
+<script>
+    // FIXED: Using a Blob URL to bypass browser security blocks on data: URLs
+    window.viewFileBlob = (base64, contentType) => {
+        const byteCharacters = atob(base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: contentType });
+        const blobUrl = URL.createObjectURL(blob);
+        
+        window.open(blobUrl, '_blank');
+        
+        // Revoke the URL after a delay to free memory
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    };
+</script>
+
 @code {
     private List<HsaReceipt> allReceipts = new();
     private List<HsaReceipt> filteredReceipts = new();
@@ -251,15 +272,16 @@
             tempReceipt.ContentType = file.ContentType;
             StateHasChanged();
         }
-        catch { await JS.InvokeVoidAsync("alert", "File error."); }
+        catch { await JS.InvokeVoidAsync("alert", "File upload failed."); }
     }
 
     private async Task ViewFile(HsaReceipt r)
     {
         if (r.FileData == null || r.FileData.Length == 0) return;
+        
+        // Pass the base64 string to the robust JS handler
         var base64 = Convert.ToBase64String(r.FileData);
-        var dataUrl = $"data:{r.ContentType};base64,{base64}";
-        await JS.InvokeVoidAsync("open", dataUrl, "_blank");
+        await JS.InvokeVoidAsync("viewFileBlob", base64, r.ContentType);
     }
 
     private async Task SaveReceipt()
