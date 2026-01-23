@@ -61,6 +61,9 @@ public class AppDbContext : DbContext
     public DbSet<BudgetIncomeSource> BudgetIncomeSources { get; set; }
     public DbSet<BudgetExpectedIncome> BudgetExpectedIncome { get; set; }
     public DbSet<BudgetWatchItem> BudgetWatchItems { get; set; }
+
+    // HSA Manager
+    public DbSet<HsaReceipt> HsaReceipts { get; set; }
 }
 
 public class BulletItem 
@@ -518,6 +521,37 @@ public static class PasswordHelper
         return Convert.ToBase64String(bytes); 
     } 
     public static bool VerifyPassword(string password, string storedHash) => HashPassword(password) == storedHash; 
+}
+
+public class HsaReceipt
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    
+    [Required]
+    public string Type { get; set; } = "Medical"; // Medical, Dental, Eye Care, Chiropractor, Other
+    
+    [Required]
+    public string Provider { get; set; } = "";
+    
+    [Required]
+    public DateTime ServiceDate { get; set; }
+    
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal Amount { get; set; }
+    
+    public string Note { get; set; } = "";
+    
+    // Receipt File Data
+    public string FileName { get; set; } = "";
+    public string ContentType { get; set; } = ""; // image/jpeg, application/pdf, etc.
+    public byte[]? FileData { get; set; }
+    
+    // Tracking
+    public bool IsReimbursed { get; set; } = false;
+    public DateTime? ReimbursedAt { get; set; }
+    public int TaxYear { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
 public static class BulletViewConfig 
