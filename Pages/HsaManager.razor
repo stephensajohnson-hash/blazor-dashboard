@@ -1,251 +1,82 @@
 @page "/hsa"
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+
+@* Keep these for when we add DB logic back later *@
 @using Dashboard
-@using Dashboard.Components.Bullet
 @using Microsoft.EntityFrameworkCore
-@using Microsoft.AspNetCore.Components.Forms
-@using Microsoft.JSInterop
-@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode(prerender: false))
-
 @inject IDbContextFactory<AppDbContext> DbFactory
-@inject IJSRuntime JS
 
-<div class="min-h-screen bg-[#0a0a0a] text-white font-sans overflow-x-hidden">
-    <BulletHeader ShowControls="false" CustomDateText="HSA Archive" />
+<div class="min-h-screen bg-black flex flex-col items-center justify-center p-10 font-mono text-emerald-400">
+    <h1 class="text-white text-2xl font-black mb-12 uppercase tracking-tighter border-b border-gray-800 pb-4 w-full max-w-2xl text-center">
+        HSA Minimal Rebuild
+    </h1>
 
-    <div class="sticky top-[73px] z-30 bg-[#0c0c0c]/80 backdrop-blur-md border-b border-gray-800 p-4 shadow-xl">
-        <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
-            <div class="flex items-center gap-2 bg-black/50 p-1 rounded-xl border border-gray-800">
-                <button type="button" @onclick="HandleFilterAll"
-                        class="px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition @(selectedYear == 0 ? "bg-blue-600 text-white shadow-lg" : "text-gray-500 hover:text-gray-300")">
-                    All Years
-                </button>
-                @foreach (var year in availableYears)
-                {
-                    <button type="button" @onclick="() => FilterByYear(year)"
-                            class="px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition @(selectedYear == year ? "bg-blue-600 text-white shadow-lg" : "text-gray-500 hover:text-gray-300")">
-                        @year
-                    </button>
-                }
-            </div>
+    @* THE BUTTON *@
+    <button @onclick="OpenModal" 
+            class="bg-blue-600 hover:bg-blue-500 text-white px-16 py-8 rounded-3xl font-black text-2xl uppercase tracking-[0.3em] shadow-[0_0_50px_rgba(37,99,235,0.3)] transition-all active:scale-95">
+        ADD RECEIPT
+    </button>
 
-            <button type="button" @onclick="OpenAddModal" 
-                    class="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-[0.2em] transition shadow-lg active:scale-95 flex items-center gap-2">
-                <span>➕</span> Add Receipt
-            </button>
+    @* TERMINAL LOG CONSOLE *@
+    <div class="mt-20 w-full max-w-2xl bg-gray-900 border border-gray-800 p-8 rounded-[2rem] h-96 overflow-y-auto shadow-2xl">
+        <div class="text-gray-600 text-[10px] uppercase font-black mb-4 border-b border-gray-800 pb-2 flex justify-between">
+            <span>Terminal Log</span>
+            <span class="animate-pulse text-emerald-900">CIRCUIT_ALIVE</span>
         </div>
-    </div>
-
-    <div class="max-w-7xl mx-auto p-6">
-        @if (isLoading)
+        @foreach (var log in logs)
         {
-            <div class="flex flex-col items-center justify-center py-20 opacity-50">
-                <div class="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-                <div class="text-[10px] font-black uppercase tracking-[0.3em]">Accessing Vault...</div>
-            </div>
-        }
-        else if (!filteredReceipts.Any())
-        {
-            <div class="text-center py-32 bg-gray-900/20 border-2 border-dashed border-gray-800 rounded-3xl">
-                <div class="text-4xl mb-4 opacity-20">📂</div>
-                <div class="text-gray-500 font-bold uppercase tracking-tighter">No receipts found for @(selectedYear == 0 ? "all time" : selectedYear.ToString())</div>
-            </div>
-        }
-        else
-        {
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                @foreach (var r in filteredReceipts)
-                {
-                    <div class="group relative bg-[#111] border border-gray-800 rounded-2xl p-5 hover:border-blue-500/50 transition-all duration-300 shadow-2xl flex flex-col h-full">
-                        <div class="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                            <button type="button" @onclick="() => OpenEditModal(r)" class="bg-blue-600 p-2 rounded-lg text-xs hover:bg-blue-500 shadow-lg">✏️</button>
-                            <button type="button" @onclick="() => DeleteReceipt(r.Id)" class="bg-red-600 p-2 rounded-lg text-xs hover:bg-red-500 shadow-lg">✕</button>
-                        </div>
-
-                        <div class="flex justify-between items-start mb-4">
-                            <div class="bg-gray-800/50 px-3 py-1 rounded-lg text-[9px] font-black text-blue-400 uppercase tracking-widest border border-gray-700">
-                                @r.Type
-                            </div>
-                            <div class="text-[10px] font-mono text-gray-500">
-                                @r.ServiceDate.ToString("yyyy-MM-dd")
-                            </div>
-                        </div>
-
-                        <h3 class="text-white font-black uppercase tracking-tight text-lg mb-1 leading-tight">@r.Provider</h3>
-                        <div class="text-2xl font-black text-emerald-400 mb-4">$@r.Amount.ToString("N2")</div>
-
-                        @if (!string.IsNullOrWhiteSpace(r.Note))
-                        {
-                            <p class="text-xs text-gray-500 italic mb-4 line-clamp-2">@r.Note</p>
-                        }
-
-                        <div class="mt-auto pt-4 border-t border-gray-800 flex justify-between items-center">
-                            <span class="text-[9px] font-black uppercase tracking-widest @(r.IsReimbursed ? "text-emerald-500" : "text-amber-500")">
-                                @(r.IsReimbursed ? "✅ Reimbursed" : "⏳ Unreimbursed")
-                            </span>
-                            @if (!string.IsNullOrEmpty(r.FileName)) { <span class="text-xl">📄</span> }
-                        </div>
-                    </div>
-                }
+            <div class="mb-1 text-xs">
+                <span class="text-gray-700">[@DateTime.Now.ToString("HH:mm:ss.fff")]</span> @log
             </div>
         }
     </div>
 </div>
 
-@if (showModal)
+@* THE MODAL - Using the object pattern from your working budget-tracker *@
+@if (tempObject != null)
 {
-    <div class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm animate-in fade-in duration-200">
-        <div class="bg-[#0f0f0f] border border-gray-800 w-full max-w-lg rounded-3xl shadow-[0_0_100px_rgba(0,0,0,0.5)] overflow-hidden">
-            <div class="p-6 border-b border-gray-800 flex justify-between items-center bg-black/20">
-                <h2 class="text-sm font-black uppercase tracking-[0.2em]">@(editingId == 0 ? "New Receipt" : "Edit Receipt")</h2>
-                <button type="button" @onclick="CloseModal" class="text-gray-500 hover:text-white transition px-2">✕</button>
-            </div>
-            
-            <EditForm Model="tempReceipt" OnValidSubmit="SaveReceipt" class="p-8 space-y-5">
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="col-span-2">
-                        <label class="text-[10px] font-black text-gray-500 uppercase ml-1">Provider</label>
-                        <InputText @bind-Value="tempReceipt.Provider" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-white text-sm focus:border-blue-500 outline-none" />
-                    </div>
-                    <div>
-                        <label class="text-[10px] font-black text-gray-500 uppercase ml-1">Amount</label>
-                        <InputNumber @bind-Value="tempReceipt.Amount" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-white text-sm focus:border-blue-500 outline-none" />
-                    </div>
-                    <div>
-                        <label class="text-[10px] font-black text-gray-500 uppercase ml-1">Type</label>
-                        <InputSelect @bind-Value="tempReceipt.Type" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-white text-sm focus:border-blue-500 outline-none">
-                            <option value="Medical">Medical</option>
-                            <option value="Dental">Dental</option>
-                            <option value="Eye Care">Eye Care</option>
-                            <option value="Chiropractor">Chiropractor</option>
-                            <option value="Other">Other</option>
-                        </InputSelect>
-                    </div>
-                    <div>
-                        <label class="text-[10px] font-black text-gray-500 uppercase ml-1">Date of Service</label>
-                        <InputDate @bind-Value="tempReceipt.ServiceDate" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-white text-sm focus:border-blue-500 outline-none" />
-                    </div>
-                    <div class="flex items-center gap-3 pt-6 pl-2">
-                        <InputCheckbox @bind-Value="tempReceipt.IsReimbursed" id="reimbursed" class="w-4 h-4 accent-blue-600" />
-                        <label for="reimbursed" class="text-[10px] font-black text-gray-400 uppercase cursor-pointer">Reimbursed</label>
-                    </div>
-                </div>
-                <div>
-                    <label class="text-[10px] font-black text-gray-500 uppercase ml-1">Note</label>
-                    <InputTextArea @bind-Value="tempReceipt.Note" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-white text-sm h-20 focus:border-blue-500 outline-none" />
-                </div>
-
-                <div class="pt-4 flex gap-3">
-                    <button type="button" @onclick="CloseModal" class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-black py-4 rounded-2xl uppercase text-[10px] tracking-widest transition">Cancel</button>
-                    <button type="submit" class="flex-[2] bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-2xl uppercase text-[10px] tracking-widest transition shadow-lg">@(editingId == 0 ? "Create Record" : "Update Record")</button>
-                </div>
-            </EditForm>
+    <div class="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center p-4">
+        <div class="bg-[#111] border-4 border-blue-600 rounded-[3rem] p-20 w-full max-w-xl text-center shadow-[0_0_100px_rgba(0,0,0,1)]">
+            <h2 class="text-white text-4xl font-black uppercase mb-12 tracking-widest">Modal Visible</h2>
+            <button @onclick="Close" class="bg-white text-black px-12 py-4 rounded-full font-black uppercase text-sm tracking-[0.2em] hover:bg-gray-200 transition-all">
+                CLOSE
+            </button>
         </div>
     </div>
 }
 
 @code {
-    private List<HsaReceipt> allReceipts = new();
-    private List<HsaReceipt> filteredReceipts = new();
-    private List<int> availableYears = new();
-    private int selectedYear = 0;
-    private bool isLoading = true;
+    private List<string> logs = new();
+    private object? tempObject = null;
 
-    private bool showModal = false;
-    private int editingId = 0;
-    private HsaReceipt tempReceipt = new();
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    protected override void OnInitialized()
     {
-        if (firstRender) { await LoadData(); }
+        AddLog("BOOT: Component initialized.");
     }
 
-    private async Task LoadData()
+    private void OpenModal()
     {
-        isLoading = true;
-        try
-        {
-            using var db = await DbFactory.CreateDbContextAsync();
-            allReceipts = await db.HsaReceipts.OrderBy(x => x.ServiceDate).ToListAsync();
-            availableYears = allReceipts.Select(x => x.ServiceDate.Year).Distinct().OrderByDescending(x => x).ToList();
-            ApplyFilter();
-        }
-        catch (Exception ex) { Console.WriteLine($"HSA_LOAD_ERROR: {ex.Message}"); }
-        finally { isLoading = false; await InvokeAsync(StateHasChanged); }
+        AddLog("EVENT: 'ADD RECEIPT' CLICKED.");
+        
+        // This instantiation triggers the @if block above
+        tempObject = new object();
+        
+        AddLog("STATE: tempObject is NOT NULL.");
+        StateHasChanged(); // Force the UI to refresh immediately
     }
 
-    private void ApplyFilter()
+    private void Close()
     {
-        if (selectedYear == 0) filteredReceipts = allReceipts;
-        else filteredReceipts = allReceipts.Where(x => x.ServiceDate.Year == selectedYear).ToList();
-    }
-
-    private void FilterByYear(int year) { selectedYear = year; ApplyFilter(); }
-    private void HandleFilterAll() { selectedYear = 0; ApplyFilter(); }
-
-    private void ResetTempReceipt()
-    {
-        tempReceipt = new HsaReceipt 
-        { 
-            ServiceDate = DateTime.Today, 
-            Type = "Medical", 
-            Provider = "", 
-            Note = "", 
-            FileName = "",
-            ContentType = ""
-        };
-    }
-
-    private void OpenAddModal()
-    {
-        Console.WriteLine("HSA: Opening Add Modal");
-        editingId = 0;
-        ResetTempReceipt();
-        showModal = true;
+        tempObject = null;
+        AddLog("EVENT: MODAL CLOSED.");
         StateHasChanged();
     }
 
-    private void OpenEditModal(HsaReceipt r)
+    private void AddLog(string msg)
     {
-        Console.WriteLine($"HSA: Opening Edit Modal for ID {r.Id}");
-        editingId = r.Id;
-        tempReceipt = new HsaReceipt {
-            Id = r.Id, UserId = r.UserId, Provider = r.Provider, Amount = r.Amount,
-            Type = r.Type, ServiceDate = r.ServiceDate, Note = r.Note, 
-            IsReimbursed = r.IsReimbursed, FileName = r.FileName, ContentType = r.ContentType
-        };
-        showModal = true;
-        StateHasChanged();
-    }
-
-    private void CloseModal() { showModal = false; }
-
-    private async Task SaveReceipt()
-    {
-        try
-        {
-            using var db = await DbFactory.CreateDbContextAsync();
-            tempReceipt.TaxYear = tempReceipt.ServiceDate.Year;
-            tempReceipt.UserId = 1;
-
-            if (editingId == 0) db.HsaReceipts.Add(tempReceipt);
-            else db.HsaReceipts.Update(tempReceipt);
-
-            await db.SaveChangesAsync();
-            showModal = false;
-            await LoadData();
-        }
-        catch (Exception ex) { Console.WriteLine($"SAVE_ERR: {ex.Message}"); }
-    }
-
-    private async Task DeleteReceipt(int id)
-    {
-        if (!await JS.InvokeAsync<bool>("confirm", "Delete this record?")) return;
-        try
-        {
-            using var db = await DbFactory.CreateDbContextAsync();
-            var target = await db.HsaReceipts.FindAsync(id);
-            if (target != null) { db.HsaReceipts.Remove(target); await db.SaveChangesAsync(); await LoadData(); }
-        }
-        catch (Exception ex) { Console.WriteLine($"DEL_ERR: {ex.Message}"); }
+        logs.Insert(0, msg);
+        // This will show up in your Render logs
+        Console.WriteLine($"HSA_TERMINAL: {msg}");
     }
 }
