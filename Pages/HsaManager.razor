@@ -11,17 +11,28 @@
     <BulletHeader ShowControls="false" CustomDateText="HSA Receipt Manager" />
 
     <div class="max-w-6xl mx-auto p-6">
-        @if (!string.IsNullOrEmpty(statusMessage))
+        @if (!tableExists)
         {
-            <div class="bg-blue-900/50 border border-blue-800 text-blue-200 p-4 rounded-xl mb-6 flex justify-between items-center">
-                <span>@statusMessage</span>
-                <button @onclick="CreateHsaTable" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-black text-xs uppercase tracking-widest transition">
-                    Try Create Table Now
-                </button>
+            <div class="bg-blue-900/50 border border-blue-800 text-blue-200 p-8 rounded-2xl mb-6 shadow-2xl animate-pulse">
+                <div class="flex flex-col items-center gap-4 text-center">
+                    <span class="text-3xl">🛠️</span>
+                    <div>
+                        <h3 class="font-black uppercase tracking-widest mb-1">Database Initialization Required</h3>
+                        <p class="text-xs text-blue-300 mb-4">The HsaReceipts table was not found in your Postgres database.</p>
+                    </div>
+                    <button @onclick="CreateHsaTable" class="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-xl font-black text-sm uppercase tracking-[0.2em] transition-all transform hover:scale-105 active:scale-95 shadow-lg">
+                        Create HsaReceipts Table
+                    </button>
+                    @if (!string.IsNullOrEmpty(statusMessage))
+                    {
+                        <div class="mt-4 p-3 bg-black/40 rounded-lg text-[10px] font-mono text-yellow-400">
+                            @statusMessage
+                        </div>
+                    }
+                </div>
             </div>
         }
-
-        @if (tableExists)
+        else
         {
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-xl h-fit">
@@ -30,16 +41,16 @@
                     </h3>
                     <EditForm Model="newReceipt" OnValidSubmit="HandleSubmit" class="space-y-4">
                         <div>
-                            <label class="block text-[10px] font-black text-gray-500 uppercase mb-1">Provider</label>
+                            <label class="block text-[10px] font-black text-gray-500 uppercase mb-1 ml-1">Provider</label>
                             <InputText @bind-Value="newReceipt.Provider" class="w-full bg-black border border-gray-800 rounded-lg p-2 text-white text-sm focus:border-blue-500 outline-none" />
                         </div>
                         <div class="grid grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-[10px] font-black text-gray-500 uppercase mb-1">Amount</label>
+                                <label class="block text-[10px] font-black text-gray-500 uppercase mb-1 ml-1">Amount</label>
                                 <InputNumber @bind-Value="newReceipt.Amount" class="w-full bg-black border border-gray-800 rounded-lg p-2 text-white text-sm" />
                             </div>
                             <div>
-                                <label class="block text-[10px] font-black text-gray-500 uppercase mb-1">Type</label>
+                                <label class="block text-[10px] font-black text-gray-500 uppercase mb-1 ml-1">Type</label>
                                 <InputSelect @bind-Value="newReceipt.Type" class="w-full bg-black border border-gray-800 rounded-lg p-2 text-white text-sm">
                                     <option value="Medical">Medical</option>
                                     <option value="Dental">Dental</option>
@@ -50,7 +61,7 @@
                             </div>
                         </div>
                         <div>
-                            <label class="block text-[10px] font-black text-gray-500 uppercase mb-1">Date of Service</label>
+                            <label class="block text-[10px] font-black text-gray-500 uppercase mb-1 ml-1">Date of Service</label>
                             <InputDate @bind-Value="newReceipt.ServiceDate" class="w-full bg-black border border-gray-800 rounded-lg p-2 text-white text-sm" />
                         </div>
                         <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-3 rounded-xl transition shadow-lg uppercase text-xs tracking-widest mt-4">
@@ -74,17 +85,21 @@
                                     <th class="p-4">Date</th>
                                     <th class="p-4">Provider</th>
                                     <th class="p-4">Type</th>
-                                    <th class="p-4">Amount</th>
+                                    <th class="p-4 text-right">Amount</th>
                                 </tr>
                             </thead>
                             <tbody class="text-sm text-gray-300">
+                                @if (!receipts.Any())
+                                {
+                                    <tr><td colspan="4" class="p-10 text-center text-gray-600 italic">No receipts found for this user.</td></tr>
+                                }
                                 @foreach (var r in receipts)
                                 {
                                     <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition">
-                                        <td class="p-4">@r.ServiceDate.ToShortDateString()</td>
-                                        <td class="p-4 text-white font-bold">@r.Provider</td>
+                                        <td class="p-4 font-mono text-xs text-gray-500">@r.ServiceDate.ToShortDateString()</td>
+                                        <td class="p-4 text-white font-bold uppercase tracking-tight">@r.Provider</td>
                                         <td class="p-4 uppercase text-[10px]">@r.Type</td>
-                                        <td class="p-4 font-black text-blue-400">$@r.Amount.ToString("N2")</td>
+                                        <td class="p-4 text-right font-black text-blue-400">$@r.Amount.ToString("N2")</td>
                                     </tr>
                                 }
                             </tbody>
@@ -99,7 +114,7 @@
 @code {
     private HsaReceipt newReceipt = new() { ServiceDate = DateTime.Now, Type = "Medical" };
     private List<HsaReceipt> receipts = new();
-    private string statusMessage = "Checking database connection...";
+    private string statusMessage = "";
     private bool tableExists = false;
 
     protected override async Task OnInitializedAsync()
@@ -112,54 +127,55 @@
         try
         {
             using var db = await DbFactory.CreateDbContextAsync();
-            // Simple check to see if table exists
             receipts = await db.HsaReceipts.OrderByDescending(x => x.ServiceDate).ToListAsync();
             tableExists = true;
             statusMessage = "";
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             tableExists = false;
-            statusMessage = "HsaReceipts table not found in Postgres.";
+            statusMessage = $"System: Table check failed. {ex.Message}";
         }
+        StateHasChanged();
     }
 
     private async Task CreateHsaTable()
     {
-        statusMessage = "Executing SQL Command...";
+        statusMessage = "Status: Executing SQL 'CREATE TABLE'...";
         StateHasChanged();
         
         try
         {
             using var db = await DbFactory.CreateDbContextAsync();
             var sql = @"
-                CREATE TABLE ""HsaReceipts"" (
+                CREATE TABLE IF NOT EXISTS ""HsaReceipts"" (
                     ""Id"" SERIAL PRIMARY KEY,
                     ""UserId"" INTEGER NOT NULL,
                     ""Type"" TEXT NOT NULL,
                     ""Provider"" TEXT NOT NULL,
-                    ""ServiceDate"" TIMESTAMP WITH TIME ZONE NOT NULL,
+                    ""ServiceDate"" TIMESTAMP NOT NULL,
                     ""Amount"" DECIMAL(18,2) NOT NULL,
                     ""Note"" TEXT,
                     ""FileName"" TEXT,
                     ""ContentType"" TEXT,
                     ""FileData"" BYTEA,
                     ""IsReimbursed"" BOOLEAN NOT NULL DEFAULT FALSE,
-                    ""ReimbursedAt"" TIMESTAMP WITH TIME ZONE,
+                    ""ReimbursedAt"" TIMESTAMP,
                     ""TaxYear"" INTEGER NOT NULL,
-                    ""CreatedAt"" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    ""CreatedAt"" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );";
             
             await db.Database.ExecuteSqlRawAsync(sql);
-            statusMessage = "Table created successfully!";
+            statusMessage = "Status: Success! Refreshing application state...";
+            StateHasChanged();
+            await Task.Delay(500); // Small pause for the DB to propagate
             await LoadReceipts();
         }
         catch (Exception ex)
         {
-            statusMessage = $"Error: {ex.Message}";
+            statusMessage = $"Error details: {ex.Message}";
+            StateHasChanged();
         }
-        
-        StateHasChanged();
     }
 
     private async Task HandleSubmit() 
