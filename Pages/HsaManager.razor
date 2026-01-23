@@ -1,159 +1,54 @@
 @page "/hsa"
-@using Dashboard.Components.Bullet
 @using Dashboard
 @using Microsoft.EntityFrameworkCore
-@using Microsoft.AspNetCore.Components.Forms
 @rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode(prerender: false))
 
 @inject IDbContextFactory<AppDbContext> DbFactory
 
-<div class="print-container bg-white text-black min-h-screen font-sans">
-    <BulletHeader ShowControls="false" CustomDateText="HSA Receipt Manager" />
+<div class="p-10 bg-black min-h-screen text-white font-sans">
+    <h1 class="text-2xl font-black mb-8 border-b border-gray-800 pb-4 uppercase tracking-tighter">
+        HSA Table Initializer
+    </h1>
 
-    <div class="max-w-6xl mx-auto p-6">
-        @if (!tableExists)
-        {
-            <div class="bg-blue-900 border border-blue-800 text-blue-100 p-8 rounded-2xl mb-6 shadow-2xl">
-                <div class="flex flex-col items-center gap-4 text-center">
-                    <span class="text-3xl">🗄️</span>
-                    <div>
-                        <h3 class="font-black uppercase tracking-widest mb-1">Database Setup Required</h3>
-                        <p class="text-xs text-blue-300 mb-4 font-bold">The HSA table is currently missing from Postgres.</p>
+    <div class="max-w-2xl">
+        <button @onclick="CreateHsaTable" 
+                class="bg-blue-600 hover:bg-blue-500 text-white px-12 py-6 rounded-2xl font-black text-lg uppercase tracking-[0.3em] transition-all shadow-[0_0_30px_rgba(37,99,235,0.4)] active:scale-95 mb-8">
+            Initialize Database Table
+        </button>
+
+        <div class="bg-gray-900 border border-gray-800 rounded-3xl p-6 shadow-2xl">
+            <h2 class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4 border-b border-gray-800 pb-2">
+                System Execution Log
+            </h2>
+            <div class="font-mono text-xs text-emerald-400 space-y-1 h-96 overflow-y-auto">
+                @if (!logs.Any())
+                {
+                    <div class="text-gray-600 italic">Ready for command...</div>
+                }
+                @foreach (var log in logs)
+                {
+                    <div class="leading-relaxed">
+                        <span class="text-gray-600">[@log.Timestamp]</span> @log.Message
                     </div>
-                    
-                    <button @onclick="CreateHsaTable" 
-                            class="bg-white text-blue-900 hover:bg-blue-100 px-10 py-4 rounded-xl font-black text-sm uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95">
-                        Initialize Table Now
-                    </button>
-
-                    @if (!string.IsNullOrEmpty(statusMessage))
-                    {
-                        <div class="mt-6 p-4 bg-black/50 border border-blue-700/50 rounded-lg text-[11px] font-mono text-blue-200 text-left w-full overflow-x-auto">
-                            <div class="font-black text-blue-400 mb-2 border-b border-blue-800/50 pb-1">EXECUTION LOG:</div>
-                            @((MarkupString)statusMessage.Replace("\n", "<br/>"))
-                        </div>
-                    }
-                </div>
+                }
             </div>
-        }
-        else
-        {
-            @* --- REST OF UI (RENDERED ONLY AFTER TABLE EXISTS) --- *@
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in duration-500">
-                <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-xl h-fit">
-                    <h3 class="text-white font-black uppercase tracking-widest text-sm mb-4 border-b border-gray-800 pb-2">New Receipt</h3>
-                    <EditForm Model="newReceipt" OnValidSubmit="HandleSubmit" class="space-y-4">
-                        <div>
-                            <label class="block text-[10px] font-black text-gray-500 uppercase mb-1 ml-1">Provider</label>
-                            <InputText @bind-Value="newReceipt.Provider" class="w-full bg-black border border-gray-800 rounded-lg p-2 text-white text-sm focus:border-blue-500 outline-none" />
-                        </div>
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-[10px] font-black text-gray-500 uppercase mb-1 ml-1">Amount</label>
-                                <InputNumber @bind-Value="newReceipt.Amount" class="w-full bg-black border border-gray-800 rounded-lg p-2 text-white text-sm" />
-                            </div>
-                            <div>
-                                <label class="block text-[10px] font-black text-gray-500 uppercase mb-1 ml-1">Type</label>
-                                <InputSelect @bind-Value="newReceipt.Type" class="w-full bg-black border border-gray-800 rounded-lg p-2 text-white text-sm">
-                                    <option value="Medical">Medical</option>
-                                    <option value="Dental">Dental</option>
-                                    <option value="Eye Care">Eye Care</option>
-                                    <option value="Chiropractor">Chiropractor</option>
-                                    <option value="Other">Other</option>
-                                </InputSelect>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-[10px] font-black text-gray-500 uppercase mb-1 ml-1">Date of Service</label>
-                            <InputDate @bind-Value="newReceipt.ServiceDate" class="w-full bg-black border border-gray-800 rounded-lg p-2 text-white text-sm" />
-                        </div>
-                        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-3 rounded-xl transition shadow-lg uppercase text-xs tracking-widest mt-4">Save Receipt</button>
-                    </EditForm>
-                </div>
-
-                <div class="md:col-span-2 space-y-6">
-                    <div class="bg-gray-900 border border-gray-800 p-4 rounded-xl shadow-md inline-block">
-                        <div class="text-[10px] font-black text-gray-500 uppercase">Total Expenses</div>
-                        <div class="text-2xl font-black text-white">$@receipts.Sum(x => x.Amount).ToString("N2")</div>
-                    </div>
-
-                    <div class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden shadow-xl">
-                        <table class="w-full text-left border-collapse">
-                            <thead class="bg-black border-b border-gray-800 text-[10px] font-black text-gray-500 uppercase tracking-widest">
-                                <tr>
-                                    <th class="p-4">Date</th>
-                                    <th class="p-4">Provider</th>
-                                    <th class="p-4">Type</th>
-                                    <th class="p-4 text-right">Amount</th>
-                                </tr>
-                            </thead>
-                            <tbody class="text-sm text-gray-300">
-                                @if (!receipts.Any()) { <tr><td colspan="4" class="p-10 text-center text-gray-600 italic">Table initialized. No records yet.</td></tr> }
-                                @foreach (var r in receipts)
-                                {
-                                    <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition">
-                                        <td class="p-4 font-mono text-xs text-gray-500">@r.ServiceDate.ToShortDateString()</td>
-                                        <td class="p-4 text-white font-bold uppercase tracking-tight">@r.Provider</td>
-                                        <td class="p-4 uppercase text-[10px]">@r.Type</td>
-                                        <td class="p-4 text-right font-black text-blue-400">$@r.Amount.ToString("N2")</td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        }
+        </div>
     </div>
 </div>
 
 @code {
-    private HsaReceipt newReceipt = new() { ServiceDate = DateTime.Now, Type = "Medical" };
-    private List<HsaReceipt> receipts = new();
-    private string statusMessage = "";
-    private bool tableExists = false;
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            Console.WriteLine("HSA: Component Loaded. Initializing DB check...");
-            await LoadReceipts();
-        }
-    }
-
-    private async Task LoadReceipts()
-    {
-        try
-        {
-            using var db = await DbFactory.CreateDbContextAsync();
-            Console.WriteLine("HSA: Checking for HsaReceipts table...");
-            
-            // This is a surgical check that won't crash the circuit if it fails
-            receipts = await db.HsaReceipts.AsNoTracking().OrderByDescending(x => x.ServiceDate).ToListAsync();
-            
-            tableExists = true;
-            Console.WriteLine("HSA: Table found. Count: " + receipts.Count);
-        }
-        catch (Exception ex)
-        {
-            tableExists = false;
-            Console.WriteLine("HSA: Table not found yet. Awaiting initialization.");
-            AddLog("Postgres Relation Check: Not Found.");
-        }
-        await InvokeAsync(StateHasChanged);
-    }
+    private List<LogEntry> logs = new();
 
     private async Task CreateHsaTable()
     {
-        AddLog("Command Triggered: Initializing SQL Process...");
-        await InvokeAsync(StateHasChanged);
-        
+        AddLog("BUTTON CLICKED: Starting initialization sequence.");
+        StateHasChanged();
+
         try
         {
+            AddLog("Creating Database Context Factory...");
             using var db = await DbFactory.CreateDbContextAsync();
             
-            // Postgres SQL with explicit lowercase table name for maximum compatibility
             var sql = @"
                 CREATE TABLE IF NOT EXISTS ""HsaReceipts"" (
                     ""Id"" SERIAL PRIMARY KEY,
@@ -171,35 +66,34 @@
                     ""TaxYear"" INTEGER NOT NULL,
                     ""CreatedAt"" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );";
-            
-            Console.WriteLine("HSA: Executing Raw SQL CREATE TABLE...");
+
+            AddLog("CONNECTION OPEN: Executing Raw SQL command to Postgres...");
             await db.Database.ExecuteSqlRawAsync(sql);
             
-            AddLog("SQL Success: Table structure verified/created.");
-            await Task.Delay(200);
-            await LoadReceipts();
+            AddLog("SQL SUCCESS: Table 'HsaReceipts' verified or created.");
         }
         catch (Exception ex)
         {
-            Console.WriteLine("HSA: SQL Error! " + ex.Message);
             AddLog("CRITICAL ERROR: " + ex.Message);
+            if (ex.InnerException != null)
+            {
+                AddLog("INNER ERROR: " + ex.InnerException.Message);
+            }
         }
-        await InvokeAsync(StateHasChanged);
+
+        AddLog("Sequence Complete.");
+        StateHasChanged();
     }
 
     private void AddLog(string msg)
     {
-        statusMessage += $"[{DateTime.Now:T}] {msg}\n";
+        logs.Add(new LogEntry { Timestamp = DateTime.Now.ToString("HH:mm:ss"), Message = msg });
+        Console.WriteLine($"HSA_LOG: {msg}");
     }
 
-    private async Task HandleSubmit() 
-    { 
-        using var db = await DbFactory.CreateDbContextAsync();
-        newReceipt.UserId = 1;
-        newReceipt.TaxYear = newReceipt.ServiceDate.Year;
-        db.HsaReceipts.Add(newReceipt);
-        await db.SaveChangesAsync();
-        newReceipt = new HsaReceipt { ServiceDate = DateTime.Now, Type = "Medical" };
-        await LoadReceipts();
+    private class LogEntry
+    {
+        public string Timestamp { get; set; } = "";
+        public string Message { get; set; } = "";
     }
 }
