@@ -1,99 +1,63 @@
 @page "/hsa"
-@using Dashboard
-@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Web
 @rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode(prerender: false))
 
+@* We keep these in the file but don't touch them until a button is pressed *@
+@using Dashboard
+@using Microsoft.EntityFrameworkCore
 @inject IDbContextFactory<AppDbContext> DbFactory
 
-<div class="min-h-screen bg-black text-emerald-400 p-8 font-mono">
-    <h1 class="text-2xl font-black text-white border-b border-gray-800 pb-4 mb-8 uppercase tracking-tighter">
-        HSA Bare-Metal Debugger
-    </h1>
+<div style="background:#000; color:#0f0; min-height:100vh; padding:40px; font-family:monospace; line-height:1.5;">
+    
+    <h1 style="color:#fff; border-bottom:1px solid #333; pb-4 mb-8">DEBUG TERMINAL v1.0</h1>
 
-    <div class="flex flex-wrap gap-4 mb-8">
-        @* THE "DAMN LOG" BUTTON *@
-        <button @onclick='() => AddLog("LOG: Button manually clicked.")' 
-                class="bg-gray-700 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-bold uppercase text-xs tracking-widest transition shadow-lg">
-            Simple Log
+    <div style="display:flex; gap:10px; margin-bottom:20px;">
+        @* BUTTON 1: THE "DAMN LOG" TEST *@
+        <button @onclick="SimpleLog" style="background:#444; color:#fff; padding:10px 20px; cursor:pointer; border:1px solid #666;">
+            TEST LOG
         </button>
 
-        <button @onclick="CheckTable" 
-                class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-lg font-bold uppercase text-xs tracking-widest transition shadow-lg">
-            Check If Table Exists
-        </button>
-
-        <button @onclick="RunCreateTable" 
-                class="bg-red-600 hover:bg-red-500 text-white px-6 py-3 rounded-lg font-bold uppercase text-xs tracking-widest transition shadow-lg">
-            Run Create Table SQL
-        </button>
-
-        <button @onclick="() => debugLogs.Clear()" 
-                class="bg-black border border-gray-700 text-gray-500 px-6 py-3 rounded-lg font-bold uppercase text-xs tracking-widest transition hover:text-white">
-            Clear Console
+        @* BUTTON 2: THE DB TEST *@
+        <button @onclick="RunDbAction" style="background:#005cc5; color:#fff; padding:10px 20px; cursor:pointer; border:none;">
+            INITIALIZE HSA TABLE
         </button>
     </div>
 
-    <div class="bg-gray-900 border-2 border-gray-800 rounded-2xl p-6 shadow-2xl">
-        <div class="text-[10px] text-gray-500 uppercase font-black mb-4 flex justify-between">
-            <span>Terminal Output</span>
-            <span>Circuit Status: Connected</span>
-        </div>
-        <div class="h-[500px] overflow-y-auto space-y-1 text-xs leading-relaxed">
-            @if (!debugLogs.Any())
-            {
-                <div class="text-gray-700 italic">No output detected...</div>
-            }
-            @foreach (var log in debugLogs)
-            {
-                <div>
-                    <span class="text-gray-600">[@log.Timestamp]</span>
-                    <span class="@(log.IsError ? "text-red-400" : "text-emerald-400")"> @log.Message</span>
-                </div>
-            }
-        </div>
+    <div style="background:#111; border:1px solid #333; padding:20px; height:600px; overflow-y:auto;">
+        <div style="color:#666; margin-bottom:10px;">> STANDBY_</div>
+        @foreach (var log in logs)
+        {
+            <div style="margin-bottom:4px;">
+                <span style="color:#555;">[@log.Split('|')[0]]</span> @log.Split('|')[1]
+            </div>
+        }
     </div>
 </div>
 
 @code {
-    private List<DebugEntry> debugLogs = new();
+    private List<string> logs = new();
 
     protected override void OnInitialized()
     {
-        AddLog("SYSTEM: Page Initialized. WebSocket Ready.");
+        // This MUST show up immediately when the page loads
+        AddLog("CORE: Page component initialized.");
     }
 
-    private async Task CheckTable()
+    private void SimpleLog()
     {
-        AddLog("CHECKING: Querying information_schema for 'HsaReceipts'...");
+        // If this doesn't show up, the WebSocket is dead
+        AddLog("UI_EVENT: Log button clicked.");
+    }
+
+    private async Task RunDbAction()
+    {
+        AddLog("DB_ACTION: Attempting to connect to Postgres...");
+        
         try
         {
             using var db = await DbFactory.CreateDbContextAsync();
-            var conn = db.Database.GetDbConnection();
-            if (conn.State != System.Data.ConnectionState.Open) await conn.OpenAsync();
+            AddLog("DB_CONNECT: Context factory created.");
 
-            using var cmd = conn.CreateCommand();
-            // Using double quotes as seen in BulletBaseService to handle case-sensitivity
-            cmd.CommandText = "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'HsaReceipts');";
-            
-            var result = await cmd.ExecuteScalarAsync();
-            bool exists = result is bool b && b;
-
-            AddLog(exists ? "RESULT: Table exists." : "RESULT: Table NOT FOUND.");
-        }
-        catch (Exception ex)
-        {
-            AddLog($"CHECK FAILED: {ex.Message}", true);
-        }
-    }
-
-    private async Task RunCreateTable()
-    {
-        AddLog("SQL START: Attempting to create table 'HsaReceipts'...");
-        try
-        {
-            using var db = await DbFactory.CreateDbContextAsync();
-            
-            // Using the exact double-quote formatting from BulletBaseService
             var sql = @"
                 CREATE TABLE IF NOT EXISTS ""HsaReceipts"" (
                     ""Id"" SERIAL PRIMARY KEY,
@@ -112,34 +76,22 @@
                     ""CreatedAt"" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );";
 
-            AddLog("SQL EXEC: Sending raw command to Postgres...");
+            AddLog("DB_SQL: Sending CREATE TABLE command...");
             await db.Database.ExecuteSqlRawAsync(sql);
-            AddLog("SQL SUCCESS: Table verified/created.");
-            
-            await CheckTable();
+            AddLog("DB_SUCCESS: Table verified/created.");
         }
         catch (Exception ex)
         {
-            AddLog($"SQL CRITICAL ERROR: {ex.Message}", true);
-            if (ex.InnerException != null) AddLog($"INNER: {ex.InnerException.Message}", true);
+            AddLog("DB_CRITICAL: " + ex.Message);
+            if (ex.InnerException != null) AddLog("INNER: " + ex.InnerException.Message);
         }
     }
 
-    private void AddLog(string msg, bool isError = false)
+    private void AddLog(string msg)
     {
-        debugLogs.Insert(0, new DebugEntry { 
-            Timestamp = DateTime.Now.ToString("HH:mm:ss.fff"), 
-            Message = msg,
-            IsError = isError
-        });
-        Console.WriteLine($"HSA_DEBUG: {msg}");
+        var time = DateTime.Now.ToString("HH:mm:ss");
+        logs.Insert(0, $"{time}|{msg}");
+        Console.WriteLine($"HSA_DEBUG_CONSOLE: {msg}");
         StateHasChanged();
-    }
-
-    private class DebugEntry
-    {
-        public string Timestamp { get; set; } = "";
-        public string Message { get; set; } = "";
-        public bool IsError { get; set; }
     }
 }
