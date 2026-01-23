@@ -1,47 +1,145 @@
 @page "/hsa"
-@using Microsoft.AspNetCore.Components.Web
+@using Dashboard
+@using Microsoft.EntityFrameworkCore
 @rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode(prerender: false))
 
-<div style="background:#000; color:#fff; min-height:100vh; padding:50px; font-family:sans-serif;">
-    <h1 style="color:#3b82f6;">CIRCUIT TEST</h1>
+@inject IDbContextFactory<AppDbContext> DbFactory
 
-    @* DAMN BUTTON *@
-    <button @onclick="LogToConsole" 
-            style="background:#2563eb; color:#fff; padding:20px 40px; border:none; border-radius:10px; font-weight:bold; cursor:pointer; font-size:1.5rem;">
-        LOG
-    </button>
+<div class="min-h-screen bg-black text-emerald-400 p-8 font-mono">
+    <h1 class="text-2xl font-black text-white border-b border-gray-800 pb-4 mb-8 uppercase tracking-tighter">
+        HSA Bare-Metal Debugger
+    </h1>
 
-    <div style="margin-top:30px; background:#111; border:1px solid #333; padding:20px; border-radius:10px;">
-        <div style="color:#666; font-size:0.8rem; margin-bottom:10px; border-bottom:1px solid #222;">UI LOG OUTPUT</div>
-        <pre style="color:#10b981; font-family:monospace;">
-@foreach (var line in testLogs)
-{
-@line
-}
-        </pre>
+    <div class="flex flex-wrap gap-4 mb-8">
+        @* THE "DAMN LOG" BUTTON *@
+        <button @onclick='() => AddLog("LOG: Button manually clicked.")' 
+                class="bg-gray-700 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-bold uppercase text-xs tracking-widest transition shadow-lg">
+            Simple Log
+        </button>
+
+        <button @onclick="CheckTable" 
+                class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-lg font-bold uppercase text-xs tracking-widest transition shadow-lg">
+            Check If Table Exists
+        </button>
+
+        <button @onclick="RunCreateTable" 
+                class="bg-red-600 hover:bg-red-500 text-white px-6 py-3 rounded-lg font-bold uppercase text-xs tracking-widest transition shadow-lg">
+            Run Create Table SQL
+        </button>
+
+        <button @onclick="() => debugLogs.Clear()" 
+                class="bg-black border border-gray-700 text-gray-500 px-6 py-3 rounded-lg font-bold uppercase text-xs tracking-widest transition hover:text-white">
+            Clear Console
+        </button>
+    </div>
+
+    <div class="bg-gray-900 border-2 border-gray-800 rounded-2xl p-6 shadow-2xl">
+        <div class="text-[10px] text-gray-500 uppercase font-black mb-4 flex justify-between">
+            <span>Terminal Output</span>
+            <span>Circuit Status: Connected</span>
+        </div>
+        <div class="h-[500px] overflow-y-auto space-y-1 text-xs leading-relaxed">
+            @if (!debugLogs.Any())
+            {
+                <div class="text-gray-700 italic">No output detected...</div>
+            }
+            @foreach (var log in debugLogs)
+            {
+                <div>
+                    <span class="text-gray-600">[@log.Timestamp]</span>
+                    <span class="@(log.IsError ? "text-red-400" : "text-emerald-400")"> @log.Message</span>
+                </div>
+            }
+        </div>
     </div>
 </div>
 
 @code {
-    private List<string> testLogs = new();
+    private List<DebugEntry> debugLogs = new();
 
     protected override void OnInitialized()
     {
-        // This proves the page loaded
-        string msg = "SYSTEM: Initialized at " + DateTime.Now.ToString("HH:mm:ss");
-        testLogs.Add(msg);
-        Console.WriteLine(msg);
+        AddLog("SYSTEM: Page Initialized. WebSocket Ready.");
     }
 
-    private void LogToConsole()
+    private async Task CheckTable()
     {
-        // This proves the button click traveled from browser to server and back
-        string msg = "CLICK: 'log' at " + DateTime.Now.ToString("HH:mm:ss");
-        testLogs.Add(msg);
-        
-        // This will show up in your Render Logs
-        Console.WriteLine("HSA_TEST_DEBUG: " + msg);
-        
+        AddLog("CHECKING: Querying information_schema for 'HsaReceipts'...");
+        try
+        {
+            using var db = await DbFactory.CreateDbContextAsync();
+            var conn = db.Database.GetDbConnection();
+            if (conn.State != System.Data.ConnectionState.Open) await conn.OpenAsync();
+
+            using var cmd = conn.CreateCommand();
+            // Using double quotes as seen in BulletBaseService to handle case-sensitivity
+            cmd.CommandText = "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'HsaReceipts');";
+            
+            var result = await cmd.ExecuteScalarAsync();
+            bool exists = result is bool b && b;
+
+            AddLog(exists ? "RESULT: Table exists." : "RESULT: Table NOT FOUND.");
+        }
+        catch (Exception ex)
+        {
+            AddLog($"CHECK FAILED: {ex.Message}", true);
+        }
+    }
+
+    private async Task RunCreateTable()
+    {
+        AddLog("SQL START: Attempting to create table 'HsaReceipts'...");
+        try
+        {
+            using var db = await DbFactory.CreateDbContextAsync();
+            
+            // Using the exact double-quote formatting from BulletBaseService
+            var sql = @"
+                CREATE TABLE IF NOT EXISTS ""HsaReceipts"" (
+                    ""Id"" SERIAL PRIMARY KEY,
+                    ""UserId"" INTEGER NOT NULL,
+                    ""Type"" TEXT NOT NULL,
+                    ""Provider"" TEXT NOT NULL,
+                    ""ServiceDate"" TIMESTAMP NOT NULL,
+                    ""Amount"" DECIMAL(18,2) NOT NULL,
+                    ""Note"" TEXT,
+                    ""FileName"" TEXT,
+                    ""ContentType"" TEXT,
+                    ""FileData"" BYTEA,
+                    ""IsReimbursed"" BOOLEAN NOT NULL DEFAULT FALSE,
+                    ""ReimbursedAt"" TIMESTAMP,
+                    ""TaxYear"" INTEGER NOT NULL,
+                    ""CreatedAt"" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );";
+
+            AddLog("SQL EXEC: Sending raw command to Postgres...");
+            await db.Database.ExecuteSqlRawAsync(sql);
+            AddLog("SQL SUCCESS: Table verified/created.");
+            
+            await CheckTable();
+        }
+        catch (Exception ex)
+        {
+            AddLog($"SQL CRITICAL ERROR: {ex.Message}", true);
+            if (ex.InnerException != null) AddLog($"INNER: {ex.InnerException.Message}", true);
+        }
+    }
+
+    private void AddLog(string msg, bool isError = false)
+    {
+        debugLogs.Insert(0, new DebugEntry { 
+            Timestamp = DateTime.Now.ToString("HH:mm:ss.fff"), 
+            Message = msg,
+            IsError = isError
+        });
+        Console.WriteLine($"HSA_DEBUG: {msg}");
         StateHasChanged();
+    }
+
+    private class DebugEntry
+    {
+        public string Timestamp { get; set; } = "";
+        public string Message { get; set; } = "";
+        public bool IsError { get; set; }
     }
 }
