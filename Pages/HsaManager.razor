@@ -1,13 +1,25 @@
 @page "/hsa"
 @using Dashboard.Components.Bullet
-@using Dashboard @* Add this to find HsaReceipt *@
-@using Microsoft.EntityFrameworkCore @* Add this to find IDbContextFactory *@
+@using Dashboard
+@using Microsoft.EntityFrameworkCore
 @using Microsoft.AspNetCore.Components.Forms
+@rendermode InteractiveServer
+
 @inject IDbContextFactory<AppDbContext> DbFactory
 
 <BulletHeader ShowControls="false" CustomDateText="HSA Receipt Manager" />
 
 <div class="max-w-6xl mx-auto p-6">
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="bg-red-900/50 border border-red-800 text-red-200 p-4 rounded-xl mb-6 flex justify-between items-center">
+            <span>@errorMessage</span>
+            <button @onclick="CreateHsaTable" class="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg font-black text-xs uppercase tracking-widest transition">
+                Surgically Create Table
+            </button>
+        </div>
+    }
+
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-xl h-fit">
             <h3 class="text-white font-black uppercase tracking-widest text-sm mb-4 border-b border-gray-800 pb-2">
@@ -92,6 +104,7 @@
 @code {
     private HsaReceipt newReceipt = new() { ServiceDate = DateTime.Now, Type = "Medical" };
     private List<HsaReceipt> receipts = new();
+    private string? errorMessage;
     private decimal totalAmount => receipts.Sum(x => x.Amount);
     private decimal unreimbursedAmount => receipts.Where(x => !x.IsReimbursed).Sum(x => x.Amount);
 
@@ -102,21 +115,58 @@
 
     private async Task LoadReceipts()
     {
-        using var db = await DbFactory.CreateDbContextAsync();
-        receipts = await db.HsaReceipts
-            .OrderByDescending(x => x.ServiceDate)
-            .ToListAsync();
+        try
+        {
+            using var db = await DbFactory.CreateDbContextAsync();
+            receipts = await db.HsaReceipts
+                .OrderByDescending(x => x.ServiceDate)
+                .ToListAsync();
+            errorMessage = null;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "HSA Database table is missing or inaccessible.";
+            Console.WriteLine($"Load Error: {ex.Message}");
+        }
     }
 
-    private void HandleFileSelected(InputFileChangeEventArgs e) 
-    { 
-        // Logic for file handling
+    private async Task CreateHsaTable()
+    {
+        try
+        {
+            using var db = await DbFactory.CreateDbContextAsync();
+            // This forces EF to create the table if it is missing from the current model
+            await db.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""HsaReceipts"" (
+                    ""Id"" SERIAL PRIMARY KEY,
+                    ""UserId"" INTEGER NOT NULL,
+                    ""Type"" TEXT NOT NULL,
+                    ""Provider"" TEXT NOT NULL,
+                    ""ServiceDate"" TIMESTAMP WITH TIME ZONE NOT NULL,
+                    ""Amount"" DECIMAL(18,2) NOT NULL,
+                    ""Note"" TEXT,
+                    ""FileName"" TEXT,
+                    ""ContentType"" TEXT,
+                    ""FileData"" BYTEA,
+                    ""IsReimbursed"" BOOLEAN NOT NULL DEFAULT FALSE,
+                    ""ReimbursedAt"" TIMESTAMP WITH TIME ZONE,
+                    ""TaxYear"" INTEGER NOT NULL,
+                    ""CreatedAt"" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );");
+            await LoadReceipts();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to create table: {ex.Message}";
+        }
     }
+
+    private void HandleFileSelected(InputFileChangeEventArgs e) { }
 
     private async Task HandleSubmit() 
     { 
         using var db = await DbFactory.CreateDbContextAsync();
-        newReceipt.UserId = 1; // Assuming default user for now
+        newReceipt.UserId = 1;
         newReceipt.TaxYear = newReceipt.ServiceDate.Year;
         db.HsaReceipts.Add(newReceipt);
         await db.SaveChangesAsync();
