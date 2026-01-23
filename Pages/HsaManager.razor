@@ -11,17 +11,16 @@
 @inject IJSRuntime JS
 
 <div class="min-h-screen bg-[#0a0a0a] text-white font-sans overflow-x-hidden">
-    @* 1. MAIN HEADER (Frozen via component) *@
-    <BulletHeader ShowControls="false" CustomDateText="HSA Archive" />
+    @* 1. MAIN HEADER (Frozen) *@
+    <BulletHeader ShowControls="false" CustomDateText="HSA Ledger" />
 
     @* 2. STICKY SUB-HEADER *@
-    <div class="sticky top-[73px] z-30 bg-[#0c0c0c]/90 backdrop-blur-md border-b border-gray-800 p-4 shadow-2xl">
+    <div class="sticky top-[73px] z-30 bg-[#0c0c0c]/95 backdrop-blur-md border-b border-gray-800 p-4 shadow-2xl">
         <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
-            @* Year Filters *@
             <div class="flex items-center gap-2 bg-black/50 p-1 rounded-xl border border-gray-800">
-                <button type="button" @onclick="() => FilterByYear(0)"
+                <button type="button" @onclick="HandleFilterAll"
                         class="px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition @(selectedYear == 0 ? "bg-blue-600 text-white shadow-lg" : "text-gray-500 hover:text-gray-300")">
-                    All Years
+                    All Time
                 </button>
                 @foreach (var year in availableYears)
                 {
@@ -32,7 +31,6 @@
                 }
             </div>
 
-            @* Action Button *@
             <button type="button" @onclick="OpenAddModal" 
                     class="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-[0.2em] transition shadow-lg active:scale-95 flex items-center gap-2">
                 <span>➕</span> Add Receipt
@@ -40,58 +38,68 @@
         </div>
     </div>
 
-    @* 3. DATA DISPLAY GRID *@
-    <div class="max-w-7xl mx-auto p-6">
+    @* 3. LEDGER DISPLAY *@
+    <div class="max-w-7xl mx-auto p-6 pb-40">
         @if (isLoading)
         {
             <div class="flex flex-col items-center justify-center py-20 opacity-30">
                 <div class="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                <div class="text-[10px] font-black uppercase tracking-widest">Querying Records...</div>
-            </div>
-        }
-        else if (!filteredReceipts.Any())
-        {
-            <div class="text-center py-32 bg-gray-900/20 border-2 border-dashed border-gray-800 rounded-3xl">
-                <div class="text-gray-600 font-bold uppercase tracking-widest text-xs">No data found for this period.</div>
+                <div class="text-[10px] font-black uppercase tracking-widest">Loading Ledger...</div>
             </div>
         }
         else
         {
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                @foreach (var r in filteredReceipts)
-                {
-                    <div class="group relative bg-[#111] border border-gray-800 rounded-2xl p-5 hover:border-blue-500/50 transition-all duration-300 shadow-xl flex flex-col h-full">
-                        @* Hover Actions *@
-                        <div class="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                            <button @onclick="() => OpenEditModal(r)" class="bg-blue-600 p-2 rounded-lg text-xs hover:bg-blue-500 shadow-lg">✏️</button>
-                            <button @onclick="() => DeleteReceipt(r.Id)" class="bg-red-600 p-2 rounded-lg text-xs hover:bg-red-500 shadow-lg">✕</button>
-                        </div>
-
-                        <div class="flex justify-between items-start mb-4">
-                            <div class="bg-gray-800/50 px-3 py-1 rounded-lg text-[9px] font-black text-blue-400 uppercase tracking-widest border border-gray-700">
-                                @(string.IsNullOrEmpty(r.Type) ? "MEDICAL" : r.Type.ToUpper())
-                            </div>
-                            <div class="text-[10px] font-mono text-gray-500">
-                                @r.ServiceDate.ToString("yyyy-MM-dd")
-                            </div>
-                        </div>
-
-                        <h3 class="text-white font-black uppercase tracking-tight text-lg mb-1 leading-tight truncate">
-                            @(string.IsNullOrEmpty(r.Provider) ? "UNKNOWN PROVIDER" : r.Provider)
-                        </h3>
-                        <div class="text-2xl font-black text-emerald-400 mb-4">$@r.Amount.ToString("N2")</div>
-
-                        @if (!string.IsNullOrWhiteSpace(r.Note))
-                        {
-                            <p class="text-xs text-gray-500 italic mb-4 line-clamp-2">@r.Note</p>
+            <div class="bg-[#111] border border-gray-800 rounded-2xl shadow-2xl overflow-hidden">
+                <table class="w-full text-left border-collapse table-fixed">
+                    <thead class="bg-black/50 text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 border-b border-gray-800">
+                        <tr>
+                            <th class="p-4 w-32">Date</th>
+                            <th class="p-4 w-1/4">Provider</th>
+                            <th class="p-4 w-32">Category</th>
+                            <th class="p-4">Note</th>
+                            <th class="p-4 w-32 text-right">Amount</th>
+                            <th class="p-4 w-40 text-right pr-6">Refund Bal</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-sm font-medium">
+                        @{
+                            decimal runningTotal = 0;
+                            @foreach (var r in filteredReceipts)
+                            {
+                                if (!r.IsReimbursed) { runningTotal += r.Amount; }
+                                
+                                <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition group relative">
+                                    <td class="p-4 font-mono text-xs text-gray-500">@r.ServiceDate.ToString("yyyy-MM-dd")</td>
+                                    <td class="p-4 text-white font-bold uppercase tracking-tight truncate">
+                                        @(string.IsNullOrEmpty(r.Provider) ? "---" : r.Provider)
+                                        
+                                        @* HOVER ACTIONS (Surgically moved to provider cell for visibility) *@
+                                        <div class="absolute inset-y-0 left-0 flex items-center gap-2 px-2 bg-gray-900 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button @onclick="() => OpenEditModal(r)" class="bg-blue-600 p-1.5 rounded hover:bg-blue-500 text-[10px]">✏️</button>
+                                            <button @onclick="() => DeleteReceipt(r.Id)" class="bg-red-600 p-1.5 rounded hover:bg-red-500 text-[10px]">✕</button>
+                                        </div>
+                                    </td>
+                                    <td class="p-4">
+                                        <span class="text-[9px] font-black px-2 py-0.5 rounded border border-gray-700 bg-gray-800/50 text-blue-400">
+                                            @(string.IsNullOrEmpty(r.Type) ? "MED" : r.Type.ToUpper().Substring(0, Math.Min(3, r.Type.Length)))
+                                        </span>
+                                    </td>
+                                    <td class="p-4 text-gray-500 italic text-xs truncate">@(string.IsNullOrEmpty(r.Note) ? "---" : r.Note)</td>
+                                    <td class="p-4 text-right font-mono @(r.IsReimbursed ? "line-through text-gray-600" : "text-emerald-400 font-bold")">
+                                        $@r.Amount.ToString("N2")
+                                    </td>
+                                    <td class="p-4 text-right pr-6 font-black font-mono text-blue-400">
+                                        $@runningTotal.ToString("N2")
+                                    </td>
+                                </tr>
+                            }
                         }
-
-                        <div class="mt-auto pt-4 border-t border-gray-800 flex justify-between items-center">
-                            <span class="text-[9px] font-black uppercase tracking-widest @(r.IsReimbursed ? "text-emerald-500" : "text-amber-500")">
-                                @(r.IsReimbursed ? "✅ Reimbursed" : "⏳ Pending")
-                            </span>
-                            @if (!string.IsNullOrEmpty(r.FileName)) { <span class="text-xl">📄</span> }
-                        </div>
+                    </tbody>
+                </table>
+                @if (!filteredReceipts.Any())
+                {
+                    <div class="p-20 text-center text-gray-600 font-black uppercase tracking-widest text-xs italic">
+                        Empty Ledger
                     </div>
                 }
             </div>
@@ -99,7 +107,7 @@
     </div>
 </div>
 
-@* MODAL (Code unchanged but z-index updated) *@
+@* MODAL CODE REMAINS IDENTICAL TO PREVIOUS VERSION *@
 @if (showModal)
 {
     <div class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
@@ -137,7 +145,7 @@
                     </div>
                     <div class="flex items-center gap-3 pt-6 pl-2">
                         <InputCheckbox @bind-Value="tempReceipt.IsReimbursed" id="reimbursed" class="w-5 h-5 accent-blue-600 rounded bg-gray-900 border-gray-700" />
-                        <label for="reimbursed" class="text-[10px] font-black text-gray-400 uppercase cursor-pointer">Reimbursed</label>
+                        <label for="reimbursed" class="text-[10px] font-black text-gray-400 uppercase cursor-pointer tracking-widest">Reimbursed</label>
                     </div>
                 </div>
                 <div>
@@ -146,7 +154,7 @@
                 </div>
                 <div class="flex gap-3 pt-4">
                     <button type="button" @onclick="CloseModal" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-black py-4 rounded-2xl uppercase text-[10px] tracking-widest transition">Cancel</button>
-                    <button type="submit" class="flex-[2] bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-2xl uppercase text-[10px] tracking-widest transition">Save</button>
+                    <button type="submit" class="flex-[2] bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-2xl uppercase text-[10px] tracking-widest transition shadow-lg">Save</button>
                 </div>
             </EditForm>
         </div>
@@ -163,7 +171,6 @@
     private bool showModal = false;
     private int editingId = 0;
     private HsaReceipt tempReceipt = new();
-    private List<string> logs = new(); // Left for tracing
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -176,15 +183,9 @@
         try
         {
             using var db = await DbFactory.CreateDbContextAsync();
+            // Requirement: Oldest first for ledger logic
             allReceipts = await db.HsaReceipts.OrderBy(x => x.ServiceDate).ToListAsync();
-            
-            // Extract distinct years for the subheader buttons
-            availableYears = allReceipts
-                .Select(x => x.ServiceDate.Year)
-                .Distinct()
-                .OrderByDescending(x => x)
-                .ToList();
-
+            availableYears = allReceipts.Select(x => x.ServiceDate.Year).Distinct().OrderByDescending(x => x).ToList();
             ApplyFilter();
         }
         catch (Exception ex) { Console.WriteLine($"LOAD_ERR: {ex.Message}"); }
@@ -197,11 +198,8 @@
         else filteredReceipts = allReceipts.Where(x => x.ServiceDate.Year == selectedYear).ToList();
     }
 
-    private void FilterByYear(int year) 
-    { 
-        selectedYear = year; 
-        ApplyFilter(); 
-    }
+    private void FilterByYear(int year) { selectedYear = year; ApplyFilter(); }
+    private void HandleFilterAll() { selectedYear = 0; ApplyFilter(); }
 
     private void OpenAddModal()
     {
@@ -216,7 +214,7 @@
         tempReceipt = new HsaReceipt {
             Id = r.Id, UserId = r.UserId, Provider = r.Provider ?? "", Amount = r.Amount,
             Type = r.Type ?? "Medical", ServiceDate = r.ServiceDate, Note = r.Note ?? "", 
-            IsReimbursed = r.IsReimbursed, FileName = r.FileName ?? ""
+            IsReimbursed = r.IsReimbursed
         };
         showModal = true;
     }
@@ -243,7 +241,7 @@
 
     private async Task DeleteReceipt(int id)
     {
-        if (!await JS.InvokeAsync<bool>("confirm", "Delete this record permanently?")) return;
+        if (!await JS.InvokeAsync<bool>("confirm", "Delete this record?")) return;
         try
         {
             using var db = await DbFactory.CreateDbContextAsync();
@@ -252,6 +250,4 @@
         }
         catch (Exception ex) { Console.WriteLine($"DEL_ERR: {ex.Message}"); }
     }
-
-    private void AddLog(string msg) { Console.WriteLine($"HSA_TRACE: {msg}"); }
 }
