@@ -3,18 +3,17 @@
 @using Dashboard.Components.Bullet
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.AspNetCore.Components.Forms
-@using Microsoft.JSInterop @* ADDED TO FIX BUILD ERROR *@
+@using Microsoft.JSInterop
 @rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode(prerender: false))
 
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject IJSRuntime JS
 
 <div class="min-h-screen bg-[#0a0a0a] text-white font-sans overflow-x-hidden">
-    @* 1. COMMON HEADER *@
     <BulletHeader ShowControls="false" CustomDateText="HSA Archive" />
 
-    @* 2. STICKY SUBHEADER *@
-    <div class="sticky top-[73px] z-40 bg-[#0c0c0c]/80 backdrop-blur-md border-b border-gray-800 p-4 shadow-xl">
+    @* Sticky Subheader *@
+    <div class="sticky top-[73px] z-30 bg-[#0c0c0c]/80 backdrop-blur-md border-b border-gray-800 p-4 shadow-xl">
         <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
             <div class="flex items-center gap-2 bg-black/50 p-1 rounded-xl border border-gray-800">
                 <button @onclick="() => FilterByYear(0)"
@@ -37,7 +36,6 @@
         </div>
     </div>
 
-    @* 3. MAIN CONTENT DISPLAY *@
     <div class="max-w-7xl mx-auto p-6">
         @if (isLoading)
         {
@@ -59,7 +57,6 @@
                 @foreach (var r in filteredReceipts)
                 {
                     <div class="group relative bg-[#111] border border-gray-800 rounded-2xl p-5 hover:border-blue-500/50 transition-all duration-300 shadow-2xl flex flex-col h-full">
-                        @* Hover Actions *@
                         <div class="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                             <button @onclick="() => OpenEditModal(r)" class="bg-blue-600 p-2 rounded-lg text-xs hover:bg-blue-500 shadow-lg">✏️</button>
                             <button @onclick="() => DeleteReceipt(r.Id)" class="bg-red-600 p-2 rounded-lg text-xs hover:bg-red-500 shadow-lg">✕</button>
@@ -86,10 +83,7 @@
                             <span class="text-[9px] font-black uppercase tracking-widest @(r.IsReimbursed ? "text-emerald-500" : "text-amber-500")">
                                 @(r.IsReimbursed ? "✅ Reimbursed" : "⏳ Unreimbursed")
                             </span>
-                            @if (!string.IsNullOrEmpty(r.FileName))
-                            {
-                                <span class="text-xl" title="@r.FileName">📄</span>
-                            }
+                            @if (!string.IsNullOrEmpty(r.FileName)) { <span class="text-xl">📄</span> }
                         </div>
                     </div>
                 }
@@ -98,7 +92,6 @@
     </div>
 </div>
 
-@* 4. ADD/EDIT MODAL *@
 @if (showModal)
 {
     <div class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm animate-in fade-in duration-200">
@@ -112,11 +105,11 @@
                 <div class="grid grid-cols-2 gap-4">
                     <div class="col-span-2">
                         <label class="text-[10px] font-black text-gray-500 uppercase ml-1">Provider</label>
-                        <InputText @bind-Value="tempReceipt.Provider" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-white text-sm focus:border-blue-500 outline-none" required />
+                        <InputText @bind-Value="tempReceipt.Provider" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-white text-sm focus:border-blue-500 outline-none" placeholder="Medical Provider Name" />
                     </div>
                     <div>
                         <label class="text-[10px] font-black text-gray-500 uppercase ml-1">Amount</label>
-                        <InputNumber @bind-Value="tempReceipt.Amount" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-white text-sm focus:border-blue-500 outline-none" required />
+                        <InputNumber @bind-Value="tempReceipt.Amount" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-white text-sm focus:border-blue-500 outline-none" />
                     </div>
                     <div>
                         <label class="text-[10px] font-black text-gray-500 uppercase ml-1">Type</label>
@@ -130,7 +123,7 @@
                     </div>
                     <div>
                         <label class="text-[10px] font-black text-gray-500 uppercase ml-1">Date of Service</label>
-                        <InputDate @bind-Value="tempReceipt.ServiceDate" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-white text-sm focus:border-blue-500 outline-none" required />
+                        <InputDate @bind-Value="tempReceipt.ServiceDate" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-white text-sm focus:border-blue-500 outline-none" />
                     </div>
                     <div class="flex items-center gap-3 pt-6 pl-2">
                         <InputCheckbox @bind-Value="tempReceipt.IsReimbursed" id="reimbursed" class="w-4 h-4 accent-blue-600" />
@@ -160,14 +153,11 @@
 
     private bool showModal = false;
     private int editingId = 0;
-    private HsaReceipt tempReceipt = new();
+    private HsaReceipt tempReceipt = new() { ServiceDate = DateTime.Today, Type = "Medical", Provider = "" };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
-        {
-            await LoadData();
-        }
+        if (firstRender) { await LoadData(); }
     }
 
     private async Task LoadData()
@@ -198,33 +188,32 @@
         else filteredReceipts = allReceipts.Where(x => x.ServiceDate.Year == selectedYear).ToList();
     }
 
-    private void FilterByYear(int year)
-    {
-        selectedYear = year;
-        ApplyFilter();
-    }
+    private void FilterByYear(int year) { selectedYear = year; ApplyFilter(); }
 
     private void OpenAddModal()
     {
         editingId = 0;
-        tempReceipt = new HsaReceipt { ServiceDate = DateTime.Today, Type = "Medical" };
+        // Ensure every field is initialized to prevent validation crashes
+        tempReceipt = new HsaReceipt { ServiceDate = DateTime.Today, Type = "Medical", Provider = "", Note = "", FileName = "" };
         showModal = true;
+        StateHasChanged();
     }
 
     private void OpenEditModal(HsaReceipt r)
     {
         editingId = r.Id;
         tempReceipt = new HsaReceipt {
-            Id = r.Id,
+             Id = r.Id,
             UserId = r.UserId,
             Provider = r.Provider,
             Amount = r.Amount,
             Type = r.Type,
             ServiceDate = r.ServiceDate,
             Note = r.Note,
-            IsReimbursed = r.IsReimbursed
+            IsReimbursed = r.IsReimbursed       
         };
         showModal = true;
+        StateHasChanged();
     }
 
     private async Task SaveReceipt()
@@ -242,13 +231,12 @@
             showModal = false;
             await LoadData();
         }
-        catch (Exception ex) { Console.WriteLine($"SAVE_ERROR: {ex.Message}"); }
+        catch (Exception ex) { Console.WriteLine($"SAVE_ERR: {ex.Message}"); }
     }
 
     private async Task DeleteReceipt(int id)
     {
-        if (!await JS.InvokeAsync<bool>("confirm", "Permanently delete this receipt record?")) return;
-
+        if (!await JS.InvokeAsync<bool>("confirm", "Delete this record?")) return;
         try
         {
             using var db = await DbFactory.CreateDbContextAsync();
@@ -258,8 +246,7 @@
                 db.HsaReceipts.Remove(target);
                 await db.SaveChangesAsync();
                 await LoadData();
-            }
-        }
-        catch (Exception ex) { Console.WriteLine($"DELETE_ERROR: {ex.Message}"); }
+            }        }
+        catch (Exception ex) { Console.WriteLine($"DEL_ERR: {ex.Message}"); }
     }
 }
