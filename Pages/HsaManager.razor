@@ -5,50 +5,69 @@
 
 @inject IDbContextFactory<AppDbContext> DbFactory
 
-<div class="p-10 bg-black min-h-screen text-white font-sans">
-    <h1 class="text-2xl font-black mb-8 border-b border-gray-800 pb-4 uppercase tracking-tighter">
-        HSA Table Initializer
-    </h1>
+<div style="background-color: #000; color: #fff; min-height: 100vh; padding: 40px; font-family: sans-serif;">
+    <h1 style="color: #3b82f6; font-size: 2rem; font-weight: 900; margin-bottom: 20px;">HSA DEBUG CONSOLE</h1>
 
-    <div class="max-w-2xl">
+    <div style="display: flex; gap: 20px; margin-bottom: 30px;">
         <button @onclick="CreateHsaTable" 
-                class="bg-blue-600 hover:bg-blue-500 text-white px-12 py-6 rounded-2xl font-black text-lg uppercase tracking-[0.3em] transition-all shadow-[0_0_30px_rgba(37,99,235,0.4)] active:scale-95 mb-8">
-            Initialize Database Table
+                style="background-color: #2563eb; color: white; padding: 15px 30px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer;">
+            1. INITIALIZE TABLE
         </button>
 
-        <div class="bg-gray-900 border border-gray-800 rounded-3xl p-6 shadow-2xl">
-            <h2 class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4 border-b border-gray-800 pb-2">
-                System Execution Log
-            </h2>
-            <div class="font-mono text-xs text-emerald-400 space-y-1 h-96 overflow-y-auto">
-                @if (!logs.Any())
-                {
-                    <div class="text-gray-600 italic">Ready for command...</div>
-                }
-                @foreach (var log in logs)
-                {
-                    <div class="leading-relaxed">
-                        <span class="text-gray-600">[@log.Timestamp]</span> @log.Message
-                    </div>
-                }
-            </div>
+        <button @onclick="CheckIfTableExists" 
+                style="background-color: #4b5563; color: white; padding: 15px 30px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer;">
+            2. VERIFY TABLE EXISTS
+        </button>
+    </div>
+
+    <div style="background-color: #111; border: 1px solid #333; border-radius: 12px; padding: 20px;">
+        <div style="color: #666; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px; border-bottom: 1px solid #222; pb-5">
+            Console Output
         </div>
+        <pre style="font-family: monospace; font-size: 0.85rem; color: #10b981; line-height: 1.5; height: 500px; overflow-y: auto;">
+@foreach (var line in debugLines)
+{
+@line
+}
+        </pre>
     </div>
 </div>
 
 @code {
-    private List<LogEntry> logs = new();
+    private List<string> debugLines = new();
+
+    protected override void OnInitialized()
+    {
+        AddLine("SYSTEM: Page Initialized. Interactive circuit established.");
+    }
+
+    private async Task CheckIfTableExists()
+    {
+        AddLine("CHECK: Verifying if 'HsaReceipts' exists in information_schema...");
+        try
+        {
+            using var db = await DbFactory.CreateDbContextAsync();
+            var sql = "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'HsaReceipts');";
+            
+            using var command = db.Database.GetDbConnection().CreateCommand();
+            command.CommandText = sql;
+            await db.Database.OpenConnectionAsync();
+            
+            var exists = (bool?)await command.ExecuteScalarAsync();
+            AddLine(exists == true ? "RESULT: [CONFIRMED] Table exists in database." : "RESULT: [MISSING] Table does not exist.");
+        }
+        catch (Exception ex)
+        {
+            AddLine("CHECK ERROR: " + ex.Message);
+        }
+    }
 
     private async Task CreateHsaTable()
     {
-        AddLog("BUTTON CLICKED: Starting initialization sequence.");
-        StateHasChanged();
-
+        AddLine("SQL: Attempting 'CREATE TABLE' sequence...");
         try
         {
-            AddLog("Creating Database Context Factory...");
             using var db = await DbFactory.CreateDbContextAsync();
-            
             var sql = @"
                 CREATE TABLE IF NOT EXISTS ""HsaReceipts"" (
                     ""Id"" SERIAL PRIMARY KEY,
@@ -67,33 +86,22 @@
                     ""CreatedAt"" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );";
 
-            AddLog("CONNECTION OPEN: Executing Raw SQL command to Postgres...");
             await db.Database.ExecuteSqlRawAsync(sql);
-            
-            AddLog("SQL SUCCESS: Table 'HsaReceipts' verified or created.");
+            AddLine("SQL SUCCESS: Create command executed successfully.");
+            await CheckIfTableExists();
         }
         catch (Exception ex)
         {
-            AddLog("CRITICAL ERROR: " + ex.Message);
-            if (ex.InnerException != null)
-            {
-                AddLog("INNER ERROR: " + ex.InnerException.Message);
-            }
+            AddLine("SQL CRITICAL FAILURE: " + ex.Message);
+            if (ex.InnerException != null) AddLine("INNER: " + ex.InnerException.Message);
         }
-
-        AddLog("Sequence Complete.");
         StateHasChanged();
     }
 
-    private void AddLog(string msg)
+    private void AddLine(string msg)
     {
-        logs.Add(new LogEntry { Timestamp = DateTime.Now.ToString("HH:mm:ss"), Message = msg });
-        Console.WriteLine($"HSA_LOG: {msg}");
-    }
-
-    private class LogEntry
-    {
-        public string Timestamp { get; set; } = "";
-        public string Message { get; set; } = "";
+        var timestamp = DateTime.Now.ToString("HH:mm:ss");
+        debugLines.Add($"[{timestamp}] {msg}\n");
+        Console.WriteLine($"HSA_DEBUG: {msg}");
     }
 }
