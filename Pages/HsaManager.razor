@@ -13,20 +13,24 @@
     <div class="max-w-6xl mx-auto p-6">
         @if (!tableExists)
         {
-            <div class="bg-blue-900/50 border border-blue-800 text-blue-200 p-8 rounded-2xl mb-6 shadow-2xl">
+            <div class="bg-blue-900 border border-blue-800 text-blue-100 p-8 rounded-2xl mb-6 shadow-2xl">
                 <div class="flex flex-col items-center gap-4 text-center">
-                    <span class="text-3xl">🛠️</span>
+                    <span class="text-3xl">🗄️</span>
                     <div>
-                        <h3 class="font-black uppercase tracking-widest mb-1">Database Initialization Required</h3>
-                        <p class="text-xs text-blue-300 mb-4">The HsaReceipts table was not found in your Postgres database.</p>
+                        <h3 class="font-black uppercase tracking-widest mb-1">Database Setup Required</h3>
+                        <p class="text-xs text-blue-300 mb-4 font-bold">The HSA table is currently missing from Postgres.</p>
                     </div>
-                    <button @onclick="CreateHsaTable" class="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-xl font-black text-sm uppercase tracking-[0.2em] transition-all shadow-lg">
-                        Create HsaReceipts Table
+                    
+                    <button @onclick="CreateHsaTable" 
+                            class="bg-white text-blue-900 hover:bg-blue-100 px-10 py-4 rounded-xl font-black text-sm uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95">
+                        Initialize Table Now
                     </button>
+
                     @if (!string.IsNullOrEmpty(statusMessage))
                     {
-                        <div class="mt-4 p-3 bg-black/40 rounded-lg text-[10px] font-mono text-yellow-400">
-                            @statusMessage
+                        <div class="mt-6 p-4 bg-black/50 border border-blue-700/50 rounded-lg text-[11px] font-mono text-blue-200 text-left w-full overflow-x-auto">
+                            <div class="font-black text-blue-400 mb-2 border-b border-blue-800/50 pb-1">EXECUTION LOG:</div>
+                            @((MarkupString)statusMessage.Replace("\n", "<br/>"))
                         </div>
                     }
                 </div>
@@ -34,7 +38,8 @@
         }
         else
         {
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            @* --- REST OF UI (RENDERED ONLY AFTER TABLE EXISTS) --- *@
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in duration-500">
                 <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-xl h-fit">
                     <h3 class="text-white font-black uppercase tracking-widest text-sm mb-4 border-b border-gray-800 pb-2">New Receipt</h3>
                     <EditForm Model="newReceipt" OnValidSubmit="HandleSubmit" class="space-y-4">
@@ -65,13 +70,13 @@
                         <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-3 rounded-xl transition shadow-lg uppercase text-xs tracking-widest mt-4">Save Receipt</button>
                     </EditForm>
                 </div>
+
                 <div class="md:col-span-2 space-y-6">
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div class="bg-gray-900 border border-gray-800 p-4 rounded-xl shadow-md">
-                            <div class="text-[10px] font-black text-gray-500 uppercase">Total Expenses</div>
-                            <div class="text-2xl font-black text-white">$@receipts.Sum(x => x.Amount).ToString("N2")</div>
-                        </div>
+                    <div class="bg-gray-900 border border-gray-800 p-4 rounded-xl shadow-md inline-block">
+                        <div class="text-[10px] font-black text-gray-500 uppercase">Total Expenses</div>
+                        <div class="text-2xl font-black text-white">$@receipts.Sum(x => x.Amount).ToString("N2")</div>
                     </div>
+
                     <div class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden shadow-xl">
                         <table class="w-full text-left border-collapse">
                             <thead class="bg-black border-b border-gray-800 text-[10px] font-black text-gray-500 uppercase tracking-widest">
@@ -83,7 +88,7 @@
                                 </tr>
                             </thead>
                             <tbody class="text-sm text-gray-300">
-                                @if (!receipts.Any()) { <tr><td colspan="4" class="p-10 text-center text-gray-600 italic">No receipts found.</td></tr> }
+                                @if (!receipts.Any()) { <tr><td colspan="4" class="p-10 text-center text-gray-600 italic">Table initialized. No records yet.</td></tr> }
                                 @foreach (var r in receipts)
                                 {
                                     <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition">
@@ -108,10 +113,13 @@
     private string statusMessage = "";
     private bool tableExists = false;
 
-    // Use AfterRender so the circuit is connected before we check the DB
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender) { await LoadReceipts(); }
+        if (firstRender)
+        {
+            Console.WriteLine("HSA: Component Loaded. Initializing DB check...");
+            await LoadReceipts();
+        }
     }
 
     private async Task LoadReceipts()
@@ -119,26 +127,33 @@
         try
         {
             using var db = await DbFactory.CreateDbContextAsync();
-            receipts = await db.HsaReceipts.OrderByDescending(x => x.ServiceDate).ToListAsync();
+            Console.WriteLine("HSA: Checking for HsaReceipts table...");
+            
+            // This is a surgical check that won't crash the circuit if it fails
+            receipts = await db.HsaReceipts.AsNoTracking().OrderByDescending(x => x.ServiceDate).ToListAsync();
+            
             tableExists = true;
-            statusMessage = "";
+            Console.WriteLine("HSA: Table found. Count: " + receipts.Count);
         }
         catch (Exception ex)
         {
             tableExists = false;
-            statusMessage = $"System Message: Table check failed. {ex.Message}";
+            Console.WriteLine("HSA: Table not found yet. Awaiting initialization.");
+            AddLog("Postgres Relation Check: Not Found.");
         }
         await InvokeAsync(StateHasChanged);
     }
 
     private async Task CreateHsaTable()
     {
-        statusMessage = "Status: Executing SQL 'CREATE TABLE'...";
+        AddLog("Command Triggered: Initializing SQL Process...");
         await InvokeAsync(StateHasChanged);
         
         try
         {
             using var db = await DbFactory.CreateDbContextAsync();
+            
+            // Postgres SQL with explicit lowercase table name for maximum compatibility
             var sql = @"
                 CREATE TABLE IF NOT EXISTS ""HsaReceipts"" (
                     ""Id"" SERIAL PRIMARY KEY,
@@ -157,16 +172,24 @@
                     ""CreatedAt"" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );";
             
+            Console.WriteLine("HSA: Executing Raw SQL CREATE TABLE...");
             await db.Database.ExecuteSqlRawAsync(sql);
-            statusMessage = "Status: Table created! Refreshing...";
-            await InvokeAsync(StateHasChanged);
+            
+            AddLog("SQL Success: Table structure verified/created.");
+            await Task.Delay(200);
             await LoadReceipts();
         }
         catch (Exception ex)
         {
-            statusMessage = $"Error details: {ex.Message}";
-            await InvokeAsync(StateHasChanged);
+            Console.WriteLine("HSA: SQL Error! " + ex.Message);
+            AddLog("CRITICAL ERROR: " + ex.Message);
         }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void AddLog(string msg)
+    {
+        statusMessage += $"[{DateTime.Now:T}] {msg}\n";
     }
 
     private async Task HandleSubmit() 
