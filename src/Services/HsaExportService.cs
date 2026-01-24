@@ -11,13 +11,13 @@ public class HsaExportService
     {
         using var outputDocument = new PdfDocument();
         
-        // 1. GENERATE THE LEDGER PAGE MANUALLY
+        // 1. GENERATE THE LEDGER PAGE MANUALLY (Fast, no Browser needed)
         var page = outputDocument.AddPage();
         var gfx = XGraphics.FromPdfPage(page);
+        
         var fontTitle = new XFont("Verdana", 18, XFontStyleEx.Bold);
         var fontHeader = new XFont("Verdana", 10, XFontStyleEx.Bold);
         var fontRegular = new XFont("Verdana", 10, XFontStyleEx.Regular);
-        var fontMono = new XFont("Courier New", 10, XFontStyleEx.Regular);
 
         double yPos = 40;
         gfx.DrawString("HSA Reimbursement Submission", fontTitle, XBrushes.Blue, new XPoint(40, yPos));
@@ -36,18 +36,13 @@ public class HsaExportService
 
         foreach (var r in receipts)
         {
-            gfx.DrawString(r.ServiceDate.ToString("yyyy-MM-dd"), fontMono, XBrushes.Black, new XPoint(40, yPos));
+            gfx.DrawString(r.ServiceDate.ToString("yyyy-MM-dd"), fontRegular, XBrushes.Black, new XPoint(40, yPos));
             gfx.DrawString(r.Provider?.Substring(0, Math.Min(r.Provider.Length, 25)) ?? "---", fontRegular, XBrushes.Black, new XPoint(120, yPos));
             gfx.DrawString(r.Type ?? "---", fontRegular, XBrushes.Black, new XPoint(300, yPos));
-            gfx.DrawString($"${r.Amount:N2}", fontMono, XBrushes.Black, new XPoint(500, yPos));
+            gfx.DrawString($"${r.Amount:N2}", fontRegular, XBrushes.Black, new XPoint(500, yPos));
             yPos += 20;
 
-            if (yPos > 750) // Basic page overflow handling
-            {
-                page = outputDocument.AddPage();
-                gfx = XGraphics.FromPdfPage(page);
-                yPos = 40;
-            }
+            if (yPos > 750) { page = outputDocument.AddPage(); gfx = XGraphics.FromPdfPage(page); yPos = 40; }
         }
 
         yPos += 10;
@@ -73,13 +68,12 @@ public class HsaExportService
                     using var ms = new MemoryStream(r.FileData!);
                     using var img = XImage.FromStream(ms);
                     var imgGfx = XGraphics.FromPdfPage(imgPage);
-                    
                     double width = imgPage.Width.Point;
                     double height = (width / img.PixelWidth) * img.PixelHeight;
                     imgGfx.DrawImage(img, 0, 0, width, height);
                 }
             }
-            catch { /* Skip corrupt files */ }
+            catch { /* File skipped if corrupt */ }
         }
 
         using var finalMs = new MemoryStream();
