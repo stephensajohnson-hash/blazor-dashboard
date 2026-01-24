@@ -13,12 +13,9 @@
 @inject HsaExportService ExportService
 
 <div class="min-h-screen bg-[#0a0a0a] text-white font-sans overflow-x-hidden">
-    @* 1. MAIN HEADER *@
-    <div class="no-print">
-        <BulletHeader ShowControls="false" CustomDateText="HSA Ledger" />
-    </div>
+    <BulletHeader ShowControls="false" CustomDateText="HSA Ledger" />
 
-    @* 2. STICKY SUB-HEADER *@
+    @* 1. STICKY SUB-HEADER *@
     <div class="sticky top-[73px] z-30 bg-[#0c0c0c]/95 backdrop-blur-md border-b border-gray-800 p-4 shadow-2xl no-print">
         <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
             <div class="flex items-center gap-6">
@@ -61,7 +58,7 @@
         </div>
     </div>
 
-    @* 3. LEDGER DISPLAY *@
+    @* 2. LEDGER DISPLAY *@
     <div class="max-w-7xl mx-auto p-6 pb-40">
         @if (isLoading)
         {
@@ -103,6 +100,7 @@
                                             <input type="checkbox" checked="@isSelected" @onchange="@(e => ToggleSelection(r.Id))" class="w-4 h-4 rounded border-gray-700 bg-gray-900 accent-blue-600 cursor-pointer" />
                                         }
                                     </td>
+
                                     <td class="p-4 font-mono text-gray-500 text-sm">@r.ServiceDate.ToString("yyyy-MM-dd")</td>
                                     <td class="p-4 text-white font-bold tracking-tight truncate text-sm">
                                         @(string.IsNullOrEmpty(r.Provider) ? "---" : r.Provider)
@@ -296,7 +294,7 @@
     private async Task GenerateSubmission()
     {
         if (!selectedIds.Any()) return;
-        if (!await JS.InvokeAsync<bool>("confirm", $"Ready to submit {selectedIds.Count} items (${SelectedTotal:N2})?")) return;
+        if (!await JS.InvokeAsync<bool>("confirm", $"Submit {selectedIds.Count} items (${SelectedTotal:N2})?")) return;
 
         isLoading = true;
         StateHasChanged();
@@ -309,11 +307,11 @@
                 .OrderBy(r => r.ServiceDate)
                 .ToListAsync();
 
-            // Generate the PDF
-            var pdfBytes = await ExportService.CreateSubmissionPdf(targets);
+            // 1. Generate the PDF (Using the manual PdfSharp logic we drafted)
+            var pdfBytes = ExportService.CreateSubmissionPdf(targets);
             var base64 = Convert.ToBase64String(pdfBytes);
 
-            // Mark as reimbursed ONLY if PDF creation succeeded
+            // 2. Mark as reimbursed ONLY if PDF creation succeeded
             foreach (var r in targets)
             {
                 r.IsReimbursed = true;
@@ -321,7 +319,7 @@
             }
             await db.SaveChangesAsync();
 
-            // Trigger Download
+            // 3. Trigger Download
             var fileName = $"HSA_Submission_{DateTime.Now:yyyyMMdd_HHmm}.pdf";
             await JS.InvokeVoidAsync("downloadFile", base64, "application/pdf", fileName);
 

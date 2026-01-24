@@ -1,43 +1,62 @@
-using PuppeteerSharp;
-using PuppeteerSharp.Media; // Required for PaperFormat
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
 using PdfSharp.Drawing;
-using System.Text;
 using Dashboard;
 
 namespace Dashboard.Services;
 
 public class HsaExportService
 {
-    public async Task<byte[]> CreateSubmissionPdf(List<HsaReceipt> receipts)
+    public byte[] CreateSubmissionPdf(List<HsaReceipt> receipts)
     {
-        // 1. GENERATE THE LEDGER PAGE VIA PUPPETEER
-        var html = BuildLedgerHtml(receipts);
-        
-        // Fix for CS1674: BrowserFetcher in newer versions isn't used with 'using' 
-        var browserFetcher = new BrowserFetcher();
-        await browserFetcher.DownloadAsync();
-        
-        using var browser = await Puppeteer.LaunchAsync(new LaunchOptions { Headless = true });
-        using var page = await browser.NewPageAsync();
-        await page.SetContentAsync(html);
-        
-        // Use the explicit Media namespace for PaperFormat
-        var ledgerPdfBytes = await page.PdfDataAsync(new PdfOptions { Format = PaperFormat.A4 });
-        await browser.CloseAsync();
-
-        // 2. MERGE EVERYTHING VIA PDFSHARP
         using var outputDocument = new PdfDocument();
         
-        // Add the Ledger
-        using (var ledgerStream = new MemoryStream(ledgerPdfBytes))
+        // 1. GENERATE THE LEDGER PAGE MANUALLY
+        var page = outputDocument.AddPage();
+        var gfx = XGraphics.FromPdfPage(page);
+        var fontTitle = new XFont("Verdana", 18, XFontStyleEx.Bold);
+        var fontHeader = new XFont("Verdana", 10, XFontStyleEx.Bold);
+        var fontRegular = new XFont("Verdana", 10, XFontStyleEx.Regular);
+        var fontMono = new XFont("Courier New", 10, XFontStyleEx.Regular);
+
+        double yPos = 40;
+        gfx.DrawString("HSA Reimbursement Submission", fontTitle, XBrushes.Blue, new XPoint(40, yPos));
+        yPos += 25;
+        gfx.DrawString($"Generated: {DateTime.Now:yyyy-MM-dd HH:mm}", fontRegular, XBrushes.Gray, new XPoint(40, yPos));
+        yPos += 40;
+
+        // Draw Table Headers
+        gfx.DrawString("Date", fontHeader, XBrushes.Black, new XPoint(40, yPos));
+        gfx.DrawString("Provider", fontHeader, XBrushes.Black, new XPoint(120, yPos));
+        gfx.DrawString("Category", fontHeader, XBrushes.Black, new XPoint(300, yPos));
+        gfx.DrawString("Amount", fontHeader, XBrushes.Black, new XPoint(500, yPos));
+        yPos += 5;
+        gfx.DrawLine(XPens.Black, 40, yPos, 550, yPos);
+        yPos += 15;
+
+        foreach (var r in receipts)
         {
-            var ledgerDoc = PdfReader.Open(ledgerStream, PdfDocumentOpenMode.Import);
-            CopyPages(ledgerDoc, outputDocument);
+            gfx.DrawString(r.ServiceDate.ToString("yyyy-MM-dd"), fontMono, XBrushes.Black, new XPoint(40, yPos));
+            gfx.DrawString(r.Provider?.Substring(0, Math.Min(r.Provider.Length, 25)) ?? "---", fontRegular, XBrushes.Black, new XPoint(120, yPos));
+            gfx.DrawString(r.Type ?? "---", fontRegular, XBrushes.Black, new XPoint(300, yPos));
+            gfx.DrawString($"${r.Amount:N2}", fontMono, XBrushes.Black, new XPoint(500, yPos));
+            yPos += 20;
+
+            if (yPos > 750) // Basic page overflow handling
+            {
+                page = outputDocument.AddPage();
+                gfx = XGraphics.FromPdfPage(page);
+                yPos = 40;
+            }
         }
 
-        // Add Attachments
+        yPos += 10;
+        gfx.DrawLine(XPens.Black, 40, yPos, 550, yPos);
+        yPos += 20;
+        gfx.DrawString("Total Submission:", fontHeader, XBrushes.Black, new XPoint(380, yPos));
+        gfx.DrawString($"${receipts.Sum(x => x.Amount):N2}", fontHeader, XBrushes.DarkGreen, new XPoint(500, yPos));
+
+        // 2. APPEND ATTACHMENTS
         foreach (var r in receipts.Where(x => x.FileData != null && x.FileData.Length > 0))
         {
             try 
@@ -46,64 +65,25 @@ public class HsaExportService
                 {
                     using var ms = new MemoryStream(r.FileData!);
                     var attachment = PdfReader.Open(ms, PdfDocumentOpenMode.Import);
-                    CopyPages(attachment, outputDocument);
+                    for (int i = 0; i < attachment.PageCount; i++) outputDocument.AddPage(attachment.Pages[i]);
                 }
                 else if (r.ContentType != null && r.ContentType.Contains("image"))
                 {
-                    var newPage = outputDocument.AddPage();
+                    var imgPage = outputDocument.AddPage();
                     using var ms = new MemoryStream(r.FileData!);
                     using var img = XImage.FromStream(ms);
+                    var imgGfx = XGraphics.FromPdfPage(imgPage);
                     
-                    var graphics = XGraphics.FromPdfPage(newPage);
-                    
-                    // Fix for CS0618: Use .Point property for conversion in 6.1
-                    double pageWidth = newPage.Width.Point;
-                    double imageHeight = (pageWidth / img.PixelWidth) * img.PixelHeight;
-                    
-                    graphics.DrawImage(img, 0, 0, pageWidth, imageHeight);
+                    double width = imgPage.Width.Point;
+                    double height = (width / img.PixelWidth) * img.PixelHeight;
+                    imgGfx.DrawImage(img, 0, 0, width, height);
                 }
             }
-            catch (Exception ex) 
-            { 
-                Console.WriteLine($"ATTACHMENT_ERR for {r.Provider}: {ex.Message}");
-            }
+            catch { /* Skip corrupt files */ }
         }
 
         using var finalMs = new MemoryStream();
         outputDocument.Save(finalMs);
         return finalMs.ToArray();
-    }
-
-    private void CopyPages(PdfDocument from, PdfDocument to)
-    {
-        for (int i = 0; i < from.PageCount; i++) to.AddPage(from.Pages[i]);
-    }
-
-    private string BuildLedgerHtml(List<HsaReceipt> receipts)
-    {
-        var sb = new StringBuilder();
-        sb.Append(@"<html><head><style>
-            body { font-family: sans-serif; padding: 40px; color: #333; }
-            h1 { color: #2563eb; margin-bottom: 5px; font-size: 24px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th { text-align: left; border-bottom: 2px solid #000; padding: 12px 8px; font-size: 12px; }
-            td { padding: 10px 8px; border-bottom: 1px solid #eee; font-size: 11px; }
-            .amt { text-align: right; font-family: monospace; }
-            .total { font-weight: bold; background: #f8fafc; border-top: 2px solid #333; }
-        </style></head><body>");
-
-        sb.Append("<h1>HSA Reimbursement Submission</h1>");
-        sb.Append($"<p>Generated: {DateTime.Now:yyyy-MM-dd HH:mm}</p>");
-        sb.Append("<table><thead><tr><th>Date</th><th>Provider</th><th>Category</th><th class='amt'>Amount</th></tr></thead><tbody>");
-
-        foreach (var r in receipts)
-        {
-            sb.Append($"<tr><td>{r.ServiceDate:yyyy-MM-dd}</td><td>{r.Provider}</td><td>{r.Type}</td><td class='amt'>${r.Amount:N2}</td></tr>");
-        }
-
-        sb.Append($"<tr class='total'><td colspan='3' style='text-align:right'>Total Submission:</td><td class='amt'>${receipts.Sum(x => x.Amount):N2}</td></tr>");
-        sb.Append("</tbody></table></body></html>");
-
-        return sb.ToString();
     }
 }
