@@ -9,49 +9,20 @@ public class HsaExportService
 {
     public byte[] CreateSubmissionPdf(List<HsaReceipt> receipts)
     {
-        Console.WriteLine("PDF_CHECKPOINT: 1 - Starting Service");
+        Console.WriteLine("PDF_CHECKPOINT: 1 - Starting Stitch-Only Service");
         using var outputDocument = new PdfDocument();
         
         try 
         {
-            // 1. GENERATE THE LEDGER PAGE
-            Console.WriteLine("PDF_CHECKPOINT: 2 - Creating Ledger Page");
-            var page = outputDocument.AddPage();
-            var gfx = XGraphics.FromPdfPage(page);
+            // We are skipping the Ledger page entirely to avoid Font dependencies.
+            // We are going straight to the attachments.
             
-            // Standard fonts do not require a FontResolver - this bypasses the Linux font issue
-            var fontTitle = new XFont("Helvetica", 18, XFontStyleEx.Bold);
-            var fontHeader = new XFont("Helvetica", 10, XFontStyleEx.Bold);
-            var fontRegular = new XFont("Helvetica", 10, XFontStyleEx.Regular);
-
-            double yPos = 40;
-            gfx.DrawString("HSA Reimbursement Submission", fontTitle, XBrushes.Blue, new XPoint(40, yPos));
-            yPos += 40;
-
-            Console.WriteLine("PDF_CHECKPOINT: 3 - Drawing Headers");
-            gfx.DrawString("Date", fontHeader, XBrushes.Black, new XPoint(40, yPos));
-            gfx.DrawString("Provider", fontHeader, XBrushes.Black, new XPoint(120, yPos));
-            gfx.DrawString("Amount", fontHeader, XBrushes.Black, new XPoint(500, yPos));
-            yPos += 20;
-
-            foreach (var r in receipts)
-            {
-                Console.WriteLine($"PDF_CHECKPOINT: 4 - Drawing Row for {r.Id}");
-                string dateStr = r.ServiceDate.ToString("yyyy-MM-dd");
-                string provStr = r.Provider ?? "Unknown";
-                string amtStr = $"${r.Amount:N2}";
-
-                gfx.DrawString(dateStr, fontRegular, XBrushes.Black, new XPoint(40, yPos));
-                gfx.DrawString(provStr, fontRegular, XBrushes.Black, new XPoint(120, yPos));
-                gfx.DrawString(amtStr, fontRegular, XBrushes.Black, new XPoint(500, yPos));
-                yPos += 20;
-            }
-
-            // 2. APPEND ATTACHMENTS
-            Console.WriteLine("PDF_CHECKPOINT: 5 - Starting Attachments");
+            int fileCount = 0;
             foreach (var r in receipts.Where(x => x.FileData != null && x.FileData.Length > 0))
             {
-                Console.WriteLine($"PDF_CHECKPOINT: 6 - Processing File for {r.Provider}");
+                fileCount++;
+                Console.WriteLine($"PDF_CHECKPOINT: 2 - Stitching file {fileCount} for {r.Provider}");
+                
                 try 
                 {
                     if (r.ContentType != null && r.ContentType.ToLower().Contains("pdf"))
@@ -69,16 +40,31 @@ public class HsaExportService
                         using var ms = new MemoryStream(r.FileData!);
                         using var img = XImage.FromStream(ms);
                         var imgGfx = XGraphics.FromPdfPage(imgPage);
-                        imgGfx.DrawImage(img, 0, 0, imgPage.Width.Point, 400); // Fixed height for testing
+                        
+                        // Scale to fit page width
+                        double width = imgPage.Width.Point;
+                        double height = (width / img.PixelWidth) * img.PixelHeight;
+                        
+                        // Limit height to avoid overflow
+                        if (height > imgPage.Height.Point) height = imgPage.Height.Point;
+                        
+                        imgGfx.DrawImage(img, 0, 0, width, height);
                     }
                 }
                 catch (Exception fileEx) 
                 { 
-                    Console.WriteLine($"PDF_CHECKPOINT: FILE_ERROR on {r.Id} - {fileEx.Message}");
+                    Console.WriteLine($"PDF_CHECKPOINT: ERROR on file {fileCount} - {fileEx.Message}");
                 }
             }
 
-            Console.WriteLine("PDF_CHECKPOINT: 7 - Saving to Stream");
+            if (outputDocument.PageCount == 0)
+            {
+                // If no files were selected, we have to add one blank page 
+                // because a PDF with 0 pages is invalid.
+                outputDocument.AddPage();
+            }
+
+            Console.WriteLine("PDF_CHECKPOINT: 3 - Saving final document");
             using var finalMs = new MemoryStream();
             outputDocument.Save(finalMs);
             return finalMs.ToArray();
@@ -86,7 +72,6 @@ public class HsaExportService
         catch (Exception ex)
         {
             Console.WriteLine($"PDF_CRASH: {ex.Message}");
-            Console.WriteLine(ex.StackTrace);
             throw; 
         }
     }
