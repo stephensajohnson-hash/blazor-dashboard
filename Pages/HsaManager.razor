@@ -314,10 +314,10 @@
 
     private async Task GenerateSubmission()
     {
-        var targets = allReceipts.Where(r => selectedIds.Contains(r.Id) && !r.IsReimbursed).ToList();
-        if (!targets.Any()) return;
+        var selectedRecords = allReceipts.Where(r => selectedIds.Contains(r.Id) && !r.IsReimbursed).ToList();
+        if (!selectedRecords.Any()) return;
         
-        if (!await JS.InvokeAsync<bool>("confirm", $"Submit {targets.Count} items (${targets.Sum(x=>x.Amount):N2})?")) return;
+        if (!await JS.InvokeAsync<bool>("confirm", $"Submit {selectedRecords.Count} items?")) return;
 
         isLoading = true;
         StateHasChanged();
@@ -325,9 +325,14 @@
         try
         {
             using var db = await DbFactory.CreateDbContextAsync();
-            var dbTargets = await db.HsaReceipts.Where(r => targets.Select(t => t.Id).Contains(r.Id)).ToListAsync();
+            
+            // FIXED: Explicitly OrderBy ServiceDate so the files attach oldest-to-newest
+            var dbTargets = await db.HsaReceipts
+                .Where(r => selectedIds.Contains(r.Id))
+                .OrderBy(r => r.ServiceDate) 
+                .ToListAsync();
 
-            // 1. Generate PDF (Using your Stitch-Only logic)
+            // 1. Generate PDF (Using Stitch-Only logic)
             var pdfBytes = ExportService.CreateSubmissionPdf(dbTargets);
 
             // 2. Update Database
@@ -338,7 +343,7 @@
             }
             await db.SaveChangesAsync();
 
-            // 3. STREAM THE DOWNLOAD (Fix for OutOfMemoryException)
+            // 3. Streaming Download
             var fileName = $"HSA_Submission_{DateTime.Now:yyyyMMdd_HHmm}.pdf";
             using var stream = new MemoryStream(pdfBytes);
             using var streamRef = new DotNetStreamReference(stream);
