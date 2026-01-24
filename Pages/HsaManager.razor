@@ -287,22 +287,58 @@
     private async Task GenerateSubmission()
     {
         if (!selectedIds.Any()) return;
-        if (!await JS.InvokeAsync<bool>("confirm", $"Ready to submit {selectedIds.Count} items (${SelectedTotal:N2})? This marks them as reimbursed.")) return;
+        if (!await JS.InvokeAsync<bool>("confirm", $"Submit {selectedIds.Count} items (${SelectedTotal:N2})?")) return;
+
+        isLoading = true;
+        StateHasChanged();
 
         try
         {
             using var db = await DbFactory.CreateDbContextAsync();
-            var targets = await db.HsaReceipts.Where(r => selectedIds.Contains(r.Id)).ToListAsync();
+            var targets = await db.HsaReceipts
+                .Where(r => selectedIds.Contains(r.Id))
+                .OrderBy(r => r.ServiceDate)
+                .ToListAsync();
+
+            Console.WriteLine($"PDF_TRACE: Generating PDF for {targets.Count} items...");
+
+            // 1. Create the PDF bytes
+            // If this line fails, the database update below will NOT run.
+            var pdfBytes = await ExportService.CreateSubmissionPdf(targets);
+            
+            Console.WriteLine($"PDF_TRACE: PDF Generated successfully. Size: {pdfBytes.Length} bytes.");
+
+            var base64 = Convert.ToBase64String(pdfBytes);
+
+            // 2. Mark as reimbursed ONLY if PDF was successful
             foreach (var r in targets)
             {
                 r.IsReimbursed = true;
                 r.ReimbursedAt = DateTime.Now;
             }
             await db.SaveChangesAsync();
+
+            // 3. Trigger Download
+            var fileName = $"HSA_Submission_{DateTime.Now:yyyyMMdd_HHmm}.pdf";
+            await JS.InvokeVoidAsync("downloadFile", base64, "application/pdf", fileName);
+            
+            Console.WriteLine("PDF_TRACE: Download command sent to browser.");
+
             selectedIds.Clear();
             await LoadData();
         }
-        catch (Exception ex) { Console.WriteLine($"SUBMIT_ERR: {ex.Message}"); }
+        catch (Exception ex) 
+        { 
+            // This will now show up in your Render logs!
+            Console.WriteLine($"FATAL_EXPORT_ERROR: {ex.Message}");
+            Console.WriteLine(ex.StackTrace);
+            await JS.InvokeVoidAsync("alert", $"Export Failed: {ex.Message}");
+        }
+        finally 
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
     }
 
     private void OpenAddModal() { editingId = 0; tempReceipt = new HsaReceipt { ServiceDate = DateTime.Today, Provider = "", Type = "Chiropractic", Note = "" }; showModal = true; }
