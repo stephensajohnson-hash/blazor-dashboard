@@ -314,7 +314,7 @@
         var targets = allReceipts.Where(r => selectedIds.Contains(r.Id) && !r.IsReimbursed).ToList();
         if (!targets.Any()) return;
         
-        if (!await JS.InvokeAsync<bool>("confirm", $"Submit {targets.Count} items (${targets.Sum(x=>x.Amount):N2})?")) return;
+        if (!await JS.InvokeAsync<bool>("confirm", $"Submit {targets.Count} items?")) return;
 
         isLoading = true;
         StateHasChanged();
@@ -324,11 +324,10 @@
             using var db = await DbFactory.CreateDbContextAsync();
             var dbTargets = await db.HsaReceipts.Where(r => targets.Select(t => t.Id).Contains(r.Id)).ToListAsync();
 
-            // Generate PDF
+            // 1. Generate PDF Bytes
             var pdfBytes = ExportService.CreateSubmissionPdf(dbTargets);
-            var base64 = Convert.ToBase64String(pdfBytes);
 
-            // Update Database
+            // 2. Mark as reimbursed
             foreach (var r in dbTargets)
             {
                 r.IsReimbursed = true;
@@ -336,9 +335,22 @@
             }
             await db.SaveChangesAsync();
 
-            // Download
+            // 3. STREAM THE DOWNLOAD (Memory Efficient)
             var fileName = $"HSA_Submission_{DateTime.Now:yyyyMMdd_HHmm}.pdf";
-            await JS.InvokeVoidAsync("downloadFile", base64, "application/pdf", fileName);
+            using var stream = new MemoryStream(pdfBytes);
+            using var streamRef = new DotNetStreamReference(stream);
+
+            window.downloadFileFromStream = async (fileName, contentStreamReference) => {
+                const arrayBuffer = await contentStreamReference.arrayBuffer();
+                const blob = new Blob([arrayBuffer]);
+                const url = URL.createObjectURL(blob);
+                const anchorElement = document.createElement('a');
+                anchorElement.href = url;
+                anchorElement.download = fileName ?? '';
+                anchorElement.click();
+                anchorElement.remove();
+                URL.revokeObjectURL(url);
+            };
 
             selectedIds.Clear();
             await LoadData();
