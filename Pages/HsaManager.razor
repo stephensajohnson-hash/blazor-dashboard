@@ -248,6 +248,18 @@
         link.click();
         document.body.removeChild(link);
     };
+
+    window.downloadFileFromStream = async (fileName, contentStreamReference) => {
+        const arrayBuffer = await contentStreamReference.arrayBuffer();
+        const blob = new Blob([arrayBuffer]);
+        const url = URL.createObjectURL(blob);
+        const anchorElement = document.createElement('a');
+        anchorElement.href = url;
+        anchorElement.download = fileName ?? '';
+        anchorElement.click();
+        anchorElement.remove();
+        URL.revokeObjectURL(url);
+    };
 </script>
 
 @code {
@@ -324,7 +336,7 @@
             using var db = await DbFactory.CreateDbContextAsync();
             var dbTargets = await db.HsaReceipts.Where(r => targets.Select(t => t.Id).Contains(r.Id)).ToListAsync();
 
-            // 1. Generate PDF Bytes
+            // 1. Generate PDF (Memory Efficient)
             var pdfBytes = ExportService.CreateSubmissionPdf(dbTargets);
 
             // 2. Mark as reimbursed
@@ -335,22 +347,11 @@
             }
             await db.SaveChangesAsync();
 
-            // 3. STREAM THE DOWNLOAD (Memory Efficient)
+            // 3. Streaming Download (Fix for OutOfMemoryException)
             var fileName = $"HSA_Submission_{DateTime.Now:yyyyMMdd_HHmm}.pdf";
             using var stream = new MemoryStream(pdfBytes);
             using var streamRef = new DotNetStreamReference(stream);
-
-            window.downloadFileFromStream = async (fileName, contentStreamReference) => {
-                const arrayBuffer = await contentStreamReference.arrayBuffer();
-                const blob = new Blob([arrayBuffer]);
-                const url = URL.createObjectURL(blob);
-                const anchorElement = document.createElement('a');
-                anchorElement.href = url;
-                anchorElement.download = fileName ?? '';
-                anchorElement.click();
-                anchorElement.remove();
-                URL.revokeObjectURL(url);
-            };
+            await JS.InvokeVoidAsync("downloadFileFromStream", fileName, streamRef);
 
             selectedIds.Clear();
             await LoadData();
@@ -360,7 +361,11 @@
             Console.WriteLine($"FATAL_EXPORT_ERROR: {ex.Message}");
             await JS.InvokeVoidAsync("alert", $"Export Failed: {ex.Message}");
         }
-        finally { isLoading = false; StateHasChanged(); }
+        finally 
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
     }
 
     private async Task UndoReimbursement()
