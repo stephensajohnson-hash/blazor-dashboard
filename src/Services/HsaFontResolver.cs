@@ -16,8 +16,9 @@ public class HsaFontResolver : IFontResolver
     {
         var assembly = Assembly.GetExecutingAssembly();
         
+        // This finds the font no matter what the manifest prefix is
         string? resourceName = assembly.GetManifestResourceNames()
-            .FirstOrDefault(x => x.EndsWith(FontFilename));
+            .FirstOrDefault(x => x.EndsWith("Roboto-VariableFont_wdth,wght.ttf"));
 
         if (string.IsNullOrEmpty(resourceName)) return null;
 
