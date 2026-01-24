@@ -1,7 +1,7 @@
 @page "/hsa"
 @using Dashboard
 @using Dashboard.Components.Bullet
-@using Dashboard.Services @* Ensure this matches your Service namespace *@
+@using Dashboard.Services
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.AspNetCore.Components.Web
@@ -10,7 +10,7 @@
 
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject IJSRuntime JS
-@inject HsaExportService ExportService @* FIXED: Added missing injection *@
+@inject HsaExportService ExportService
 
 <div class="min-h-screen bg-[#0a0a0a] text-white font-sans overflow-x-hidden">
     @* 1. MAIN HEADER *@
@@ -37,7 +37,7 @@
                     }
                 </div>
 
-                @* Selection Totals *@
+                @* Selection Stats *@
                 @if (selectedIds.Any())
                 {
                     <div class="flex items-center gap-4 animate-in fade-in slide-in-from-left-2">
@@ -296,7 +296,7 @@
     private async Task GenerateSubmission()
     {
         if (!selectedIds.Any()) return;
-        if (!await JS.InvokeAsync<bool>("confirm", $"Submit {selectedIds.Count} items (${SelectedTotal:N2})?")) return;
+        if (!await JS.InvokeAsync<bool>("confirm", $"Ready to submit {selectedIds.Count} items (${SelectedTotal:N2})?")) return;
 
         isLoading = true;
         StateHasChanged();
@@ -309,13 +309,11 @@
                 .OrderBy(r => r.ServiceDate)
                 .ToListAsync();
 
-            Console.WriteLine($"PDF_TRACE: Processing {targets.Count} items.");
-
-            // 1. Create the PDF
+            // Generate the PDF
             var pdfBytes = await ExportService.CreateSubmissionPdf(targets);
             var base64 = Convert.ToBase64String(pdfBytes);
 
-            // 2. Mark as reimbursed ONLY if PDF creation succeeded
+            // Mark as reimbursed ONLY if PDF creation succeeded
             foreach (var r in targets)
             {
                 r.IsReimbursed = true;
@@ -323,7 +321,7 @@
             }
             await db.SaveChangesAsync();
 
-            // 3. Trigger Download
+            // Trigger Download
             var fileName = $"HSA_Submission_{DateTime.Now:yyyyMMdd_HHmm}.pdf";
             await JS.InvokeVoidAsync("downloadFile", base64, "application/pdf", fileName);
 
