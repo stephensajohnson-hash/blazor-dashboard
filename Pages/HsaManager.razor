@@ -240,15 +240,6 @@
         setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
     };
 
-    window.downloadFile = (base64, contentType, fileName) => {
-        const link = document.createElement('a');
-        link.download = fileName;
-        link.href = `data:${contentType};base64,${base64}`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
-
     window.downloadFileFromStream = async (fileName, contentStreamReference) => {
         const arrayBuffer = await contentStreamReference.arrayBuffer();
         const blob = new Blob([arrayBuffer]);
@@ -326,7 +317,7 @@
         var targets = allReceipts.Where(r => selectedIds.Contains(r.Id) && !r.IsReimbursed).ToList();
         if (!targets.Any()) return;
         
-        if (!await JS.InvokeAsync<bool>("confirm", $"Submit {targets.Count} items?")) return;
+        if (!await JS.InvokeAsync<bool>("confirm", $"Submit {targets.Count} items (${targets.Sum(x=>x.Amount):N2})?")) return;
 
         isLoading = true;
         StateHasChanged();
@@ -336,10 +327,10 @@
             using var db = await DbFactory.CreateDbContextAsync();
             var dbTargets = await db.HsaReceipts.Where(r => targets.Select(t => t.Id).Contains(r.Id)).ToListAsync();
 
-            // 1. Generate PDF (Memory Efficient)
+            // 1. Generate PDF (Using your Stitch-Only logic)
             var pdfBytes = ExportService.CreateSubmissionPdf(dbTargets);
 
-            // 2. Mark as reimbursed
+            // 2. Update Database
             foreach (var r in dbTargets)
             {
                 r.IsReimbursed = true;
@@ -347,7 +338,7 @@
             }
             await db.SaveChangesAsync();
 
-            // 3. Streaming Download (Fix for OutOfMemoryException)
+            // 3. STREAM THE DOWNLOAD (Fix for OutOfMemoryException)
             var fileName = $"HSA_Submission_{DateTime.Now:yyyyMMdd_HHmm}.pdf";
             using var stream = new MemoryStream(pdfBytes);
             using var streamRef = new DotNetStreamReference(stream);
