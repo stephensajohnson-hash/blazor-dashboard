@@ -77,6 +77,9 @@ else
         options.UseInMemoryDatabase("TempDb"));
 }
 
+// Add this near the top of Program.cs
+PdfSharp.Fonts.GlobalFontSettings.FontResolver = new Dashboard.Services.HsaFontResolver();
+
 var app = builder.Build();
 
 // =========================================================
