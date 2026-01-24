@@ -9,95 +9,85 @@ public class HsaExportService
 {
     public byte[] CreateSubmissionPdf(List<HsaReceipt> receipts)
     {
+        Console.WriteLine("PDF_CHECKPOINT: 1 - Starting Service");
         using var outputDocument = new PdfDocument();
         
-        // 1. GENERATE THE LEDGER PAGE
-        var page = outputDocument.AddPage();
-        var gfx = XGraphics.FromPdfPage(page);
-        
-        // Use 'Arial' or 'Helvetica' - Linux environments usually map these to DejaVuSans
-        var fontTitle = new XFont("Arial", 18, XFontStyleEx.Bold);
-        var fontHeader = new XFont("Arial", 10, XFontStyleEx.Bold);
-        var fontRegular = new XFont("Arial", 10, XFontStyleEx.Regular);
-
-        double yPos = 40;
-        gfx.DrawString("HSA Reimbursement Submission", fontTitle, XBrushes.Blue, new XPoint(40, yPos));
-        yPos += 25;
-        gfx.DrawString($"Generated: {DateTime.Now:yyyy-MM-dd HH:mm}", fontRegular, XBrushes.Gray, new XPoint(40, yPos));
-        yPos += 40;
-
-        // Table Headers
-        gfx.DrawString("Date", fontHeader, XBrushes.Black, new XPoint(40, yPos));
-        gfx.DrawString("Provider", fontHeader, XBrushes.Black, new XPoint(120, yPos));
-        gfx.DrawString("Category", fontHeader, XBrushes.Black, new XPoint(300, yPos));
-        gfx.DrawString("Amount", fontHeader, XBrushes.Black, new XPoint(500, yPos));
-        yPos += 5;
-        gfx.DrawLine(XPens.Black, 40, yPos, 550, yPos);
-        yPos += 15;
-
-        foreach (var r in receipts)
+        try 
         {
-            gfx.DrawString(r.ServiceDate.ToString("yyyy-MM-dd"), fontRegular, XBrushes.Black, new XPoint(40, yPos));
+            // 1. GENERATE THE LEDGER PAGE
+            Console.WriteLine("PDF_CHECKPOINT: 2 - Creating Ledger Page");
+            var page = outputDocument.AddPage();
+            var gfx = XGraphics.FromPdfPage(page);
             
-            // Null-safe provider text
-            string provText = r.Provider ?? "---";
-            if (provText.Length > 25) provText = provText.Substring(0, 22) + "...";
-            gfx.DrawString(provText, fontRegular, XBrushes.Black, new XPoint(120, yPos));
-            
-            gfx.DrawString(r.Type ?? "Other", fontRegular, XBrushes.Black, new XPoint(300, yPos));
-            gfx.DrawString($"${r.Amount:N2}", fontRegular, XBrushes.Black, new XPoint(500, yPos));
-            
+            // Standard fonts do not require a FontResolver - this bypasses the Linux font issue
+            var fontTitle = new XFont("Helvetica", 18, XFontStyleEx.Bold);
+            var fontHeader = new XFont("Helvetica", 10, XFontStyleEx.Bold);
+            var fontRegular = new XFont("Helvetica", 10, XFontStyleEx.Regular);
+
+            double yPos = 40;
+            gfx.DrawString("HSA Reimbursement Submission", fontTitle, XBrushes.Blue, new XPoint(40, yPos));
+            yPos += 40;
+
+            Console.WriteLine("PDF_CHECKPOINT: 3 - Drawing Headers");
+            gfx.DrawString("Date", fontHeader, XBrushes.Black, new XPoint(40, yPos));
+            gfx.DrawString("Provider", fontHeader, XBrushes.Black, new XPoint(120, yPos));
+            gfx.DrawString("Amount", fontHeader, XBrushes.Black, new XPoint(500, yPos));
             yPos += 20;
-            if (yPos > 750) { page = outputDocument.AddPage(); gfx = XGraphics.FromPdfPage(page); yPos = 40; }
-        }
 
-        yPos += 10;
-        gfx.DrawLine(XPens.Black, 40, yPos, 550, yPos);
-        yPos += 20;
-        gfx.DrawString("Total Submission:", fontHeader, XBrushes.Black, new XPoint(380, yPos));
-        gfx.DrawString($"${receipts.Sum(x => x.Amount):N2}", fontHeader, XBrushes.DarkGreen, new XPoint(500, yPos));
-
-        // 2. APPEND ATTACHMENTS
-        foreach (var r in receipts.Where(x => x.FileData != null && x.FileData.Length > 0))
-        {
-            try 
+            foreach (var r in receipts)
             {
-                // PDF HANDLING
-                if (r.ContentType != null && r.ContentType.ToLower().Contains("pdf"))
+                Console.WriteLine($"PDF_CHECKPOINT: 4 - Drawing Row for {r.Id}");
+                string dateStr = r.ServiceDate.ToString("yyyy-MM-dd");
+                string provStr = r.Provider ?? "Unknown";
+                string amtStr = $"${r.Amount:N2}";
+
+                gfx.DrawString(dateStr, fontRegular, XBrushes.Black, new XPoint(40, yPos));
+                gfx.DrawString(provStr, fontRegular, XBrushes.Black, new XPoint(120, yPos));
+                gfx.DrawString(amtStr, fontRegular, XBrushes.Black, new XPoint(500, yPos));
+                yPos += 20;
+            }
+
+            // 2. APPEND ATTACHMENTS
+            Console.WriteLine("PDF_CHECKPOINT: 5 - Starting Attachments");
+            foreach (var r in receipts.Where(x => x.FileData != null && x.FileData.Length > 0))
+            {
+                Console.WriteLine($"PDF_CHECKPOINT: 6 - Processing File for {r.Provider}");
+                try 
                 {
-                    using var ms = new MemoryStream(r.FileData!);
-                    var attachment = PdfReader.Open(ms, PdfDocumentOpenMode.Import);
-                    for (int i = 0; i < attachment.PageCount; i++) 
+                    if (r.ContentType != null && r.ContentType.ToLower().Contains("pdf"))
                     {
-                        outputDocument.AddPage(attachment.Pages[i]);
+                        using var ms = new MemoryStream(r.FileData!);
+                        var attachment = PdfReader.Open(ms, PdfDocumentOpenMode.Import);
+                        for (int i = 0; i < attachment.PageCount; i++) 
+                        {
+                            outputDocument.AddPage(attachment.Pages[i]);
+                        }
+                    }
+                    else if (r.ContentType != null && r.ContentType.ToLower().Contains("image"))
+                    {
+                        var imgPage = outputDocument.AddPage();
+                        using var ms = new MemoryStream(r.FileData!);
+                        using var img = XImage.FromStream(ms);
+                        var imgGfx = XGraphics.FromPdfPage(imgPage);
+                        imgGfx.DrawImage(img, 0, 0, imgPage.Width.Point, 400); // Fixed height for testing
                     }
                 }
-                // IMAGE HANDLING
-                else if (r.ContentType != null && r.ContentType.ToLower().Contains("image"))
-                {
-                    var imgPage = outputDocument.AddPage();
-                    using var ms = new MemoryStream(r.FileData!);
-                    using var img = XImage.FromStream(ms);
-                    var imgGfx = XGraphics.FromPdfPage(imgPage);
-                    
-                    double width = imgPage.Width.Point;
-                    double height = (width / img.PixelWidth) * img.PixelHeight;
-                    
-                    // Cap height to page height
-                    if (height > imgPage.Height.Point) height = imgPage.Height.Point - 40;
-                    
-                    imgGfx.DrawImage(img, 0, 0, width, height);
+                catch (Exception fileEx) 
+                { 
+                    Console.WriteLine($"PDF_CHECKPOINT: FILE_ERROR on {r.Id} - {fileEx.Message}");
                 }
             }
-            catch (Exception ex) 
-            { 
-                // Don't kill the whole export for one bad image
-                Console.WriteLine($"FILE_APPEND_ERROR: {ex.Message}");
-            }
-        }
 
-        using var finalMs = new MemoryStream();
-        outputDocument.Save(finalMs);
-        return finalMs.ToArray();
+            Console.WriteLine("PDF_CHECKPOINT: 7 - Saving to Stream");
+            using var finalMs = new MemoryStream();
+            outputDocument.Save(finalMs);
+            return finalMs.ToArray();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"PDF_CRASH: {ex.Message}");
+            Console.WriteLine(ex.StackTrace);
+            throw; 
+        }
     }
 }
