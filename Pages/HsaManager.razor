@@ -52,6 +52,7 @@
                             <span class="text-xl font-black text-emerald-400 font-mono leading-none">$@SelectedTotal.ToString("N2")</span>
                         </div>
                         
+                        @* Action: Generate Submission (for unreimbursed items) *@
                         @if (HasUnreimbursedSelected)
                         {
                             <button @onclick="GenerateSubmission" 
@@ -60,6 +61,7 @@
                             </button>
                         }
 
+                        @* Action: Undo Reimbursement (for reimbursed items) *@
                         @if (HasReimbursedSelected)
                         {
                             <button @onclick="UndoReimbursement" 
@@ -120,7 +122,7 @@
                                     </td>
 
                                     <td class="p-4 font-mono text-gray-500 text-sm">@r.ServiceDate.ToString("yyyy-MM-dd")</td>
-                                    <td class="p-4 text-blue-400 font-bold truncate text-sm">@r.Patient</td>
+                                    <td class="p-4 text-blue-400 font-bold truncate text-sm">@(r.Patient ?? "---")</td>
                                     <td class="p-4 text-white font-bold tracking-tight truncate text-sm">
                                         @(string.IsNullOrEmpty(r.Provider) ? "---" : r.Provider)
                                     </td>
@@ -280,13 +282,14 @@
     private int editingId = 0;
     private HsaReceipt tempReceipt = new();
 
-    // Support lists for Content Assist
+    // Content Assist Lists
     private List<string> knownPatients = new();
     private List<string> knownProviders = new();
 
     private decimal SelectedTotal => allReceipts.Where(r => selectedIds.Contains(r.Id)).Sum(r => r.Amount);
     private bool IsAllSelected => filteredReceipts.Any() && filteredReceipts.All(r => selectedIds.Contains(r.Id));
     
+    // Conditionals for sub-header buttons
     private bool HasUnreimbursedSelected => allReceipts.Any(r => selectedIds.Contains(r.Id) && !r.IsReimbursed);
     private bool HasReimbursedSelected => allReceipts.Any(r => selectedIds.Contains(r.Id) && r.IsReimbursed);
 
@@ -303,7 +306,7 @@
             using var db = await DbFactory.CreateDbContextAsync();
             allReceipts = await db.HsaReceipts.OrderBy(x => x.ServiceDate).ToListAsync();
             
-            // Rebuild Content Assist sources
+            // Build Content Assist suggestions based on existing data
             knownPatients = allReceipts.Select(x => x.Patient).Where(x => !string.IsNullOrEmpty(x)).Distinct().OrderBy(x => x).ToList()!;
             knownProviders = allReceipts.Select(x => x.Provider).Where(x => !string.IsNullOrEmpty(x)).Distinct().OrderBy(x => x).ToList()!;
 
@@ -348,12 +351,17 @@
         try
         {
             using var db = await DbFactory.CreateDbContextAsync();
+            
+            // FIXED: Explicitly OrderBy ServiceDate so the files attach oldest-to-newest
             var dbTargets = await db.HsaReceipts
                 .Where(r => selectedIds.Contains(r.Id))
-                .OrderBy(r => r.ServiceDate)
+                .OrderBy(r => r.ServiceDate) 
                 .ToListAsync();
+
+            // 1. Generate PDF (Using Stitch-Only logic)
             var pdfBytes = ExportService.CreateSubmissionPdf(dbTargets);
 
+            // 2. Update Database
             foreach (var r in dbTargets)
             {
                 r.IsReimbursed = true;
@@ -361,6 +369,7 @@
             }
             await db.SaveChangesAsync();
 
+            // 3. Streaming Download
             var fileName = $"HSA_Submission_{DateTime.Now:yyyyMMdd_HHmm}.pdf";
             using var stream = new MemoryStream(pdfBytes);
             using var streamRef = new DotNetStreamReference(stream);
@@ -417,7 +426,6 @@
             Type = r.Type ?? "Medical", ServiceDate = r.ServiceDate, Note = r.Note ?? "", 
             IsReimbursed = r.IsReimbursed, ReimbursedAt = r.ReimbursedAt, TaxYear = r.TaxYear,
             FileData = r.FileData, ContentType = r.ContentType, FileName = r.FileName
-            // OriginalFileName removed here
         };
         showModal = true;
     }
@@ -440,7 +448,8 @@
 
     private async Task ViewFile(HsaReceipt r) {
         if (r.FileData == null || r.FileData.Length == 0) return;
-        await JS.InvokeVoidAsync("viewFileBlob", Convert.ToBase64String(r.FileData), r.ContentType);
+        var base64 = Convert.ToBase64String(r.FileData);
+        await JS.InvokeVoidAsync("viewFileBlob", base64, r.ContentType);
     }
 
     private async Task SaveReceipt() {
@@ -456,7 +465,6 @@
                     existing.FileData = tempReceipt.FileData;
                     existing.FileName = tempReceipt.FileName;
                     existing.ContentType = tempReceipt.ContentType;
-                    // existing.OriginalFileName removed here
                 }
             }
             await db.SaveChangesAsync();
@@ -476,17 +484,24 @@
 
     private async Task RunPatientMigration()
     {
-        if (!await JS.InvokeAsync<bool>("confirm", "Add 'Patient' column to the DB and default to 'Cayce Johnson'?")) return;
+        if (!await JS.InvokeAsync<bool>("confirm", "This will add the Patient column to the DB and default all records to Cayce Johnson. Continue?")) return;
 
         try
         {
             using var db = await DbFactory.CreateDbContextAsync();
-            // Only adding Patient
+            
+            // 1. Physically add column to SQLite/Postgres if EF hasn't caught up
             await db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""HsaReceipts"" ADD COLUMN IF NOT EXISTS ""Patient"" TEXT;");
+            
+            // 2. Backfill existing nulls
             await db.Database.ExecuteSqlRawAsync(@"UPDATE ""HsaReceipts"" SET ""Patient"" = 'Cayce Johnson' WHERE ""Patient"" IS NULL;");
             
             await LoadData();
-            await JS.InvokeVoidAsync("alert", "Database synced. Patient field added.");
+            await JS.InvokeVoidAsync("alert", "Database updated successfully.");
         }
-        catch (Exception ex) { await JS.InvokeVoidAsync("alert", $"Sync Error: {ex.Message}"); }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+        }
     }
+}
