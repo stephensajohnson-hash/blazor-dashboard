@@ -528,7 +528,7 @@ public class HsaReceipt
     public int Id { get; set; }
     public int UserId { get; set; }
     public string? Provider { get; set; }
-    public string? Patient { get; set; }      // New Field
+    public string? Patient { get; set; } 
     public decimal Amount { get; set; }
     public string? Type { get; set; }
     public DateTime ServiceDate { get; set; }
@@ -543,7 +543,6 @@ public class HsaReceipt
     // File Handling
     public byte[]? FileData { get; set; }
     public string? FileName { get; set; }
-    public string? OriginalFileName { get; set; } // The 16th field
     public string? ContentType { get; set; }
 }
 

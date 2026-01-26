@@ -415,7 +415,9 @@
         tempReceipt = new HsaReceipt {
             Id = r.Id, UserId = r.UserId, Patient = r.Patient, Provider = r.Provider ?? "", Amount = r.Amount,
             Type = r.Type ?? "Medical", ServiceDate = r.ServiceDate, Note = r.Note ?? "", 
-            IsReimbursed = r.IsReimbursed, FileData = r.FileData, ContentType = r.ContentType, FileName = r.FileName
+            IsReimbursed = r.IsReimbursed, ReimbursedAt = r.ReimbursedAt, TaxYear = r.TaxYear,
+            FileData = r.FileData, ContentType = r.ContentType, FileName = r.FileName
+            // OriginalFileName removed here
         };
         showModal = true;
     }
@@ -454,6 +456,7 @@
                     existing.FileData = tempReceipt.FileData;
                     existing.FileName = tempReceipt.FileName;
                     existing.ContentType = tempReceipt.ContentType;
+                    // existing.OriginalFileName removed here
                 }
             }
             await db.SaveChangesAsync();
@@ -473,15 +476,17 @@
 
     private async Task RunPatientMigration()
     {
-        if (!await JS.InvokeAsync<bool>("confirm", "Add 'Patient' column and backfill existing items with 'Cayce Johnson'?")) return;
+        if (!await JS.InvokeAsync<bool>("confirm", "Add 'Patient' column to the DB and default to 'Cayce Johnson'?")) return;
+
         try
         {
             using var db = await DbFactory.CreateDbContextAsync();
+            // Only adding Patient
             await db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""HsaReceipts"" ADD COLUMN IF NOT EXISTS ""Patient"" TEXT;");
             await db.Database.ExecuteSqlRawAsync(@"UPDATE ""HsaReceipts"" SET ""Patient"" = 'Cayce Johnson' WHERE ""Patient"" IS NULL;");
+            
             await LoadData();
-            await JS.InvokeVoidAsync("alert", "Database updated successfully.");
+            await JS.InvokeVoidAsync("alert", "Database synced. Patient field added.");
         }
-        catch (Exception ex) { await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}"); }
+        catch (Exception ex) { await JS.InvokeVoidAsync("alert", $"Sync Error: {ex.Message}"); }
     }
-}
