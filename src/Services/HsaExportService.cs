@@ -1,6 +1,7 @@
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
 using PdfSharp.Drawing;
+using PdfSharp.Drawing.Layout; // REQUIRED FOR XTextFormatter
 using Dashboard;
 
 namespace Dashboard.Services;
@@ -29,7 +30,7 @@ public class HsaExportService
             gfx.DrawString($"Generated: {DateTime.Now:yyyy-MM-dd HH:mm}", fontTable, XBrushes.Gray, new XPoint(40, yPos));
             yPos += 40;
 
-            // Column Definitions (X, Width)
+            // Column Definitions (X position and Width for wrapping)
             var colDate = (X: 40.0, W: 60.0);
             var colPatient = (X: 105.0, W: 95.0);
             var colProvider = (X: 205.0, W: 155.0);
@@ -48,15 +49,19 @@ public class HsaExportService
 
             foreach (var r in receipts)
             {
-                // Measure each column to find the tallest one (for row height)
+                // Measure the height needed for this row based on the longest wrapped text
                 double hPatient = MeasureHeight(gfx, r.Patient ?? "---", fontTable, colPatient.W);
                 double hProvider = MeasureHeight(gfx, r.Provider ?? "---", fontTable, colProvider.W);
                 double hCategory = MeasureHeight(gfx, r.Type ?? "Medical", fontTable, colCategory.W);
                 
                 double rowHeight = Math.Max(18, Math.Max(hPatient, Math.Max(hProvider, hCategory)));
 
-                // Check for page overflow
-                if (yPos + rowHeight > 750) { /* Multi-page logic would start here */ }
+                // Simple check for page bottom; reset or new page logic could be expanded here
+                if (yPos + rowHeight > 750) 
+                {
+                     // For now, we continue, but in a full production environment, 
+                     // you would add outputDocument.AddPage() here.
+                }
 
                 gfx.DrawString(r.ServiceDate.ToString("yyyy-MM-dd"), fontTable, XBrushes.Black, new XPoint(colDate.X, yPos));
                 
@@ -66,7 +71,7 @@ public class HsaExportService
                 
                 gfx.DrawString($"${r.Amount:N2}", fontTable, XBrushes.Black, new XPoint(colAmount.X, yPos));
                 
-                yPos += rowHeight + 4; // Add small buffer between rows
+                yPos += rowHeight + 4; // Move to next row position
             }
 
             yPos += 10;
@@ -123,7 +128,7 @@ public class HsaExportService
 
     private double MeasureHeight(XGraphics gfx, string text, XFont font, double width)
     {
-        // Simple line-break estimation for PDFSharp
+        // Estimate height based on word-wrapping logic
         var words = text.Split(' ');
         int lines = 1;
         double currentLineWidth = 0;
