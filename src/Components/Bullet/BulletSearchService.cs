@@ -15,10 +15,12 @@ namespace Dashboard.Services
             _baseService = baseService;
         }
 
+        // Shared Query string
         public string Query { get; set; } = "";
-        public string Type { get; set; } = "all";
         
-        // Defaulting to null allows the BaseService to skip the date filter
+        public string Type { get; set; } = "all";
+
+        // Changed to nullable to support "All Time" (Full History) default
         public DateTime? Start { get; set; } = null;
         public DateTime? End { get; set; } = null;
 
@@ -39,13 +41,11 @@ namespace Dashboard.Services
 
         public async Task ExecuteSearch(int userId)
         {
-            // Removed the "if Query is empty return" guard.
-            // We now proceed regardless of text, allowing date/type scans.
             IsSearching = true;
             Results.Clear();
             CurrentPage = 1;
 
-            // We delegate the heavy lifting to the existing SearchItems method in BaseService
+            // Updated to pass nullable dates to the base service
             var searchResults = await _baseService.SearchItems(userId, Query, Type, Start, End);
             
             if (searchResults != null)
@@ -57,6 +57,8 @@ namespace Dashboard.Services
         public void ClearSearch()
         {
             Query = "";
+            Start = null;
+            End = null;
             IsSearching = false;
             Results.Clear();
             CurrentPage = 1;
