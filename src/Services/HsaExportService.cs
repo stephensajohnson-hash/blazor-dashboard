@@ -29,10 +29,13 @@ public class HsaExportService
             gfx.DrawString($"Generated: {DateTime.Now:yyyy-MM-dd HH:mm}", fontTable, XBrushes.Gray, new XPoint(40, yPos));
             yPos += 40;
 
+            // Adjusted X-Coordinates to fit Patient column
             gfx.DrawString("Date", fontHeader, XBrushes.Black, new XPoint(40, yPos));
-            gfx.DrawString("Provider", fontHeader, XBrushes.Black, new XPoint(110, yPos));
-            gfx.DrawString("Category", fontHeader, XBrushes.Black, new XPoint(300, yPos));
+            gfx.DrawString("Patient", fontHeader, XBrushes.Black, new XPoint(105, yPos));
+            gfx.DrawString("Provider", fontHeader, XBrushes.Black, new XPoint(205, yPos));
+            gfx.DrawString("Category", fontHeader, XBrushes.Black, new XPoint(365, yPos));
             gfx.DrawString("Amount", fontHeader, XBrushes.Black, new XPoint(500, yPos));
+            
             yPos += 5;
             gfx.DrawLine(XPens.Black, 40, yPos, 550, yPos);
             yPos += 15;
@@ -40,12 +43,14 @@ public class HsaExportService
             foreach (var r in receipts)
             {
                 gfx.DrawString(r.ServiceDate.ToString("yyyy-MM-dd"), fontTable, XBrushes.Black, new XPoint(40, yPos));
-                gfx.DrawString(Truncate(r.Provider ?? "---", 35), fontTable, XBrushes.Black, new XPoint(110, yPos));
-                gfx.DrawString(Truncate(r.Type ?? "Medical", 25), fontTable, XBrushes.Black, new XPoint(300, yPos));
+                gfx.DrawString(Truncate(r.Patient ?? "---", 20), fontTable, XBrushes.Black, new XPoint(105, yPos));
+                gfx.DrawString(Truncate(r.Provider ?? "---", 30), fontTable, XBrushes.Black, new XPoint(205, yPos));
+                gfx.DrawString(Truncate(r.Type ?? "Medical", 25), fontTable, XBrushes.Black, new XPoint(365, yPos));
                 gfx.DrawString($"${r.Amount:N2}", fontTable, XBrushes.Black, new XPoint(500, yPos));
                 
                 yPos += 18;
-                if (yPos > 750) { yPos = 50; } // Note: Real multi-page ledger would need a new gfx loop
+                // Basic overflow reset - a production multi-page ledger would require a more complex loop
+                if (yPos > 750) { yPos = 50; } 
             }
 
             yPos += 10;
@@ -61,7 +66,7 @@ public class HsaExportService
                 {
                     if (r.ContentType?.ToLower().Contains("pdf") == true)
                     {
-                        using var ms = new MemoryStream(r.FileData!); // FIXED: Removed extra 'Memory'
+                        using var ms = new MemoryStream(r.FileData!);
                         using var attachment = PdfReader.Open(ms, PdfDocumentOpenMode.Import);
                         foreach (var aPage in attachment.Pages) outputDocument.AddPage(aPage);
                     }
