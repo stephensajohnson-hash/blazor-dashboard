@@ -29,12 +29,18 @@ public class HsaExportService
             gfx.DrawString($"Generated: {DateTime.Now:yyyy-MM-dd HH:mm}", fontTable, XBrushes.Gray, new XPoint(40, yPos));
             yPos += 40;
 
-            // Adjusted X-Coordinates to fit Patient column
-            gfx.DrawString("Date", fontHeader, XBrushes.Black, new XPoint(40, yPos));
-            gfx.DrawString("Patient", fontHeader, XBrushes.Black, new XPoint(105, yPos));
-            gfx.DrawString("Provider", fontHeader, XBrushes.Black, new XPoint(205, yPos));
-            gfx.DrawString("Category", fontHeader, XBrushes.Black, new XPoint(365, yPos));
-            gfx.DrawString("Amount", fontHeader, XBrushes.Black, new XPoint(500, yPos));
+            // Column Definitions (X, Width)
+            var colDate = (X: 40.0, W: 60.0);
+            var colPatient = (X: 105.0, W: 95.0);
+            var colProvider = (X: 205.0, W: 155.0);
+            var colCategory = (X: 365.0, W: 130.0);
+            var colAmount = (X: 500.0, W: 50.0);
+
+            gfx.DrawString("Date", fontHeader, XBrushes.Black, new XPoint(colDate.X, yPos));
+            gfx.DrawString("Patient", fontHeader, XBrushes.Black, new XPoint(colPatient.X, yPos));
+            gfx.DrawString("Provider", fontHeader, XBrushes.Black, new XPoint(colProvider.X, yPos));
+            gfx.DrawString("Category", fontHeader, XBrushes.Black, new XPoint(colCategory.X, yPos));
+            gfx.DrawString("Amount", fontHeader, XBrushes.Black, new XPoint(colAmount.X, yPos));
             
             yPos += 5;
             gfx.DrawLine(XPens.Black, 40, yPos, 550, yPos);
@@ -42,15 +48,25 @@ public class HsaExportService
 
             foreach (var r in receipts)
             {
-                gfx.DrawString(r.ServiceDate.ToString("yyyy-MM-dd"), fontTable, XBrushes.Black, new XPoint(40, yPos));
-                gfx.DrawString(Truncate(r.Patient ?? "---", 20), fontTable, XBrushes.Black, new XPoint(105, yPos));
-                gfx.DrawString(Truncate(r.Provider ?? "---", 30), fontTable, XBrushes.Black, new XPoint(205, yPos));
-                gfx.DrawString(Truncate(r.Type ?? "Medical", 25), fontTable, XBrushes.Black, new XPoint(365, yPos));
-                gfx.DrawString($"${r.Amount:N2}", fontTable, XBrushes.Black, new XPoint(500, yPos));
+                // Measure each column to find the tallest one (for row height)
+                double hPatient = MeasureHeight(gfx, r.Patient ?? "---", fontTable, colPatient.W);
+                double hProvider = MeasureHeight(gfx, r.Provider ?? "---", fontTable, colProvider.W);
+                double hCategory = MeasureHeight(gfx, r.Type ?? "Medical", fontTable, colCategory.W);
                 
-                yPos += 18;
-                // Basic overflow reset - a production multi-page ledger would require a more complex loop
-                if (yPos > 750) { yPos = 50; } 
+                double rowHeight = Math.Max(18, Math.Max(hPatient, Math.Max(hProvider, hCategory)));
+
+                // Check for page overflow
+                if (yPos + rowHeight > 750) { /* Multi-page logic would start here */ }
+
+                gfx.DrawString(r.ServiceDate.ToString("yyyy-MM-dd"), fontTable, XBrushes.Black, new XPoint(colDate.X, yPos));
+                
+                DrawWrappedText(gfx, r.Patient ?? "---", fontTable, colPatient.X, yPos, colPatient.W);
+                DrawWrappedText(gfx, r.Provider ?? "---", fontTable, colProvider.X, yPos, colProvider.W);
+                DrawWrappedText(gfx, r.Type ?? "Medical", fontTable, colCategory.X, yPos, colCategory.W);
+                
+                gfx.DrawString($"${r.Amount:N2}", fontTable, XBrushes.Black, new XPoint(colAmount.X, yPos));
+                
+                yPos += rowHeight + 4; // Add small buffer between rows
             }
 
             yPos += 10;
@@ -59,7 +75,7 @@ public class HsaExportService
             gfx.DrawString("Total Reimbursement Amount:", fontTotal, XBrushes.Black, new XPoint(330, yPos));
             gfx.DrawString($"${receipts.Sum(x => x.Amount):N2}", fontTotal, XBrushes.DarkGreen, new XPoint(500, yPos));
 
-            // --- 2. APPEND ATTACHMENTS (Memory Efficient) ---
+            // --- 2. APPEND ATTACHMENTS ---
             foreach (var r in receipts.Where(x => x.FileData != null && x.FileData.Length > 0))
             {
                 try 
@@ -98,6 +114,32 @@ public class HsaExportService
         }
     }
 
-    private string Truncate(string value, int maxChars) => 
-        value.Length <= maxChars ? value : value.Substring(0, maxChars - 3) + "...";
+    private void DrawWrappedText(XGraphics gfx, string text, XFont font, double x, double y, double width)
+    {
+        XRect rect = new XRect(x, y, width, 1000);
+        XTextFormatter tf = new XTextFormatter(gfx);
+        tf.DrawString(text, font, XBrushes.Black, rect, XStringFormats.TopLeft);
+    }
+
+    private double MeasureHeight(XGraphics gfx, string text, XFont font, double width)
+    {
+        // Simple line-break estimation for PDFSharp
+        var words = text.Split(' ');
+        int lines = 1;
+        double currentLineWidth = 0;
+        foreach (var word in words)
+        {
+            double wordWidth = gfx.MeasureString(word + " ", font).Width;
+            if (currentLineWidth + wordWidth > width)
+            {
+                lines++;
+                currentLineWidth = wordWidth;
+            }
+            else
+            {
+                currentLineWidth += wordWidth;
+            }
+        }
+        return lines * (font.Height);
+    }
 }

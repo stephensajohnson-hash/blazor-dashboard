@@ -37,11 +37,6 @@
                     }
                 </div>
 
-                @* TEMPORARY MIGRATION BUTTON *@
-                <button @onclick="RunPatientMigration" class="bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-800/50 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition active:scale-95">
-                    Sync DB: Patient
-                </button>
-
                 @* Selection Stats & Actions *@
                 @if (selectedIds.Any())
                 {
@@ -436,7 +431,6 @@
             FileData = r.FileData, 
             ContentType = r.ContentType, 
             FileName = r.FileName
-            // OriginalStringId reference removed
         };
         showModal = true;
     }
@@ -491,28 +485,5 @@
             var target = await db.HsaReceipts.FindAsync(id);
             if (target != null) { db.HsaReceipts.Remove(target); await db.SaveChangesAsync(); await LoadData(); }
         } catch (Exception ex) { Console.WriteLine($"DEL_ERR: {ex.Message}"); }
-    }
-
-    private async Task RunPatientMigration()
-    {
-        if (!await JS.InvokeAsync<bool>("confirm", "Sync database for the 'Patient' field only?")) return;
-
-        try
-        {
-            using var db = await DbFactory.CreateDbContextAsync();
-            
-            // Add the Patient column
-            await db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""HsaReceipts"" ADD COLUMN IF NOT EXISTS ""Patient"" TEXT;");
-            
-            // Backfill existing records
-            await db.Database.ExecuteSqlRawAsync(@"UPDATE ""HsaReceipts"" SET ""Patient"" = 'Cayce Johnson' WHERE ""Patient"" IS NULL;");
-            
-            await LoadData();
-            await JS.InvokeVoidAsync("alert", "Database synced. Records should now appear.");
-        }
-        catch (Exception ex)
-        {
-            await JS.InvokeVoidAsync("alert", $"Sync Error: {ex.Message}");
-        }
     }
 }
