@@ -135,7 +135,9 @@ public class BulletBaseService
                 var lowerQuery = query.ToLower();
                 baseQuery = baseQuery.Where(x => 
                     x.Title.ToLower().Contains(lowerQuery) || 
-                    x.Description.ToLower().Contains(lowerQuery));
+                    x.Description.ToLower().Contains(lowerQuery) ||
+                    // NEW: Search within Meals associated with the item
+                    _db.BulletHealthMeals.Any(m => m.BulletItemId == x.Id && m.Name.ToLower().Contains(lowerQuery)));
             }
 
             if (!string.IsNullOrWhiteSpace(type) && type != "all")
@@ -155,8 +157,8 @@ public class BulletBaseService
                 .Include(x => x.DbHealthDetail)
                 .Include(x => x.DbSportsDetail)
                 .Include(x => x.Notes)
-                .Include(x => x.Meals)
-                .Include(x => x.Workouts)
+                .Include(x => x.Meals) // Explicitly included for mapping to DTO
+                .Include(x => x.Workouts) // Explicitly included for mapping to DTO
                 .OrderByDescending(x => x.Date)
                 .ToListAsync();
 

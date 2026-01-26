@@ -35,13 +35,17 @@ public class BulletTaskService
         public List<BulletHealthWorkout> Workouts { get; set; } = new();
         public List<BulletItemNote> Notes { get; set; } = new();
         public DateTime? EndDate { get; set; } 
+
+        // Helper to identify matched meals for the UI highlight
+        public bool MatchedByMeal(string query) => 
+            !string.IsNullOrEmpty(query) && 
+            Meals.Any(m => m.Name.Contains(query, StringComparison.OrdinalIgnoreCase));
     }
 
     public async Task<List<TaskDTO>> GetTasksForRange(int userId, DateTime start, DateTime end)
     {
         using var db = _factory.CreateDbContext();
         
-        // Retrieval: Explicitly order Todos by the 'Order' column so the UI stays consistent
         var items = await (from baseItem in db.BulletItems.Include(x => x.Todos)
                            join detail in db.BulletTaskDetails on baseItem.Id equals detail.BulletItemId
                            where baseItem.UserId == userId 
@@ -64,7 +68,6 @@ public class BulletTaskService
     {
         using var db = _factory.CreateDbContext();
 
-        // 1. Update the base item metadata
         var item = await db.BulletItems.FindAsync(dto.Id);
         if (item == null)
         {
@@ -79,10 +82,8 @@ public class BulletTaskService
         item.LinkUrl = dto.LinkUrl;
         item.Type = dto.Type; 
         
-        // Save first so new items have an ID for the details/todos to reference
         await db.SaveChangesAsync();
 
-        // 2. Update the specific Task details
         var detail = await db.BulletTaskDetails.FindAsync(item.Id);
         if (detail == null)
         {
@@ -95,14 +96,11 @@ public class BulletTaskService
         detail.TicketUrl = dto.Detail.TicketUrl;
         detail.IsCompleted = dto.Detail.IsCompleted;
 
-        // 3. PERSIST THE CHECKLIST (Handle Reordering)
-        // We remove existing rows and recreate them to ensure the 'Order' integers are fresh
         var existingTodos = db.BulletTaskTodoItems.Where(x => x.BulletItemId == item.Id);
         db.BulletTaskTodoItems.RemoveRange(existingTodos);
 
         if (dto.Todos != null)
         {
-            // We map the DTO items back to the DB model, respecting the 'Order' property
             var validTodos = dto.Todos
                 .Where(t => !string.IsNullOrWhiteSpace(t.Content))
                 .Select(t => new BulletTaskTodoItem
@@ -115,7 +113,6 @@ public class BulletTaskService
                 
             await db.BulletTaskTodoItems.AddRangeAsync(validTodos);
 
-            // Sync master status: if all items are checked, the task is complete
             if (validTodos.Any())
             {
                 detail.IsCompleted = validTodos.All(x => x.IsCompleted);
