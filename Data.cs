@@ -528,19 +528,14 @@ public class HsaReceipt
     public int Id { get; set; }
     public int UserId { get; set; }
     public string? Provider { get; set; }
-    public string? Patient { get; set; } 
+    public string? Patient { get; set; } // The only new field
     public decimal Amount { get; set; }
     public string? Type { get; set; }
     public DateTime ServiceDate { get; set; }
     public string? Note { get; set; }
-    
-    // Status & Metadata
     public bool IsReimbursed { get; set; }
     public DateTime? ReimbursedAt { get; set; }
     public int TaxYear { get; set; }
-    public string? OriginalStringId { get; set; }
-
-    // File Handling
     public byte[]? FileData { get; set; }
     public string? FileName { get; set; }
     public string? ContentType { get; set; }
