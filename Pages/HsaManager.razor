@@ -37,6 +37,11 @@
                     }
                 </div>
 
+                @* TEMPORARY MIGRATION BUTTON *@
+                <button @onclick="RunPatientMigration" class="bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-800/50 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition active:scale-95">
+                    Sync DB: Patient
+                </button>
+
                 @* Selection Stats & Actions *@
                 @if (selectedIds.Any())
                 {
@@ -47,7 +52,6 @@
                             <span class="text-xl font-black text-emerald-400 font-mono leading-none">$@SelectedTotal.ToString("N2")</span>
                         </div>
                         
-                        @* Action: Generate Submission (for unreimbursed items) *@
                         @if (HasUnreimbursedSelected)
                         {
                             <button @onclick="GenerateSubmission" 
@@ -56,7 +60,6 @@
                             </button>
                         }
 
-                        @* Action: Undo Reimbursement (for reimbursed items) *@
                         @if (HasReimbursedSelected)
                         {
                             <button @onclick="UndoReimbursement" 
@@ -94,6 +97,7 @@
                                 <input type="checkbox" checked="@IsAllSelected" @onchange="ToggleAll" class="w-4 h-4 rounded border-gray-700 bg-gray-900 accent-blue-600" />
                             </th>
                             <th class="p-4 w-32">Date</th>
+                            <th class="p-4 w-40">Patient</th>
                             <th class="p-4 w-1/4">Provider</th>
                             <th class="p-4 w-48">Category</th>
                             <th class="p-4">Note</th>
@@ -116,6 +120,7 @@
                                     </td>
 
                                     <td class="p-4 font-mono text-gray-500 text-sm">@r.ServiceDate.ToString("yyyy-MM-dd")</td>
+                                    <td class="p-4 text-blue-400 font-bold truncate text-sm">@r.Patient</td>
                                     <td class="p-4 text-white font-bold tracking-tight truncate text-sm">
                                         @(string.IsNullOrEmpty(r.Provider) ? "---" : r.Provider)
                                     </td>
@@ -166,8 +171,18 @@
 
             <EditForm Model="tempReceipt" OnValidSubmit="SaveReceipt" class="space-y-5 text-left">
                 <div>
+                    <label class="block text-[10px] font-black text-gray-500 uppercase mb-1 ml-1 tracking-widest">Patient</label>
+                    <input @bind="tempReceipt.Patient" list="patient-list" class="w-full bg-gray-900 border border-gray-700 rounded-xl p-3 text-white text-sm focus:border-blue-500 outline-none" />
+                    <datalist id="patient-list">
+                        @foreach (var p in knownPatients) { <option value="@p" /> }
+                    </datalist>
+                </div>
+                <div>
                     <label class="block text-[10px] font-black text-gray-500 uppercase mb-1 ml-1 tracking-widest">Provider</label>
-                    <InputText @bind-Value="tempReceipt.Provider" class="w-full bg-gray-900 border border-gray-700 rounded-xl p-3 text-white text-sm focus:border-blue-500 outline-none" />
+                    <input @bind="tempReceipt.Provider" list="provider-list" class="w-full bg-gray-900 border border-gray-700 rounded-xl p-3 text-white text-sm focus:border-blue-500 outline-none" />
+                    <datalist id="provider-list">
+                        @foreach (var pr in knownProviders) { <option value="@pr" /> }
+                    </datalist>
                 </div>
                 <div class="grid grid-cols-2 gap-4">
                     <div>
@@ -265,10 +280,13 @@
     private int editingId = 0;
     private HsaReceipt tempReceipt = new();
 
+    // Support lists for Content Assist
+    private List<string> knownPatients = new();
+    private List<string> knownProviders = new();
+
     private decimal SelectedTotal => allReceipts.Where(r => selectedIds.Contains(r.Id)).Sum(r => r.Amount);
     private bool IsAllSelected => filteredReceipts.Any() && filteredReceipts.All(r => selectedIds.Contains(r.Id));
     
-    // Conditionals for sub-header buttons
     private bool HasUnreimbursedSelected => allReceipts.Any(r => selectedIds.Contains(r.Id) && !r.IsReimbursed);
     private bool HasReimbursedSelected => allReceipts.Any(r => selectedIds.Contains(r.Id) && r.IsReimbursed);
 
@@ -284,6 +302,11 @@
         {
             using var db = await DbFactory.CreateDbContextAsync();
             allReceipts = await db.HsaReceipts.OrderBy(x => x.ServiceDate).ToListAsync();
+            
+            // Rebuild Content Assist sources
+            knownPatients = allReceipts.Select(x => x.Patient).Where(x => !string.IsNullOrEmpty(x)).Distinct().OrderBy(x => x).ToList()!;
+            knownProviders = allReceipts.Select(x => x.Provider).Where(x => !string.IsNullOrEmpty(x)).Distinct().OrderBy(x => x).ToList()!;
+
             availableYears = allReceipts.Select(x => x.ServiceDate.Year).Distinct().OrderByDescending(x => x).ToList();
             ApplyFilter();
         }
@@ -325,17 +348,12 @@
         try
         {
             using var db = await DbFactory.CreateDbContextAsync();
-            
-            // FIXED: Explicitly OrderBy ServiceDate so the files attach oldest-to-newest
             var dbTargets = await db.HsaReceipts
                 .Where(r => selectedIds.Contains(r.Id))
-                .OrderBy(r => r.ServiceDate) 
+                .OrderBy(r => r.ServiceDate)
                 .ToListAsync();
-
-            // 1. Generate PDF (Using Stitch-Only logic)
             var pdfBytes = ExportService.CreateSubmissionPdf(dbTargets);
 
-            // 2. Update Database
             foreach (var r in dbTargets)
             {
                 r.IsReimbursed = true;
@@ -343,7 +361,6 @@
             }
             await db.SaveChangesAsync();
 
-            // 3. Streaming Download
             var fileName = $"HSA_Submission_{DateTime.Now:yyyyMMdd_HHmm}.pdf";
             using var stream = new MemoryStream(pdfBytes);
             using var streamRef = new DotNetStreamReference(stream);
@@ -396,7 +413,7 @@
     private void OpenEditModal(HsaReceipt r) {
         editingId = r.Id;
         tempReceipt = new HsaReceipt {
-            Id = r.Id, UserId = r.UserId, Provider = r.Provider ?? "", Amount = r.Amount,
+            Id = r.Id, UserId = r.UserId, Patient = r.Patient, Provider = r.Provider ?? "", Amount = r.Amount,
             Type = r.Type ?? "Medical", ServiceDate = r.ServiceDate, Note = r.Note ?? "", 
             IsReimbursed = r.IsReimbursed, FileData = r.FileData, ContentType = r.ContentType, FileName = r.FileName
         };
@@ -421,8 +438,7 @@
 
     private async Task ViewFile(HsaReceipt r) {
         if (r.FileData == null || r.FileData.Length == 0) return;
-        var base64 = Convert.ToBase64String(r.FileData);
-        await JS.InvokeVoidAsync("viewFileBlob", base64, r.ContentType);
+        await JS.InvokeVoidAsync("viewFileBlob", Convert.ToBase64String(r.FileData), r.ContentType);
     }
 
     private async Task SaveReceipt() {
@@ -453,5 +469,19 @@
             var target = await db.HsaReceipts.FindAsync(id);
             if (target != null) { db.HsaReceipts.Remove(target); await db.SaveChangesAsync(); await LoadData(); }
         } catch (Exception ex) { Console.WriteLine($"DEL_ERR: {ex.Message}"); }
+    }
+
+    private async Task RunPatientMigration()
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Add 'Patient' column and backfill existing items with 'Cayce Johnson'?")) return;
+        try
+        {
+            using var db = await DbFactory.CreateDbContextAsync();
+            await db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""HsaReceipts"" ADD COLUMN IF NOT EXISTS ""Patient"" TEXT;");
+            await db.Database.ExecuteSqlRawAsync(@"UPDATE ""HsaReceipts"" SET ""Patient"" = 'Cayce Johnson' WHERE ""Patient"" IS NULL;");
+            await LoadData();
+            await JS.InvokeVoidAsync("alert", "Database updated successfully.");
+        }
+        catch (Exception ex) { await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}"); }
     }
 }

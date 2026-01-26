@@ -527,31 +527,24 @@ public class HsaReceipt
 {
     public int Id { get; set; }
     public int UserId { get; set; }
-    
-    [Required]
-    public string Type { get; set; } = "Medical"; // Medical, Dental, Eye Care, Chiropractor, Other
-    
-    [Required]
-    public string Provider { get; set; } = "";
-    
-    [Required]
-    public DateTime ServiceDate { get; set; }
-    
-    [Column(TypeName = "decimal(18,2)")]
+    public string? Provider { get; set; }
+    public string? Patient { get; set; }      // New Field
     public decimal Amount { get; set; }
+    public string? Type { get; set; }
+    public DateTime ServiceDate { get; set; }
+    public string? Note { get; set; }
     
-    public string Note { get; set; } = "";
-    
-    // Receipt File Data
-    public string FileName { get; set; } = "";
-    public string ContentType { get; set; } = ""; // image/jpeg, application/pdf, etc.
-    public byte[]? FileData { get; set; }
-    
-    // Tracking
-    public bool IsReimbursed { get; set; } = false;
+    // Status & Metadata
+    public bool IsReimbursed { get; set; }
     public DateTime? ReimbursedAt { get; set; }
     public int TaxYear { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public string? OriginalStringId { get; set; }
+
+    // File Handling
+    public byte[]? FileData { get; set; }
+    public string? FileName { get; set; }
+    public string? OriginalFileName { get; set; } // The 16th field
+    public string? ContentType { get; set; }
 }
 
 public static class BulletViewConfig 
