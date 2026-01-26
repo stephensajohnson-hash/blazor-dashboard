@@ -123,28 +123,42 @@ public class BulletBaseService
         await _db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""BulletGameDetails"" (""BulletItemId"" INTEGER NOT NULL PRIMARY KEY, ""LeagueId"" INTEGER NOT NULL DEFAULT 0, ""SeasonId"" INTEGER NOT NULL DEFAULT 0, ""HomeTeamId"" INTEGER NOT NULL DEFAULT 0, ""AwayTeamId"" INTEGER NOT NULL DEFAULT 0, ""HomeScore"" INTEGER NOT NULL DEFAULT 0, ""AwayScore"" INTEGER NOT NULL DEFAULT 0, ""IsComplete"" BOOLEAN NOT NULL DEFAULT FALSE, ""StartTime"" TIMESTAMP NULL, ""TvChannel"" TEXT NOT NULL DEFAULT '', CONSTRAINT ""FK_GameDetails_BulletItems"" FOREIGN KEY (""BulletItemId"") REFERENCES ""BulletItems""(""Id"") ON DELETE CASCADE);");
     }
 
-    public async Task<List<BulletTaskService.TaskDTO>> SearchItems(int userId, string query, string type, DateTime start, DateTime end)
+    public async Task<List<BulletTaskService.TaskDTO>> SearchItems(int userId, string query, string type, DateTime? start, DateTime? end)
     {
         try
         {
+            // Start the base query filtered by UserId
             var baseQuery = _db.BulletItems.AsNoTracking()
-                .Where(x => x.UserId == userId && x.Date >= start && x.Date <= end);
+                .Where(x => x.UserId == userId);
 
+            // ONLY apply date filters if they are provided (not null)
+            if (start.HasValue)
+            {
+                baseQuery = baseQuery.Where(x => x.Date >= start.Value);
+            }
+            if (end.HasValue)
+            {
+                baseQuery = baseQuery.Where(x => x.Date <= end.Value);
+            }
+
+            // Apply Text Search logic
             if (!string.IsNullOrWhiteSpace(query))
             {
                 var lowerQuery = query.ToLower();
                 baseQuery = baseQuery.Where(x => 
                     x.Title.ToLower().Contains(lowerQuery) || 
                     x.Description.ToLower().Contains(lowerQuery) ||
-                    // NEW: Search within Meals associated with the item
+                    // Search within Meals associated with the item
                     _db.BulletHealthMeals.Any(m => m.BulletItemId == x.Id && m.Name.ToLower().Contains(lowerQuery)));
             }
 
+            // Apply Type filter
             if (!string.IsNullOrWhiteSpace(type) && type != "all")
             {
                 baseQuery = baseQuery.Where(x => x.Type == type);
             }
 
+            // Execute database fetch with all required Includes
             var items = await baseQuery
                 .Include(x => x.DbTaskDetail)
                 .Include(x => x.DbMeetingDetail)
@@ -157,11 +171,12 @@ public class BulletBaseService
                 .Include(x => x.DbHealthDetail)
                 .Include(x => x.DbSportsDetail)
                 .Include(x => x.Notes)
-                .Include(x => x.Meals) // Explicitly included for mapping to DTO
-                .Include(x => x.Workouts) // Explicitly included for mapping to DTO
+                .Include(x => x.Meals) 
+                .Include(x => x.Workouts)
                 .OrderByDescending(x => x.Date)
                 .ToListAsync();
 
+            // Map results to DTOs
             return items.Select(t => new BulletTaskService.TaskDTO
             {
                 Id = t.Id,
@@ -196,7 +211,7 @@ public class BulletBaseService
             return new List<BulletTaskService.TaskDTO>();
         }
     }
-
+    
     public async Task DeleteItem(int id)
     {
         var item = await _db.BulletItems.FindAsync(id);

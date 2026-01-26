@@ -17,8 +17,10 @@ namespace Dashboard.Services
 
         public string Query { get; set; } = "";
         public string Type { get; set; } = "all";
-        public DateTime Start { get; set; } = DateTime.Today.AddYears(-1);
-        public DateTime End { get; set; } = DateTime.Today.AddYears(1);
+        
+        // Defaulting to null allows the BaseService to skip the date filter
+        public DateTime? Start { get; set; } = null;
+        public DateTime? End { get; set; } = null;
 
         public bool IsSearching { get; set; } = false;
         public List<BulletTaskService.TaskDTO> Results { get; private set; } = new();
