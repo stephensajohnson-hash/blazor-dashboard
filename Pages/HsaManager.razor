@@ -68,7 +68,7 @@
                             </button>
                             <button @onclick="UndoReimbursement" 
                                     class="bg-orange-600 hover:bg-orange-500 text-white px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg transition active:scale-95">
-                                Undo Reimbursed Status
+                                Undo Status
                             </button>
                         }
                     </div>
@@ -287,7 +287,6 @@
     private decimal SelectedTotal => allReceipts.Where(r => selectedIds.Contains(r.Id)).Sum(r => r.Amount);
     private bool IsAllSelected => filteredReceipts.Any() && filteredReceipts.All(r => selectedIds.Contains(r.Id));
     
-    // Using DisbursementId instead of boolean flag
     private bool HasUnreimbursedSelected => allReceipts.Any(r => selectedIds.Contains(r.Id) && r.DisbursementId == null);
     private bool HasReimbursedSelected => allReceipts.Any(r => selectedIds.Contains(r.Id) && r.DisbursementId != null);
 
@@ -365,6 +364,10 @@
         try
         {
             using var db = await DbFactory.CreateDbContextAsync();
+            
+            // INCREASE TIMEOUT for large PDF blob transfer
+            db.Database.SetCommandTimeout(TimeSpan.FromMinutes(5));
+
             var dbTargets = await db.HsaReceipts
                 .Where(r => targets.Select(t => t.Id).Contains(r.Id))
                 .OrderBy(r => r.ServiceDate)
@@ -381,6 +384,8 @@
                 GeneratedPdf = pdfBytes 
             };
             db.HsaDisbursements.Add(newDist);
+            
+            // Fails here if payload is too big without timeout fix
             await db.SaveChangesAsync();
 
             // Link receipts to the new distribution
