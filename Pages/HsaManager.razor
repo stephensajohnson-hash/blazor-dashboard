@@ -37,6 +37,11 @@
                     }
                 </div>
 
+                @* TEMPORARY MIGRATION BUTTON *@
+                <button @onclick="RunDisbursementMigration" class="bg-purple-900/30 hover:bg-purple-900/50 text-purple-400 border border-purple-800/50 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition active:scale-95">
+                    Upgrade DB: Distributions
+                </button>
+
                 @* Selection Stats & Actions *@
                 @if (selectedIds.Any())
                 {
@@ -88,7 +93,6 @@
                 <table class="w-full text-left border-collapse table-fixed">
                     <thead>
                         <tr class="bg-[#1a1a1a] text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 border-b border-gray-800">
-                            @* Sticky THs solve the drifting title row issue. 152px = 72px + 80px offsets *@
                             <th class="p-4 w-12 text-center sticky top-[152px] z-30 bg-[#1a1a1a]">
                                 <input type="checkbox" checked="@IsAllSelected" @onchange="ToggleAll" class="w-4 h-4 rounded border-gray-700 bg-gray-900 accent-blue-600" />
                             </th>
@@ -107,7 +111,8 @@
                             decimal runningTotal = 0;
                             @foreach (var r in filteredReceipts)
                             {
-                                if (!r.IsReimbursed) { runningTotal += r.Amount; }
+                                bool isReimbursed = r.DisbursementId != null;
+                                if (!isReimbursed) { runningTotal += r.Amount; }
                                 bool isSelected = selectedIds.Contains(r.Id);
                                 
                                 <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition group relative align-top">
@@ -115,7 +120,6 @@
                                         <input type="checkbox" checked="@isSelected" @onchange="@(e => ToggleSelection(r.Id))" class="w-4 h-4 rounded border-gray-700 bg-gray-900 accent-blue-600 cursor-pointer" />
                                     </td>
 
-                                    @* Changed date format to mm/dd/yyyy per request *@
                                     <td class="p-4 font-mono text-gray-500 text-sm whitespace-nowrap">@r.ServiceDate.ToString("MM/dd/yyyy")</td>
                                     <td class="p-4 text-blue-400 font-bold text-sm break-words">@(r.Patient ?? "---")</td>
                                     <td class="p-4 text-white font-bold tracking-tight text-sm break-words">
@@ -136,7 +140,7 @@
                                             </button>
                                         }
                                     </td>
-                                    <td class="p-4 text-right font-mono text-sm whitespace-nowrap @(r.IsReimbursed ? "line-through text-gray-600" : "text-emerald-400 font-bold")">
+                                    <td class="p-4 text-right font-mono text-sm whitespace-nowrap @(isReimbursed ? "line-through text-gray-600" : "text-emerald-400 font-bold")">
                                         $@r.Amount.ToString("N2")
                                     </td>
                                     <td class="p-4 text-right pr-6 font-black font-mono text-sm text-blue-400 relative whitespace-nowrap">
@@ -207,10 +211,6 @@
                     <div>
                         <label class="block text-[10px] font-black text-gray-500 uppercase mb-1 ml-1 tracking-widest">Date</label>
                         <InputDate @bind-Value="tempReceipt.ServiceDate" class="w-full bg-gray-900 border border-gray-700 rounded-xl p-3 text-white text-sm focus:border-blue-500 outline-none" />
-                    </div>
-                    <div class="flex items-center gap-3 pt-6 pl-2">
-                        <InputCheckbox @bind-Value="tempReceipt.IsReimbursed" id="reimbursed" class="w-5 h-5 accent-blue-600 rounded bg-gray-900 border-gray-700" />
-                        <label for="reimbursed" class="text-[10px] font-black text-gray-400 uppercase cursor-pointer tracking-widest">Reimbursed</label>
                     </div>
                 </div>
                 
@@ -283,8 +283,8 @@
     private decimal SelectedTotal => allReceipts.Where(r => selectedIds.Contains(r.Id)).Sum(r => r.Amount);
     private bool IsAllSelected => filteredReceipts.Any() && filteredReceipts.All(r => selectedIds.Contains(r.Id));
     
-    private bool HasUnreimbursedSelected => allReceipts.Any(r => selectedIds.Contains(r.Id) && !r.IsReimbursed);
-    private bool HasReimbursedSelected => allReceipts.Any(r => selectedIds.Contains(r.Id) && r.IsReimbursed);
+    private bool HasUnreimbursedSelected => allReceipts.Any(r => selectedIds.Contains(r.Id) && r.DisbursementId == null);
+    private bool HasReimbursedSelected => allReceipts.Any(r => selectedIds.Contains(r.Id) && r.DisbursementId != null);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -311,15 +311,8 @@
 
     private void ApplyFilter()
     {
-        if (selectedYear == 0) 
-        {
-            filteredReceipts = new List<HsaReceipt>(allReceipts);
-        }
-        else 
-        {
-            // AUDIT: Using direct ServiceDate.Year comparison to fix 2026/2027 display
-            filteredReceipts = allReceipts.Where(x => x.ServiceDate.Year == selectedYear).ToList();
-        }
+        if (selectedYear == 0) filteredReceipts = new List<HsaReceipt>(allReceipts);
+        else filteredReceipts = allReceipts.Where(x => x.ServiceDate.Year == selectedYear).ToList();
         StateHasChanged();
     }
 
@@ -340,10 +333,11 @@
 
     private async Task GenerateSubmission()
     {
-        var selectedRecords = allReceipts.Where(r => selectedIds.Contains(r.Id) && !r.IsReimbursed).ToList();
-        if (!selectedRecords.Any()) return;
+        var targets = allReceipts.Where(r => selectedIds.Contains(r.Id) && r.DisbursementId == null).ToList();
+        if (!targets.Any()) return;
         
-        if (!await JS.InvokeAsync<bool>("confirm", $"Submit {selectedRecords.Count} items?")) return;
+        var txKey = await JS.InvokeAsync<string>("prompt", "Enter Transaction Key:");
+        if (string.IsNullOrEmpty(txKey)) return;
 
         isLoading = true;
         StateHasChanged();
@@ -351,21 +345,23 @@
         try
         {
             using var db = await DbFactory.CreateDbContextAsync();
-            var dbTargets = await db.HsaReceipts
-                .Where(r => selectedIds.Contains(r.Id))
-                .OrderBy(r => r.ServiceDate) 
-                .ToListAsync();
-
+            var dbTargets = await db.HsaReceipts.Where(r => targets.Select(t => t.Id).Contains(r.Id)).OrderBy(r => r.ServiceDate).ToListAsync();
+            
             var pdfBytes = ExportService.CreateSubmissionPdf(dbTargets);
 
-            foreach (var r in dbTargets)
-            {
-                r.IsReimbursed = true;
-                r.ReimbursedAt = DateTime.Now;
-            }
+            var newDisbursement = new HsaDisbursement {
+                CreatedAt = DateTime.Now,
+                TransactionKey = txKey,
+                TotalAmount = dbTargets.Sum(x => x.Amount),
+                GeneratedPdf = pdfBytes
+            };
+            db.HsaDisbursements.Add(newDisbursement);
             await db.SaveChangesAsync();
 
-            var fileName = $"HSA_Submission_{DateTime.Now:yyyyMMdd_HHmm}.pdf";
+            foreach (var r in dbTargets) { r.DisbursementId = newDisbursement.Id; }
+            await db.SaveChangesAsync();
+
+            var fileName = $"HSA_{DateTime.Now:yyyyMMdd}_{txKey}.pdf";
             using var stream = new MemoryStream(pdfBytes);
             using var streamRef = new DotNetStreamReference(stream);
             await JS.InvokeVoidAsync("downloadFileFromStream", fileName, streamRef);
@@ -373,37 +369,23 @@
             selectedIds.Clear();
             await LoadData();
         }
-        catch (Exception ex) 
-        { 
-            Console.WriteLine($"FATAL_EXPORT_ERROR: {ex.Message}");
-            await JS.InvokeVoidAsync("alert", $"Export Failed: {ex.Message}");
-        }
-        finally 
-        {
-            isLoading = false;
-            StateHasChanged();
-        }
+        catch (Exception ex) { await JS.InvokeVoidAsync("alert", $"Export Failed: {ex.Message}"); }
+        finally { isLoading = false; StateHasChanged(); }
     }
 
     private async Task UndoReimbursement()
     {
-        var targets = allReceipts.Where(r => selectedIds.Contains(r.Id) && r.IsReimbursed).ToList();
+        var targets = allReceipts.Where(r => selectedIds.Contains(r.Id) && r.DisbursementId != null).ToList();
         if (!targets.Any()) return;
 
-        if (!await JS.InvokeAsync<bool>("confirm", $"Set {targets.Count} items back to 'Unreimbursed'?")) return;
+        if (!await JS.InvokeAsync<bool>("confirm", $"Unlink {targets.Count} items from their disbursements?")) return;
 
         isLoading = true;
         try
         {
             using var db = await DbFactory.CreateDbContextAsync();
             var dbTargets = await db.HsaReceipts.Where(r => targets.Select(t => t.Id).Contains(r.Id)).ToListAsync();
-
-            foreach (var r in dbTargets)
-            {
-                r.IsReimbursed = false;
-                r.ReimbursedAt = null;
-            }
-
+            foreach (var r in dbTargets) { r.DisbursementId = null; }
             await db.SaveChangesAsync();
             selectedIds.Clear();
             await LoadData();
@@ -417,20 +399,10 @@
     private void OpenEditModal(HsaReceipt r) {
         editingId = r.Id;
         tempReceipt = new HsaReceipt {
-            Id = r.Id, 
-            UserId = r.UserId, 
-            Patient = r.Patient, 
-            Provider = r.Provider ?? "", 
-            Amount = r.Amount,
-            Type = r.Type ?? "Medical", 
-            ServiceDate = r.ServiceDate, 
-            Note = r.Note ?? "", 
-            IsReimbursed = r.IsReimbursed, 
-            ReimbursedAt = r.ReimbursedAt, 
-            TaxYear = r.TaxYear,
-            FileData = r.FileData, 
-            ContentType = r.ContentType, 
-            FileName = r.FileName
+            Id = r.Id, UserId = r.UserId, Patient = r.Patient, Provider = r.Provider ?? "", Amount = r.Amount,
+            Type = r.Type ?? "Medical", ServiceDate = r.ServiceDate, Note = r.Note ?? "", 
+            DisbursementId = r.DisbursementId, TaxYear = r.TaxYear, FileData = r.FileData, 
+            ContentType = r.ContentType, FileName = r.FileName
         };
         showModal = true;
     }
@@ -485,5 +457,16 @@
             var target = await db.HsaReceipts.FindAsync(id);
             if (target != null) { db.HsaReceipts.Remove(target); await db.SaveChangesAsync(); await LoadData(); }
         } catch (Exception ex) { Console.WriteLine($"DEL_ERR: {ex.Message}"); }
+    }
+
+    private async Task RunDisbursementMigration() {
+        if (!await JS.InvokeAsync<bool>("confirm", "Create table and migrate boolean flags?")) return;
+        try {
+            using var db = await DbFactory.CreateDbContextAsync();
+            await db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""HsaDisbursements"" (""Id"" SERIAL PRIMARY KEY, ""CreatedAt"" TIMESTAMP NOT NULL, ""TransactionKey"" TEXT, ""TotalAmount"" DECIMAL(18,2) NOT NULL, ""GeneratedPdf"" BYTEA);");
+            await db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""HsaReceipts"" ADD COLUMN IF NOT EXISTS ""DisbursementId"" INTEGER;");
+            await db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""HsaReceipts"" DROP COLUMN IF EXISTS ""IsReimbursed"";");
+            await LoadData(); await JS.InvokeVoidAsync("alert", "HSA Distribution tables updated.");
+        } catch (Exception ex) { await JS.InvokeVoidAsync("alert", $"Err: {ex.Message}"); }
     }
 }

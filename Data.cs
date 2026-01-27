@@ -522,19 +522,33 @@ public static class PasswordHelper
     } 
     public static bool VerifyPassword(string password, string storedHash) => HashPassword(password) == storedHash; 
 }
+public class HsaDisbursement
+{
+    public int Id { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public string? TransactionKey { get; set; } // The ID from your bank/HSA provider
+    public decimal TotalAmount { get; set; }
+    
+    // Optional: Store the generated PDF so it's a permanent record 
+    // even if receipts are later deleted or the code logic changes.
+    public byte[]? GeneratedPdf { get; set; } 
+}
 
 public class HsaReceipt
 {
     public int Id { get; set; }
     public int UserId { get; set; }
     public string? Provider { get; set; }
-    public string? Patient { get; set; } // The only new field
+    public string? Patient { get; set; }
     public decimal Amount { get; set; }
     public string? Type { get; set; }
     public DateTime ServiceDate { get; set; }
     public string? Note { get; set; }
-    public bool IsReimbursed { get; set; }
-    public DateTime? ReimbursedAt { get; set; }
+    
+    // RELATIONAL LINK
+    // If this is NULL, the item is unreimbursed.
+    public int? DisbursementId { get; set; }
+    
     public int TaxYear { get; set; }
     public byte[]? FileData { get; set; }
     public string? FileName { get; set; }
