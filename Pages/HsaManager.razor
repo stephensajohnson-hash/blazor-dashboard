@@ -13,12 +13,12 @@
 @inject HsaExportService ExportService
 
 <div class="min-h-screen bg-[#0a0a0a] text-white font-sans">
-    @* 1. MAIN HEADER - STICKY (72px height) *@
+    @* 1. MAIN HEADER - STICKY (72px) *@
     <div class="no-print sticky top-0 z-50 bg-[#0a0a0a] border-b border-gray-800">
         <BulletHeader ShowControls="false" CustomDateText="HSA Ledger" />
     </div>
 
-    @* 2. STICKY SUB-HEADER (Approx 80px height) *@
+    @* 2. STICKY SUB-HEADER (Approx 80px) *@
     <div class="sticky top-[72px] z-40 bg-[#0c0c0c]/95 backdrop-blur-md border-b border-gray-800 p-4 shadow-2xl no-print">
         <div class="max-w-[98%] mx-auto flex flex-wrap items-center justify-between gap-4">
             <div class="flex items-center gap-6">
@@ -73,7 +73,7 @@
         </div>
     </div>
 
-    @* 3. LEDGER DISPLAY - Removed overflow-hidden to fix sticky header placement *@
+    @* 3. LEDGER DISPLAY *@
     <div class="max-w-[98%] mx-auto p-4 pb-40">
         @if (isLoading)
         {
@@ -84,11 +84,10 @@
         }
         else
         {
-            <div class="bg-[#111] border border-gray-800 rounded-2xl shadow-2xl">
-                <table class="w-full text-left border-collapse">
+            <div class="bg-[#111] border border-gray-800 rounded-2xl shadow-2xl overflow-visible">
+                <table class="w-full text-left border-collapse table-fixed">
                     <thead>
                         <tr class="bg-[#1a1a1a] text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 border-b border-gray-800">
-                            @* Headers are sticky at 152px (72 + 80). Background must be solid to cover rows. *@
                             <th class="p-4 w-12 text-center sticky top-[152px] z-30 bg-[#1a1a1a]">
                                 <input type="checkbox" checked="@IsAllSelected" @onchange="ToggleAll" class="w-4 h-4 rounded border-gray-700 bg-gray-900 accent-blue-600" />
                             </th>
@@ -296,7 +295,7 @@
         try
         {
             using var db = await DbFactory.CreateDbContextAsync();
-            allReceipts = await db.HsaReceipts.OrderBy(x => x.ServiceDate).ToListAsync();
+            allReceipts = await db.HsaReceipts.OrderByDescending(x => x.ServiceDate).ToListAsync();
             
             knownPatients = allReceipts.Select(x => x.Patient).Where(x => !string.IsNullOrEmpty(x)).Distinct().OrderBy(x => x).ToList()!;
             knownProviders = allReceipts.Select(x => x.Provider).Where(x => !string.IsNullOrEmpty(x)).Distinct().OrderBy(x => x).ToList()!;
@@ -312,11 +311,11 @@
     {
         if (selectedYear == 0) 
         {
-            filteredReceipts = allReceipts;
+            filteredReceipts = new List<HsaReceipt>(allReceipts);
         }
         else 
         {
-            // AUDIT: Fixed filtering logic using direct ServiceDate year comparison
+            // AUDIT: Using direct ServiceDate.Year comparison to fix 2026/2027 display
             filteredReceipts = allReceipts.Where(x => x.ServiceDate.Year == selectedYear).ToList();
         }
         StateHasChanged();
@@ -334,7 +333,7 @@
     private void ToggleAll()
     {
         if (IsAllSelected) foreach (var r in filteredReceipts) selectedIds.Remove(r.Id);
-        else foreach (var r in filteredReceipts) selectedIds.Add(r.Id); // AUDIT: Fixed typo in typo fix
+        else foreach (var r in filteredReceipts) selectedIds.Add(r.Id); 
     }
 
     private async Task GenerateSubmission()
