@@ -8,32 +8,46 @@ namespace Dashboard.Services;
 
 public class HsaExportService
 {
-    public byte[] CreateSubmissionPdf(List<HsaReceipt> receipts)
+    public byte[] CreateSubmissionPdf(List<HsaReceipt> receipts, string? txKey = null, string? description = null)
     {
         using var outputDocument = new PdfDocument();
         outputDocument.Options.CompressContentStreams = true;
 
         try 
         {
-            // --- 1. GENERATE LEDGER PAGE(S) ---
             var page = outputDocument.AddPage();
             var gfx = XGraphics.FromPdfPage(page);
             
             var fontTitle = new XFont("Roboto", 18, XFontStyleEx.Bold);
+            var fontLabel = new XFont("Roboto", 10, XFontStyleEx.Bold);
             var fontHeader = new XFont("Roboto", 10, XFontStyleEx.Bold);
             var fontTable = new XFont("Roboto", 9, XFontStyleEx.Regular);
             var fontTotal = new XFont("Roboto", 11, XFontStyleEx.Bold);
 
             double yPos = 50;
-            double bottomMargin = 740; // Safety margin for page breaks
+            double bottomMargin = 740;
 
-            // Header (Page 1 Only)
+            // --- HEADER SECTION ---
             gfx.DrawString("HSA Reimbursement Ledger", fontTitle, XBrushes.Black, new XPoint(40, yPos));
-            yPos += 20;
-            gfx.DrawString($"Generated: {DateTime.Now:MM/dd/yyyy HH:mm}", fontTable, XBrushes.Gray, new XPoint(40, yPos));
-            yPos += 40;
+            yPos += 25;
 
-            // Column Definitions
+            if (!string.IsNullOrEmpty(txKey))
+            {
+                gfx.DrawString("Transaction Key:", fontLabel, XBrushes.Black, new XPoint(40, yPos));
+                gfx.DrawString(txKey, fontTable, XBrushes.Black, new XPoint(130, yPos));
+                yPos += 15;
+            }
+
+            if (!string.IsNullOrEmpty(description))
+            {
+                gfx.DrawString("Description:", fontLabel, XBrushes.Black, new XPoint(40, yPos));
+                gfx.DrawString(description, fontTable, XBrushes.Black, new XPoint(130, yPos));
+                yPos += 15;
+            }
+
+            gfx.DrawString($"Generated: {DateTime.Now:MM/dd/yyyy HH:mm}", fontTable, XBrushes.Gray, new XPoint(40, yPos));
+            yPos += 30;
+
             var colDate = (X: 40.0, W: 65.0);
             var colPatient = (X: 110.0, W: 90.0);
             var colProvider = (X: 205.0, W: 155.0);
@@ -44,13 +58,11 @@ public class HsaExportService
 
             foreach (var r in receipts)
             {
-                // Measure the height needed for this row
                 double hPatient = MeasureHeight(gfx, r.Patient ?? "---", fontTable, colPatient.W);
                 double hProvider = MeasureHeight(gfx, r.Provider ?? "---", fontTable, colProvider.W);
                 double hCategory = MeasureHeight(gfx, r.Type ?? "Medical", fontTable, colCategory.W);
                 double rowHeight = Math.Max(18, Math.Max(hPatient, Math.Max(hProvider, hCategory)));
 
-                // Pagination check
                 if (yPos + rowHeight > bottomMargin)
                 {
                     gfx.Dispose();
@@ -60,21 +72,16 @@ public class HsaExportService
                     DrawTableHeaders(gfx, fontHeader, colDate.X, colPatient.X, colProvider.X, colCategory.X, colAmount.X, ref yPos);
                 }
 
-                // FIXED: Date Alignment. We now use DrawWrappedText for the Date too 
-                // to ensure the baseline matches the Patient/Provider columns exactly.
                 DrawWrappedText(gfx, r.ServiceDate.ToString("MM/dd/yyyy"), fontTable, colDate.X, yPos, colDate.W);
-                
                 DrawWrappedText(gfx, r.Patient ?? "---", fontTable, colPatient.X, yPos, colPatient.W);
                 DrawWrappedText(gfx, r.Provider ?? "---", fontTable, colProvider.X, yPos, colProvider.W);
                 DrawWrappedText(gfx, r.Type ?? "Medical", fontTable, colCategory.X, yPos, colCategory.W);
+                gfx.DrawString($"${r.Amount:N2}", fontTable, XBrushes.Black, new XPoint(colAmount.X, yPos + 9));
                 
-                // Align Amount to the top of the row
-                gfx.DrawString($"${r.Amount:N2}", fontTable, XBrushes.Black, new XPoint(colAmount.X, yPos + 9)); // +9 matches font height baseline
-                
-                yPos += rowHeight + 6; // Space between rows
+                yPos += rowHeight + 6;
             }
 
-            // --- GRAND TOTAL SUMMARY ---
+            // --- GRAND TOTAL ---
             if (yPos + 50 > bottomMargin)
             {
                 gfx.Dispose();
@@ -91,7 +98,6 @@ public class HsaExportService
             
             gfx.Dispose();
 
-            // --- 2. APPEND ATTACHMENTS (STITCHING) ---
             foreach (var r in receipts.Where(x => x.FileData != null && x.FileData.Length > 0))
             {
                 try 
@@ -108,11 +114,9 @@ public class HsaExportService
                         using var img = XImage.FromStream(ms);
                         var imgPage = outputDocument.AddPage();
                         using var imgGfx = XGraphics.FromPdfPage(imgPage);
-                        
                         double width = imgPage.Width.Point;
                         double height = (width / img.PixelWidth) * img.PixelHeight;
                         if (height > imgPage.Height.Point) height = imgPage.Height.Point;
-                        
                         imgGfx.DrawImage(img, 0, 0, width, height);
                     }
                 }
