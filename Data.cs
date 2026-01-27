@@ -527,12 +527,9 @@ public class HsaDisbursement
 {
     public int Id { get; set; }
     public DateTime CreatedAt { get; set; }
-    public string? TransactionKey { get; set; } // The ID from your bank/HSA provider
+    public string? TransactionKey { get; set; }
+    public string? Description { get; set; }
     public decimal TotalAmount { get; set; }
-    
-    // Optional: Store the generated PDF so it's a permanent record 
-    // even if receipts are later deleted or the code logic changes.
-    public byte[]? GeneratedPdf { get; set; } 
 }
 
 public class HsaReceipt
