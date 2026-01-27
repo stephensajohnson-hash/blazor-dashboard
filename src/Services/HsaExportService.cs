@@ -25,63 +25,68 @@ public class HsaExportService
             var fontTotal = new XFont("Roboto", 11, XFontStyleEx.Bold);
 
             double yPos = 50;
-            double bottomMargin = 750; // The cutoff point for a new page
+            double bottomMargin = 740; // Safety margin for page breaks
 
-            // Initial Header (Only on Page 1)
+            // Header (Page 1 Only)
             gfx.DrawString("HSA Reimbursement Ledger", fontTitle, XBrushes.Black, new XPoint(40, yPos));
             yPos += 20;
             gfx.DrawString($"Generated: {DateTime.Now:MM/dd/yyyy HH:mm}", fontTable, XBrushes.Gray, new XPoint(40, yPos));
             yPos += 40;
 
-            // Column Definitions (X coordinates matched to your UI widths)
+            // Column Definitions
             var colDate = (X: 40.0, W: 65.0);
             var colPatient = (X: 110.0, W: 90.0);
             var colProvider = (X: 205.0, W: 155.0);
             var colCategory = (X: 365.0, W: 130.0);
             var colAmount = (X: 500.0, W: 50.0);
 
-            // Draw first set of headers
             DrawTableHeaders(gfx, fontHeader, colDate.X, colPatient.X, colProvider.X, colCategory.X, colAmount.X, ref yPos);
 
             foreach (var r in receipts)
             {
-                // Measure the tallest field to determine row height
+                // Measure the height needed for this row
                 double hPatient = MeasureHeight(gfx, r.Patient ?? "---", fontTable, colPatient.W);
                 double hProvider = MeasureHeight(gfx, r.Provider ?? "---", fontTable, colProvider.W);
                 double hCategory = MeasureHeight(gfx, r.Type ?? "Medical", fontTable, colCategory.W);
                 double rowHeight = Math.Max(18, Math.Max(hPatient, Math.Max(hProvider, hCategory)));
 
-                // MULTI-PAGE TRIGGER: If this row pushes past the margin, start a new page
+                // Pagination check
                 if (yPos + rowHeight > bottomMargin)
                 {
-                    gfx.Dispose(); // Close current page graphics
+                    gfx.Dispose();
                     page = outputDocument.AddPage();
                     gfx = XGraphics.FromPdfPage(page);
-                    yPos = 50; // Reset cursor to top of new page
-                    
-                    // Re-draw headers on the new page
+                    yPos = 50;
                     DrawTableHeaders(gfx, fontHeader, colDate.X, colPatient.X, colProvider.X, colCategory.X, colAmount.X, ref yPos);
                 }
 
-                // Draw Date with corrected MM/dd/yyyy format and vertical alignment
-                gfx.DrawString(r.ServiceDate.ToString("MM/dd/yyyy"), fontTable, XBrushes.Black, new XPoint(colDate.X, yPos));
+                // FIXED: Date Alignment. We now use DrawWrappedText for the Date too 
+                // to ensure the baseline matches the Patient/Provider columns exactly.
+                DrawWrappedText(gfx, r.ServiceDate.ToString("MM/dd/yyyy"), fontTable, colDate.X, yPos, colDate.W);
                 
-                // Draw Wrapped Content
                 DrawWrappedText(gfx, r.Patient ?? "---", fontTable, colPatient.X, yPos, colPatient.W);
                 DrawWrappedText(gfx, r.Provider ?? "---", fontTable, colProvider.X, yPos, colProvider.W);
                 DrawWrappedText(gfx, r.Type ?? "Medical", fontTable, colCategory.X, yPos, colCategory.W);
                 
-                // Draw Amount
-                gfx.DrawString($"${r.Amount:N2}", fontTable, XBrushes.Black, new XPoint(colAmount.X, yPos));
+                // Align Amount to the top of the row
+                gfx.DrawString($"${r.Amount:N2}", fontTable, XBrushes.Black, new XPoint(colAmount.X, yPos + 9)); // +9 matches font height baseline
                 
-                yPos += rowHeight + 4; // Advance cursor for next row
+                yPos += rowHeight + 6; // Space between rows
             }
 
-            // Draw Grand Total footer
+            // --- GRAND TOTAL SUMMARY ---
+            if (yPos + 50 > bottomMargin)
+            {
+                gfx.Dispose();
+                page = outputDocument.AddPage();
+                gfx = XGraphics.FromPdfPage(page);
+                yPos = 50;
+            }
+
             yPos += 10;
             gfx.DrawLine(XPens.Black, 40, yPos, 550, yPos);
             yPos += 20;
-            gfx.DrawString("Total Reimbursement Amount:", fontTotal, XBrushes.Black, new XPoint(330, yPos));
+            gfx.DrawString("Total Reimbursement Amount:", fontTotal, XBrushes.Black, new XPoint(310, yPos));
             gfx.DrawString($"${receipts.Sum(x => x.Amount):N2}", fontTotal, XBrushes.DarkGreen, new XPoint(500, yPos));
             
             gfx.Dispose();
