@@ -1,7 +1,7 @@
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
 using PdfSharp.Drawing;
-using PdfSharp.Drawing.Layout; // REQUIRED FOR XTextFormatter
+using PdfSharp.Drawing.Layout;
 using Dashboard;
 
 namespace Dashboard.Services;
@@ -17,7 +17,7 @@ public class HsaExportService
         {
             // --- 1. GENERATE LEDGER PAGE(S) ---
             var page = outputDocument.AddPage();
-            using var gfx = XGraphics.FromPdfPage(page);
+            var gfx = XGraphics.FromPdfPage(page);
             
             var fontTitle = new XFont("Roboto", 18, XFontStyleEx.Bold);
             var fontHeader = new XFont("Roboto", 10, XFontStyleEx.Bold);
@@ -25,62 +25,68 @@ public class HsaExportService
             var fontTotal = new XFont("Roboto", 11, XFontStyleEx.Bold);
 
             double yPos = 50;
+            double bottomMargin = 750; // The cutoff point for a new page
+
+            // Initial Header (Only on Page 1)
             gfx.DrawString("HSA Reimbursement Ledger", fontTitle, XBrushes.Black, new XPoint(40, yPos));
             yPos += 20;
-            gfx.DrawString($"Generated: {DateTime.Now:yyyy-MM-dd HH:mm}", fontTable, XBrushes.Gray, new XPoint(40, yPos));
+            gfx.DrawString($"Generated: {DateTime.Now:MM/dd/yyyy HH:mm}", fontTable, XBrushes.Gray, new XPoint(40, yPos));
             yPos += 40;
 
-            // Column Definitions (X position and Width for wrapping)
-            var colDate = (X: 40.0, W: 60.0);
-            var colPatient = (X: 105.0, W: 95.0);
+            // Column Definitions (X coordinates matched to your UI widths)
+            var colDate = (X: 40.0, W: 65.0);
+            var colPatient = (X: 110.0, W: 90.0);
             var colProvider = (X: 205.0, W: 155.0);
             var colCategory = (X: 365.0, W: 130.0);
             var colAmount = (X: 500.0, W: 50.0);
 
-            gfx.DrawString("Date", fontHeader, XBrushes.Black, new XPoint(colDate.X, yPos));
-            gfx.DrawString("Patient", fontHeader, XBrushes.Black, new XPoint(colPatient.X, yPos));
-            gfx.DrawString("Provider", fontHeader, XBrushes.Black, new XPoint(colProvider.X, yPos));
-            gfx.DrawString("Category", fontHeader, XBrushes.Black, new XPoint(colCategory.X, yPos));
-            gfx.DrawString("Amount", fontHeader, XBrushes.Black, new XPoint(colAmount.X, yPos));
-            
-            yPos += 5;
-            gfx.DrawLine(XPens.Black, 40, yPos, 550, yPos);
-            yPos += 15;
+            // Draw first set of headers
+            DrawTableHeaders(gfx, fontHeader, colDate.X, colPatient.X, colProvider.X, colCategory.X, colAmount.X, ref yPos);
 
             foreach (var r in receipts)
             {
-                // Measure the height needed for this row based on the longest wrapped text
+                // Measure the tallest field to determine row height
                 double hPatient = MeasureHeight(gfx, r.Patient ?? "---", fontTable, colPatient.W);
                 double hProvider = MeasureHeight(gfx, r.Provider ?? "---", fontTable, colProvider.W);
                 double hCategory = MeasureHeight(gfx, r.Type ?? "Medical", fontTable, colCategory.W);
-                
                 double rowHeight = Math.Max(18, Math.Max(hPatient, Math.Max(hProvider, hCategory)));
 
-                // Simple check for page bottom; reset or new page logic could be expanded here
-                if (yPos + rowHeight > 750) 
+                // MULTI-PAGE TRIGGER: If this row pushes past the margin, start a new page
+                if (yPos + rowHeight > bottomMargin)
                 {
-                     // For now, we continue, but in a full production environment, 
-                     // you would add outputDocument.AddPage() here.
+                    gfx.Dispose(); // Close current page graphics
+                    page = outputDocument.AddPage();
+                    gfx = XGraphics.FromPdfPage(page);
+                    yPos = 50; // Reset cursor to top of new page
+                    
+                    // Re-draw headers on the new page
+                    DrawTableHeaders(gfx, fontHeader, colDate.X, colPatient.X, colProvider.X, colCategory.X, colAmount.X, ref yPos);
                 }
 
-                gfx.DrawString(r.ServiceDate.ToString("yyyy-MM-dd"), fontTable, XBrushes.Black, new XPoint(colDate.X, yPos));
+                // Draw Date with corrected MM/dd/yyyy format and vertical alignment
+                gfx.DrawString(r.ServiceDate.ToString("MM/dd/yyyy"), fontTable, XBrushes.Black, new XPoint(colDate.X, yPos));
                 
+                // Draw Wrapped Content
                 DrawWrappedText(gfx, r.Patient ?? "---", fontTable, colPatient.X, yPos, colPatient.W);
                 DrawWrappedText(gfx, r.Provider ?? "---", fontTable, colProvider.X, yPos, colProvider.W);
                 DrawWrappedText(gfx, r.Type ?? "Medical", fontTable, colCategory.X, yPos, colCategory.W);
                 
+                // Draw Amount
                 gfx.DrawString($"${r.Amount:N2}", fontTable, XBrushes.Black, new XPoint(colAmount.X, yPos));
                 
-                yPos += rowHeight + 4; // Move to next row position
+                yPos += rowHeight + 4; // Advance cursor for next row
             }
 
+            // Draw Grand Total footer
             yPos += 10;
             gfx.DrawLine(XPens.Black, 40, yPos, 550, yPos);
             yPos += 20;
             gfx.DrawString("Total Reimbursement Amount:", fontTotal, XBrushes.Black, new XPoint(330, yPos));
             gfx.DrawString($"${receipts.Sum(x => x.Amount):N2}", fontTotal, XBrushes.DarkGreen, new XPoint(500, yPos));
+            
+            gfx.Dispose();
 
-            // --- 2. APPEND ATTACHMENTS ---
+            // --- 2. APPEND ATTACHMENTS (STITCHING) ---
             foreach (var r in receipts.Where(x => x.FileData != null && x.FileData.Length > 0))
             {
                 try 
@@ -119,6 +125,18 @@ public class HsaExportService
         }
     }
 
+    private void DrawTableHeaders(XGraphics gfx, XFont font, double xD, double xP, double xPr, double xC, double xA, ref double y)
+    {
+        gfx.DrawString("Date", font, XBrushes.Black, new XPoint(xD, y));
+        gfx.DrawString("Patient", font, XBrushes.Black, new XPoint(xP, y));
+        gfx.DrawString("Provider", font, XBrushes.Black, new XPoint(xPr, y));
+        gfx.DrawString("Category", font, XBrushes.Black, new XPoint(xC, y));
+        gfx.DrawString("Amount", font, XBrushes.Black, new XPoint(xA, y));
+        y += 5;
+        gfx.DrawLine(XPens.Black, 40, y, 550, y);
+        y += 15;
+    }
+
     private void DrawWrappedText(XGraphics gfx, string text, XFont font, double x, double y, double width)
     {
         XRect rect = new XRect(x, y, width, 1000);
@@ -128,23 +146,15 @@ public class HsaExportService
 
     private double MeasureHeight(XGraphics gfx, string text, XFont font, double width)
     {
-        // Estimate height based on word-wrapping logic
         var words = text.Split(' ');
         int lines = 1;
         double currentLineWidth = 0;
         foreach (var word in words)
         {
             double wordWidth = gfx.MeasureString(word + " ", font).Width;
-            if (currentLineWidth + wordWidth > width)
-            {
-                lines++;
-                currentLineWidth = wordWidth;
-            }
-            else
-            {
-                currentLineWidth += wordWidth;
-            }
+            if (currentLineWidth + wordWidth > width) { lines++; currentLineWidth = wordWidth; }
+            else { currentLineWidth += wordWidth; }
         }
-        return lines * (font.Height);
+        return lines * font.Height;
     }
 }
