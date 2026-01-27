@@ -64,6 +64,7 @@ public class AppDbContext : DbContext
 
     // HSA Manager
     public DbSet<HsaReceipt> HsaReceipts { get; set; }
+    public DbSet<HsaDisbursement> HsaDisbursements { get; set; }
 }
 
 public class BulletItem 
