@@ -37,11 +37,6 @@
                     }
                 </div>
 
-                @* TEMPORARY MIGRATION BUTTON *@
-                <button @onclick="RunDisbursementMigration" class="bg-purple-900/30 hover:bg-purple-900/50 text-purple-400 border border-purple-800/50 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition active:scale-95">
-                    Upgrade DB: Distributions
-                </button>
-
                 @* Selection Stats & Actions *@
                 @if (selectedIds.Any())
                 {
@@ -120,6 +115,7 @@
                                     <td class="p-4 text-center">
                                         <input type="checkbox" checked="@isSelected" @onchange="@(e => ToggleSelection(r.Id))" class="w-4 h-4 rounded border-gray-700 bg-gray-900 accent-blue-600 cursor-pointer" />
                                     </td>
+
                                     <td class="p-4 font-mono text-gray-500 text-sm whitespace-nowrap">@r.ServiceDate.ToString("MM/dd/yyyy")</td>
                                     <td class="p-4 text-blue-400 font-bold text-sm break-words">@(r.Patient ?? "---")</td>
                                     <td class="p-4 text-white font-bold tracking-tight text-sm break-words">@(r.Provider ?? "---")</td>
@@ -138,6 +134,7 @@
                                     </td>
                                     <td class="p-4 text-right pr-6 font-black font-mono text-sm text-blue-400 relative whitespace-nowrap">
                                         $@runningTotal.ToString("N2")
+
                                         <div class="absolute inset-y-0 right-0 flex items-center gap-2 px-4 bg-gradient-to-l from-[#111] via-[#111] to-transparent opacity-0 group-hover:opacity-100 transition-opacity z-20">
                                             <button @onclick="() => OpenEditModal(r)" class="bg-blue-600 p-1.5 rounded hover:bg-blue-500 text-[10px] shadow-lg">✏️</button>
                                             <button @onclick="() => DeleteReceipt(r.Id)" class="bg-red-600 p-1.5 rounded hover:bg-red-500 text-[10px] shadow-lg">✕</button>
@@ -247,7 +244,7 @@
     </div>
 }
 
-@* DISTRIBUTION MODAL (NEW & EDIT) *@
+@* DISTRIBUTION MODAL *@
 @if (showDistModal)
 {
     <div class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
@@ -317,7 +314,12 @@
     private List<string> knownProviders = new();
 
     private decimal SelectedTotal => allReceipts.Where(r => selectedIds.Contains(r.Id)).Sum(r => r.Amount);
-    private bool IsAllSelected => filteredReceipts.Any() && filteredReceipts.All(r => selectedIds.Contains(r.Id));
+
+    @* IsAllSelected now checks if all unreimbursed items in the filtered view are selected *@
+    private bool IsAllSelected =>
+        filteredReceipts.Any(r => r.DisbursementId == null) &&
+        filteredReceipts.Where(r => r.DisbursementId == null).All(r => selectedIds.Contains(r.Id));
+
     private bool HasUnreimbursedSelected => allReceipts.Any(r => selectedIds.Contains(r.Id) && r.DisbursementId == null);
     private bool HasReimbursedSelected => allReceipts.Any(r => selectedIds.Contains(r.Id) && r.DisbursementId != null);
 
@@ -370,7 +372,30 @@
     private void FilterByYear(int year) { selectedYear = year; ApplyFilter(); }
     private void HandleFilterAll() { selectedYear = 0; ApplyFilter(); }
     private void ToggleSelection(int id) { if (selectedIds.Contains(id)) selectedIds.Remove(id); else selectedIds.Add(id); }
-    private void ToggleAll() { if (IsAllSelected) foreach (var r in filteredReceipts) selectedIds.Remove(r.Id); else foreach (var r in filteredReceipts) selectedIds.Add(r.Id); }
+
+    @* ToggleAll only adds/removes items that have NOT been reimbursed *@
+    private void ToggleAll()
+    {
+        var unreimbursedFilteredIds = filteredReceipts
+            .Where(r => r.DisbursementId == null)
+            .Select(r => r.Id)
+            .ToList();
+
+        if (IsAllSelected)
+        {
+            foreach (var id in unreimbursedFilteredIds)
+            {
+                selectedIds.Remove(id);
+            }
+        }
+        else
+        {
+            foreach (var id in unreimbursedFilteredIds)
+            {
+                selectedIds.Add(id);
+            }
+        }
+    }
 
     private void OpenNewDistModal()
     {
@@ -405,7 +430,6 @@
             using var db = await DbFactory.CreateDbContextAsync();
             if (tempDist.Id == 0)
             {
-                // Creating New Distribution from Selection
                 var targets = allReceipts.Where(r => selectedIds.Contains(r.Id) && r.DisbursementId == null).ToList();
                 var dbTargets = await db.HsaReceipts
                     .Where(r => targets.Select(t => t.Id).Contains(r.Id))
@@ -422,7 +446,6 @@
                 }
                 await db.SaveChangesAsync();
 
-                // Generate PDF and Download
                 var pdfBytes = ExportService.CreateSubmissionPdf(dbTargets, tempDist.TransactionKey, tempDist.Description);
                 var fileName = $"HSA_{DateTime.Now:yyyyMMdd}_{tempDist.TransactionKey}.pdf";
                 using var stream = new MemoryStream(pdfBytes);
@@ -433,7 +456,6 @@
             }
             else
             {
-                // Editing Existing Distribution Metadata
                 var existing = await db.HsaDisbursements.FindAsync(tempDist.Id);
                 if (existing != null)
                 {
@@ -488,7 +510,7 @@
 
     private async Task DeleteDistribution(int id)
     {
-        if (!await JS.InvokeAsync<bool>("confirm", "Delete this record? Receipts will become unreimbursed.")) 
+        if (!await JS.InvokeAsync<bool>("confirm", "Delete record? Receipts will become unreimbursed.")) 
         {
             return;
         }
@@ -520,7 +542,7 @@
     private async Task UndoReimbursement()
     {
         var targets = allReceipts.Where(r => selectedIds.Contains(r.Id) && r.DisbursementId != null).ToList();
-        if (!targets.Any() || !await JS.InvokeAsync<bool>("confirm", $"Unlink {targets.Count} items from their distributions?")) 
+        if (!targets.Any() || !await JS.InvokeAsync<bool>("confirm", "Unlink items from their distributions?")) 
         {
             return;
         }
@@ -658,27 +680,6 @@
         catch (Exception ex) 
         { 
             Console.WriteLine($"DEL_ERR: {ex.Message}"); 
-        }
-    }
-
-    private async Task RunDisbursementMigration()
-    {
-        if (!await JS.InvokeAsync<bool>("confirm", "This will create the Distributions table and update schema. Continue?")) 
-        {
-            return;
-        }
-
-        try
-        {
-            using var db = await DbFactory.CreateDbContextAsync();
-            await db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""HsaDisbursements"" (""Id"" SERIAL PRIMARY KEY, ""CreatedAt"" TIMESTAMP NOT NULL, ""TransactionKey"" TEXT, ""Description"" TEXT, ""TotalAmount"" DECIMAL(18,2) NOT NULL);");
-            await db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""HsaReceipts"" ADD COLUMN IF NOT EXISTS ""DisbursementId"" INTEGER;");
-            await LoadData();
-            await JS.InvokeVoidAsync("alert", "Schema Updated.");
-        }
-        catch (Exception ex) 
-        { 
-            await JS.InvokeVoidAsync("alert", $"Err: {ex.Message}"); 
         }
     }
 }
