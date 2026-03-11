@@ -170,7 +170,6 @@
                             bool isHome = g.Detail.HomeTeamId == activeTeamId;
                             bool isWin = false; bool isLoss = false;
                             
-                            // Determine W/L Logic for Styling
                             if (g.Detail.IsComplete) {
                                 if (isHome) { isWin = g.Detail.HomeScore > g.Detail.AwayScore; isLoss = g.Detail.HomeScore < g.Detail.AwayScore; }
                                 else { isWin = g.Detail.AwayScore > g.Detail.HomeScore; isLoss = g.Detail.AwayScore < g.Detail.HomeScore; }
@@ -264,7 +263,6 @@
                     <input @bind="tempName" class="w-full bg-black border border-gray-600 rounded p-2 text-white" placeholder="League Name" />
                     <input @bind="tempLinkUrl" class="w-full bg-black border border-gray-600 rounded p-2 text-white" placeholder="Link URL (Optional)" />
                     
-                    @* FIX: ADDED IMAGE PREVIEW AND PATH INPUT FOR LEAGUE *@
                     <div class="bg-black/50 p-3 rounded border border-gray-700 space-y-2">
                         <label class="text-[10px] text-gray-500 uppercase font-bold">Image Asset</label>
                         <div class="flex gap-3 items-center">
@@ -377,7 +375,7 @@
                 debugText += " | ERROR: " + ex.Message; 
             } finally {
                 isLoading = false;
-                StateHasChanged();
+                await InvokeAsync(StateHasChanged);
             }
         }
     }
@@ -419,10 +417,8 @@
     {
         if(activeTeamId > 0 && selectedSeasonId > 0)
         {
-            // 1. Fetch Games
             teamGames = await SportsService.GetTeamSchedule(userId, activeTeamId, selectedSeasonId);
             
-            // 2. Calculate Running Record Logic (Custom for UI)
             int wins = 0; int losses = 0; int ties = 0;
             
             foreach(var g in teamGames.OrderBy(x => x.Date))
@@ -437,7 +433,6 @@
                     else if(myScore < oppScore) losses++;
                     else ties++;
                 }
-                // Assign the "Running Record" to the DTO property we created earlier
                 g.FavoriteRecord = new BulletSportsService.TeamRecord { Wins = wins, Losses = losses, Ties = ties };
             }
         }
@@ -463,7 +458,6 @@
         var source = teamGames.FirstOrDefault(x => x.Id == g.Id);
         if(source != null)
         {
-            // Deep Copy Logic to Fix Empty Editor
             editingGame = new BulletSportsService.GameDTO 
             { 
                 Id = source.Id,
@@ -508,22 +502,109 @@
             var f = e.File; 
             using var ms = new MemoryStream();
             await f.OpenReadStream(5 * 1024 * 1024).CopyToAsync(ms);
-            // This saves the image to the StoredImages table and returns the /db-images/ID path
             tempImgUrl = await BaseService.SaveImageAsync(ms.ToArray(), f.ContentType); 
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
         } 
         catch {} 
     }
 
     private async Task SaveConfigModal()
     {
-        if(string.IsNullOrWhiteSpace(tempName)) return;
-        if(modalType == "league") { if(editingId==0) await SportsService.AddLeague(userId, tempName, tempImgUrl, tempLinkUrl); else await SportsService.UpdateLeague(new League{Id=editingId, UserId=userId, Name=tempName, ImgUrl=tempImgUrl, LinkUrl=tempLinkUrl}); }
-        else if(modalType == "season") { if(tempLeagueId==0) return; if(editingId==0) await SportsService.AddSeason(userId, tempLeagueId, tempName, tempImgUrl); else await SportsService.UpdateSeason(new Season{Id=editingId, UserId=userId, LeagueId=tempLeagueId, Name=tempName, ImgUrl=tempImgUrl}); }
-        else if(modalType == "team") { if(tempLeagueId==0) return; var t = new Team{Id=editingId, UserId=userId, LeagueId=tempLeagueId, Name=tempName, Abbreviation=tempAbbr, LogoUrl=tempImgUrl, IsFavorite=tempIsFav}; if(editingId==0) await SportsService.AddTeam(userId, tempLeagueId, tempName, tempAbbr, tempImgUrl, tempIsFav); else await SportsService.UpdateTeam(t); }
+        if (string.IsNullOrWhiteSpace(tempName))
+        {
+            return;
+        }
+
+        if (modalType == "league")
+        {
+            if (editingId == 0)
+            {
+                await SportsService.AddLeague(userId, tempName, tempImgUrl, tempLinkUrl);
+            }
+            else
+            {
+                var target = leagues.FirstOrDefault(x => x.Id == editingId);
+                if (target != null)
+                {
+                    target.Name = tempName;
+                    target.ImgUrl = tempImgUrl;
+                    target.LinkUrl = tempLinkUrl;
+                    await SportsService.UpdateLeague(target);
+                }
+            }
+        }
+        else if (modalType == "season")
+        {
+            if (tempLeagueId == 0)
+            {
+                return;
+            }
+
+            if (editingId == 0)
+            {
+                await SportsService.AddSeason(userId, tempLeagueId, tempName, tempImgUrl);
+            }
+            else
+            {
+                var target = seasons.FirstOrDefault(x => x.Id == editingId);
+                if (target != null)
+                {
+                    target.Name = tempName;
+                    target.ImgUrl = tempImgUrl;
+                    target.LeagueId = tempLeagueId;
+                    await SportsService.UpdateSeason(target);
+                }
+            }
+        }
+        else if (modalType == "team")
+        {
+            if (tempLeagueId == 0)
+            {
+                return;
+            }
+
+            if (editingId == 0)
+            {
+                await SportsService.AddTeam(userId, tempLeagueId, tempName, tempAbbr, tempImgUrl, tempIsFav);
+            }
+            else
+            {
+                var target = teams.FirstOrDefault(x => x.Id == editingId);
+                if (target != null)
+                {
+                    target.Name = tempName;
+                    target.Abbreviation = tempAbbr;
+                    target.LogoUrl = tempImgUrl;
+                    target.LeagueId = tempLeagueId;
+                    target.IsFavorite = tempIsFav;
+                    await SportsService.UpdateTeam(target);
+                }
+            }
+        }
         
         showConfigModal = false;
         await LoadAllData();
+    }
+
+    private async Task RunDisbursementMigration()
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "This will create the Distributions table and update schema. Continue?")) 
+        {
+            return;
+        }
+
+        try
+        {
+            using var db = await DbFactory.CreateDbContextAsync();
+            await db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""HsaDisbursements"" (""Id"" SERIAL PRIMARY KEY, ""CreatedAt"" TIMESTAMP NOT NULL, ""TransactionKey"" TEXT, ""Description"" TEXT, ""TotalAmount"" DECIMAL(18,2) NOT NULL);");
+            await db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""HsaReceipts"" ADD COLUMN IF NOT EXISTS ""DisbursementId"" INTEGER;");
+            await LoadData();
+            await JS.InvokeVoidAsync("alert", "Schema Updated.");
+        }
+        catch (Exception ex) 
+        { 
+            await JS.InvokeVoidAsync("alert", $"Err: {ex.Message}"); 
+        }
     }
 
     private string FormatDate(DateTime d)
