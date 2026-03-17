@@ -79,15 +79,15 @@
                     <span class="pl-2">Date</span><span>Description</span><span class="text-right">Amount</span><span class="text-right pr-2">Balance</span><span class="text-center font-black">Ops</span>
                 </div>
                 <div class="flex-1 max-h-[70vh] overflow-y-auto">
-                    <Virtualize Items="@sortedTransactions" Context="t">
+                    <Virtualize Items="@sortedTransactions" Context="ledgerTrans">
                         @{
-                            string imgUrl = GetTransactionImage(t);
+                            string imgUrl = GetTransactionImage(ledgerTrans);
                             <div class="grid grid-cols-[110px_1fr_80px_80px_60px] gap-4 items-center p-3 border-b hover:bg-blue-50 transition group text-sm font-black">
-                                <div class="flex items-center gap-3 pl-2"><img src="@(string.IsNullOrEmpty(imgUrl) ? "https://cdn-icons-png.flaticon.com/512/3233/3233483.png" : imgUrl)" class="w-8 h-8 rounded-full object-cover border" /><div class="text-gray-500 font-mono text-xs">@t.Date.ToString("MMM dd")</div></div>
-                                <div class="truncate flex items-center gap-2">@t.Description @if(t.Splits.Any()){ <span class="text-xs">🔀</span> }</div>
-                                <div class="text-right font-mono @(t.Amount >= 0 ? "text-green-600" : "text-red-600")">$@t.Amount.ToString("N2")</div>
+                                <div class="flex items-center gap-3 pl-2"><img src="@(string.IsNullOrEmpty(imgUrl) ? "https://cdn-icons-png.flaticon.com/512/3233/3233483.png" : imgUrl)" class="w-8 h-8 rounded-full object-cover border" /><div class="text-gray-500 font-mono text-xs">@ledgerTrans.Date.ToString("MMM dd")</div></div>
+                                <div class="truncate flex items-center gap-2">@ledgerTrans.Description @if(ledgerTrans.Splits.Any()){ <span class="text-xs">🔀</span> }</div>
+                                <div class="text-right font-mono @(ledgerTrans.Amount >= 0 ? "text-green-600" : "text-red-600")">$@ledgerTrans.Amount.ToString("N2")</div>
                                 <div class="text-right pr-2 font-mono text-gray-400">--</div>
-                                <div class="flex justify-center gap-3"><button class="text-gray-300 hover:text-blue-600 transition" @onclick="() => OpenTransactionModal(t)">✎</button><button class="text-gray-300 hover:text-red-600 transition font-black" @onclick="() => DeleteTransaction(t)">✕</button></div>
+                                <div class="flex justify-center gap-3"><button class="text-gray-300 hover:text-blue-600 transition" @onclick="() => OpenTransactionModal(ledgerTrans)">✎</button><button class="text-gray-300 hover:text-red-600 transition font-black" @onclick="() => DeleteTransaction(ledgerTrans)">✕</button></div>
                             </div>
                         }
                     </Virtualize>
@@ -198,21 +198,21 @@
                         <button @onclick="() => OpenWatchModal()">＋</button>
                     </div>
                     <div class="divide-y divide-gray-100 font-black text-gray-800">
-                        @foreach(var item in (CurrentPeriod.WatchList ?? new()).OrderBy(x => x.DueDate ?? DateTime.MaxValue)) {
+                        @foreach(var watchItem in (CurrentPeriod.WatchList ?? new()).OrderBy(x => x.DueDate ?? DateTime.MaxValue)) {
                             <div class="p-3 flex justify-between items-center hover:bg-orange-50 transition text-sm">
                                 <div class="flex items-center gap-3">
                                     <div class="w-8 h-8 rounded-full bg-white border overflow-hidden flex items-center justify-center shadow-sm">
-                                        @{ string watchImg = GetBudgetItemImage(item.ResolvedBudgetItemId); }
+                                        @{ string watchImg = GetBudgetItemImage(watchItem.ResolvedBudgetItemId); }
                                         @if(!string.IsNullOrEmpty(watchImg)){<img src="@watchImg" class="w-full h-full object-cover" />}else{<span class="text-[10px] font-black">🔍</span>}
                                     </div>
-                                    <div><div class="text-xs font-black truncate w-32 tracking-tighter uppercase">@item.Description</div><div class="text-[10px] text-gray-500 uppercase font-mono">Due @(item.DueDate?.ToString("MM/dd") ?? "TBD")</div></div>
+                                    <div><div class="text-xs font-black truncate w-32 tracking-tighter uppercase">@watchItem.Description</div><div class="text-[10px] text-gray-500 uppercase font-mono">Due @(watchItem.DueDate?.ToString("MM/dd") ?? "TBD")</div></div>
                                 </div>
                                 <div class="flex items-center gap-4">
-                                    <span class="font-mono">$@item.Amount.ToString("N2")</span>
+                                    <span class="font-mono">$@watchItem.Amount.ToString("N2")</span>
                                     <div class="flex gap-2">
-                                        <button @onclick="() => RealizeExpense(item)" class="text-gray-400 hover:text-green-600 transition text-lg" title="Realize to Ledger">✅</button>
-                                        <button @onclick="() => OpenWatchModal(item)" class="text-gray-300 hover:text-orange-600 transition font-black">✎</button>
-                                        <button @onclick="() => DeleteWatchItem(item)" class="text-gray-300 hover:text-red-600 transition font-black">✕</button>
+                                        <button @onclick="() => RealizeExpense(watchItem)" class="text-gray-400 hover:text-green-600 transition text-lg" title="Realize to Ledger">✅</button>
+                                        <button @onclick="() => OpenWatchModal(watchItem)" class="text-gray-300 hover:text-orange-600 transition font-black">✎</button>
+                                        <button @onclick="() => DeleteWatchItem(watchItem)" class="text-gray-300 hover:text-red-600 transition font-black">✕</button>
                                     </div>
                                 </div>
                             </div>
@@ -292,8 +292,6 @@
     private decimal cachedAvailableFunds;
     private decimal cachedUnaccounted;
     private List<BudgetTransaction> sortedTransactions = new();
-    
-    // Performance Lookup Dictionary
     private Dictionary<int, decimal> spentLookup = new();
 
     private BudgetPeriod? CurrentPeriod => (periods != null && periods.Count > 0 && currentIndex < periods.Count) ? periods[currentIndex] : null;
@@ -331,28 +329,34 @@
         sortedTransactions = CurrentPeriod.Transactions.OrderBy(t => t.Date).ToList();
         
         spentLookup.Clear();
-        foreach(var t in sortedTransactions) {
-            if (t.ResolvedBudgetItemId.HasValue) {
-                int key = t.ResolvedBudgetItemId.Value;
-                if (!spentLookup.ContainsKey(key)) spentLookup[key] = 0;
-                spentLookup[key] += (t.Amount * -1);
+        foreach (var trans in sortedTransactions) 
+        {
+            if (trans.ResolvedBudgetItemId.HasValue) 
+            {
+                int tid = trans.ResolvedBudgetItemId.Value;
+                if (!spentLookup.ContainsKey(tid)) spentLookup[tid] = 0;
+                spentLookup[tid] += (trans.Amount * -1);
             }
-            foreach(var s in t.Splits) {
-                int key = s.ResolvedBudgetItemId;
-                if (!spentLookup.ContainsKey(key)) spentLookup[key] = 0;
-                spentLookup[key] += (t.Amount < 0 ? Math.Abs(s.Amount) : -Math.Abs(s.Amount));
+            foreach (var split in trans.Splits) 
+            {
+                int sid = split.ResolvedBudgetItemId;
+                if (!spentLookup.ContainsKey(sid)) spentLookup[sid] = 0;
+                spentLookup[sid] += (trans.Amount < 0 ? Math.Abs(split.Amount) : -Math.Abs(split.Amount));
             }
         }
-        foreach(var tr in CurrentPeriod.Transfers) {
-            if (tr.ResolvedFromId.HasValue) {
-                int key = tr.ResolvedFromId.Value;
-                if (!spentLookup.ContainsKey(key)) spentLookup[key] = 0;
-                spentLookup[key] += tr.Amount;
+        foreach (var transfer in CurrentPeriod.Transfers) 
+        {
+            if (transfer.ResolvedFromId.HasValue) 
+            {
+                int fromId = transfer.ResolvedFromId.Value;
+                if (!spentLookup.ContainsKey(fromId)) spentLookup[fromId] = 0;
+                spentLookup[fromId] += transfer.Amount;
             }
-            if (tr.ResolvedToId.HasValue) {
-                int key = tr.ResolvedToId.Value;
-                if (!spentLookup.ContainsKey(key)) spentLookup[key] = 0;
-                spentLookup[key] -= tr.Amount;
+            if (transfer.ResolvedToId.HasValue) 
+            {
+                int toId = transfer.ResolvedToId.Value;
+                if (!spentLookup.ContainsKey(toId)) spentLookup[toId] = 0;
+                spentLookup[toId] -= transfer.Amount;
             }
         }
 
@@ -427,7 +431,7 @@
         if (CurrentPeriod == null) return list; 
         foreach(var t in CurrentPeriod.Transactions.Where(t => t.ResolvedBudgetItemId == itemId)) list.Add(new HistoryItem { Date = t.Date, Desc = t.Description, SubText = "", Amount = t.Amount * -1 }); 
         foreach(var x in CurrentPeriod.Transactions.SelectMany(t => t.Splits.Select(s => new { P = t, S = s })).Where(x => x.S.ResolvedBudgetItemId == itemId)) { 
-            decimal a = x.P.Amount < 0 ? Math.Abs(s.Amount) : -Math.Abs(s.Amount); 
+            decimal a = x.P.Amount < 0 ? Math.Abs(x.S.Amount) : -Math.Abs(x.S.Amount); 
             list.Add(new HistoryItem { Date = x.P.Date, Desc = $"{x.P.Description} (Split)", SubText = "", Amount = a }); 
         } 
         foreach(var tr in CurrentPeriod.Transfers.Where(tr => tr.ResolvedFromId == itemId)) { 
@@ -556,7 +560,29 @@
     
     private void OpenIncomeModal(BudgetExpectedIncome? i = null) { EditingIncome = i ?? new BudgetExpectedIncome { BudgetPeriodId = CurrentPeriod?.Id ?? 0, Date = DateTime.Today }; }
     private void OpenWatchModal(BudgetWatchItem? w = null) { RefreshFlatList(); EditingWatch = w ?? new BudgetWatchItem { BudgetPeriodId = CurrentPeriod?.Id ?? 0, ResolvedBudgetItemId = null }; }
-    private string GetTransactionImage(BudgetTransaction t) { if(!string.IsNullOrEmpty(t.SourceStringId)) return incomeSources.FirstOrDefault(s => s.StringId == t.SourceStringId)?.ImgUrl ?? ""; if(t.ResolvedBudgetItemId != null) return GetBudgetItemImage(t.ResolvedBudgetItemId.Value); var first = t.Splits.FirstOrDefault(); if(first != null) return GetBudgetItemImage(first.ResolvedBudgetItemId); return ""; }
+    
+    private string GetTransactionImage(BudgetTransaction trans) 
+    { 
+        if(!string.IsNullOrEmpty(trans.SourceStringId)) 
+        {
+            var source = incomeSources.FirstOrDefault(s => s.StringId == trans.SourceStringId);
+            return source?.ImgUrl ?? "";
+        }
+        
+        if(trans.ResolvedBudgetItemId != null) 
+        {
+            return GetBudgetItemImage(trans.ResolvedBudgetItemId.Value); 
+        }
+        
+        var firstSplit = trans.Splits.FirstOrDefault(); 
+        if(firstSplit != null) 
+        {
+            return GetBudgetItemImage(firstSplit.ResolvedBudgetItemId); 
+        }
+        
+        return ""; 
+    }
+    
     private string GetSourceImage(string sid) => incomeSources.FirstOrDefault(s => s.StringId == sid)?.ImgUrl ?? "";
     private string GetSourceName(string sid) => incomeSources.FirstOrDefault(s => s.StringId == sid)?.Name ?? sid;
     private string GetBudgetItemImage(int? id) { if (id == null) return ""; return FlatBudgetList.FirstOrDefault(i => i.Id == id)?.ImgUrl ?? ""; }
