@@ -47,6 +47,7 @@ public class BudgetService
         {
             return await _db.BudgetPeriods
                 .AsNoTracking()
+                .AsSplitQuery() // <--- THE PERFORMANCE FIX
                 .Include(p => p.Cycles)
                     .ThenInclude(c => c.Items)
                 .Include(p => p.Transactions)
@@ -73,6 +74,7 @@ public class BudgetService
         {
             return await _db.BudgetPeriods
                 .Where(p => p.UserId == userId)
+                .AsSplitQuery() // <--- Adding it here too just in case
                 .Include(p => p.Cycles)
                     .ThenInclude(c => c.Items)
                 .Include(p => p.Transactions)
