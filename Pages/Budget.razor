@@ -265,7 +265,11 @@
     private User? currentUser; 
     private int userId = 0; 
     private bool isLoading = true; 
-    private List<BudgetPeriod> periods = new(); 
+    
+    // Performance Fix: Break apart periods logic to load lazy
+    private List<BudgetPeriod> shallowPeriods = new();
+    private BudgetPeriod? CurrentPeriod;
+    
     private List<BudgetIncomeSource> incomeSources = new(); 
     private List<BudgetItem> FlatBudgetList = new(); 
     private int currentIndex = 0; 
@@ -292,9 +296,9 @@
     private decimal cachedAvailableFunds;
     private decimal cachedUnaccounted;
     private List<BudgetTransaction> sortedTransactions = new();
+    
+    // Performance Lookup Dictionary
     private Dictionary<int, decimal> spentLookup = new();
-
-    private BudgetPeriod? CurrentPeriod => (periods != null && periods.Count > 0 && currentIndex < periods.Count) ? periods[currentIndex] : null;
 
     protected override async Task OnAfterRenderAsync(bool firstRender) {
         if (firstRender) {
@@ -315,8 +319,40 @@
     private async Task LoadData() { 
         if (userId == 0) return; 
         try { 
-            periods = await BudgetService.GetPeriods(userId); 
+            // 1. Shallow Load ONLY for Navigation (if not loaded)
+            if (!shallowPeriods.Any())
+            {
+                shallowPeriods = await Db.BudgetPeriods
+                    .AsNoTracking()
+                    .Where(p => p.UserId == userId)
+                    .OrderByDescending(p => p.StartDate)
+                    .Select(p => new BudgetPeriod 
+                    { 
+                        Id = p.Id, 
+                        DisplayName = p.DisplayName, 
+                        StartDate = p.StartDate, 
+                        InitialBankBalance = p.InitialBankBalance 
+                    })
+                    .ToListAsync();
+            }
+
+            // 2. Deep Load ONLY for the specific CurrentPeriod
+            if (shallowPeriods.Any() && currentIndex < shallowPeriods.Count)
+            {
+                int activePeriodId = shallowPeriods[currentIndex].Id;
+                
+                CurrentPeriod = await Db.BudgetPeriods
+                    .AsNoTracking()
+                    .Include(p => p.ExpectedIncome)
+                    .Include(p => p.WatchList)
+                    .Include(p => p.Transfers)
+                    .Include(p => p.Transactions).ThenInclude(t => t.Splits)
+                    .Include(p => p.Cycles).ThenInclude(c => c.Items)
+                    .FirstOrDefaultAsync(p => p.Id == activePeriodId);
+            }
+
             incomeSources = await Db.BudgetIncomeSources.AsNoTracking().Where(x => x.UserId == userId || x.UserId == 0).ToListAsync(); 
+            
             RefreshFlatList();
             CalculateTotals(); 
             StateHasChanged();
@@ -422,7 +458,7 @@
 
     private async Task NextPeriod() { if (CanGoNext) { currentIndex--; await LoadData(); } }
     private async Task PrevPeriod() { if (CanGoBack) { currentIndex++; await LoadData(); } }
-    private bool CanGoBack => currentIndex < (periods?.Count ?? 0) - 1;
+    private bool CanGoBack => currentIndex < (shallowPeriods?.Count ?? 0) - 1;
     private bool CanGoNext => currentIndex > 0;
 
     private decimal GetSpentForBudgetItem(int itemId) { 
@@ -518,6 +554,7 @@
                 Db.BudgetWatchItems.Add(new BudgetWatchItem { BudgetPeriodId = newPeriod.Id, Description = watch.Description, Amount = watch.Amount, DueDate = watch.DueDate?.AddMonths(1) }); 
             } 
             await Db.SaveChangesAsync(); 
+            shallowPeriods.Clear(); // Force a fresh load of the period list
             await LoadData(); 
             currentIndex = 0; 
         } catch { } 
@@ -594,8 +631,8 @@
     private string GetBudgetItemImage(int? id) { if (id == null) return ""; return FlatBudgetList.FirstOrDefault(i => i.Id == id)?.ImgUrl ?? ""; }
     private void ToggleExpand(int id) => ExpandedItemId = (ExpandedItemId == id) ? null : id;
     
-    private async Task SavePeriodChanges() { if(EditingPeriod != null) { Db.BudgetPeriods.Update(EditingPeriod); await Db.SaveChangesAsync(); EditingPeriod = null; await LoadData(); } }
-    private async Task DeletePeriod() { if(EditingPeriod != null && await JS.InvokeAsync<bool>("confirm", "Delete?")) { Db.BudgetPeriods.Remove(EditingPeriod); await Db.SaveChangesAsync(); EditingPeriod = null; currentIndex = 0; await LoadData(); } }
+    private async Task SavePeriodChanges() { if(EditingPeriod != null) { Db.BudgetPeriods.Update(EditingPeriod); await Db.SaveChangesAsync(); EditingPeriod = null; shallowPeriods.Clear(); await LoadData(); } }
+    private async Task DeletePeriod() { if(EditingPeriod != null && await JS.InvokeAsync<bool>("confirm", "Delete?")) { Db.BudgetPeriods.Remove(EditingPeriod); await Db.SaveChangesAsync(); EditingPeriod = null; currentIndex = 0; shallowPeriods.Clear(); await LoadData(); } }
 
     public class SessionData { public int UserId { get; set; } public DateTime Expiry { get; set; } }
     public class HistoryItem { public DateTime Date { get; set; } public string Desc { get; set; } = ""; public string SubText { get; set; } = ""; public decimal Amount { get; set; } }
