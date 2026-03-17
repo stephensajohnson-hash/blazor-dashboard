@@ -322,40 +322,25 @@
             // 1. Shallow Load ONLY for Navigation (if not loaded)
             if (!shallowPeriods.Any())
             {
-                shallowPeriods = await Db.BudgetPeriods
-                    .AsNoTracking()
-                    .Where(p => p.UserId == userId)
-                    .OrderByDescending(p => p.StartDate)
-                    .Select(p => new BudgetPeriod 
-                    { 
-                        Id = p.Id, 
-                        DisplayName = p.DisplayName, 
-                        StartDate = p.StartDate, 
-                        InitialBankBalance = p.InitialBankBalance 
-                    })
-                    .ToListAsync();
+                shallowPeriods = await BudgetService.GetPeriodsShallowAsync(userId);
             }
 
             // 2. Deep Load ONLY for the specific CurrentPeriod
-            if (shallowPeriods.Any() && currentIndex < shallowPeriods.Count)
+            if (shallowPeriods.Any() && currentIndex >= 0 && currentIndex < shallowPeriods.Count)
             {
                 int activePeriodId = shallowPeriods[currentIndex].Id;
                 
-                CurrentPeriod = await Db.BudgetPeriods
-                    .AsNoTracking()
-                    .Include(p => p.ExpectedIncome)
-                    .Include(p => p.WatchList)
-                    .Include(p => p.Transfers)
-                    .Include(p => p.Transactions).ThenInclude(t => t.Splits)
-                    .Include(p => p.Cycles).ThenInclude(c => c.Items)
-                    .FirstOrDefaultAsync(p => p.Id == activePeriodId);
+                CurrentPeriod = await BudgetService.GetPeriodDetailsAsync(activePeriodId);
+            }
+            else 
+            {
+                CurrentPeriod = null;
             }
 
             incomeSources = await Db.BudgetIncomeSources.AsNoTracking().Where(x => x.UserId == userId || x.UserId == 0).ToListAsync(); 
             
             RefreshFlatList();
             CalculateTotals(); 
-            StateHasChanged();
         } catch { } finally { isLoading = false; StateHasChanged(); } 
     }
 
@@ -554,7 +539,7 @@
                 Db.BudgetWatchItems.Add(new BudgetWatchItem { BudgetPeriodId = newPeriod.Id, Description = watch.Description, Amount = watch.Amount, DueDate = watch.DueDate?.AddMonths(1) }); 
             } 
             await Db.SaveChangesAsync(); 
-            shallowPeriods.Clear(); // Force a fresh load of the period list
+            shallowPeriods.Clear(); // Force reload to pull newly created period
             await LoadData(); 
             currentIndex = 0; 
         } catch { } 
