@@ -62,6 +62,7 @@
                 </div>
                 <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 divide-x divide-y md:divide-y-0 divide-gray-700 bg-[#2c2f33]">
                     <div class="p-3 text-center"><div class="text-[9px] text-gray-500 uppercase mb-1 font-black">Start</div><div class="text-xs font-mono text-white">$@CurrentPeriod.InitialBankBalance.ToString("N2")</div></div>
+                    @* Performance Fix: Use cached totals instead of expensive dynamic getters *@
                     <div class="p-3 text-center"><div class="text-[9px] text-green-500/70 uppercase mb-1 font-black">Income</div><div class="text-xs font-mono text-green-400">+$@cachedActualIncome.ToString("N2")</div></div>
                     <div class="p-3 text-center"><div class="text-[9px] text-red-500/70 uppercase mb-1 font-black">Expenses</div><div class="text-xs font-mono text-red-400">-$@cachedActualExpenses.ToString("N2")</div></div>
                     <div class="p-3 text-center"><div class="text-[9px] text-green-500/40 uppercase mb-1 font-mono font-black">Exp Income</div><div class="text-xs font-mono text-green-600">$@cachedExpectedIncomeTotal.ToString("N2")</div></div>
@@ -78,6 +79,7 @@
                 <div class="p-3 bg-gray-100 border-b border-gray-300 font-black text-gray-600 text-[10px] uppercase grid grid-cols-[110px_1fr_80px_80px_60px] gap-4 items-center tracking-widest">
                     <span class="pl-2">Date</span><span>Description</span><span class="text-right">Amount</span><span class="text-right pr-2">Balance</span><span class="text-center font-black">Ops</span>
                 </div>
+                @* Performance Fix: Virtualize the ledger so only visible rows are rendered *@
                 <div class="flex-1 max-h-[70vh] overflow-y-auto">
                     <Virtualize Items="@sortedTransactions" Context="t">
                         @{
@@ -223,6 +225,7 @@
         </div>
     }
 
+    @* Modals remain the same as provided *@
     @if (EditingPeriod != null) {
         <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm text-gray-800 font-black"><div class="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border border-gray-200"><div class="bg-gray-100 px-4 py-3 border-b font-black text-gray-700 flex justify-between items-center text-sm uppercase font-mono"><span>Period Settings</span><button @onclick="() => { EditingPeriod = null; }" class="text-gray-400 text-xl font-bold">&times;</button></div><div class="p-6 space-y-4 font-black"><div><label class="block text-[10px] text-gray-400 uppercase mb-1">Display Title</label><input @bind="EditingPeriod.DisplayName" class="w-full border rounded p-2 text-sm font-black" /></div><div><label class="block text-[10px] text-gray-400 uppercase mb-1">Initial Bank Balance ($)</label><input type="number" @bind="EditingPeriod.InitialBankBalance" step="0.01" class="w-full border rounded p-2 text-sm font-mono font-black" /></div><button @onclick="DeletePeriod" class="w-full py-2 bg-red-50 text-red-600 rounded text-[10px] uppercase font-black">Delete Month</button></div><div class="bg-gray-50 px-4 py-3 flex justify-end gap-2 border-t font-black"><button @onclick="() => { EditingPeriod = null; }" class="px-4 py-2 text-xs text-gray-600 font-bold">Cancel</button><button @onclick="SavePeriodChanges" class="bg-blue-600 text-white px-8 py-2 rounded text-xs shadow font-black tracking-widest uppercase">Save</button></div></div></div>
     }
@@ -292,6 +295,8 @@
     private decimal cachedAvailableFunds;
     private decimal cachedUnaccounted;
     private List<BudgetTransaction> sortedTransactions = new();
+    
+    // Performance Lookup Dictionary
     private Dictionary<int, decimal> spentLookup = new();
 
     private BudgetPeriod? CurrentPeriod => (periods != null && periods.Count > 0 && currentIndex < periods.Count) ? periods[currentIndex] : null;
@@ -331,26 +336,26 @@
         spentLookup.Clear();
         foreach(var t in sortedTransactions) {
             if (t.ResolvedBudgetItemId.HasValue) {
-                int id = t.ResolvedBudgetItemId.Value;
-                if (!spentLookup.ContainsKey(id)) spentLookup[id] = 0;
-                spentLookup[id] += (t.Amount * -1);
+                int bid = t.ResolvedBudgetItemId.Value;
+                if (!spentLookup.ContainsKey(bid)) spentLookup[bid] = 0;
+                spentLookup[bid] += (t.Amount * -1);
             }
             foreach(var s in t.Splits) {
-                int id = s.ResolvedBudgetItemId;
-                if (!spentLookup.ContainsKey(id)) spentLookup[id] = 0;
-                spentLookup[id] += (t.Amount < 0 ? Math.Abs(s.Amount) : -Math.Abs(s.Amount));
+                int bid = s.ResolvedBudgetItemId;
+                if (!spentLookup.ContainsKey(bid)) spentLookup[bid] = 0;
+                spentLookup[bid] += (t.Amount < 0 ? Math.Abs(s.Amount) : -Math.Abs(s.Amount));
             }
         }
         foreach(var tr in CurrentPeriod.Transfers) {
             if (tr.ResolvedFromId.HasValue) {
-                int id = tr.ResolvedFromId.Value;
-                if (!spentLookup.ContainsKey(id)) spentLookup[id] = 0;
-                spentLookup[id] += tr.Amount;
+                int bid = tr.ResolvedFromId.Value;
+                if (!spentLookup.ContainsKey(bid)) spentLookup[bid] = 0;
+                spentLookup[bid] += tr.Amount;
             }
             if (tr.ResolvedToId.HasValue) {
-                int id = tr.ResolvedToId.Value;
-                if (!spentLookup.ContainsKey(id)) spentLookup[id] = 0;
-                spentLookup[id] -= tr.Amount;
+                int bid = tr.ResolvedToId.Value;
+                if (!spentLookup.ContainsKey(bid)) spentLookup[bid] = 0;
+                spentLookup[bid] -= tr.Amount;
             }
         }
 
