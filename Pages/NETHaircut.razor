@@ -107,13 +107,19 @@
 
 private async Task SeedInitialData()
     {
+        Console.WriteLine("--- SEED START: Button Clicked ---");
         isLoading = true;
+        dbError = ""; 
         StateHasChanged();
 
         try 
         {
-            // FORCE THE SCHEMA MANUALLY
-            // This bypasses EF's "EnsureCreated" logic which is currently failing you.
+            Console.WriteLine("Step 1: Checking Database Connection...");
+            var canConnect = await Db.Database.CanConnectAsync();
+            Console.WriteLine($"Step 1 Result: Connection Success = {canConnect}");
+
+            Console.WriteLine("Step 2: Running Raw SQL Table Creation...");
+            // Using Raw SQL because EnsureCreated ignores existing databases with migration history
             await Db.Database.ExecuteSqlRawAsync(@"
                 CREATE TABLE IF NOT EXISTS ""NETH_Phones"" (
                     ""Id"" SERIAL PRIMARY KEY,
@@ -127,7 +133,7 @@ private async Task SeedInitialData()
                     ""BusinessName"" TEXT NOT NULL,
                     ""BrandColor"" TEXT NOT NULL,
                     ""LogoMediaId"" INTEGER NULL,
-                    ""StripeAccountId"" TEXT NOT NULL,
+                    ""StripeAccountId"" TEXT NOT NULL DEFAULT '',
                     ""PhoneId"" INTEGER NOT NULL REFERENCES ""NETH_Phones""(""Id"")
                 );
                 CREATE TABLE IF NOT EXISTS ""NETH_Stylists"" (
@@ -136,7 +142,7 @@ private async Task SeedInitialData()
                     ""Name"" TEXT NOT NULL,
                     ""Bio"" TEXT NOT NULL,
                     ""IsIndependent"" BOOLEAN NOT NULL,
-                    ""StripeAccountId"" TEXT NOT NULL,
+                    ""StripeAccountId"" TEXT NOT NULL DEFAULT '',
                     ""PhoneId"" INTEGER NOT NULL REFERENCES ""NETH_Phones""(""Id"")
                 );
                 CREATE TABLE IF NOT EXISTS ""NETH_Services"" (
@@ -147,14 +153,16 @@ private async Task SeedInitialData()
                     ""DurationMinutes"" INTEGER NOT NULL
                 );
             ");
+            Console.WriteLine("Step 2 Result: Tables Created/Verified.");
 
-            // 1. Create Phones
+            Console.WriteLine("Step 3: Inserting Phone Data...");
             var shopPhone = new Dashboard.NETH_Phone { Number = "9035551111", Type = "Work" };
             var brandonPhone = new Dashboard.NETH_Phone { Number = "9035552222", Type = "Mobile" };
             Db.NETH_Phones.AddRange(shopPhone, brandonPhone);
             await Db.SaveChangesAsync();
+            Console.WriteLine($"Step 3 Result: Phones Saved. ShopPhoneId: {shopPhone.Id}");
 
-            // 2. Create Shop
+            Console.WriteLine("Step 4: Inserting Shop Data...");
             var shop = new Dashboard.NETH_Shop
             {
                 UrlKey = "leatherandblades",
@@ -165,8 +173,9 @@ private async Task SeedInitialData()
             };
             Db.NETH_Shops.Add(shop);
             await Db.SaveChangesAsync();
+            Console.WriteLine($"Step 4 Result: Shop Saved. ShopId: {shop.Id}");
 
-            // 3. Create Stylist
+            Console.WriteLine("Step 5: Inserting Stylist Data...");
             var brandon = new Dashboard.NETH_Stylist
             {
                 ShopId = shop.Id,
@@ -178,19 +187,18 @@ private async Task SeedInitialData()
             };
             Db.NETH_Stylists.Add(brandon);
             await Db.SaveChangesAsync();
+            Console.WriteLine("Step 5 Result: Stylist Saved.");
 
-            // 4. Create Services
-            Db.NETH_Services.AddRange(
-                new Dashboard.NETH_Service { StylistId = brandon.Id, Name = "Standard Fade", Price = 30.00m, DurationMinutes = 30 },
-                new Dashboard.NETH_Service { StylistId = brandon.Id, Name = "The Works", Price = 50.00m, DurationMinutes = 60 }
-            );
-
-            await Db.SaveChangesAsync();
+            Console.WriteLine("Step 6: Refreshing Page Data...");
             await LoadShopData();
+            Console.WriteLine("--- SEED COMPLETE: Success ---");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"MANUAL SEED FAILURE: {ex.Message}");
+            var msg = $"SEED ERROR: {ex.Message}";
+            Console.WriteLine(msg);
+            if (ex.InnerException != null) Console.WriteLine($"INNER: {ex.InnerException.Message}");
+            dbError = msg;
         }
         finally 
         {
