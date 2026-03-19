@@ -34,13 +34,18 @@ namespace Dashboard
     {
         public int Id { get; set; }
         public int ShopId { get; set; }
+        public NETH_Shop Shop { get; set; } // Added this back in case it's needed for the Include
+        
         public string Name { get; set; }
         public string Bio { get; set; }
         public bool IsIndependent { get; set; }
-        public string StripeAccountId { get; set; } // For independent booth renters
+        public string StripeAccountId { get; set; }
 
         public int PhoneId { get; set; }
         public NETH_Phone Phone { get; set; }
+
+        // THIS IS THE MISSING LINE:
+        public List<NETH_Service> Services { get; set; } = new(); 
     }
 
     public class NETH_Client
