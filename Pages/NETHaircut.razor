@@ -1,6 +1,7 @@
 @page "/nethaircut"
 @using Microsoft.AspNetCore.WebUtilities
 @using Microsoft.EntityFrameworkCore
+@using Dashboard
 @inject Dashboard.AppDbContext Db
 @inject NavigationManager NavManager
 @rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode(prerender: false))
@@ -17,14 +18,19 @@
     <main class="booking-card">
         @if (isLoading)
         {
-            <p>Loading Registry...</p>
+            <div class="spinner-box">
+                <div class="spinner"></div>
+                <p>Processing Database...</p>
+            </div>
         }
         else if (currentShop == null)
         {
             <div class="seed-box">
-                <p class="mb-4">No data found for "@CurrentStylist".</p>
+                <i class="fas fa-database mb-3" style="font-size: 2rem; color: #e67e22;"></i>
+                <h3>No Registry Found</h3>
+                <p class="mb-4 text-sm">We couldn't find a shop for "<strong>@CurrentStylist</strong>". Click below to build the database tables and seed initial data.</p>
                 <button class="btn-seed" @onclick="SeedInitialData">
-                    🔧 Seed "Leather & Blades" Data
+                    🔧 Build Tables & Seed Data
                 </button>
             </div>
         }
@@ -32,21 +38,30 @@
         {
             <section class="welcome-text">
                 <h2>Welcome to @currentShop.BusinessName</h2>
-                <p>Status: <strong>Active</strong></p>
+                <div class="status-badge">
+                    <span class="status-dot"></span> Online & Booking
+                </div>
             </section>
 
-            <div class="services-list">
-                @foreach (var stylist in currentShop.Stylists)
+            <div class="stylist-grid">
+                @foreach (Dashboard.NETH_Stylist stylist in currentShop.Stylists)
                 {
-                    <div class="stylist-section">
-                        <h3>Stylist: @stylist.Name</h3>
-                        @foreach (var service in stylist.Services)
-                        {
-                            <div class="service-item">
-                                <span>@service.Name</span>
-                                <span>$@service.Price</span>
-                            </div>
-                        }
+                    <div class="stylist-card">
+                        <div class="stylist-info">
+                            <h3>@stylist.Name</h3>
+                            <p class="bio">@stylist.Bio</p>
+                        </div>
+                        
+                        <div class="services-list">
+                            @foreach (Dashboard.NETH_Service service in stylist.Services)
+                            {
+                                <div class="service-row">
+                                    <span class="service-name">@service.Name</span>
+                                    <span class="service-price">$@service.Price.ToString("N2")</span>
+                                </div>
+                            }
+                        </div>
+                        <button class="btn-book">Book with @stylist.Name</button>
                     </div>
                 }
             </div>
@@ -77,13 +92,15 @@
         try 
         {
             currentShop = await Db.NETH_Shops
+                .AsNoTracking()
                 .Include(s => s.Stylists)
                     .ThenInclude(st => st.Services)
+                .Include(s => s.Phone)
                 .FirstOrDefaultAsync(s => s.UrlKey.ToLower() == CurrentStylist.ToLower());
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Database not ready: {ex.Message}");
+            Console.WriteLine($"DB Load Error: {ex.Message}");
             currentShop = null; 
         }
     }
@@ -91,88 +108,162 @@
     private async Task SeedInitialData()
     {
         isLoading = true;
+        StateHasChanged();
 
-        var shopPhone = new Dashboard.NETH_Phone { Number = "9035551111", Type = "Work" };
-        var brandonPhone = new Dashboard.NETH_Phone { Number = "9035552222", Type = "Mobile" };
-        var clientPhone = new Dashboard.NETH_Phone { Number = "9035553333", Type = "Mobile" };
-        Db.NETH_Phones.AddRange(shopPhone, brandonPhone, clientPhone);
-        await Db.SaveChangesAsync();
-
-        var shop = new Dashboard.NETH_Shop
+        try 
         {
-            UrlKey = "leatherandblades",
-            BusinessName = "Leather & Blades",
-            BrandColor = "#D2B48C",
-            PhoneId = shopPhone.Id
-        };
-        Db.NETH_Shops.Add(shop);
-        await Db.SaveChangesAsync();
+            // CRITICAL: This command creates the physical tables in Postgres
+            await Db.Database.EnsureCreatedAsync();
 
-        var brandon = new Dashboard.NETH_Stylist
+            // 1. Create Phones
+            var shopPhone = new Dashboard.NETH_Phone { Number = "9035551111", Type = "Work" };
+            var brandonPhone = new Dashboard.NETH_Phone { Number = "9035552222", Type = "Mobile" };
+            var clientPhone = new Dashboard.NETH_Phone { Number = "9035553333", Type = "Mobile" };
+            Db.NETH_Phones.AddRange(shopPhone, brandonPhone, clientPhone);
+            await Db.SaveChangesAsync();
+
+            // 2. Create Shop
+            var shop = new Dashboard.NETH_Shop
+            {
+                UrlKey = "leatherandblades",
+                BusinessName = "Leather & Blades",
+                BrandColor = "#D2B48C",
+                PhoneId = shopPhone.Id
+            };
+            Db.NETH_Shops.Add(shop);
+            await Db.SaveChangesAsync();
+
+            // 3. Create Stylist
+            var brandon = new Dashboard.NETH_Stylist
+            {
+                ShopId = shop.Id,
+                Name = "Brandon",
+                Bio = "Master Barber specializing in straight-razor fades.",
+                IsIndependent = true,
+                PhoneId = brandonPhone.Id
+            };
+            Db.NETH_Stylists.Add(brandon);
+            await Db.SaveChangesAsync();
+
+            // 4. Create Services
+            Db.NETH_Services.AddRange(
+                new Dashboard.NETH_Service { StylistId = brandon.Id, Name = "Standard Fade", Price = 30.00m, DurationMinutes = 30 },
+                new Dashboard.NETH_Service { StylistId = brandon.Id, Name = "Beard Trim", Price = 15.00m, DurationMinutes = 15 },
+                new Dashboard.NETH_Service { StylistId = brandon.Id, Name = "The Works", Price = 50.00m, DurationMinutes = 60 }
+            );
+
+            // 5. Create Client & Note
+            var client = new Dashboard.NETH_Client { FirstName = "Jayce", LastName = "Test", PhoneId = clientPhone.Id };
+            Db.NETH_Clients.Add(client);
+            await Db.SaveChangesAsync();
+
+            var note = new Dashboard.NETH_ClientNote
+            {
+                ClientId = client.Id,
+                StylistId = brandon.Id,
+                ShortDescription = "Grand Canyon Trip",
+                LongDescription = "Planning a big trip in 2027.",
+                EventYear = 2027,
+                EventMonth = 1
+            };
+            Db.NETH_ClientNotes.Add(note);
+
+            await Db.SaveChangesAsync();
+            await LoadShopData();
+        }
+        catch (Exception ex)
         {
-            ShopId = shop.Id,
-            Name = "Brandon",
-            Bio = "Master Barber specializing in straight-razor fades.",
-            IsIndependent = true,
-            PhoneId = brandonPhone.Id
-        };
-        Db.NETH_Stylists.Add(brandon);
-        await Db.SaveChangesAsync();
-
-        Db.NETH_Services.AddRange(
-            new Dashboard.NETH_Service { StylistId = brandon.Id, Name = "Standard Fade", Price = 30.00m, DurationMinutes = 30 },
-            new Dashboard.NETH_Service { StylistId = brandon.Id, Name = "Beard Trim", Price = 15.00m, DurationMinutes = 15 },
-            new Dashboard.NETH_Service { StylistId = brandon.Id, Name = "The Works", Price = 50.00m, DurationMinutes = 60 }
-        );
-
-        var client = new Dashboard.NETH_Client { FirstName = "Jayce", LastName = "Test", PhoneId = clientPhone.Id };
-        Db.NETH_Clients.Add(client);
-        await Db.SaveChangesAsync();
-
-        var note = new Dashboard.NETH_ClientNote
+            Console.WriteLine($"SEED FAILURE: {ex.Message}");
+            if (ex.InnerException != null) Console.WriteLine($"INNER: {ex.InnerException.Message}");
+        }
+        finally 
         {
-            ClientId = client.Id,
-            StylistId = brandon.Id,
-            ShortDescription = "Grand Canyon Trip",
-            LongDescription = "Planning a big trip in 2027.",
-            EventYear = 2027,
-            EventMonth = 1
-        };
-        Db.NETH_ClientNotes.Add(note);
-
-        await Db.SaveChangesAsync();
-        await LoadShopData();
-        isLoading = false;
+            isLoading = false;
+            StateHasChanged();
+        }
     }
 }
 
 <style>
-    .btn-seed {
-        background-color: #e67e22;
-        color: white;
-        padding: 15px;
-        border-radius: 8px;
-        border: none;
-        font-weight: bold;
-        cursor: pointer;
-        width: 100%;
-        text-transform: uppercase;
-        font-size: 0.8rem;
+    :root {
+        --dark-bg: #1a1b1e;
+        --card-bg: #25262b;
+        --text-main: #c1c2c5;
     }
-    .service-item {
+
+    .app-container {
+        background-color: var(--dark-bg);
+        color: var(--text-main);
+        min-height: 100vh;
         display: flex;
-        justify-content: space-between;
-        padding: 10px 0;
-        border-bottom: 1px solid #444;
+        flex-direction: column;
+        align-items: center;
+        padding: 2rem;
+        font-family: 'Inter', sans-serif;
     }
-    .stylist-section h3 {
-        color: #D2B48C;
-        margin-top: 20px;
-        border-bottom: 2px solid #D2B48C;
+
+    .stylist-header { text-align: center; margin-bottom: 2rem; }
+    .logo-circle {
+        width: 60px; height: 60px;
+        background-color: var(--brand-color);
+        border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        margin: 0 auto 1rem; font-size: 1.5rem; color: #1a1b1e;
     }
-    
-    @@keyframes spin { 
-        0% { transform: rotate(0deg); } 
-        100% { transform: rotate(360deg); } 
+
+    .booking-card {
+        background-color: var(--card-bg);
+        border-radius: 12px;
+        padding: 2rem;
+        width: 100%;
+        max-width: 450px;
+        border: 1px solid #373a40;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.3);
     }
+
+    .status-badge {
+        font-size: 0.75rem; color: #40c057; 
+        display: flex; align-items: center; gap: 5px;
+        margin-top: 5px; font-weight: bold;
+    }
+    .status-dot { height: 8px; width: 8px; background: #40c057; border-radius: 50%; }
+
+    .stylist-card {
+        margin-top: 1.5rem;
+        background: rgba(0,0,0,0.2);
+        padding: 1rem;
+        border-radius: 8px;
+    }
+
+    .service-row {
+        display: flex; justify-content: space-between;
+        padding: 8px 0; border-bottom: 1px solid #373a40;
+        font-size: 0.9rem;
+    }
+
+    .btn-book {
+        width: 100%; margin-top: 1rem;
+        padding: 10px; border-radius: 6px;
+        background: var(--brand-color); color: #1a1b1e;
+        border: none; font-weight: bold; cursor: pointer;
+    }
+
+    .btn-seed {
+        background-color: #e67e22; color: white;
+        padding: 12px; border-radius: 6px; border: none;
+        width: 100%; font-weight: bold; cursor: pointer;
+        margin-top: 1rem;
+    }
+
+    .seed-box { text-align: center; color: #909296; }
+
+    .spinner {
+        border: 4px solid rgba(255,255,255,0.1);
+        border-top: 4px solid var(--brand-color);
+        border-radius: 50%; width: 40px; height: 40px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 1rem;
+    }
+
+    @@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 </style>
