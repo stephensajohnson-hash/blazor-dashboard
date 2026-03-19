@@ -1,103 +1,168 @@
 @page "/nethaircut"
 @using Microsoft.AspNetCore.WebUtilities
+@using Microsoft.EntityFrameworkCore
+@inject Dashboard.AppDbContext Db
 @inject NavigationManager NavManager
 
-<div class="app-container" style="--brand-color: @(CurrentStylist == "LEATHERANDBLADES" ? "#D2B48C" : "#E0B0FF")">
+<div class="app-container">
     <header class="stylist-header">
-        <div class="logo-circle">
-            <i class="fas fa-cut"></i>
-        </div>
         <h1>@FormattedName</h1>
         <p class="tagline">North East Texas Style & Booking</p>
     </header>
 
     <main class="booking-card">
-        <section class="welcome-text">
-            <h2>Welcome to the Chair</h2>
-            <p>You are viewing the specialized booking page for <strong>@FormattedName</strong>.</p>
-        </section>
+        @if (isLoading)
+        {
+            <p>Loading Registry...</p>
+        }
+        else if (currentShop == null)
+        {
+            <div class="seed-box">
+                <p class="mb-4">No data found for "@CurrentStylist".</p>
+                <button class="btn-seed" @onclick="SeedInitialData">
+                    🔧 Seed "Leather & Blades" Data
+                </button>
+            </div>
+        }
+        else
+        {
+            <section class="welcome-text">
+                <h2>Welcome to @currentShop.BusinessName</h2>
+                <p>Status: <strong>Active</strong></p>
+            </section>
 
-        <div class="status-box">
-            <span class="status-dot"></span>
-            <span>Mode: QueryString Simulation</span>
-        </div>
-
-        <button class="btn-primary" @onclick="SimulateBooking">
-            View @FormattedName's Schedule
-        </button>
+            <div class="services-list">
+                @foreach (var stylist in currentShop.Stylists)
+                {
+                    <div class="stylist-section">
+                        <h3>Stylist: @stylist.Name</h3>
+                        @foreach (var service in stylist.Services)
+                        {
+                            <div class="service-item">
+                                <span>@service.Name</span>
+                                <span>$@service.Price</span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
     </main>
-
-    <footer class="install-banner">
-        <p>Install <strong>@FormattedName</strong> to your home screen.</p>
-    </footer>
 </div>
 
 @code {
     private string CurrentStylist { get; set; } = "GENERAL";
     private string FormattedName => CurrentStylist.Replace("%20", " ").ToUpper();
+    private bool isLoading = true;
+    private NETH_Shop? currentShop;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        // Parse the Current URL
         var uri = NavManager.ToAbsoluteUri(NavManager.Uri);
-        
-        // Extract the "stylist" parameter
         if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("stylist", out var name))
         {
             CurrentStylist = name.ToString();
         }
+
+        await LoadShopData();
+        isLoading = false;
     }
 
-    private void SimulateBooking()
+    private async Task LoadShopData()
     {
-        Console.WriteLine($"Opening schedule for: {CurrentStylist}");
+        // Look for the shop by its URL Key (e.g. leatherandblades)
+        currentShop = await Db.NETH_Shops
+            .Include(s => s.Stylists)
+                .ThenInclude(st => st.Services)
+            .FirstOrDefaultAsync(s => s.UrlKey.ToLower() == CurrentStylist.ToLower());
+    }
+
+    private async Task SeedInitialData()
+    {
+        isLoading = true;
+
+        // 1. Create a Phone Entry
+        var shopPhone = new NETH_Phone { Number = "9035551111", Type = "Work" };
+        var brandonPhone = new NETH_Phone { Number = "9035552222", Type = "Mobile" };
+        var clientPhone = new NETH_Phone { Number = "9035553333", Type = "Mobile" };
+        Db.NETH_Phones.AddRange(shopPhone, brandonPhone, clientPhone);
+        await Db.SaveChangesAsync();
+
+        // 2. Create the Shop (Leather & Blades)
+        var shop = new NETH_Shop
+        {
+            UrlKey = "leatherandblades",
+            BusinessName = "Leather & Blades",
+            BrandColor = "#D2B48C",
+            PhoneId = shopPhone.Id
+        };
+        Db.NETH_Shops.Add(shop);
+        await Db.SaveChangesAsync();
+
+        // 3. Create Brandon as the Stylist
+        var brandon = new NETH_Stylist
+        {
+            ShopId = shop.Id,
+            Name = "Brandon",
+            Bio = "Master Barber specializing in straight-razor fades.",
+            IsIndependent = true,
+            PhoneId = brandonPhone.Id
+        };
+        Db.NETH_Stylists.Add(brandon);
+        await Db.SaveChangesAsync();
+
+        // 4. Create Services
+        Db.NETH_Services.AddRange(
+            new NETH_Service { StylistId = brandon.Id, Name = "Standard Fade", Price = 30.00m, DurationMinutes = 30 },
+            new NETH_Service { StylistId = brandon.Id, Name = "Beard Trim", Price = 15.00m, DurationMinutes = 15 },
+            new NETH_Service { StylistId = brandon.Id, Name = "The Works", Price = 50.00m, DurationMinutes = 60 }
+        );
+
+        // 5. Create a Client & Note (The "Grand Canyon" Note)
+        var client = new NETH_Client { FirstName = "Jayce", LastName = "Test", PhoneId = clientPhone.Id };
+        Db.NETH_Clients.Add(client);
+        await Db.SaveChangesAsync();
+
+        var note = new NETH_ClientNote
+        {
+            ClientId = client.Id,
+            StylistId = brandon.Id,
+            ShortDescription = "Grand Canyon Trip",
+            LongDescription = "Planning a big trip in 2027.",
+            EventYear = 2027,
+            EventMonth = 1
+        };
+        Db.NETH_ClientNotes.Add(note);
+
+        await Db.SaveChangesAsync();
+        await LoadShopData();
+        isLoading = false;
     }
 }
 
 <style>
-    :root {
-        --primary-gold: var(--brand-color, #D2B48C); 
-        --dark-bg: #1a1a1a;
-        --card-bg: #2d2d2d;
-        --text-light: #f4f4f4;
+    /* Reuse your previous styles, plus these for the Seed button */
+    .btn-seed {
+        background-color: #e67e22;
+        color: white;
+        padding: 15px;
+        border-radius: 8px;
+        border: none;
+        font-weight: bold;
+        cursor: pointer;
+        width: 100%;
+        text-transform: uppercase;
+        font-size: 0.8rem;
     }
-
-    .app-container {
-        background-color: var(--dark-bg);
-        color: var(--text-light);
-        min-height: 100vh;
+    .service-item {
         display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 20px;
-        font-family: sans-serif;
+        justify-content: space-between;
+        padding: 10px 0;
+        border-bottom: 1px solid #444;
     }
-
-    .stylist-header { text-align: center; margin-bottom: 30px; }
-
-    .logo-circle {
-        width: 70px; height: 70px;
-        background-color: var(--primary-gold);
-        border-radius: 50%;
-        display: flex; align-items: center; justify-content: center;
-        margin: 0 auto 15px; font-size: 1.5rem; color: #1a1a1a;
+    .stylist-section h3 {
+        color: #D2B48C;
+        margin-top: 20px;
+        border-bottom: 2px solid #D2B48C;
     }
-
-    .booking-card {
-        background-color: var(--card-bg);
-        border-radius: 12px; padding: 25px;
-        width: 100%; max-width: 350px;
-        border: 1px solid #444; text-align: center;
-    }
-
-    .btn-primary {
-        background-color: var(--primary-gold);
-        color: #1a1a1a; border: none;
-        padding: 12px; width: 100%;
-        border-radius: 6px; font-weight: bold; cursor: pointer;
-    }
-
-    .status-box { margin-top: 15px; font-size: 0.75rem; color: #888; }
-    .status-dot { height: 6px; width: 6px; background-color: #4CAF50; border-radius: 50%; display: inline-block; margin-right: 5px; }
-    .install-banner { margin-top: auto; font-size: 0.8rem; color: #aaa; }
 </style>

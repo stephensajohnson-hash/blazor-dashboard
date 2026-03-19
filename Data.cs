@@ -65,6 +65,17 @@ public class AppDbContext : DbContext
     // HSA Manager
     public DbSet<HsaReceipt> HsaReceipts { get; set; }
     public DbSet<HsaDisbursement> HsaDisbursements { get; set; }
+
+    //NET Haircut
+    public DbSet<NETH_Phone> NETH_Phones { get; set; }
+    public DbSet<NETH_Shop> NETH_Shops { get; set; }
+    public DbSet<NETH_Stylist> NETH_Stylists { get; set; }
+    public DbSet<NETH_Service> NETH_Services { get; set; }
+    public DbSet<NETH_Client> NETH_Clients { get; set; }
+    public DbSet<NETH_ClientNote> NETH_ClientNotes { get; set; }
+    public DbSet<NETH_NoteTag> NETH_NoteTags { get; set; }
+    public DbSet<NETH_Media> NETH_MediaItems { get; set; }
+    public DbSet<NETH_Appointment> NETH_Appointments { get; set; }
 }
 
 public class BulletItem 
