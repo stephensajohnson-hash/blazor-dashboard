@@ -105,21 +105,53 @@
         }
     }
 
-    private async Task SeedInitialData()
+private async Task SeedInitialData()
     {
         isLoading = true;
         StateHasChanged();
 
         try 
         {
-            // CRITICAL: This command creates the physical tables in Postgres
-            await Db.Database.EnsureCreatedAsync();
+            // FORCE THE SCHEMA MANUALLY
+            // This bypasses EF's "EnsureCreated" logic which is currently failing you.
+            await Db.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""NETH_Phones"" (
+                    ""Id"" SERIAL PRIMARY KEY,
+                    ""Number"" TEXT NOT NULL,
+                    ""Type"" TEXT NOT NULL,
+                    ""IsBadNumber"" BOOLEAN NOT NULL DEFAULT FALSE
+                );
+                CREATE TABLE IF NOT EXISTS ""NETH_Shops"" (
+                    ""Id"" SERIAL PRIMARY KEY,
+                    ""UrlKey"" TEXT NOT NULL,
+                    ""BusinessName"" TEXT NOT NULL,
+                    ""BrandColor"" TEXT NOT NULL,
+                    ""LogoMediaId"" INTEGER NULL,
+                    ""StripeAccountId"" TEXT NOT NULL,
+                    ""PhoneId"" INTEGER NOT NULL REFERENCES ""NETH_Phones""(""Id"")
+                );
+                CREATE TABLE IF NOT EXISTS ""NETH_Stylists"" (
+                    ""Id"" SERIAL PRIMARY KEY,
+                    ""ShopId"" INTEGER NOT NULL REFERENCES ""NETH_Shops""(""Id""),
+                    ""Name"" TEXT NOT NULL,
+                    ""Bio"" TEXT NOT NULL,
+                    ""IsIndependent"" BOOLEAN NOT NULL,
+                    ""StripeAccountId"" TEXT NOT NULL,
+                    ""PhoneId"" INTEGER NOT NULL REFERENCES ""NETH_Phones""(""Id"")
+                );
+                CREATE TABLE IF NOT EXISTS ""NETH_Services"" (
+                    ""Id"" SERIAL PRIMARY KEY,
+                    ""StylistId"" INTEGER NOT NULL REFERENCES ""NETH_Stylists""(""Id""),
+                    ""Name"" TEXT NOT NULL,
+                    ""Price"" DECIMAL NOT NULL,
+                    ""DurationMinutes"" INTEGER NOT NULL
+                );
+            ");
 
             // 1. Create Phones
             var shopPhone = new Dashboard.NETH_Phone { Number = "9035551111", Type = "Work" };
             var brandonPhone = new Dashboard.NETH_Phone { Number = "9035552222", Type = "Mobile" };
-            var clientPhone = new Dashboard.NETH_Phone { Number = "9035553333", Type = "Mobile" };
-            Db.NETH_Phones.AddRange(shopPhone, brandonPhone, clientPhone);
+            Db.NETH_Phones.AddRange(shopPhone, brandonPhone);
             await Db.SaveChangesAsync();
 
             // 2. Create Shop
@@ -128,7 +160,8 @@
                 UrlKey = "leatherandblades",
                 BusinessName = "Leather & Blades",
                 BrandColor = "#D2B48C",
-                PhoneId = shopPhone.Id
+                PhoneId = shopPhone.Id,
+                StripeAccountId = ""
             };
             Db.NETH_Shops.Add(shop);
             await Db.SaveChangesAsync();
@@ -140,7 +173,8 @@
                 Name = "Brandon",
                 Bio = "Master Barber specializing in straight-razor fades.",
                 IsIndependent = true,
-                PhoneId = brandonPhone.Id
+                PhoneId = brandonPhone.Id,
+                StripeAccountId = ""
             };
             Db.NETH_Stylists.Add(brandon);
             await Db.SaveChangesAsync();
@@ -148,33 +182,15 @@
             // 4. Create Services
             Db.NETH_Services.AddRange(
                 new Dashboard.NETH_Service { StylistId = brandon.Id, Name = "Standard Fade", Price = 30.00m, DurationMinutes = 30 },
-                new Dashboard.NETH_Service { StylistId = brandon.Id, Name = "Beard Trim", Price = 15.00m, DurationMinutes = 15 },
                 new Dashboard.NETH_Service { StylistId = brandon.Id, Name = "The Works", Price = 50.00m, DurationMinutes = 60 }
             );
-
-            // 5. Create Client & Note
-            var client = new Dashboard.NETH_Client { FirstName = "Jayce", LastName = "Test", PhoneId = clientPhone.Id };
-            Db.NETH_Clients.Add(client);
-            await Db.SaveChangesAsync();
-
-            var note = new Dashboard.NETH_ClientNote
-            {
-                ClientId = client.Id,
-                StylistId = brandon.Id,
-                ShortDescription = "Grand Canyon Trip",
-                LongDescription = "Planning a big trip in 2027.",
-                EventYear = 2027,
-                EventMonth = 1
-            };
-            Db.NETH_ClientNotes.Add(note);
 
             await Db.SaveChangesAsync();
             await LoadShopData();
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"SEED FAILURE: {ex.Message}");
-            if (ex.InnerException != null) Console.WriteLine($"INNER: {ex.InnerException.Message}");
+            Console.WriteLine($"MANUAL SEED FAILURE: {ex.Message}");
         }
         finally 
         {
