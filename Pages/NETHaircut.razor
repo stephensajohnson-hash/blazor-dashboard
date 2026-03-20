@@ -1,9 +1,10 @@
 @page "/nethaircut"
 @using Microsoft.AspNetCore.WebUtilities
 @using Microsoft.EntityFrameworkCore
+@using Dashboard
 @inject Dashboard.AppDbContext Db
 @inject NavigationManager NavManager
-@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode(prerender: false))
+@attribute [RenderModeInteractiveServer]
 
 <div class="app-container" style="--brand-color: @(currentShop?.BrandColor ?? "#D2B48C")">
     <header class="stylist-header">
@@ -67,6 +68,16 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // SURGICAL FIX: Build tables on load since the button is disconnected
+        try 
+        {
+            await Db.Database.EnsureCreatedAsync();
+        }
+        catch (Exception ex) 
+        {
+            Console.WriteLine($"Schema sync error: {ex.Message}");
+        }
+
         var uri = NavManager.ToAbsoluteUri(NavManager.Uri);
         if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("stylist", out var name))
         {
@@ -102,47 +113,13 @@
 
         try 
         {
-            Console.WriteLine("Step 1: SQL Table Creation...");
-            await Db.Database.ExecuteSqlRawAsync(@"
-                CREATE TABLE IF NOT EXISTS ""NETH_Phones"" (
-                    ""Id"" SERIAL PRIMARY KEY,
-                    ""Number"" TEXT NOT NULL,
-                    ""Type"" TEXT NOT NULL,
-                    ""IsBadNumber"" BOOLEAN NOT NULL DEFAULT FALSE
-                );
-                CREATE TABLE IF NOT EXISTS ""NETH_Shops"" (
-                    ""Id"" SERIAL PRIMARY KEY,
-                    ""UrlKey"" TEXT NOT NULL,
-                    ""BusinessName"" TEXT NOT NULL,
-                    ""BrandColor"" TEXT NOT NULL,
-                    ""LogoMediaId"" INTEGER NULL,
-                    ""StripeAccountId"" TEXT NOT NULL DEFAULT '',
-                    ""PhoneId"" INTEGER NOT NULL REFERENCES ""NETH_Phones""(""Id"")
-                );
-                CREATE TABLE IF NOT EXISTS ""NETH_Stylists"" (
-                    ""Id"" SERIAL PRIMARY KEY,
-                    ""ShopId"" INTEGER NOT NULL REFERENCES ""NETH_Shops""(""Id""),
-                    ""Name"" TEXT NOT NULL,
-                    ""Bio"" TEXT NOT NULL,
-                    ""IsIndependent"" BOOLEAN NOT NULL,
-                    ""StripeAccountId"" TEXT NOT NULL DEFAULT '',
-                    ""PhoneId"" INTEGER NOT NULL REFERENCES ""NETH_Phones""(""Id"")
-                );
-                CREATE TABLE IF NOT EXISTS ""NETH_Services"" (
-                    ""Id"" SERIAL PRIMARY KEY,
-                    ""StylistId"" INTEGER NOT NULL REFERENCES ""NETH_Stylists""(""Id""),
-                    ""Name"" TEXT NOT NULL,
-                    ""Price"" DECIMAL NOT NULL,
-                    ""DurationMinutes"" INTEGER NOT NULL
-                );
-            ");
-
-            Console.WriteLine("Step 2: Inserting Data...");
+            // Create Phones
             var shopPhone = new Dashboard.NETH_Phone { Number = "9035551111", Type = "Work" };
             var brandonPhone = new Dashboard.NETH_Phone { Number = "9035552222", Type = "Mobile" };
             Db.NETH_Phones.AddRange(shopPhone, brandonPhone);
             await Db.SaveChangesAsync();
 
+            // Create Shop
             var shop = new Dashboard.NETH_Shop
             {
                 UrlKey = "leatherandblades",
@@ -154,6 +131,7 @@
             Db.NETH_Shops.Add(shop);
             await Db.SaveChangesAsync();
 
+            // Create Stylist
             var brandon = new Dashboard.NETH_Stylist
             {
                 ShopId = shop.Id,
@@ -166,15 +144,15 @@
             Db.NETH_Stylists.Add(brandon);
             await Db.SaveChangesAsync();
 
+            // Create Services
             Db.NETH_Services.AddRange(
                 new Dashboard.NETH_Service { StylistId = brandon.Id, Name = "Standard Fade", Price = 30.00m, DurationMinutes = 30 },
                 new Dashboard.NETH_Service { StylistId = brandon.Id, Name = "The Works", Price = 55.00m, DurationMinutes = 60 }
             );
 
             await Db.SaveChangesAsync();
-            Console.WriteLine("Step 3: Reloading...");
-            await LoadShopData();
             Console.WriteLine("--- SEED COMPLETE ---");
+            await LoadShopData();
         }
         catch (Exception ex)
         {
