@@ -34,7 +34,6 @@
                     <p style="color: #ff4444; font-size: 0.8rem; margin-bottom: 1rem;">@dbError</p>
                 }
                 
-                @* Surgical Fix: Added action to preserve querystring and type="submit" *@
                 <form action="@NavManager.Uri" @onsubmit="SeedInitialData" @onsubmit:preventDefault>
                     <button type="submit" class="btn-seed">
                         🔧 Build Tables & Seed Data
@@ -86,6 +85,13 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // 1. Capture the stylist name from the URL immediately
+        var uri = NavManager.ToAbsoluteUri(NavManager.Uri);
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("stylist", out var name))
+        {
+            CurrentStylist = name.ToString();
+        }
+
         try 
         {
             await Db.Database.ExecuteSqlRawAsync(@"
@@ -129,12 +135,6 @@
             Console.WriteLine($"Critical Schema Error: {ex.Message}");
         }
 
-        var uri = NavManager.ToAbsoluteUri(NavManager.Uri);
-        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("stylist", out var name))
-        {
-            CurrentStylist = name.ToString();
-        }
-
         await LoadShopData();
         isLoading = false;
     }
@@ -143,12 +143,15 @@
     {
         try 
         {
+            // Use the local variable to ensure we aren't querying with a null/empty string
+            var searchKey = CurrentStylist.ToLower();
+            
             currentShop = await Db.NETH_Shops
                 .AsNoTracking()
                 .Include(s => s.Stylists)
                     .ThenInclude(st => st.Services)
                 .Include(s => s.Phone)
-                .FirstOrDefaultAsync(s => s.UrlKey.ToLower() == CurrentStylist.ToLower());
+                .FirstOrDefaultAsync(s => s.UrlKey.ToLower() == searchKey);
         }
         catch (Exception ex)
         {
@@ -203,7 +206,7 @@
             await Db.SaveChangesAsync();
             Console.WriteLine("--- SEED COMPLETE ---");
             
-            // Surgical Fix: Force a reload of the current URI to pick up the new data
+            // Hard refresh to clear circuit and pick up new data
             NavManager.NavigateTo(NavManager.Uri, forceLoad: true);
         }
         catch (Exception ex)
