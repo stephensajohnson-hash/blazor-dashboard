@@ -25,7 +25,7 @@
         {
             <div class="spinner-box">
                 <div class="spinner"></div>
-                <p>Loading Registry...</p>
+                <p>Initialing Database & Loading Registry...</p>
             </div>
         }
         else if (currentShop == null)
@@ -34,7 +34,11 @@
                 <i class="fas fa-database mb-3" style="font-size: 2rem; color: #e67e22;"></i>
                 <h3>No Registry Found</h3>
                 <p class="mb-4 text-sm">We couldn't find a registry for "<strong>@CurrentStylist</strong>".</p>
-                <button class="btn-seed" @onclick="SeedMissingData">🔧 Seed Remaining Tables</button>
+                @if (!string.IsNullOrEmpty(dbError))
+                {
+                    <p style="color: #ff4444; font-size: 0.8rem; margin-bottom: 1rem;">@dbError</p>
+                }
+                <button class="btn-seed" @onclick="SeedMissingData">🔧 Build Tables & Seed Clients</button>
             </div>
         }
         else
@@ -85,14 +89,8 @@
             <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Clients]</p>
             @foreach(var c in clients) { <div>ID:@c.Id | Name:@c.FirstName @c.LastName | Email:@c.Email | PhoneID:@c.PhoneId</div> }
 
-            <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_ClientNotes]</p>
-            @foreach(var cn in clientNotes) { <div>ID:@cn.Id | ClientID:@cn.ClientId | StylistID:@cn.StylistId | Note:(Fixed)</div> }
-
             <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Appointments]</p>
-            @foreach(var a in appointments) { <div>ID:@a.Id | ClientID:@a.ClientId | StylistID:@a.StylistId | Date:@a.StartTime</div> }
-
-            <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_NoteTags]</p>
-            @foreach(var nt in noteTags) { <div>ID:@nt.Id | Tag:(Found)</div> }
+            @foreach(var a in appointments) { <div>ID:@a.Id | ClientID:@a.ClientId | StyID:@a.StylistId | Start:@a.StartTime</div> }
 
             <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Phones]</p>
             @foreach(var p in phones) { <div>ID:@p.Id | Num:@p.Number | Type:@p.Type</div> }
@@ -104,20 +102,53 @@
     private string CurrentStylist { get; set; } = "GENERAL";
     private string FormattedName => CurrentStylist.Replace("%20", " ").ToUpper();
     private bool isLoading = true;
+    private string dbError = "";
 
     private List<NETH_Shop> shops = new();
     private List<NETH_Stylist> stylists = new();
     private List<NETH_Service> services = new();
     private List<NETH_Client> clients = new();
-    private List<NETH_ClientNote> clientNotes = new();
     private List<NETH_Appointment> appointments = new();
-    private List<NETH_NoteTag> noteTags = new();
     private List<NETH_Phone> phones = new();
     
     private Dashboard.NETH_Shop? currentShop;
 
     protected override async Task OnInitializedAsync()
     {
+        // 1. Capture the URL parameter immediately to prevent the 'GENERAL' reset
+        var uri = NavManager.ToAbsoluteUri(NavManager.Uri);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+        if (query.TryGetValue("stylist", out var name))
+        {
+            CurrentStylist = name.ToString();
+        }
+
+        // 2. Ensure all tables exist before auditing
+        try 
+        {
+            await Db.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""NETH_Clients"" (
+                    ""Id"" SERIAL PRIMARY KEY, ""FirstName"" TEXT NOT NULL, ""LastName"" TEXT NOT NULL, 
+                    ""Email"" TEXT NOT NULL, ""PhoneId"" INTEGER NOT NULL REFERENCES ""NETH_Phones""(""Id"")
+                );
+                CREATE TABLE IF NOT EXISTS ""NETH_ClientNotes"" (
+                    ""Id"" SERIAL PRIMARY KEY, ""ClientId"" INTEGER NOT NULL REFERENCES ""NETH_Clients""(""Id""), 
+                    ""StylistId"" INTEGER NOT NULL REFERENCES ""NETH_Stylists""(""Id""), ""Note"" TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS ""NETH_Appointments"" (
+                    ""Id"" SERIAL PRIMARY KEY, ""ClientId"" INTEGER NOT NULL REFERENCES ""NETH_Clients""(""Id""), 
+                    ""StylistId"" INTEGER NOT NULL REFERENCES ""NETH_Stylists""(""Id""), ""StartTime"" TIMESTAMP NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS ""NETH_NoteTags"" (
+                    ""Id"" SERIAL PRIMARY KEY, ""TagName"" TEXT NOT NULL, ""Color"" TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS ""NETH_Media"" (
+                    ""Id"" SERIAL PRIMARY KEY, ""FileName"" TEXT NOT NULL
+                );
+            ");
+        }
+        catch (Exception ex) { Console.WriteLine($"Table Creation Error: {ex.Message}"); }
+
         await LoadAllData();
         isLoading = false;
     }
@@ -130,46 +161,45 @@
             stylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync();
             services = await Db.NETH_Services.AsNoTracking().ToListAsync();
             clients = await Db.NETH_Clients.AsNoTracking().ToListAsync();
-            clientNotes = await Db.NETH_ClientNotes.AsNoTracking().ToListAsync();
             appointments = await Db.NETH_Appointments.AsNoTracking().ToListAsync();
-            noteTags = await Db.NETH_NoteTags.AsNoTracking().ToListAsync();
             phones = await Db.NETH_Phones.AsNoTracking().ToListAsync();
 
-            var uri = NavManager.ToAbsoluteUri(NavManager.Uri);
-            var query = QueryHelpers.ParseQuery(uri.Query);
-            string key = query.TryGetValue("stylist", out var name) ? name.ToString().ToLower() : "leatherandblades";
-
+            string key = CurrentStylist.ToLower().Trim();
             currentShop = await Db.NETH_Shops
                 .AsNoTracking()
                 .Include(s => s.Stylists).ThenInclude(st => st.Services)
                 .FirstOrDefaultAsync(s => s.UrlKey.ToLower() == key);
         }
-        catch (Exception ex) { Console.WriteLine($"Audit Error: {ex.Message}"); }
+        catch (Exception ex) 
+        { 
+            dbError = $"Audit Error: {ex.Message}";
+            Console.WriteLine(dbError); 
+        }
     }
 
     private async Task SeedMissingData()
     {
         try 
         {
-            var clientPhone = new NETH_Phone { Number = "9035559999", Type = "Mobile" };
-            Db.NETH_Phones.Add(clientPhone);
+            var p = new NETH_Phone { Number = "9035559999", Type = "Mobile" };
+            Db.NETH_Phones.Add(p);
             await Db.SaveChangesAsync();
 
-            var client = new NETH_Client { FirstName = "John", LastName = "Doe", Email = "john@example.com", PhoneId = clientPhone.Id };
-            Db.NETH_Clients.Add(client);
+            var c = new NETH_Client { FirstName = "John", LastName = "Doe", Email = "john@example.com", PhoneId = p.Id };
+            Db.NETH_Clients.Add(c);
             await Db.SaveChangesAsync();
 
             var stylist = await Db.NETH_Stylists.FirstOrDefaultAsync();
             if (stylist != null)
             {
-                var appt = new NETH_Appointment { ClientId = client.Id, StylistId = stylist.Id, StartTime = DateTime.UtcNow.AddDays(1) };
-                Db.NETH_Appointments.Add(appt);
+                var a = new NETH_Appointment { ClientId = c.Id, StylistId = stylist.Id, StartTime = DateTime.UtcNow.AddDays(1) };
+                Db.NETH_Appointments.Add(a);
                 await Db.SaveChangesAsync();
             }
 
             NavManager.NavigateTo(NavManager.Uri, true);
         }
-        catch (Exception ex) { Console.WriteLine($"Seed Error: {ex.Message}"); }
+        catch (Exception ex) { dbError = $"Seed Error: {ex.Message}"; }
     }
 }
 
