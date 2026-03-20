@@ -85,15 +85,17 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // 1. Capture the stylist name from the URL immediately
+        // 1. Capture the stylist name from the URL immediately and reliably
         var uri = NavManager.ToAbsoluteUri(NavManager.Uri);
-        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("stylist", out var name))
+        var query = QueryHelpers.ParseQuery(uri.Query);
+        if (query.TryGetValue("stylist", out var name))
         {
             CurrentStylist = name.ToString();
         }
 
         try 
         {
+            // Ensure Tables Exist
             await Db.Database.ExecuteSqlRawAsync(@"
                 CREATE TABLE IF NOT EXISTS ""NETH_Phones"" (
                     ""Id"" SERIAL PRIMARY KEY,
@@ -143,8 +145,8 @@
     {
         try 
         {
-            // Use the local variable to ensure we aren't querying with a null/empty string
-            var searchKey = CurrentStylist.ToLower();
+            // Surgical Fix: Force the search key to be the captured URL value
+            string searchKey = (CurrentStylist ?? "GENERAL").ToLower().Trim();
             
             currentShop = await Db.NETH_Shops
                 .AsNoTracking()
@@ -206,7 +208,7 @@
             await Db.SaveChangesAsync();
             Console.WriteLine("--- SEED COMPLETE ---");
             
-            // Hard refresh to clear circuit and pick up new data
+            // Force reload to pick up new data
             NavManager.NavigateTo(NavManager.Uri, forceLoad: true);
         }
         catch (Exception ex)
