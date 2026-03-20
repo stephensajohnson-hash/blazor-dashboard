@@ -16,6 +16,11 @@
     </header>
 
     <main class="booking-card">
+        @* DIAGNOSTIC BOX *@
+        <div style="background: #000; color: #0f0; padding: 5px; font-family: monospace; font-size: 10px; margin-bottom: 10px;">
+            KEY: @CurrentStylist | DB: @(currentShop == null ? "NULL" : "OK")
+        </div>
+
         @if (isLoading)
         {
             <div class="spinner-box">
@@ -28,12 +33,13 @@
             <div class="seed-box">
                 <i class="fas fa-database mb-3" style="font-size: 2rem; color: #e67e22;"></i>
                 <h3>No Registry Found</h3>
-                <p class="mb-4 text-sm">We couldn't find a shop for "<strong>@CurrentStylist</strong>". Click below to build the database tables and seed initial data.</p>
+                <p class="mb-4 text-sm">
+                    We couldn't find a shop for "<strong>@CurrentStylist</strong>".
+                </p>
                 @if (!string.IsNullOrEmpty(dbError))
                 {
                     <p style="color: #ff4444; font-size: 0.8rem; margin-bottom: 1rem;">@dbError</p>
                 }
-                
                 <form action="@NavManager.Uri" @onsubmit="SeedInitialData" @onsubmit:preventDefault>
                     <button type="submit" class="btn-seed">
                         🔧 Build Tables & Seed Data
@@ -85,9 +91,9 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // 1. Capture the stylist name from the URL immediately and reliably
         var uri = NavManager.ToAbsoluteUri(NavManager.Uri);
         var query = QueryHelpers.ParseQuery(uri.Query);
+
         if (query.TryGetValue("stylist", out var name))
         {
             CurrentStylist = name.ToString();
@@ -95,46 +101,46 @@
 
         try 
         {
-            // Ensure Tables Exist
+            // Broken into short lines for easier review
             await Db.Database.ExecuteSqlRawAsync(@"
                 CREATE TABLE IF NOT EXISTS ""NETH_Phones"" (
-                    ""Id"" SERIAL PRIMARY KEY,
-                    ""Number"" TEXT NOT NULL,
-                    ""Type"" TEXT NOT NULL,
+                    ""Id"" SERIAL PRIMARY KEY, 
+                    ""Number"" TEXT NOT NULL, 
+                    ""Type"" TEXT NOT NULL, 
                     ""IsBadNumber"" BOOLEAN NOT NULL DEFAULT FALSE
                 );
                 CREATE TABLE IF NOT EXISTS ""NETH_Shops"" (
-                    ""Id"" SERIAL PRIMARY KEY,
-                    ""UrlKey"" TEXT NOT NULL,
-                    ""BusinessName"" TEXT NOT NULL,
-                    ""BrandColor"" TEXT NOT NULL,
-                    ""LogoMediaId"" INTEGER NULL,
-                    ""LogoId"" INTEGER NULL,
-                    ""StripeAccountId"" TEXT NOT NULL DEFAULT '',
+                    ""Id"" SERIAL PRIMARY KEY, 
+                    ""UrlKey"" TEXT NOT NULL, 
+                    ""BusinessName"" TEXT NOT NULL, 
+                    ""BrandColor"" TEXT NOT NULL, 
+                    ""LogoMediaId"" INTEGER NULL, 
+                    ""LogoId"" INTEGER NULL, 
+                    ""StripeAccountId"" TEXT NOT NULL DEFAULT '', 
                     ""PhoneId"" INTEGER NOT NULL REFERENCES ""NETH_Phones""(""Id"")
                 );
                 CREATE TABLE IF NOT EXISTS ""NETH_Stylists"" (
-                    ""Id"" SERIAL PRIMARY KEY,
-                    ""ShopId"" INTEGER NOT NULL REFERENCES ""NETH_Shops""(""Id""),
-                    ""Name"" TEXT NOT NULL,
-                    ""Bio"" TEXT NOT NULL,
-                    ""IsIndependent"" BOOLEAN NOT NULL,
-                    ""StripeAccountId"" TEXT NOT NULL DEFAULT '',
+                    ""Id"" SERIAL PRIMARY KEY, 
+                    ""ShopId"" INTEGER NOT NULL REFERENCES ""NETH_Shops""(""Id""), 
+                    ""Name"" TEXT NOT NULL, 
+                    ""Bio"" TEXT NOT NULL, 
+                    ""IsIndependent"" BOOLEAN NOT NULL, 
+                    ""StripeAccountId"" TEXT NOT NULL DEFAULT '', 
                     ""PhoneId"" INTEGER NOT NULL REFERENCES ""NETH_Phones""(""Id"")
                 );
                 CREATE TABLE IF NOT EXISTS ""NETH_Services"" (
-                    ""Id"" SERIAL PRIMARY KEY,
-                    ""StylistId"" INTEGER NOT NULL REFERENCES ""NETH_Stylists""(""Id""),
-                    ""NETH_StylistId"" INTEGER NULL REFERENCES ""NETH_Stylists""(""Id""),
-                    ""Name"" TEXT NOT NULL,
-                    ""Price"" DECIMAL NOT NULL,
+                    ""Id"" SERIAL PRIMARY KEY, 
+                    ""StylistId"" INTEGER NOT NULL REFERENCES ""NETH_Stylists""(""Id""), 
+                    ""NETH_StylistId"" INTEGER NULL REFERENCES ""NETH_Stylists""(""Id""), 
+                    ""Name"" TEXT NOT NULL, 
+                    ""Price"" DECIMAL NOT NULL, 
                     ""DurationMinutes"" INTEGER NOT NULL
                 );
             ");
         }
         catch (Exception ex) 
-        {
-            Console.WriteLine($"Critical Schema Error: {ex.Message}");
+        { 
+            Console.WriteLine($"DB Error: {ex.Message}"); 
         }
 
         await LoadShopData();
@@ -145,15 +151,16 @@
     {
         try 
         {
-            // Surgical Fix: Force the search key to be the captured URL value
-            string searchKey = (CurrentStylist ?? "GENERAL").ToLower().Trim();
-            
+            // Fix for the '?' parameter: Ensure a non-null search key
+            var searchKey = CurrentStylist ?? "GENERAL";
+            var key = searchKey.ToLower().Trim();
+
             currentShop = await Db.NETH_Shops
                 .AsNoTracking()
                 .Include(s => s.Stylists)
                     .ThenInclude(st => st.Services)
                 .Include(s => s.Phone)
-                .FirstOrDefaultAsync(s => s.UrlKey.ToLower() == searchKey);
+                .FirstOrDefaultAsync(s => s.UrlKey.ToLower() == key);
         }
         catch (Exception ex)
         {
@@ -172,8 +179,17 @@
 
         try 
         {
-            var shopPhone = new Dashboard.NETH_Phone { Number = "9035551111", Type = "Work" };
-            var brandonPhone = new Dashboard.NETH_Phone { Number = "9035552222", Type = "Mobile" };
+            var shopPhone = new Dashboard.NETH_Phone 
+            { 
+                Number = "9035551111", 
+                Type = "Work" 
+            };
+            var brandonPhone = new Dashboard.NETH_Phone 
+            { 
+                Number = "9035552222", 
+                Type = "Mobile" 
+            };
+            
             Db.NETH_Phones.AddRange(shopPhone, brandonPhone);
             await Db.SaveChangesAsync();
 
@@ -185,6 +201,7 @@
                 PhoneId = shopPhone.Id,
                 StripeAccountId = ""
             };
+            
             Db.NETH_Shops.Add(shop);
             await Db.SaveChangesAsync();
 
@@ -197,18 +214,31 @@
                 PhoneId = brandonPhone.Id,
                 StripeAccountId = ""
             };
+            
             Db.NETH_Stylists.Add(brandon);
             await Db.SaveChangesAsync();
 
             Db.NETH_Services.AddRange(
-                new Dashboard.NETH_Service { StylistId = brandon.Id, Name = "Standard Fade", Price = 30.00m, DurationMinutes = 30 },
-                new Dashboard.NETH_Service { StylistId = brandon.Id, Name = "The Works", Price = 55.00m, DurationMinutes = 60 }
+                new Dashboard.NETH_Service 
+                { 
+                    StylistId = brandon.Id, 
+                    Name = "Standard Fade", 
+                    Price = 30.00m, 
+                    DurationMinutes = 30 
+                },
+                new Dashboard.NETH_Service 
+                { 
+                    StylistId = brandon.Id, 
+                    Name = "The Works", 
+                    Price = 55.00m, 
+                    DurationMinutes = 60 
+                }
             );
 
             await Db.SaveChangesAsync();
             Console.WriteLine("--- SEED COMPLETE ---");
             
-            // Force reload to pick up new data
+            // Hard refresh to preserve query string and reload state
             NavManager.NavigateTo(NavManager.Uri, forceLoad: true);
         }
         catch (Exception ex)
@@ -222,85 +252,77 @@
 }
 
 <style>
-    :root {
-        --dark-bg: #1a1b1e;
-        --card-bg: #25262b;
-        --text-main: #c1c2c5;
+    :root { 
+        --dark-bg: #1a1b1e; 
+        --card-bg: #25262b; 
+        --text-main: #c1c2c5; 
     }
-
-    .app-container {
-        background-color: var(--dark-bg);
-        color: var(--text-main);
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 2rem;
-        font-family: 'Inter', sans-serif;
+    .app-container { 
+        background-color: var(--dark-bg); 
+        color: var(--text-main); 
+        min-height: 100vh; 
+        display: flex; 
+        flex-direction: column; 
+        align-items: center; 
+        padding: 2rem; 
+        font-family: 'Inter', sans-serif; 
     }
-
     .stylist-header { text-align: center; margin-bottom: 2rem; }
-    .logo-circle {
-        width: 60px; height: 60px;
-        background-color: var(--brand-color);
-        border-radius: 50%;
-        display: flex; align-items: center; justify-content: center;
-        margin: 0 auto 1rem; font-size: 1.5rem; color: #1a1b1e;
+    .logo-circle { 
+        width: 60px; height: 60px; 
+        background-color: var(--brand-color); 
+        border-radius: 50%; 
+        display: flex; align-items: center; justify-content: center; 
+        margin: 0 auto 1rem; font-size: 1.5rem; color: #1a1b1e; 
     }
-
-    .booking-card {
-        background-color: var(--card-bg);
-        border-radius: 12px;
-        padding: 2rem;
-        width: 100%;
-        max-width: 450px;
-        border: 1px solid #373a40;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    .booking-card { 
+        background-color: var(--card-bg); 
+        border-radius: 12px; 
+        padding: 2rem; 
+        width: 100%; 
+        max-width: 450px; 
+        border: 1px solid #373a40; 
+        box-shadow: 0 10px 25px rgba(0,0,0,0.3); 
     }
-
-    .status-badge {
-        font-size: 0.75rem; color: #40c057; 
-        display: flex; align-items: center; gap: 5px;
-        margin-top: 5px; font-weight: bold;
+    .status-badge { 
+        font-size: 0.75rem; 
+        color: #40c057; 
+        display: flex; align-items: center; gap: 5px; 
+        margin-top: 5px; font-weight: bold; 
     }
-    .status-dot { height: 8px; width: 8px; background: #40c057; border-radius: 50%; }
-
-    .stylist-card {
-        margin-top: 1.5rem;
-        background: rgba(0,0,0,0.2);
-        padding: 1rem;
-        border-radius: 8px;
+    .status-dot { 
+        height: 8px; width: 8px; 
+        background: #40c057; border-radius: 50%; 
     }
-
-    .service-row {
-        display: flex; justify-content: space-between;
-        padding: 8px 0; border-bottom: 1px solid #373a40;
-        font-size: 0.9rem;
+    .stylist-card { 
+        margin-top: 1.5rem; 
+        background: rgba(0,0,0,0.2); 
+        padding: 1rem; border-radius: 8px; 
     }
-
-    .btn-book {
-        width: 100%; margin-top: 1rem;
-        padding: 10px; border-radius: 6px;
-        background: var(--brand-color); color: #1a1b1e;
-        border: none; font-weight: bold; cursor: pointer;
+    .service-row { 
+        display: flex; 
+        justify-content: space-between; 
+        padding: 8px 0; 
+        border-bottom: 1px solid #373a40; 
+        font-size: 0.9rem; 
     }
-
-    .btn-seed {
-        background-color: #e67e22; color: white;
-        padding: 12px; border-radius: 6px; border: none;
-        width: 100%; font-weight: bold; cursor: pointer;
-        margin-top: 1rem;
+    .btn-book { 
+        width: 100%; margin-top: 1rem; padding: 10px; 
+        border-radius: 6px; background: var(--brand-color); 
+        color: #1a1b1e; border: none; font-weight: bold; 
+        cursor: pointer; 
     }
-
+    .btn-seed { 
+        background-color: #e67e22; color: white; padding: 12px; 
+        border-radius: 6px; border: none; width: 100%; 
+        font-weight: bold; cursor: pointer; margin-top: 1rem; 
+    }
     .seed-box { text-align: center; color: #909296; }
-
-    .spinner {
-        border: 4px solid rgba(255,255,255,0.1);
-        border-top: 4px solid var(--brand-color);
-        border-radius: 50%; width: 40px; height: 40px;
-        animation: spin 1s linear infinite;
-        margin: 0 auto 1rem;
+    .spinner { 
+        border: 4px solid rgba(255,255,255,0.1); 
+        border-top: 4px solid var(--brand-color); 
+        border-radius: 50%; width: 40px; height: 40px; 
+        animation: spin 1s linear infinite; margin: 0 auto 1rem; 
     }
-
     @@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 </style>
