@@ -67,7 +67,7 @@
             </div>
         }
 
-        @* DATA AUDIT DUMP - RESTORED & COMPREHENSIVE *@
+        @* FULL DATA DUMP - ENSURES VISIBILITY REGARDLESS OF LOAD SUCCESS *@
         <div style="margin-top: 3rem; background: #111; padding: 1rem; border-radius: 8px; font-family: monospace; font-size: 0.65rem; color: #aaa; overflow-x: auto; line-height: 1.4;">
             <h4 style="color: #fff; border-bottom: 1px solid #333; padding-bottom: 5px;">FULL NETH DATA DUMP</h4>
             
@@ -81,7 +81,7 @@
             @foreach(var c in clients) { <div>ID:@c.Id | Name:@c.FirstName @c.LastName | PhoneID:@c.PhoneId</div> }
 
             <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Appointments]</p>
-            @foreach(var a in appointments) { <div>ID:@a.Id | ClientID:@a.ClientId | Status:@a.Status</div> }
+            @foreach(var a in appointments) { <div>ID:@a.Id | ClientID:@a.ClientId | Status:@a.Status | Paid:@a.IsPaid</div> }
 
             <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Phones]</p>
             @foreach(var p in phones) { <div>ID:@p.Id | Num:@p.Number | Type:@p.Type</div> }
@@ -120,7 +120,7 @@
         try 
         {
             await Db.Database.ExecuteSqlRawAsync(@"
-                -- Create tables if missing
+                -- Ensure tables
                 CREATE TABLE IF NOT EXISTS ""NETH_Phones"" (""Id"" SERIAL PRIMARY KEY);
                 CREATE TABLE IF NOT EXISTS ""NETH_Media"" (""Id"" SERIAL PRIMARY KEY);
                 CREATE TABLE IF NOT EXISTS ""NETH_Shops"" (""Id"" SERIAL PRIMARY KEY);
@@ -132,17 +132,20 @@
                 CREATE TABLE IF NOT EXISTS ""NETH_Appointments"" (""Id"" SERIAL PRIMARY KEY);
                 CREATE TABLE IF NOT EXISTS ""NETH_AppointmentServices"" (""Id"" SERIAL PRIMARY KEY);
 
-                -- SURGICAL SCHEMA ALIGNMENT
-                -- NETH_ClientNotes fixes
+                -- NETH_ClientNotes Alignment
                 ALTER TABLE ""NETH_ClientNotes"" ADD COLUMN IF NOT EXISTS ""ClientId"" INTEGER NOT NULL DEFAULT 0;
                 ALTER TABLE ""NETH_ClientNotes"" ADD COLUMN IF NOT EXISTS ""StylistId"" INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE ""NETH_ClientNotes"" ADD COLUMN IF NOT EXISTS ""ServiceId"" INTEGER NULL;
                 ALTER TABLE ""NETH_ClientNotes"" ADD COLUMN IF NOT EXISTS ""MediaId"" INTEGER NULL;
-                ALTER TABLE ""NETH_ClientNotes"" ADD COLUMN IF NOT EXISTS ""AttachedMediaId"" INTEGER NULL REFERENCES ""NETH_Media""(""Id"");
+                ALTER TABLE ""NETH_ClientNotes"" ADD COLUMN IF NOT EXISTS ""AttachedMediaId"" INTEGER NULL;
                 ALTER TABLE ""NETH_ClientNotes"" ADD COLUMN IF NOT EXISTS ""CreatedDate"" TIMESTAMP NOT NULL DEFAULT NOW();
                 ALTER TABLE ""NETH_ClientNotes"" ADD COLUMN IF NOT EXISTS ""ShortDescription"" TEXT NOT NULL DEFAULT '';
                 ALTER TABLE ""NETH_ClientNotes"" ADD COLUMN IF NOT EXISTS ""LongDescription"" TEXT NOT NULL DEFAULT '';
+                ALTER TABLE ""NETH_ClientNotes"" ADD COLUMN IF NOT EXISTS ""EventYear"" INTEGER NULL;
+                ALTER TABLE ""NETH_ClientNotes"" ADD COLUMN IF NOT EXISTS ""EventMonth"" INTEGER NULL;
+                ALTER TABLE ""NETH_ClientNotes"" ADD COLUMN IF NOT EXISTS ""EventDay"" INTEGER NULL;
 
-                -- NETH_Appointments fixes
+                -- NETH_Appointments Alignment
                 ALTER TABLE ""NETH_Appointments"" ADD COLUMN IF NOT EXISTS ""ShopId"" INTEGER NOT NULL DEFAULT 0;
                 ALTER TABLE ""NETH_Appointments"" ADD COLUMN IF NOT EXISTS ""StylistId"" INTEGER NOT NULL DEFAULT 0;
                 ALTER TABLE ""NETH_Appointments"" ADD COLUMN IF NOT EXISTS ""ClientId"" INTEGER NOT NULL DEFAULT 0;
@@ -153,7 +156,7 @@
                 ALTER TABLE ""NETH_Appointments"" ADD COLUMN IF NOT EXISTS ""IsPaid"" BOOLEAN NOT NULL DEFAULT FALSE;
                 ALTER TABLE ""NETH_Appointments"" ADD COLUMN IF NOT EXISTS ""Notes"" TEXT NOT NULL DEFAULT '';
 
-                -- NETH_AppointmentServices fixes
+                -- NETH_AppointmentServices Alignment
                 ALTER TABLE ""NETH_AppointmentServices"" ADD COLUMN IF NOT EXISTS ""AppointmentId"" INTEGER NOT NULL DEFAULT 0;
                 ALTER TABLE ""NETH_AppointmentServices"" ADD COLUMN IF NOT EXISTS ""ServiceId"" INTEGER NOT NULL DEFAULT 0;
                 ALTER TABLE ""NETH_AppointmentServices"" ADD COLUMN IF NOT EXISTS ""PriceAtBooking"" DECIMAL NOT NULL DEFAULT 0;
@@ -166,12 +169,11 @@
     private async Task LoadAllData()
     {
         try {
-            // Loading core data points
             shops = await Db.NETH_Shops.AsNoTracking().ToListAsync();
             stylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync();
             phones = await Db.NETH_Phones.AsNoTracking().ToListAsync();
             
-            // Try loading relational data
+            // Relational points (Wrapped individually so one error doesn't kill the dump)
             try { clients = await Db.NETH_Clients.AsNoTracking().ToListAsync(); } catch { }
             try { clientNotes = await Db.NETH_ClientNotes.AsNoTracking().ToListAsync(); } catch { }
             try { appointments = await Db.NETH_Appointments.AsNoTracking().ToListAsync(); } catch { }
@@ -192,26 +194,19 @@
         try 
         {
             var p = new NETH_Phone { Number = "9035559999", Type = "Mobile" };
-            Db.NETH_Phones.Add(p); 
-            await Db.SaveChangesAsync();
+            Db.NETH_Phones.Add(p); await Db.SaveChangesAsync();
 
             var c = new NETH_Client { FirstName = "John", LastName = "Doe", Email = "john@test.com", PhoneId = p.Id };
-            Db.NETH_Clients.Add(c); 
-            await Db.SaveChangesAsync();
+            Db.NETH_Clients.Add(c); await Db.SaveChangesAsync();
                 
             var sty = await Db.NETH_Stylists.FirstOrDefaultAsync();
             if (sty != null) {
                 var app = new NETH_Appointment { 
-                    ShopId = sty.ShopId, 
-                    StylistId = sty.Id, 
-                    ClientId = c.Id, 
-                    StartTime = DateTime.UtcNow, 
-                    EndTime = DateTime.UtcNow.AddHours(1),
-                    Status = "Booked",
-                    IsPaid = false
+                    ShopId = sty.ShopId, StylistId = sty.Id, ClientId = c.Id, 
+                    StartTime = DateTime.UtcNow, EndTime = DateTime.UtcNow.AddHours(1),
+                    Status = "Booked", IsPaid = false, Notes = "Test Seeding"
                 };
-                Db.NETH_Appointments.Add(app); 
-                await Db.SaveChangesAsync();
+                Db.NETH_Appointments.Add(app); await Db.SaveChangesAsync();
             }
             NavManager.NavigateTo(NavManager.Uri, forceLoad: true);
         }
