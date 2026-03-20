@@ -90,7 +90,7 @@
             @foreach(var c in clients) { <div>ID:@c.Id | Name:@c.FirstName @c.LastName | Email:@c.Email | PhoneID:@c.PhoneId</div> }
 
             <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Appointments]</p>
-            @foreach(var a in appointments) { <div>ID:@a.Id | ClientID:@a.ClientId | StyID:@a.StylistId | Start:@a.StartTime</div> }
+            @foreach(var a in appointments) { <div>ID:@a.Id | ClientID:@a.ClientId | Start:@a.StartTime | End:@a.EndTime</div> }
 
             <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Phones]</p>
             @foreach(var p in phones) { <div>ID:@p.Id | Num:@p.Number | Type:@p.Type</div> }
@@ -115,7 +115,6 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // 1. Capture the URL parameter immediately to prevent the 'GENERAL' reset
         var uri = NavManager.ToAbsoluteUri(NavManager.Uri);
         var query = QueryHelpers.ParseQuery(uri.Query);
         if (query.TryGetValue("stylist", out var name))
@@ -123,9 +122,9 @@
             CurrentStylist = name.ToString();
         }
 
-        // 2. Ensure all tables exist before auditing
         try 
         {
+            // SURGICAL FIX: Adding EndTime to Appointment and creating join table
             await Db.Database.ExecuteSqlRawAsync(@"
                 CREATE TABLE IF NOT EXISTS ""NETH_Clients"" (
                     ""Id"" SERIAL PRIMARY KEY, ""FirstName"" TEXT NOT NULL, ""LastName"" TEXT NOT NULL, 
@@ -137,7 +136,13 @@
                 );
                 CREATE TABLE IF NOT EXISTS ""NETH_Appointments"" (
                     ""Id"" SERIAL PRIMARY KEY, ""ClientId"" INTEGER NOT NULL REFERENCES ""NETH_Clients""(""Id""), 
-                    ""StylistId"" INTEGER NOT NULL REFERENCES ""NETH_Stylists""(""Id""), ""StartTime"" TIMESTAMP NOT NULL
+                    ""StylistId"" INTEGER NOT NULL REFERENCES ""NETH_Stylists""(""Id""), 
+                    ""StartTime"" TIMESTAMP NOT NULL, ""EndTime"" TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+                CREATE TABLE IF NOT EXISTS ""NETH_AppointmentServices"" (
+                    ""AppointmentId"" INTEGER NOT NULL REFERENCES ""NETH_Appointments""(""Id""),
+                    ""ServiceId"" INTEGER NOT NULL REFERENCES ""NETH_Services""(""Id""),
+                    PRIMARY KEY (""AppointmentId"", ""ServiceId"")
                 );
                 CREATE TABLE IF NOT EXISTS ""NETH_NoteTags"" (
                     ""Id"" SERIAL PRIMARY KEY, ""TagName"" TEXT NOT NULL, ""Color"" TEXT NOT NULL
@@ -192,7 +197,12 @@
             var stylist = await Db.NETH_Stylists.FirstOrDefaultAsync();
             if (stylist != null)
             {
-                var a = new NETH_Appointment { ClientId = c.Id, StylistId = stylist.Id, StartTime = DateTime.UtcNow.AddDays(1) };
+                var a = new NETH_Appointment { 
+                    ClientId = c.Id, 
+                    StylistId = stylist.Id, 
+                    StartTime = DateTime.UtcNow.AddDays(1),
+                    EndTime = DateTime.UtcNow.AddDays(1).AddMinutes(30)
+                };
                 Db.NETH_Appointments.Add(a);
                 await Db.SaveChangesAsync();
             }
