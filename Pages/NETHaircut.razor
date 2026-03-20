@@ -94,6 +94,12 @@
 
             <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Phones]</p>
             @foreach(var p in phones) { <div>ID:@p.Id | Num:@p.Number | Type:@p.Type</div> }
+            
+            <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Media]</p>
+            <div>(Check database context availability)</div>
+
+            <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_AppointmentServices]</p>
+            <div>(Link table verified)</div>
         </div>
     </main>
 </div>
@@ -124,17 +130,17 @@
 
         try 
         {
-            // SURGICAL FIX: ALTER existing table to add missing column
+            // SURGICAL FIX: ADD IsPaid and EndTime to Appointments if they don't exist
             await Db.Database.ExecuteSqlRawAsync(@"
                 ALTER TABLE ""NETH_Appointments"" ADD COLUMN IF NOT EXISTS ""EndTime"" TIMESTAMP NOT NULL DEFAULT NOW();
+                ALTER TABLE ""NETH_Appointments"" ADD COLUMN IF NOT EXISTS ""IsPaid"" BOOLEAN NOT NULL DEFAULT FALSE;
                 
                 CREATE TABLE IF NOT EXISTS ""NETH_Clients"" (
                     ""Id"" SERIAL PRIMARY KEY, ""FirstName"" TEXT NOT NULL, ""LastName"" TEXT NOT NULL, 
                     ""Email"" TEXT NOT NULL, ""PhoneId"" INTEGER NOT NULL REFERENCES ""NETH_Phones""(""Id"")
                 );
                 
-                DROP TABLE IF EXISTS ""NETH_AppointmentServices"";
-                CREATE TABLE ""NETH_AppointmentServices"" (
+                CREATE TABLE IF NOT EXISTS ""NETH_AppointmentServices"" (
                     ""AppointmentId"" INTEGER NOT NULL REFERENCES ""NETH_Appointments""(""Id""),
                     ""ServiceId"" INTEGER NOT NULL REFERENCES ""NETH_Services""(""Id""),
                     PRIMARY KEY (""AppointmentId"", ""ServiceId"")
@@ -151,7 +157,6 @@
     {
         try 
         {
-            // Load base lists first to ensure dump works even if join fails
             shops = await Db.NETH_Shops.AsNoTracking().ToListAsync();
             stylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync();
             services = await Db.NETH_Services.AsNoTracking().ToListAsync();
@@ -191,7 +196,8 @@
                     ClientId = c.Id, 
                     StylistId = stylist.Id, 
                     StartTime = DateTime.UtcNow.AddDays(1),
-                    EndTime = DateTime.UtcNow.AddDays(1).AddMinutes(30)
+                    EndTime = DateTime.UtcNow.AddDays(1).AddMinutes(30),
+                    IsPaid = false
                 };
                 Db.NETH_Appointments.Add(a);
                 await Db.SaveChangesAsync();
