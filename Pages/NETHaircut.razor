@@ -91,7 +91,6 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // TARGETED CHANGE 1: Capture URL parameters BEFORE DB query runs
         var uri = NavManager.ToAbsoluteUri(NavManager.Uri);
         var query = QueryHelpers.ParseQuery(uri.Query);
 
@@ -151,8 +150,15 @@
     {
         try 
         {
-            // TARGETED CHANGE 2: Force use of CurrentStylist to avoid the '?' parameter bug
-            var searchKey = (CurrentStylist ?? "leatherandblades").ToLower().Trim();
+            // SURGICAL FIX: Directly parse the URL here to ensure we never send '?' to DB
+            var uri = NavManager.ToAbsoluteUri(NavManager.Uri);
+            var query = QueryHelpers.ParseQuery(uri.Query);
+            string searchKey = "leatherandblades"; // Default fallback
+
+            if (query.TryGetValue("stylist", out var name))
+            {
+                searchKey = name.ToString().ToLower().Trim();
+            }
 
             currentShop = await Db.NETH_Shops
                 .AsNoTracking()
@@ -237,7 +243,6 @@
             await Db.SaveChangesAsync();
             Console.WriteLine("--- SEED COMPLETE ---");
             
-            // Hard refresh to preserve query string and reload state
             NavManager.NavigateTo(NavManager.Uri, forceLoad: true);
         }
         catch (Exception ex)
