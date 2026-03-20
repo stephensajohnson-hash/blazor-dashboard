@@ -16,12 +16,9 @@
     </header>
 
     <main class="booking-card">
-        @* DIAGNOSTIC BOX: Shows record counts from the tables *@
+        @* DIAGNOSTIC BOX *@
         <div style="background: #000; color: #0f0; padding: 5px; font-family: monospace; font-size: 10px; margin-bottom: 10px; border: 1px solid #333;">
-            KEY: @CurrentStylist | 
-            SHOPS: @shopCount | 
-            STYLISTS: @stylistCount | 
-            SERVICES: @serviceCount
+            KEY: @CurrentStylist | SHOPS: @shops.Count | CLIENTS: @clients.Count | APPS: @appointments.Count
         </div>
 
         @if (isLoading)
@@ -34,11 +31,10 @@
         else if (currentShop == null)
         {
             <div class="seed-box">
-                <i class="fas fa-search mb-3" style="font-size: 2rem; color: #e67e22;"></i>
-                <h3>No Shop Found</h3>
-                <p class="mb-4 text-sm">
-                    We couldn't find a registry for "<strong>@CurrentStylist</strong>".
-                </p>
+                <i class="fas fa-database mb-3" style="font-size: 2rem; color: #e67e22;"></i>
+                <h3>No Registry Found</h3>
+                <p class="mb-4 text-sm">We couldn't find a registry for "<strong>@CurrentStylist</strong>".</p>
+                <button class="btn-seed" @onclick="SeedMissingData">🔧 Seed Remaining Tables</button>
             </div>
         }
         else
@@ -51,23 +47,18 @@
             </section>
 
             <div class="stylist-grid">
-                @foreach (Dashboard.NETH_Stylist stylist in currentShop.Stylists)
+                @foreach (var stylist in currentShop.Stylists)
                 {
                     <div class="stylist-card">
                         <div class="stylist-info">
                             <h3>@stylist.Name</h3>
                             <p class="bio">@stylist.Bio</p>
-                            @if (stylist.Phone != null)
-                            {
-                                <p class="text-xs opacity-70">@stylist.Phone.Number (@stylist.Phone.Type)</p>
-                            }
                         </div>
-                        
                         <div class="services-list">
-                            @foreach (Dashboard.NETH_Service service in stylist.Services)
+                            @foreach (var service in stylist.Services)
                             {
                                 <div class="service-row">
-                                    <span class="service-name">@service.Name (@service.DurationMinutes min)</span>
+                                    <span class="service-name">@service.Name</span>
                                     <span class="service-price">$@service.Price.ToString("N2")</span>
                                 </div>
                             }
@@ -77,6 +68,42 @@
                 }
             </div>
         }
+
+        @* RAW DATA DUMP SECTION *@
+        <div style="margin-top: 3rem; background: #111; padding: 1rem; border-radius: 8px; font-family: monospace; font-size: 0.65rem; color: #aaa; overflow-x: auto; line-height: 1.4;">
+            <h4 style="color: #fff; border-bottom: 1px solid #333; padding-bottom: 5px;">FULL NETH DATA AUDIT</h4>
+            
+            <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Shops]</p>
+            @foreach(var s in shops) { <div>ID:@s.Id | Key:@s.UrlKey | Name:@s.BusinessName | PhoneID:@s.PhoneId</div> }
+
+            <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Stylists]</p>
+            @foreach(var st in stylists) { <div>ID:@st.Id | ShopID:@st.ShopId | Name:@st.Name | PhoneID:@st.PhoneId</div> }
+
+            <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Services]</p>
+            @foreach(var sv in services) { <div>ID:@sv.Id | StyID:@sv.StylistId | Name:@sv.Name | Price:@sv.Price</div> }
+
+            <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Clients]</p>
+            @foreach(var c in clients) { <div>ID:@c.Id | Name:@c.FirstName @c.LastName | Email:@c.Email | PhoneID:@c.PhoneId</div> }
+
+            <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_ClientNotes]</p>
+            @foreach(var cn in clientNotes) { <div>ID:@cn.Id | ClientID:@cn.ClientId | StylistID:@cn.StylistId | Note:@cn.Note</div> }
+
+            <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Appointments]</p>
+            @foreach(var a in appointments) { <div>ID:@a.Id | ClientID:@a.ClientId | StylistID:@a.StylistId | Date:@a.StartTime</div> }
+
+            <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_AppointmentServices]</p>
+            @foreach(var aps in appServices) { <div>AppID:@aps.AppointmentId | SvcID:@aps.ServiceId</div> }
+
+            <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_NoteTags]</p>
+            @foreach(var nt in noteTags) { <div>ID:@nt.Id | Name:@nt.TagName | Color:@nt.Color</div> }
+
+            <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Media]</p>
+            @if(!medias.Any()) { <div>(Empty)</div> }
+            @foreach(var m in medias) { <div>ID:@m.Id | FileName:@m.FileName</div> }
+
+            <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Phones]</p>
+            @foreach(var p in phones) { <div>ID:@p.Id | Num:@p.Number | Type:@p.Type</div> }
+        </div>
     </main>
 </div>
 
@@ -84,138 +111,111 @@
     private string CurrentStylist { get; set; } = "GENERAL";
     private string FormattedName => CurrentStylist.Replace("%20", " ").ToUpper();
     private bool isLoading = true;
-    
-    private int shopCount = 0;
-    private int stylistCount = 0;
-    private int serviceCount = 0;
+
+    private List<NETH_Shop> shops = new();
+    private List<NETH_Stylist> stylists = new();
+    private List<NETH_Service> services = new();
+    private List<NETH_Client> clients = new();
+    private List<NETH_ClientNote> clientNotes = new();
+    private List<NETH_Appointment> appointments = new();
+    private List<NETH_AppointmentService> appServices = new();
+    private List<NETH_NoteTag> noteTags = new();
+    private List<NETH_Media> medias = new();
+    private List<NETH_Phone> phones = new();
     
     private Dashboard.NETH_Shop? currentShop;
 
     protected override async Task OnInitializedAsync()
     {
-        var uri = NavManager.ToAbsoluteUri(NavManager.Uri);
-        var query = QueryHelpers.ParseQuery(uri.Query);
-
-        if (query.TryGetValue("stylist", out var name))
-        {
-            CurrentStylist = name.ToString();
-        }
-
-        try 
-        {
-            // Get raw counts for debugging empty tables
-            shopCount = await Db.NETH_Shops.CountAsync();
-            stylistCount = await Db.NETH_Stylists.CountAsync();
-            serviceCount = await Db.NETH_Services.CountAsync();
-        }
-        catch (Exception ex) 
-        { 
-            Console.WriteLine($"Count Error: {ex.Message}"); 
-        }
-
-        await LoadShopData();
+        await LoadAllData();
         isLoading = false;
     }
 
-    private async Task LoadShopData()
+    private async Task LoadAllData()
     {
         try 
         {
+            shops = await Db.NETH_Shops.AsNoTracking().ToListAsync();
+            stylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync();
+            services = await Db.NETH_Services.AsNoTracking().ToListAsync();
+            clients = await Db.NETH_Clients.AsNoTracking().ToListAsync();
+            clientNotes = await Db.NETH_ClientNotes.AsNoTracking().ToListAsync();
+            appointments = await Db.NETH_Appointments.AsNoTracking().ToListAsync();
+            appServices = await Db.NETH_AppointmentServices.AsNoTracking().ToListAsync();
+            noteTags = await Db.NETH_NoteTags.AsNoTracking().ToListAsync();
+            medias = await Db.NETH_Media.AsNoTracking().ToListAsync();
+            phones = await Db.NETH_Phones.AsNoTracking().ToListAsync();
+
             var uri = NavManager.ToAbsoluteUri(NavManager.Uri);
             var query = QueryHelpers.ParseQuery(uri.Query);
-            string searchKey = query.TryGetValue("stylist", out var name) 
-                ? name.ToString().ToLower().Trim() 
-                : "leatherandblades";
+            string key = query.TryGetValue("stylist", out var name) ? name.ToString().ToLower() : "leatherandblades";
 
             currentShop = await Db.NETH_Shops
                 .AsNoTracking()
-                .Include(s => s.Phone)
-                .Include(s => s.Stylists)
-                    .ThenInclude(st => st.Services)
-                .Include(s => s.Stylists)
-                    .ThenInclude(st => st.Phone)
-                .FirstOrDefaultAsync(s => s.UrlKey.ToLower() == searchKey);
+                .Include(s => s.Stylists).ThenInclude(st => st.Services)
+                .FirstOrDefaultAsync(s => s.UrlKey.ToLower() == key);
         }
-        catch (Exception ex)
+        catch (Exception ex) { Console.WriteLine($"Audit Error: {ex.Message}"); }
+    }
+
+    private async Task SeedMissingData()
+    {
+        try 
         {
-            Console.WriteLine($"Load Error: {ex.Message}");
-            currentShop = null; 
+            // 1. New Phone for Client
+            var clientPhone = new NETH_Phone { Number = "9035559999", Type = "Mobile" };
+            Db.NETH_Phones.Add(clientPhone);
+            await Db.SaveChangesAsync();
+
+            // 2. New Client
+            var client = new NETH_Client { FirstName = "John", LastName = "Doe", Email = "john@example.com", PhoneId = clientPhone.Id };
+            Db.NETH_Clients.Add(client);
+            await Db.SaveChangesAsync();
+
+            // 3. Note Tag
+            var tag = new NETH_NoteTag { TagName = "Formula", Color = "#3498db" };
+            Db.NETH_NoteTags.Add(tag);
+            await Db.SaveChangesAsync();
+
+            // 4. Client Note (Referencing Brandon Stylist ID 1 usually)
+            var stylist = await Db.NETH_Stylists.FirstOrDefaultAsync();
+            if (stylist != null)
+            {
+                var note = new NETH_ClientNote { ClientId = client.Id, StylistId = stylist.Id, Note = "Likes a high skin fade." };
+                Db.NETH_ClientNotes.Add(note);
+
+                // 5. Appointment
+                var appt = new NETH_Appointment { ClientId = client.Id, StylistId = stylist.Id, StartTime = DateTime.UtcNow.AddDays(1) };
+                Db.NETH_Appointments.Add(appt);
+                await Db.SaveChangesAsync();
+
+                // 6. Appointment Service
+                var service = await Db.NETH_Services.FirstOrDefaultAsync();
+                if (service != null)
+                {
+                    Db.NETH_AppointmentServices.Add(new NETH_AppointmentService { AppointmentId = appt.Id, ServiceId = service.Id });
+                    await Db.SaveChangesAsync();
+                }
+            }
+
+            NavManager.NavigateTo(NavManager.Uri, true);
         }
+        catch (Exception ex) { Console.WriteLine($"Seed Error: {ex.Message}"); }
     }
 }
 
 <style>
-    :root { 
-        --dark-bg: #1a1b1e; 
-        --card-bg: #25262b; 
-        --text-main: #c1c2c5; 
-    }
-    .app-container { 
-        background-color: var(--dark-bg); 
-        color: var(--text-main); 
-        min-height: 100vh; 
-        display: flex; 
-        flex-direction: column; 
-        align-items: center; 
-        padding: 2rem; 
-        font-family: 'Inter', sans-serif; 
-    }
+    :root { --dark-bg: #1a1b1e; --card-bg: #25262b; --text-main: #c1c2c5; }
+    .app-container { background-color: var(--dark-bg); color: var(--text-main); min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 2rem; font-family: 'Inter', sans-serif; }
     .stylist-header { text-align: center; margin-bottom: 2rem; }
-    .logo-circle { 
-        width: 60px; height: 60px; 
-        background-color: var(--brand-color); 
-        border-radius: 50%; 
-        display: flex; align-items: center; justify-content: center; 
-        margin: 0 auto 1rem; font-size: 1.5rem; color: #1a1b1e; 
-    }
-    .booking-card { 
-        background-color: var(--card-bg); 
-        border-radius: 12px; 
-        padding: 2rem; 
-        width: 100%; 
-        max-width: 450px; 
-        border: 1px solid #373a40; 
-        box-shadow: 0 10px 25px rgba(0,0,0,0.3); 
-    }
-    .status-badge { 
-        font-size: 0.75rem; 
-        color: #40c057; 
-        display: flex; align-items: center; gap: 5px; 
-        margin-top: 5px; font-weight: bold; 
-    }
-    .status-dot { 
-        height: 8px; width: 8px; 
-        background: #40c057; border-radius: 50%; 
-    }
-    .stylist-card { 
-        margin-top: 1.5rem; 
-        background: rgba(0,0,0,0.2); 
-        padding: 1rem; border-radius: 8px; 
-    }
-    .service-row { 
-        display: flex; 
-        justify-content: space-between; 
-        padding: 8px 0; 
-        border-bottom: 1px solid #373a40; 
-        font-size: 0.9rem; 
-    }
-    .btn-book { 
-        width: 100%; margin-top: 1rem; padding: 10px; 
-        border-radius: 6px; background: var(--brand-color); 
-        color: #1a1b1e; border: none; font-weight: bold; 
-        cursor: pointer; 
-    }
-    .btn-seed { 
-        background-color: #e67e22; color: white; padding: 12px; 
-        border-radius: 6px; border: none; width: 100%; 
-        font-weight: bold; cursor: pointer; margin-top: 1rem; 
-    }
-    .seed-box { text-align: center; color: #909296; }
-    .spinner { 
-        border: 4px solid rgba(255,255,255,0.1); 
-        border-top: 4px solid var(--brand-color); 
-        border-radius: 50%; width: 40px; height: 40px; 
-        animation: spin 1s linear infinite; margin: 0 auto 1rem; 
-    }
+    .logo-circle { width: 60px; height: 60px; background-color: var(--brand-color); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; font-size: 1.5rem; color: #1a1b1e; }
+    .booking-card { background-color: var(--card-bg); border-radius: 12px; padding: 2rem; width: 100%; max-width: 450px; border: 1px solid #373a40; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+    .status-badge { font-size: 0.75rem; color: #40c057; display: flex; align-items: center; gap: 5px; margin-top: 5px; font-weight: bold; }
+    .status-dot { height: 8px; width: 8px; background: #40c057; border-radius: 50%; }
+    .stylist-card { margin-top: 1.5rem; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; }
+    .service-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #373a40; font-size: 0.9rem; }
+    .btn-book { width: 100%; margin-top: 1rem; padding: 10px; border-radius: 6px; background: var(--brand-color); color: #1a1b1e; border: none; font-weight: bold; cursor: pointer; }
+    .btn-seed { background-color: #e67e22; color: white; padding: 10px; border-radius: 6px; border: none; width: 100%; font-weight: bold; cursor: pointer; margin-top: 1rem; }
+    .spinner { border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid var(--brand-color); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 1rem; }
     @@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 </style>
