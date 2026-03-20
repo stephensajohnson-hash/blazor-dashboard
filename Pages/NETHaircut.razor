@@ -29,6 +29,10 @@
                 <i class="fas fa-database mb-3" style="font-size: 2rem; color: #e67e22;"></i>
                 <h3>No Registry Found</h3>
                 <p class="mb-4 text-sm">We couldn't find a shop for "<strong>@CurrentStylist</strong>". Click below to build the database tables and seed initial data.</p>
+                @if (!string.IsNullOrEmpty(dbError))
+                {
+                    <p style="color: #ff4444; font-size: 0.8rem; margin-bottom: 1rem;">@dbError</p>
+                }
                 <button class="btn-seed" @onclick="SeedInitialData">
                     🔧 Build Tables & Seed Data
                 </button>
@@ -78,26 +82,32 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // SURGICAL FIX: Force table creation with Raw SQL on load
         try 
         {
+            // SURGICAL FIX: Drop and Recreate to fix the "Missing Column" error
             await Db.Database.ExecuteSqlRawAsync(@"
-                CREATE TABLE IF NOT EXISTS ""NETH_Phones"" (
+                DROP TABLE IF EXISTS ""NETH_Services"";
+                DROP TABLE IF EXISTS ""NETH_Stylists"";
+                DROP TABLE IF EXISTS ""NETH_Shops"";
+                DROP TABLE IF EXISTS ""NETH_Phones"";
+
+                CREATE TABLE ""NETH_Phones"" (
                     ""Id"" SERIAL PRIMARY KEY,
                     ""Number"" TEXT NOT NULL,
                     ""Type"" TEXT NOT NULL,
                     ""IsBadNumber"" BOOLEAN NOT NULL DEFAULT FALSE
                 );
-                CREATE TABLE IF NOT EXISTS ""NETH_Shops"" (
+                CREATE TABLE ""NETH_Shops"" (
                     ""Id"" SERIAL PRIMARY KEY,
                     ""UrlKey"" TEXT NOT NULL,
                     ""BusinessName"" TEXT NOT NULL,
                     ""BrandColor"" TEXT NOT NULL,
                     ""LogoMediaId"" INTEGER NULL,
+                    ""LogoId"" INTEGER NULL,
                     ""StripeAccountId"" TEXT NOT NULL DEFAULT '',
                     ""PhoneId"" INTEGER NOT NULL REFERENCES ""NETH_Phones""(""Id"")
                 );
-                CREATE TABLE IF NOT EXISTS ""NETH_Stylists"" (
+                CREATE TABLE ""NETH_Stylists"" (
                     ""Id"" SERIAL PRIMARY KEY,
                     ""ShopId"" INTEGER NOT NULL REFERENCES ""NETH_Shops""(""Id""),
                     ""Name"" TEXT NOT NULL,
@@ -106,9 +116,10 @@
                     ""StripeAccountId"" TEXT NOT NULL DEFAULT '',
                     ""PhoneId"" INTEGER NOT NULL REFERENCES ""NETH_Phones""(""Id"")
                 );
-                CREATE TABLE IF NOT EXISTS ""NETH_Services"" (
+                CREATE TABLE ""NETH_Services"" (
                     ""Id"" SERIAL PRIMARY KEY,
                     ""StylistId"" INTEGER NOT NULL REFERENCES ""NETH_Stylists""(""Id""),
+                    ""NETH_StylistId"" INTEGER NULL REFERENCES ""NETH_Stylists""(""Id""),
                     ""Name"" TEXT NOT NULL,
                     ""Price"" DECIMAL NOT NULL,
                     ""DurationMinutes"" INTEGER NOT NULL
@@ -143,7 +154,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"DB Load Error: {ex.Message}");
+            dbError = $"DB Load Error: {ex.Message}";
+            Console.WriteLine(dbError);
             currentShop = null; 
         }
     }
@@ -156,13 +168,11 @@
 
         try 
         {
-            // Create Phones
             var shopPhone = new Dashboard.NETH_Phone { Number = "9035551111", Type = "Work" };
             var brandonPhone = new Dashboard.NETH_Phone { Number = "9035552222", Type = "Mobile" };
             Db.NETH_Phones.AddRange(shopPhone, brandonPhone);
             await Db.SaveChangesAsync();
 
-            // Create Shop
             var shop = new Dashboard.NETH_Shop
             {
                 UrlKey = "leatherandblades",
@@ -174,7 +184,6 @@
             Db.NETH_Shops.Add(shop);
             await Db.SaveChangesAsync();
 
-            // Create Stylist
             var brandon = new Dashboard.NETH_Stylist
             {
                 ShopId = shop.Id,
@@ -187,7 +196,6 @@
             Db.NETH_Stylists.Add(brandon);
             await Db.SaveChangesAsync();
 
-            // Create Services
             Db.NETH_Services.AddRange(
                 new Dashboard.NETH_Service { StylistId = brandon.Id, Name = "Standard Fade", Price = 30.00m, DurationMinutes = 30 },
                 new Dashboard.NETH_Service { StylistId = brandon.Id, Name = "The Works", Price = 55.00m, DurationMinutes = 60 }
