@@ -76,6 +76,7 @@ public class AppDbContext : DbContext
     public DbSet<NETH_NoteTag> NETH_NoteTags { get; set; }
     public DbSet<NETH_Media> NETH_MediaItems { get; set; }
     public DbSet<NETH_Appointment> NETH_Appointments { get; set; }
+    public DbSet<NETH_AppointmentService> NETH_AppointmentsService { get; set; }
 }
 
 public class BulletItem 

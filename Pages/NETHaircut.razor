@@ -14,15 +14,16 @@
     </header>
 
     <main class="booking-card">
+        @* DIAGNOSTIC BOX *@
         <div style="background: #000; color: #0f0; padding: 5px; font-family: monospace; font-size: 10px; margin-bottom: 10px; border: 1px solid #333;">
-            KEY: @CurrentStylist | SHOPS: @shops.Count | CLIENTS: @clients.Count | APPS: @appointments.Count
+            KEY: @CurrentStylist | SHOPS: @shops.Count | CLIENTS: @clients.Count | PHONES: @phones.Count
         </div>
 
         @if (isLoading)
         {
             <div class="spinner-box">
                 <div class="spinner"></div>
-                <p>Syncing Schema & Loading...</p>
+                <p>Syncing Schema & Loading Registry...</p>
             </div>
         }
         else if (currentShop == null)
@@ -66,6 +67,7 @@
             </div>
         }
 
+        @* DATA AUDIT DUMP *@
         <div style="margin-top: 3rem; background: #111; padding: 1rem; border-radius: 8px; font-family: monospace; font-size: 0.65rem; color: #aaa; overflow-x: auto; line-height: 1.4;">
             <h4 style="color: #fff; border-bottom: 1px solid #333; padding-bottom: 5px;">DATABASE AUDIT</h4>
             <div>[Shops]: @shops.Count</div>
@@ -90,7 +92,7 @@
     private List<NETH_Client> clients = new();
     private List<NETH_ClientNote> clientNotes = new();
     private List<NETH_Appointment> appointments = new();
-    private List<NETH_AppointmentService> appServices = new();
+    private List<NETH_AppointmentServices> appServices = new();
     private List<NETH_Phone> phones = new();
     private NETH_Shop? currentShop;
 
@@ -110,48 +112,36 @@
         try 
         {
             await Db.Database.ExecuteSqlRawAsync(@"
-                -- 1. PHONES
+                -- Create tables if missing
                 CREATE TABLE IF NOT EXISTS ""NETH_Phones"" (""Id"" SERIAL PRIMARY KEY);
-                ALTER TABLE ""NETH_Phones"" ADD COLUMN IF NOT EXISTS ""Number"" TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS ""Type"" TEXT NOT NULL DEFAULT 'Mobile', ADD COLUMN IF NOT EXISTS ""IsBadNumber"" BOOLEAN NOT NULL DEFAULT FALSE;
-
-                -- 2. MEDIA
                 CREATE TABLE IF NOT EXISTS ""NETH_Media"" (""Id"" SERIAL PRIMARY KEY);
-                ALTER TABLE ""NETH_Media"" ADD COLUMN IF NOT EXISTS ""FileUrl"" TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS ""Category"" TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS ""Description"" TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS ""UploadedDate"" TIMESTAMP NOT NULL DEFAULT NOW();
-
-                -- 3. SHOPS
                 CREATE TABLE IF NOT EXISTS ""NETH_Shops"" (""Id"" SERIAL PRIMARY KEY);
-                ALTER TABLE ""NETH_Shops"" ADD COLUMN IF NOT EXISTS ""UrlKey"" TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS ""BusinessName"" TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS ""BrandColor"" TEXT NOT NULL DEFAULT '#D2B48C', ADD COLUMN IF NOT EXISTS ""LogoMediaId"" INTEGER NULL REFERENCES ""NETH_Media""(""Id""), ADD COLUMN IF NOT EXISTS ""StripeAccountId"" TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS ""PhoneId"" INTEGER NOT NULL DEFAULT 0 REFERENCES ""NETH_Phones""(""Id"");
-
-                -- 4. STYLISTS
                 CREATE TABLE IF NOT EXISTS ""NETH_Stylists"" (""Id"" SERIAL PRIMARY KEY);
-                ALTER TABLE ""NETH_Stylists"" ADD COLUMN IF NOT EXISTS ""ShopId"" INTEGER NOT NULL DEFAULT 0 REFERENCES ""NETH_Shops""(""Id""), ADD COLUMN IF NOT EXISTS ""Name"" TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS ""Bio"" TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS ""IsIndependent"" BOOLEAN NOT NULL DEFAULT FALSE, ADD COLUMN IF NOT EXISTS ""StripeAccountId"" TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS ""PhoneId"" INTEGER NOT NULL DEFAULT 0 REFERENCES ""NETH_Phones""(""Id"");
-
-                -- 5. SERVICES
                 CREATE TABLE IF NOT EXISTS ""NETH_Services"" (""Id"" SERIAL PRIMARY KEY);
-                ALTER TABLE ""NETH_Services"" ADD COLUMN IF NOT EXISTS ""StylistId"" INTEGER NOT NULL DEFAULT 0 REFERENCES ""NETH_Stylists""(""Id""), ADD COLUMN IF NOT EXISTS ""Name"" TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS ""Price"" DECIMAL NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS ""DurationMinutes"" INTEGER NOT NULL DEFAULT 0;
-
-                -- 6. CLIENTS
                 CREATE TABLE IF NOT EXISTS ""NETH_Clients"" (""Id"" SERIAL PRIMARY KEY);
-                ALTER TABLE ""NETH_Clients"" ADD COLUMN IF NOT EXISTS ""FirstName"" TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS ""LastName"" TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS ""Email"" TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS ""PhoneId"" INTEGER NOT NULL DEFAULT 0 REFERENCES ""NETH_Phones""(""Id"");
-
-                -- 7. NOTE TAGS
                 CREATE TABLE IF NOT EXISTS ""NETH_NoteTags"" (""Id"" SERIAL PRIMARY KEY);
-                ALTER TABLE ""NETH_NoteTags"" ADD COLUMN IF NOT EXISTS ""Name"" TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS ""HexColor"" TEXT NOT NULL DEFAULT '#000000';
-
-                -- 8. CLIENT NOTES
                 CREATE TABLE IF NOT EXISTS ""NETH_ClientNotes"" (""Id"" SERIAL PRIMARY KEY);
-                ALTER TABLE ""NETH_ClientNotes"" ADD COLUMN IF NOT EXISTS ""ClientId"" INTEGER NOT NULL DEFAULT 0 REFERENCES ""NETH_Clients""(""Id""), ADD COLUMN IF NOT EXISTS ""StylistId"" INTEGER NOT NULL DEFAULT 0 REFERENCES ""NETH_Stylists""(""Id""), ADD COLUMN IF NOT EXISTS ""ServiceId"" INTEGER NULL REFERENCES ""NETH_Services""(""Id""), ADD COLUMN IF NOT EXISTS ""MediaId"" INTEGER NULL REFERENCES ""NETH_Media""(""Id""), ADD COLUMN IF NOT EXISTS ""CreatedDate"" TIMESTAMP NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS ""ShortDescription"" TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS ""LongDescription"" TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS ""EventYear"" INTEGER NULL, ADD COLUMN IF NOT EXISTS ""EventMonth"" INTEGER NULL, ADD COLUMN IF NOT EXISTS ""EventDay"" INTEGER NULL;
-
-                -- 9. APPOINTMENTS
                 CREATE TABLE IF NOT EXISTS ""NETH_Appointments"" (""Id"" SERIAL PRIMARY KEY);
-                ALTER TABLE ""NETH_Appointments"" ADD COLUMN IF NOT EXISTS ""ShopId"" INTEGER NOT NULL DEFAULT 0 REFERENCES ""NETH_Shops""(""Id""), ADD COLUMN IF NOT EXISTS ""StylistId"" INTEGER NOT NULL DEFAULT 0 REFERENCES ""NETH_Stylists""(""Id""), ADD COLUMN IF NOT EXISTS ""ClientId"" INTEGER NOT NULL DEFAULT 0 REFERENCES ""NETH_Clients""(""Id""), ADD COLUMN IF NOT EXISTS ""StartTime"" TIMESTAMP NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS ""EndTime"" TIMESTAMP NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS ""Status"" TEXT NOT NULL DEFAULT 'Booked', ADD COLUMN IF NOT EXISTS ""TotalPrice"" DECIMAL NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS ""Notes"" TEXT NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS ""IsPaid"" BOOLEAN NOT NULL DEFAULT FALSE;
-
-                -- 10. APPOINTMENT SERVICES
                 CREATE TABLE IF NOT EXISTS ""NETH_AppointmentServices"" (""Id"" SERIAL PRIMARY KEY);
-                ALTER TABLE ""NETH_AppointmentServices"" ADD COLUMN IF NOT EXISTS ""AppointmentId"" INTEGER NOT NULL DEFAULT 0 REFERENCES ""NETH_Appointments""(""Id""), ADD COLUMN IF NOT EXISTS ""ServiceId"" INTEGER NOT NULL DEFAULT 0 REFERENCES ""NETH_Services""(""Id""), ADD COLUMN IF NOT EXISTS ""PriceAtBooking"" DECIMAL NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS ""DurationAtBooking"" INTEGER NOT NULL DEFAULT 0;
+
+                -- Sync columns for major tables
+                ALTER TABLE ""NETH_Appointments"" ADD COLUMN IF NOT EXISTS ""ShopId"" INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE ""NETH_Appointments"" ADD COLUMN IF NOT EXISTS ""StylistId"" INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE ""NETH_Appointments"" ADD COLUMN IF NOT EXISTS ""ClientId"" INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE ""NETH_Appointments"" ADD COLUMN IF NOT EXISTS ""StartTime"" TIMESTAMP NOT NULL DEFAULT NOW();
+                ALTER TABLE ""NETH_Appointments"" ADD COLUMN IF NOT EXISTS ""EndTime"" TIMESTAMP NOT NULL DEFAULT NOW();
+                ALTER TABLE ""NETH_Appointments"" ADD COLUMN IF NOT EXISTS ""Status"" TEXT NOT NULL DEFAULT 'Booked';
+                ALTER TABLE ""NETH_Appointments"" ADD COLUMN IF NOT EXISTS ""TotalPrice"" DECIMAL NOT NULL DEFAULT 0;
+                ALTER TABLE ""NETH_Appointments"" ADD COLUMN IF NOT EXISTS ""Notes"" TEXT NOT NULL DEFAULT '';
+                ALTER TABLE ""NETH_Appointments"" ADD COLUMN IF NOT EXISTS ""IsPaid"" BOOLEAN NOT NULL DEFAULT FALSE;
+
+                ALTER TABLE ""NETH_AppointmentServices"" ADD COLUMN IF NOT EXISTS ""AppointmentId"" INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE ""NETH_AppointmentServices"" ADD COLUMN IF NOT EXISTS ""ServiceId"" INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE ""NETH_AppointmentServices"" ADD COLUMN IF NOT EXISTS ""PriceAtBooking"" DECIMAL NOT NULL DEFAULT 0;
+                ALTER TABLE ""NETH_AppointmentServices"" ADD COLUMN IF NOT EXISTS ""DurationAtBooking"" INTEGER NOT NULL DEFAULT 0;
             ");
         }
-        catch (Exception ex) { dbError = $"Sync Error: {ex.Message}"; }
+        catch (Exception ex) { Console.WriteLine($"Sync Error: {ex.Message}"); }
     }
 
     private async Task LoadAllData()
@@ -162,8 +152,10 @@
             clients = await Db.NETH_Clients.AsNoTracking().ToListAsync();
             clientNotes = await Db.NETH_ClientNotes.AsNoTracking().ToListAsync();
             appointments = await Db.NETH_Appointments.AsNoTracking().ToListAsync();
-            appServices = await Db.NETH_AppointmentServices.AsNoTracking().ToListAsync();
             phones = await Db.NETH_Phones.AsNoTracking().ToListAsync();
+            
+            // Using the singular DbSet name you set in Data.cs
+            appServices = await Db.NETH_AppointmentsServices.AsNoTracking().ToListAsync();
 
             string key = CurrentStylist.ToLower().Trim();
             currentShop = await Db.NETH_Shops.AsNoTracking()
@@ -179,19 +171,31 @@
         await SyncSchema();
         try 
         {
-            if (!phones.Any(p => p.Number == "9035559999")) {
+            if (!clients.Any()) {
                 var p = new NETH_Phone { Number = "9035559999", Type = "Mobile" };
-                Db.NETH_Phones.Add(p); await Db.SaveChangesAsync();
+                Db.NETH_Phones.Add(p); 
+                await Db.SaveChangesAsync();
+
                 var c = new NETH_Client { FirstName = "John", LastName = "Doe", Email = "john@test.com", PhoneId = p.Id };
-                Db.NETH_Clients.Add(c); await Db.SaveChangesAsync();
+                Db.NETH_Clients.Add(c); 
+                await Db.SaveChangesAsync();
                 
                 var sty = await Db.NETH_Stylists.FirstOrDefaultAsync();
                 if (sty != null) {
-                    var app = new NETH_Appointment { ShopId = sty.ShopId, StylistId = sty.Id, ClientId = c.Id, StartTime = DateTime.Now, EndTime = DateTime.Now.AddHours(1) };
-                    Db.NETH_Appointments.Add(app); await Db.SaveChangesAsync();
+                    var app = new NETH_Appointment { 
+                        ShopId = sty.ShopId, 
+                        StylistId = sty.Id, 
+                        ClientId = c.Id, 
+                        StartTime = DateTime.UtcNow, 
+                        EndTime = DateTime.UtcNow.AddHours(1),
+                        Status = "Booked",
+                        IsPaid = false
+                    };
+                    Db.NETH_Appointments.Add(app); 
+                    await Db.SaveChangesAsync();
                 }
             }
-            NavManager.NavigateTo(NavManager.Uri, true);
+            NavManager.NavigateTo(NavManager.Uri, forceLoad: true);
         }
         catch (Exception ex) { dbError = $"Seed Error: {ex.Message}"; isLoading = false; }
     }
