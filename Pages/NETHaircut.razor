@@ -16,14 +16,14 @@
     <main class="booking-card">
         @* DIAGNOSTIC BOX *@
         <div style="background: #000; color: #0f0; padding: 5px; font-family: monospace; font-size: 10px; margin-bottom: 10px; border: 1px solid #333;">
-            KEY: @CurrentStylist | SHOPS: @shops.Count | CLIENTS: @clients.Count | APPS: @appointments.Count
+            KEY: @CurrentStylist | SHOPS: @shops.Count | CLIENTS: @clients.Count | PHONES: @phones.Count
         </div>
 
         @if (isLoading)
         {
             <div class="spinner-box">
                 <div class="spinner"></div>
-                <p>Loading Registry...</p>
+                <p>Syncing Registry & Data...</p>
             </div>
         }
         else
@@ -59,16 +59,16 @@
             {
                 <div class="seed-box">
                     <i class="fas fa-search mb-3" style="font-size: 2rem; color: #e67e22;"></i>
-                    <p>No shop found for "@CurrentStylist".</p>
+                    <p>No shop found for "<strong>@CurrentStylist</strong>".</p>
+                    @if (!string.IsNullOrEmpty(dbError))
+                    {
+                        <p style="color: #ff4444; font-size: 0.7rem; margin-top: 10px; word-break: break-all;">@dbError</p>
+                    }
                 </div>
             }
 
             <div class="seed-box" style="margin-top: 20px; border-top: 1px solid #333; padding-top: 20px;">
-                <button class="btn-seed" @onclick="SeedFullData">🔧 Populate Clients, Apps & Media</button>
-                @if (!string.IsNullOrEmpty(dbError))
-                {
-                    <p style="color: #ff4444; font-size: 0.7rem; margin-top: 10px;">@dbError</p>
-                }
+                <button class="btn-seed" @onclick="SyncAndSeedEverything">🔧 Sync All Columns & Seed Data</button>
             </div>
         }
 
@@ -83,7 +83,7 @@
             @foreach(var c in clients) { <div>ID:@c.Id | Name:@c.FirstName @c.LastName | Email:@c.Email</div> }
 
             <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Appointments]</p>
-            @foreach(var a in appointments) { <div>ID:@a.Id | ClientID:@a.ClientId | Status:@a.Status</div> }
+            @foreach(var a in appointments) { <div>ID:@a.Id | Status:@a.Status | Paid:@a.IsPaid</div> }
 
             <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Media]</p>
             @foreach(var m in medias) { <div>ID:@m.Id | Cat:@m.Category | Desc:@m.Description</div> }
@@ -103,9 +103,7 @@
     private List<NETH_Shop> shops = new();
     private List<NETH_Stylist> stylists = new();
     private List<NETH_Client> clients = new();
-    private List<NETH_ClientNote> clientNotes = new();
     private List<NETH_Appointment> appointments = new();
-    private List<NETH_AppointmentService> appServices = new();
     private List<NETH_Media> medias = new();
     private List<NETH_Phone> phones = new();
     private NETH_Shop? currentShop;
@@ -120,77 +118,98 @@
         isLoading = false;
     }
 
+    private async Task SyncSchema()
+    {
+        try 
+        {
+            await Db.Database.ExecuteSqlRawAsync(@"
+                -- MEDIA SYNC
+                CREATE TABLE IF NOT EXISTS ""NETH_Media"" (""Id"" SERIAL PRIMARY KEY);
+                ALTER TABLE ""NETH_Media"" ADD COLUMN IF NOT EXISTS ""FileUrl"" TEXT NOT NULL DEFAULT '';
+                ALTER TABLE ""NETH_Media"" ADD COLUMN IF NOT EXISTS ""Category"" TEXT NOT NULL DEFAULT '';
+                ALTER TABLE ""NETH_Media"" ADD COLUMN IF NOT EXISTS ""Description"" TEXT NOT NULL DEFAULT '';
+                ALTER TABLE ""NETH_Media"" ADD COLUMN IF NOT EXISTS ""UploadedDate"" TIMESTAMP NOT NULL DEFAULT NOW();
+
+                -- NOTE TAG SYNC
+                CREATE TABLE IF NOT EXISTS ""NETH_NoteTags"" (""Id"" SERIAL PRIMARY KEY);
+                ALTER TABLE ""NETH_NoteTags"" ADD COLUMN IF NOT EXISTS ""Name"" TEXT NOT NULL DEFAULT '';
+                ALTER TABLE ""NETH_NoteTags"" ADD COLUMN IF NOT EXISTS ""HexColor"" TEXT NOT NULL DEFAULT '#000000';
+
+                -- APPOINTMENT SYNC
+                ALTER TABLE ""NETH_Appointments"" ADD COLUMN IF NOT EXISTS ""IsPaid"" BOOLEAN NOT NULL DEFAULT FALSE;
+                ALTER TABLE ""NETH_Appointments"" ADD COLUMN IF NOT EXISTS ""Status"" TEXT NOT NULL DEFAULT 'Booked';
+                ALTER TABLE ""NETH_Appointments"" ADD COLUMN IF NOT EXISTS ""Notes"" TEXT NOT NULL DEFAULT '';
+
+                -- CLIENT NOTE SYNC
+                ALTER TABLE ""NETH_ClientNotes"" ADD COLUMN IF NOT EXISTS ""AttachedMediaId"" INTEGER NULL REFERENCES ""NETH_Media""(""Id"");
+                ALTER TABLE ""NETH_ClientNotes"" ADD COLUMN IF NOT EXISTS ""ShortDescription"" TEXT NOT NULL DEFAULT '';
+                ALTER TABLE ""NETH_ClientNotes"" ADD COLUMN IF NOT EXISTS ""LongDescription"" TEXT NOT NULL DEFAULT '';
+            ");
+        }
+        catch (Exception ex) { dbError = $"Sync Fail: {ex.Message}"; }
+    }
+
     private async Task LoadAllData()
     {
         try {
             shops = await Db.NETH_Shops.AsNoTracking().ToListAsync();
             stylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync();
             phones = await Db.NETH_Phones.AsNoTracking().ToListAsync();
-            clients = await Db.NETH_Clients.AsNoTracking().ToListAsync();
-            clientNotes = await Db.NETH_ClientNotes.AsNoTracking().ToListAsync();
-            appointments = await Db.NETH_Appointments.AsNoTracking().ToListAsync();
-            medias = await Db.NETH_Media.AsNoTracking().ToListAsync();
-            appServices = await Db.NETH_AppointmentsService.AsNoTracking().ToListAsync();
+
+            // Try loading relational lists (Wrapped to prevent page crash)
+            try { clients = await Db.NETH_Clients.AsNoTracking().ToListAsync(); } catch { }
+            try { appointments = await Db.NETH_Appointments.AsNoTracking().ToListAsync(); } catch { }
+            try { medias = await Db.NETH_Media.AsNoTracking().ToListAsync(); } catch { }
 
             string key = CurrentStylist.ToLower().Trim();
             currentShop = await Db.NETH_Shops.AsNoTracking()
                 .Include(s => s.Stylists).ThenInclude(st => st.Services)
                 .FirstOrDefaultAsync(s => s.UrlKey.ToLower() == key);
         }
-        catch (Exception ex) { dbError = $"Audit Error: {ex.Message}"; }
+        catch (Exception ex) { dbError = $"Audit/Load Error: {ex.Message}"; }
     }
 
-    private async Task SeedFullData()
+    private async Task SyncAndSeedEverything()
     {
         isLoading = true;
+        dbError = "";
+        await SyncSchema();
+        
         try 
         {
             var shop = await Db.NETH_Shops.FirstOrDefaultAsync(s => s.UrlKey == "leatherandblades");
-            var stylist = await Db.NETH_Stylists.FirstOrDefaultAsync(s => s.Name == "Brandon");
-            var service = await Db.NETH_Services.FirstOrDefaultAsync(s => s.Name == "Fade");
+            var stylist = await Db.NETH_Stylists.FirstOrDefaultAsync();
+            var service = await Db.NETH_Services.FirstOrDefaultAsync();
 
-            if (shop == null || stylist == null) {
-                dbError = "Base data (Shop/Stylist) missing.";
-                isLoading = false;
-                return;
-            }
+            if (shop != null && stylist != null) 
+            {
+                // 1. Phone
+                var cp = new NETH_Phone { Number = "9035558888", Type = "Mobile" };
+                Db.NETH_Phones.Add(cp);
+                await Db.SaveChangesAsync();
 
-            // 1. Media
-            var media = new NETH_Media { FileUrl = "/img/logo.png", Category = "Logo", Description = "Shop Logo" };
-            Db.NETH_Media.Add(media);
-            await Db.SaveChangesAsync();
+                // 2. Client
+                var client = new NETH_Client { FirstName = "John", LastName = "Doe", Email = "john@doe.com", PhoneId = cp.Id };
+                Db.NETH_Clients.Add(client);
+                await Db.SaveChangesAsync();
 
-            // 2. Client Phone
-            var cp = new NETH_Phone { Number = "9035558888", Type = "Mobile" };
-            Db.NETH_Phones.Add(cp);
-            await Db.SaveChangesAsync();
+                // 3. Appointment
+                var app = new NETH_Appointment { 
+                    ShopId = shop.Id, StylistId = stylist.Id, ClientId = client.Id, 
+                    StartTime = DateTime.UtcNow, EndTime = DateTime.UtcNow.AddMinutes(30),
+                    Status = "Booked", IsPaid = false
+                };
+                Db.NETH_Appointments.Add(app);
+                await Db.SaveChangesAsync();
 
-            // 3. Client
-            var client = new NETH_Client { FirstName = "John", LastName = "Doe", Email = "john@doe.com", PhoneId = cp.Id };
-            Db.NETH_Clients.Add(client);
-            await Db.SaveChangesAsync();
-
-            // 4. Appointment
-            var app = new NETH_Appointment { 
-                ShopId = shop.Id, StylistId = stylist.Id, ClientId = client.Id, 
-                StartTime = DateTime.UtcNow.AddDays(2), EndTime = DateTime.UtcNow.AddDays(2).AddMinutes(30),
-                Status = "Booked", IsPaid = false, TotalPrice = 30.00m
-            };
-            Db.NETH_Appointments.Add(app);
-            await Db.SaveChangesAsync();
-
-            // 5. Link Service
-            if (service != null) {
-                Db.NETH_AppointmentsService.Add(new NETH_AppointmentService { 
-                    AppointmentId = app.Id, ServiceId = service.Id, 
-                    PriceAtBooking = service.Price, DurationAtBooking = service.DurationMinutes 
-                });
+                // 4. Media
+                Db.NETH_Media.Add(new NETH_Media { Category = "Logo", Description = "Seed Logo", FileUrl = "/img/seed.png" });
                 await Db.SaveChangesAsync();
             }
 
             NavManager.NavigateTo(NavManager.Uri, forceLoad: true);
         }
-        catch (Exception ex) { dbError = $"Seed Error: {ex.Message}"; isLoading = false; }
+        catch (Exception ex) { dbError = $"Seed Fail: {ex.Message}"; isLoading = false; }
     }
 }
 
@@ -205,7 +224,7 @@
     .stylist-card { margin-top: 1.5rem; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; margin-bottom: 1rem; }
     .service-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #373a40; font-size: 0.9rem; }
     .btn-book { width: 100%; margin-top: 1rem; padding: 10px; border-radius: 6px; background: var(--brand-color); color: #1a1b1e; border: none; font-weight: bold; cursor: pointer; }
-    .btn-seed { background-color: #3498db; color: white; padding: 10px; border-radius: 6px; border: none; width: 100%; font-weight: bold; cursor: pointer; }
+    .btn-seed { background-color: #3498db; color: white; padding: 12px; border-radius: 6px; border: none; width: 100%; font-weight: bold; cursor: pointer; }
     .spinner { border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid var(--brand-color); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 1rem; }
     @@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 </style>
