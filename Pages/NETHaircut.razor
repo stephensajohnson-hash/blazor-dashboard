@@ -18,27 +18,27 @@
     <main class="booking-card">
         @* DIAGNOSTIC BOX *@
         <div style="background: #000; color: #0f0; padding: 5px; font-family: monospace; font-size: 10px; margin-bottom: 10px; border: 1px solid #333;">
-            KEY: @CurrentStylist | SHOPS: @shops.Count | CLIENTS: @clients.Count | APPS: @appointments.Count
+            KEY: @CurrentStylist | SHOPS: @shops.Count | CLIENTS: @clients.Count | PHONES: @phones.Count
         </div>
 
         @if (isLoading)
         {
             <div class="spinner-box">
                 <div class="spinner"></div>
-                <p>Initialing Database & Loading Registry...</p>
+                <p>Repairing Schema & Loading...</p>
             </div>
         }
         else if (currentShop == null)
         {
             <div class="seed-box">
                 <i class="fas fa-database mb-3" style="font-size: 2rem; color: #e67e22;"></i>
-                <h3>No Registry Found</h3>
-                <p class="mb-4 text-sm">We couldn't find a registry for "<strong>@CurrentStylist</strong>".</p>
+                <h3>Registry Status</h3>
+                <p class="mb-4 text-sm">Target: "<strong>@CurrentStylist</strong>"</p>
                 @if (!string.IsNullOrEmpty(dbError))
                 {
                     <p style="color: #ff4444; font-size: 0.8rem; margin-bottom: 1rem;">@dbError</p>
                 }
-                <button class="btn-seed" @onclick="SeedMissingData">🔧 Build Tables & Seed Clients</button>
+                <button class="btn-seed" @onclick="SeedMissingData">🔧 Repair Tables & Seed John Doe</button>
             </div>
         }
         else
@@ -90,7 +90,7 @@
             @foreach(var c in clients) { <div>ID:@c.Id | Name:@c.FirstName @c.LastName | Email:@c.Email | PhoneID:@c.PhoneId</div> }
 
             <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Appointments]</p>
-            @foreach(var a in appointments) { <div>ID:@a.Id | ClientID:@a.ClientId | Start:@a.StartTime | End:@a.EndTime</div> }
+            @foreach(var a in appointments) { <div>ID:@a.Id | ClientID:@a.ClientId | Start:@a.StartTime</div> }
 
             <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Phones]</p>
             @foreach(var p in phones) { <div>ID:@p.Id | Num:@p.Number | Type:@p.Type</div> }
@@ -124,35 +124,24 @@
 
         try 
         {
-            // SURGICAL FIX: Adding EndTime to Appointment and creating join table
+            // SURGICAL FIX: ALTER existing table to add missing column
             await Db.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE ""NETH_Appointments"" ADD COLUMN IF NOT EXISTS ""EndTime"" TIMESTAMP NOT NULL DEFAULT NOW();
+                
                 CREATE TABLE IF NOT EXISTS ""NETH_Clients"" (
                     ""Id"" SERIAL PRIMARY KEY, ""FirstName"" TEXT NOT NULL, ""LastName"" TEXT NOT NULL, 
                     ""Email"" TEXT NOT NULL, ""PhoneId"" INTEGER NOT NULL REFERENCES ""NETH_Phones""(""Id"")
                 );
-                CREATE TABLE IF NOT EXISTS ""NETH_ClientNotes"" (
-                    ""Id"" SERIAL PRIMARY KEY, ""ClientId"" INTEGER NOT NULL REFERENCES ""NETH_Clients""(""Id""), 
-                    ""StylistId"" INTEGER NOT NULL REFERENCES ""NETH_Stylists""(""Id""), ""Note"" TEXT NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS ""NETH_Appointments"" (
-                    ""Id"" SERIAL PRIMARY KEY, ""ClientId"" INTEGER NOT NULL REFERENCES ""NETH_Clients""(""Id""), 
-                    ""StylistId"" INTEGER NOT NULL REFERENCES ""NETH_Stylists""(""Id""), 
-                    ""StartTime"" TIMESTAMP NOT NULL, ""EndTime"" TIMESTAMP NOT NULL DEFAULT NOW()
-                );
-                CREATE TABLE IF NOT EXISTS ""NETH_AppointmentServices"" (
+                
+                DROP TABLE IF EXISTS ""NETH_AppointmentServices"";
+                CREATE TABLE ""NETH_AppointmentServices"" (
                     ""AppointmentId"" INTEGER NOT NULL REFERENCES ""NETH_Appointments""(""Id""),
                     ""ServiceId"" INTEGER NOT NULL REFERENCES ""NETH_Services""(""Id""),
                     PRIMARY KEY (""AppointmentId"", ""ServiceId"")
                 );
-                CREATE TABLE IF NOT EXISTS ""NETH_NoteTags"" (
-                    ""Id"" SERIAL PRIMARY KEY, ""TagName"" TEXT NOT NULL, ""Color"" TEXT NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS ""NETH_Media"" (
-                    ""Id"" SERIAL PRIMARY KEY, ""FileName"" TEXT NOT NULL
-                );
             ");
         }
-        catch (Exception ex) { Console.WriteLine($"Table Creation Error: {ex.Message}"); }
+        catch (Exception ex) { Console.WriteLine($"Schema Fix Error: {ex.Message}"); }
 
         await LoadAllData();
         isLoading = false;
@@ -162,12 +151,13 @@
     {
         try 
         {
+            // Load base lists first to ensure dump works even if join fails
             shops = await Db.NETH_Shops.AsNoTracking().ToListAsync();
             stylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync();
             services = await Db.NETH_Services.AsNoTracking().ToListAsync();
+            phones = await Db.NETH_Phones.AsNoTracking().ToListAsync();
             clients = await Db.NETH_Clients.AsNoTracking().ToListAsync();
             appointments = await Db.NETH_Appointments.AsNoTracking().ToListAsync();
-            phones = await Db.NETH_Phones.AsNoTracking().ToListAsync();
 
             string key = CurrentStylist.ToLower().Trim();
             currentShop = await Db.NETH_Shops
