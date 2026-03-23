@@ -22,19 +22,24 @@
         {
             <div class="spinner-box">
                 <div class="spinner"></div>
-                <p>Processing...</p>
+                <p>Processing Database Update...</p>
             </div>
         }
         else
         {
-            <div class="seed-box" style="margin-bottom: 20px; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 8px;">
-                <h4 style="color: #fff; margin-bottom: 10px;">Maintenance Tools</h4>
-                <button class="btn-seed" @onclick="HardResetAndSeed" style="background-color: #e74c3c;">
-                    🔥 Wipe & Re-Seed All Data
-                </button>
+            <div class="maintenance-box" style="margin-bottom: 20px; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 8px; border: 1px solid #444;">
+                <h4 style="color: #fff; margin-bottom: 10px; font-size: 0.9rem;">Database Maintenance</h4>
+                <div style="display: grid; gap: 10px;">
+                    <button class="btn-action" @onclick="OnlyResetSchema" style="background-color: #f39c12;">
+                        Step 1: Nuke & Recreate Tables
+                    </button>
+                    <button class="btn-action" @onclick="OnlySeedData" style="background-color: #27ae60;">
+                        Step 2: Seed John Doe Data
+                    </button>
+                </div>
                 @if (!string.IsNullOrEmpty(dbError))
                 {
-                    <p style="color: #ff4444; font-size: 0.7rem; margin-top: 10px; word-break: break-all;">@dbError</p>
+                    <p style="color: #ff4444; font-size: 0.7rem; margin-top: 10px; word-break: break-all; font-family: monospace;">@dbError</p>
                 }
             </div>
 
@@ -75,6 +80,8 @@
             @foreach(var c in clients) { <div>ID:@c.Id | Name:@c.FirstName @c.LastName</div> }
             <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Appointments]</p>
             @foreach(var a in appointments) { <div>ID:@a.Id | Client:@a.ClientId | Status:@a.Status</div> }
+            <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Phones]</p>
+            @foreach(var p in phones) { <div>ID:@p.Id | Num:@p.Number | Type:@p.Type</div> }
         </div>
     </main>
 </div>
@@ -104,23 +111,20 @@
     private async Task LoadAllData()
     {
         try {
-            try { shops = await Db.NETH_Shops.AsNoTracking().ToListAsync(); } catch { }
+            shops = await Db.NETH_Shops.AsNoTracking().ToListAsync();
+            phones = await Db.NETH_Phones.AsNoTracking().ToListAsync();
             try { clients = await Db.NETH_Clients.AsNoTracking().ToListAsync(); } catch { }
             try { appointments = await Db.NETH_Appointments.AsNoTracking().ToListAsync(); } catch { }
-            try { phones = await Db.NETH_Phones.AsNoTracking().ToListAsync(); } catch { }
 
             string key = CurrentStylist.ToLower().Trim();
-            currentShop = await Db.NETH_Shops.AsNoTracking()
-                .Include(s => s.Stylists).ThenInclude(st => st.Services)
-                .FirstOrDefaultAsync(s => s.UrlKey.ToLower() == key);
+            currentShop = shops.FirstOrDefault(s => s.UrlKey.ToLower() == key);
         }
-        catch (Exception ex) { dbError = $"Load Error: {ex.Message}"; }
+        catch (Exception ex) { dbError = $"Load Fail: {ex.Message}"; }
     }
 
-    private async Task HardResetAndSeed()
+    private async Task OnlyResetSchema()
     {
         isLoading = true;
-        dbError = "";
         try 
         {
             await Db.Database.ExecuteSqlRawAsync(@"
@@ -131,25 +135,39 @@
                 DROP TABLE IF EXISTS ""NETH_Clients"";
                 DROP TABLE IF EXISTS ""NETH_Media"";
                 DROP TABLE IF EXISTS ""NETH_Services"";
+                DROP TABLE IF EXISTS ""NETH_Stylists"";
+                DROP TABLE IF EXISTS ""NETH_Shops"";
+                DROP TABLE IF EXISTS ""NETH_Phones"";
 
+                CREATE TABLE ""NETH_Phones"" (""Id"" SERIAL PRIMARY KEY, ""Number"" TEXT NOT NULL, ""Type"" TEXT NOT NULL, ""IsBadNumber"" BOOLEAN NOT NULL DEFAULT FALSE);
                 CREATE TABLE ""NETH_Media"" (""Id"" SERIAL PRIMARY KEY, ""FileUrl"" TEXT NOT NULL, ""Category"" TEXT NOT NULL, ""Description"" TEXT NOT NULL, ""UploadedDate"" TIMESTAMP NOT NULL);
+                CREATE TABLE ""NETH_Shops"" (""Id"" SERIAL PRIMARY KEY, ""UrlKey"" TEXT NOT NULL, ""BusinessName"" TEXT NOT NULL, ""BrandColor"" TEXT NOT NULL, ""LogoMediaId"" INTEGER NULL, ""StripeAccountId"" TEXT NOT NULL, ""PhoneId"" INTEGER NOT NULL);
+                CREATE TABLE ""NETH_Stylists"" (""Id"" SERIAL PRIMARY KEY, ""ShopId"" INTEGER NOT NULL, ""Name"" TEXT NOT NULL, ""Bio"" TEXT NOT NULL, ""IsIndependent"" BOOLEAN NOT NULL, ""StripeAccountId"" TEXT NOT NULL, ""PhoneId"" INTEGER NOT NULL);
+                CREATE TABLE ""NETH_Services"" (""Id"" SERIAL PRIMARY KEY, ""StylistId"" INTEGER NOT NULL, ""Name"" TEXT NOT NULL, ""Price"" DECIMAL NOT NULL, ""DurationMinutes"" INTEGER NOT NULL);
                 CREATE TABLE ""NETH_Clients"" (""Id"" SERIAL PRIMARY KEY, ""FirstName"" TEXT NOT NULL, ""LastName"" TEXT NOT NULL, ""Email"" TEXT NOT NULL, ""PhoneId"" INTEGER NOT NULL);
                 CREATE TABLE ""NETH_Appointments"" (""Id"" SERIAL PRIMARY KEY, ""ShopId"" INTEGER NOT NULL, ""StylistId"" INTEGER NOT NULL, ""ClientId"" INTEGER NOT NULL, ""StartTime"" TIMESTAMP NOT NULL, ""EndTime"" TIMESTAMP NOT NULL, ""Status"" TEXT NOT NULL, ""TotalPrice"" DECIMAL NOT NULL, ""Notes"" TEXT NOT NULL, ""IsPaid"" BOOLEAN NOT NULL);
-                CREATE TABLE ""NETH_Services"" (""Id"" SERIAL PRIMARY KEY, ""StylistId"" INTEGER NOT NULL, ""Name"" TEXT NOT NULL, ""Price"" DECIMAL NOT NULL, ""DurationMinutes"" INTEGER NOT NULL);
             ");
+            await Task.Delay(1000);
+            NavManager.NavigateTo(NavManager.Uri, forceLoad: true);
+        }
+        catch (Exception ex) { dbError = $"Reset Fail: {ex.Message}"; isLoading = false; }
+    }
 
-            await Db.Database.ExecuteSqlRawAsync(@"TRUNCATE TABLE ""NETH_Shops"" RESTART IDENTITY CASCADE; TRUNCATE TABLE ""NETH_Phones"" RESTART IDENTITY CASCADE;");
-
+    private async Task OnlySeedData()
+    {
+        isLoading = true;
+        try 
+        {
             var p1 = new NETH_Phone { Number = "9035551111", Type = "Work" };
             var p2 = new NETH_Phone { Number = "9035552222", Type = "Mobile" };
             Db.NETH_Phones.AddRange(p1, p2);
             await Db.SaveChangesAsync();
 
-            var shop = new NETH_Shop { UrlKey = "leatherandblades", BusinessName = "Leather & Blades", PhoneId = p1.Id };
+            var shop = new NETH_Shop { UrlKey = "leatherandblades", BusinessName = "Leather & Blades", PhoneId = p1.Id, BrandColor = "#D2B48C", StripeAccountId = "" };
             Db.NETH_Shops.Add(shop);
             await Db.SaveChangesAsync();
 
-            var brandon = new NETH_Stylist { ShopId = shop.Id, Name = "Brandon", Bio = "Master Barber", PhoneId = p2.Id };
+            var brandon = new NETH_Stylist { ShopId = shop.Id, Name = "Brandon", Bio = "Master Barber", PhoneId = p2.Id, IsIndependent = true, StripeAccountId = "" };
             Db.NETH_Stylists.Add(brandon);
             await Db.SaveChangesAsync();
 
@@ -164,14 +182,14 @@
             var app = new NETH_Appointment { 
                 ShopId = shop.Id, StylistId = brandon.Id, ClientId = client.Id, 
                 StartTime = DateTime.UtcNow, EndTime = DateTime.UtcNow.AddMinutes(30), 
-                Status = "Booked", IsPaid = false, TotalPrice = 35.00m, Notes = "Fresh Seed" 
+                Status = "Booked", IsPaid = false, TotalPrice = 35.00m, Notes = "Seeded Fresh" 
             };
             Db.NETH_Appointments.Add(app);
             await Db.SaveChangesAsync();
 
             NavManager.NavigateTo(NavManager.Uri, forceLoad: true);
         }
-        catch (Exception ex) { dbError = $"Hard Reset Fail: {ex.Message}"; isLoading = false; }
+        catch (Exception ex) { dbError = $"Seed Fail: {ex.Message}"; isLoading = false; }
     }
 }
 
@@ -182,7 +200,7 @@
     .stylist-card { background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; margin-top: 1rem; }
     .service-row { display: flex; justify-content: space-between; font-size: 0.9rem; padding: 4px 0; border-bottom: 1px solid #444; }
     .btn-book { width: 100%; margin-top: 1rem; padding: 10px; border-radius: 6px; background: #D2B48C; color: #1a1b1e; border: none; font-weight: bold; cursor: pointer; }
-    .btn-seed { width: 100%; padding: 12px; border-radius: 6px; border: none; color: white; font-weight: bold; cursor: pointer; }
+    .btn-action { padding: 12px; border-radius: 6px; border: none; color: white; font-weight: bold; cursor: pointer; text-align: center; }
     .spinner { border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid #D2B48C; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 1rem; }
     @@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 </style>
