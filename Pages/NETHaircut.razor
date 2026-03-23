@@ -9,22 +9,26 @@
 
 <div class="min-h-screen bg-[#1a1b1e] text-gray-300 p-6 font-sans">
     
-    <div class="max-w-4xl mx-auto mb-8">
+    @* HEADER SECTION *@
+    <div class="max-w-5xl mx-auto mb-8">
         <div class="bg-[#25262b] rounded-xl border border-gray-700 p-6 shadow-2xl flex justify-between items-center">
             <div>
                 <h1 class="text-2xl font-black text-[#D2B48C] uppercase tracking-widest">NETH Terminal</h1>
-                <p class="text-xs text-gray-500 font-mono mt-1">Mode: @(currentShop == null ? "SYSTEM_INIT" : "ADMIN_DASHBOARD")</p>
+                <p class="text-[10px] text-gray-500 font-mono mt-1 uppercase">Active_Session: @(isAuthenticated ? loginUsername : "UNAUTHORIZED") | Mode: @(isAuthenticated ? "ADMIN_CRUD" : "GATEWAY")</p>
             </div>
             @if (isAuthenticated)
             {
-                <button @onclick="Logout" class="text-[10px] font-black text-red-400 border border-red-400/30 px-3 py-1 rounded hover:bg-red-400 hover:text-white transition">LOGOUT_SESSION</button>
+                <div class="flex gap-4">
+                    <button @onclick="() => showUserModal = true" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase px-4 py-2 rounded shadow-lg transition">＋ New User</button>
+                    <button @onclick="Logout" class="text-[10px] font-black text-red-400 border border-red-400/30 px-4 py-2 rounded hover:bg-red-400 hover:text-white transition">Logout</button>
+                </div>
             }
         </div>
     </div>
 
     @if (!isAuthenticated)
     {
-        @* SIMPLE LOGIN UI *@
+        @* LOGIN UI *@
         <div class="max-w-md mx-auto bg-[#25262b] rounded-xl border border-gray-700 p-8 shadow-2xl">
             <h2 class="text-center font-black uppercase tracking-widest text-gray-400 mb-6">Security Access</h2>
             <div class="space-y-4">
@@ -36,76 +40,127 @@
                     <label class="text-[10px] font-black uppercase text-gray-500 ml-1">Password</label>
                     <input type="password" @bind="loginPassword" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-3 text-white focus:border-[#D2B48C] outline-none" />
                 </div>
-                <button @onclick="AttemptLogin" class="w-full bg-[#D2B48C] text-[#1a1b1e] py-3 rounded font-black uppercase tracking-widest hover:bg-[#c4a47c] transition shadow-lg">Authenticate</button>
+                <button @onclick="AttemptLogin" class="w-full bg-[#D2B48C] text-[#1a1b1e] py-3 rounded font-black uppercase tracking-widest hover:bg-[#c4a47c] transition">Authenticate</button>
                 @if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    <p class="text-red-400 text-[10px] font-mono text-center mt-4">!! @errorMessage !!</p>
+                    <p class="text-red-400 text-[10px] font-mono text-center mt-4 uppercase animate-pulse">!! @errorMessage !!</p>
                 }
-            </div>
-            
-            <div class="mt-8 pt-6 border-t border-gray-700 text-center">
-                <p class="text-[9px] text-gray-500 uppercase mb-3 font-bold">First Time Setup?</p>
-                <button @onclick="HandleManualReset" class="text-[10px] text-blue-400 hover:underline">Re-initialize DB & Create Admin Account</button>
             </div>
         </div>
     }
     else
     {
-        @* ADMIN PANEL *@
-        <div class="max-w-4xl mx-auto grid md:grid-cols-[1fr_300px] gap-6">
-            <div class="space-y-6">
-                <div class="bg-white rounded-xl shadow-2xl p-8 border border-gray-300 text-gray-800">
-                    <h2 class="text-xl font-black uppercase mb-4">Admin Management</h2>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="p-4 bg-gray-50 rounded-lg border border-gray-200 text-center">
-                            <div class="text-[10px] font-black text-gray-400 uppercase">System Users</div>
-                            <div class="text-3xl font-black">@userCount</div>
-                        </div>
-                        <div class="p-4 bg-gray-50 rounded-lg border border-gray-200 text-center">
-                            <div class="text-[10px] font-black text-gray-400 uppercase">Registry Matches</div>
-                            <div class="text-3xl font-black">@shops.Count</div>
-                        </div>
-                    </div>
-                    
-                    <button @onclick="HandleManualSeed" class="mt-6 w-full py-3 bg-[#1a1b1e] text-white rounded font-black uppercase tracking-widest text-xs hover:bg-black transition shadow-xl">
-                        🚀 Sync & Seed Test Records
-                    </button>
+        @* USER CRUD TABLE *@
+        <div class="max-w-5xl mx-auto">
+            <div class="bg-[#25262b] rounded-xl border border-gray-700 overflow-hidden shadow-2xl">
+                <div class="p-4 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center">
+                    <span class="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Identity Management Console</span>
+                    <span class="text-[10px] font-mono text-[#D2B48C]">COUNT: @allUsers.Count</span>
                 </div>
-            </div>
-
-            <div class="bg-[#282b30] rounded-xl border border-gray-700 shadow-2xl p-5">
-                <h4 class="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-4">Audit Logs</h4>
-                <div class="space-y-2 text-[10px] font-mono">
-                    @foreach(var log in sessionLogs) {
-                        <div class="text-gray-400">> @log</div>
-                    }
+                
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="text-[10px] font-black uppercase text-gray-500 bg-black/20">
+                                <th class="p-4 border-b border-gray-700">ID</th>
+                                <th class="p-4 border-b border-gray-700">Username</th>
+                                <th class="p-4 border-b border-gray-700">Role</th>
+                                <th class="p-4 border-b border-gray-700">Created</th>
+                                <th class="p-4 border-b border-gray-700 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-sm font-medium">
+                            @foreach (var user in allUsers)
+                            {
+                                <tr class="border-b border-gray-800 hover:bg-white/5 transition group">
+                                    <td class="p-4 font-mono text-gray-500">@user.Id</td>
+                                    <td class="p-4 font-black text-white uppercase">@user.Username</td>
+                                    <td class="p-4">
+                                        <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase @GetRoleClass(user.Role)">@user.Role</span>
+                                    </td>
+                                    <td class="p-4 text-xs text-gray-500 font-mono">@user.CreatedDate.ToString("yyyy-MM-dd")</td>
+                                    <td class="p-4 text-right">
+                                        <div class="flex justify-end gap-3">
+                                            <button @onclick="() => OpenPasswordReset(user)" class="text-gray-500 hover:text-blue-400 transition text-xs font-black uppercase">Reset_Pass</button>
+                                            @if(user.Username != "admin")
+                                            {
+                                                <button @onclick="() => DeleteUser(user.Id)" class="text-gray-500 hover:text-red-500 transition text-xs font-black uppercase">Delete</button>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
     }
 </div>
 
+@* USER MODAL (CREATE / RESET PASSWORD) *@
+@if (showUserModal)
+{
+    <div class="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-[#25262b] w-full max-w-md rounded-xl border border-gray-700 shadow-2xl overflow-hidden font-black">
+            <div class="p-4 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center uppercase text-[11px] tracking-widest">
+                <span>@(isResetMode ? "Security Override" : "Register New Identity")</span>
+                <button @onclick="CloseModal" class="text-gray-500 hover:text-white">&times;</button>
+            </div>
+            <div class="p-6 space-y-4">
+                @if (!isResetMode)
+                {
+                    <div>
+                        <label class="text-[9px] uppercase text-gray-500 mb-1 block">Username</label>
+                        <input @bind="newUserName" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none focus:border-blue-500" />
+                    </div>
+                    <div>
+                        <label class="text-[9px] uppercase text-gray-500 mb-1 block">Role</label>
+                        <select @bind="newUserRole" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none">
+                            <option value="Admin">Admin</option>
+                            <option value="Stylist">Stylist</option>
+                            <option value="Client">Client</option>
+                        </select>
+                    </div>
+                }
+                else
+                {
+                    <div class="p-3 bg-blue-900/20 border border-blue-500/30 rounded text-blue-400 text-[10px] font-mono">
+                        TARGET: @selectedUser?.Username
+                    </div>
+                }
+                <div>
+                    <label class="text-[9px] uppercase text-gray-500 mb-1 block">@(isResetMode ? "New Password" : "Password")</label>
+                    <input type="password" @bind="newUserPass" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none focus:border-green-500" />
+                </div>
+            </div>
+            <div class="p-4 bg-black/20 border-t border-gray-700 flex justify-end gap-3">
+                <button @onclick="CloseModal" class="text-[10px] text-gray-500 uppercase px-4 py-2 font-black">Cancel</button>
+                <button @onclick="SaveUser" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] uppercase px-6 py-2 rounded font-black shadow-xl">Confirm_Execute</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
-    // UI State
     private bool isAuthenticated = false;
     private bool isLoading = true;
     private string loginUsername = "";
     private string loginPassword = "";
     private string errorMessage = "";
-    private List<string> sessionLogs = new();
 
-    // Data State
-    private List<NETH_Shop> shops = new();
-    private int userCount = 0;
-    private NETH_Shop? currentShop;
-    private string CurrentStylist = "leatherandblades";
+    // CRUD State
+    private List<NETH_User> allUsers = new();
+    private bool showUserModal = false;
+    private bool isResetMode = false;
+    private NETH_User? selectedUser;
+    
+    private string newUserName = "";
+    private string newUserPass = "";
+    private string newUserRole = "Client";
 
     protected override async Task OnInitializedAsync()
     {
-        var uri = Nav.ToAbsoluteUri(Nav.Uri);
-        var query = QueryHelpers.ParseQuery(uri.Query);
-        if (query.TryGetValue("stylist", out var name)) CurrentStylist = name.ToString();
-
         await LoadAllData();
         isLoading = false;
     }
@@ -113,80 +168,83 @@
     private async Task LoadAllData()
     {
         try {
-            shops = await Db.NETH_Shops.AsNoTracking().ToListAsync();
-            userCount = await Db.Database.SqlQueryRaw<int>(@"SELECT COUNT(*)::int as ""Value"" FROM ""NETH_Users""").FirstOrDefaultAsync();
-            currentShop = shops.FirstOrDefault(s => s.UrlKey.ToLower() == CurrentStylist.ToLower());
+            allUsers = await Db.Database.SqlQueryRaw<NETH_User>(@"SELECT * FROM ""NETH_Users"" ORDER BY ""Id"" DESC").ToListAsync();
         } catch { }
     }
 
     private async Task AttemptLogin()
     {
         try {
-            // Find user in Raw SQL to ensure table exists
-            var user = await Db.Database.SqlQueryRaw<int>(
-                @"SELECT ""Id"" as ""Value"" FROM ""NETH_Users"" WHERE ""Username"" = {0} AND ""Password"" = {1} LIMIT 1", 
+            var user = await Db.Database.SqlQueryRaw<NETH_User>(
+                @"SELECT * FROM ""NETH_Users"" WHERE ""Username"" = {0} AND ""Password"" = {1} LIMIT 1", 
                 loginUsername, loginPassword
             ).FirstOrDefaultAsync();
 
-            if (user > 0) {
+            if (user != null) {
                 isAuthenticated = true;
-                sessionLogs.Add($"LOGIN_SUCCESS: {loginUsername}");
                 await LoadAllData();
             } else {
-                errorMessage = "INVALID_CREDENTIALS";
+                errorMessage = "LOGIN_DENIED";
             }
-        } catch (Exception ex) {
-            errorMessage = "AUTH_SYSTEM_OFFLINE. Please run Factory Reset.";
-        }
+        } catch { errorMessage = "DATABASE_ERROR"; }
     }
 
     private void Logout() => isAuthenticated = false;
 
-    private async Task HandleManualReset()
-    {
-        errorMessage = "RUNNING_RESET...";
-        StateHasChanged();
+    private string GetRoleClass(string role) => role switch {
+        "Admin" => "bg-red-900/20 text-red-400 border border-red-500/30",
+        "Stylist" => "bg-[#D2B48C]/20 text-[#D2B48C] border border-[#D2B48C]/30",
+        _ => "bg-blue-900/20 text-blue-400 border border-blue-500/30"
+    };
+
+    private void OpenPasswordReset(NETH_User user) {
+        selectedUser = user;
+        isResetMode = true;
+        newUserPass = "";
+        showUserModal = true;
+    }
+
+    private void CloseModal() {
+        showUserModal = false;
+        isResetMode = false;
+        selectedUser = null;
+        newUserName = "";
+        newUserPass = "";
+    }
+
+    private async Task SaveUser() {
+        if (string.IsNullOrWhiteSpace(newUserPass)) return;
 
         try {
-            await Db.Database.ExecuteSqlRawAsync(@"
-                DROP TABLE IF EXISTS ""NETH_AppointmentServices""; DROP TABLE IF EXISTS ""NETH_Appointments"";
-                DROP TABLE IF EXISTS ""NETH_ClientNotes""; DROP TABLE IF EXISTS ""NETH_NoteTags"";
-                DROP TABLE IF EXISTS ""NETH_Clients""; DROP TABLE IF EXISTS ""NETH_Media"";
-                DROP TABLE IF EXISTS ""NETH_Services""; DROP TABLE IF EXISTS ""NETH_Stylists"";
-                DROP TABLE IF EXISTS ""NETH_Shops""; DROP TABLE IF EXISTS ""NETH_Phones"";
-                DROP TABLE IF EXISTS ""NETH_Users"";
-
-                CREATE TABLE ""NETH_Users"" (""Id"" SERIAL PRIMARY KEY, ""Username"" TEXT NOT NULL, ""Password"" TEXT NOT NULL, ""Role"" TEXT NOT NULL, ""CreatedDate"" TIMESTAMP NOT NULL);
-                
-                CREATE TABLE ""NETH_Phones"" (""Id"" SERIAL PRIMARY KEY, ""Number"" TEXT NOT NULL, ""Type"" TEXT NOT NULL, ""IsBadNumber"" BOOLEAN NOT NULL DEFAULT FALSE);
-                
-                CREATE TABLE ""NETH_Shops"" (""Id"" SERIAL PRIMARY KEY, ""UrlKey"" TEXT NOT NULL, ""BusinessName"" TEXT NOT NULL, ""BrandColor"" TEXT NOT NULL, ""LogoId"" INTEGER NULL, ""LogoMediaId"" INTEGER NULL, ""StripeAccountId"" TEXT NOT NULL, ""PhoneId"" INTEGER NOT NULL);
-                
-                CREATE TABLE ""NETH_Stylists"" (""Id"" SERIAL PRIMARY KEY, ""ShopId"" INTEGER NOT NULL, ""Name"" TEXT NOT NULL, ""Bio"" TEXT NOT NULL, ""IsIndependent"" BOOLEAN NOT NULL, ""StripeAccountId"" TEXT NOT NULL, ""PhoneId"" INTEGER NOT NULL, ""UserId"" INTEGER NULL);
-                
-                CREATE TABLE ""NETH_Clients"" (""Id"" SERIAL PRIMARY KEY, ""FirstName"" TEXT NOT NULL, ""LastName"" TEXT NOT NULL, ""Email"" TEXT NOT NULL, ""PhoneId"" INTEGER NOT NULL, ""UserId"" INTEGER NULL);
-                
-                CREATE TABLE ""NETH_Appointments"" (""Id"" SERIAL PRIMARY KEY, ""ShopId"" INTEGER NOT NULL, ""StylistId"" INTEGER NOT NULL, ""ClientId"" INTEGER NOT NULL, ""StartTime"" TIMESTAMP NOT NULL, ""EndTime"" TIMESTAMP NOT NULL, ""Status"" TEXT NOT NULL, ""TotalPrice"" DECIMAL NOT NULL, ""Notes"" TEXT NOT NULL, ""IsPaid"" BOOLEAN NOT NULL);
-
-                -- Seed ADMIN Account
-                INSERT INTO ""NETH_Users"" (""Username"", ""Password"", ""Role"", ""CreatedDate"") VALUES ('admin', 'password123', 'Admin', NOW());
-            ");
-            
-            errorMessage = "RESET_COMPLETE. Try login: admin / password123";
+            if (isResetMode && selectedUser != null) {
+                await Db.Database.ExecuteSqlRawAsync(
+                    @"UPDATE ""NETH_Users"" SET ""Password"" = {0} WHERE ""Id"" = {1}", 
+                    newUserPass, selectedUser.Id
+                );
+            } else {
+                await Db.Database.ExecuteSqlRawAsync(
+                    @"INSERT INTO ""NETH_Users"" (""Username"", ""Password"", ""Role"", ""CreatedDate"") VALUES ({0}, {1}, {2}, NOW())", 
+                    newUserName, newUserPass, newUserRole
+                );
+            }
             await LoadAllData();
+            CloseModal();
         } catch (Exception ex) { errorMessage = ex.Message; }
     }
 
-    private async Task HandleManualSeed()
-    {
-        sessionLogs.Add("EXEC_SEED_CMD...");
+    private async Task DeleteUser(int id) {
         try {
-            await Db.Database.ExecuteSqlRawAsync(@"
-                INSERT INTO ""NETH_Phones"" (""Number"", ""Type"") VALUES ('9035551111', 'Work');
-                INSERT INTO ""NETH_Shops"" (""UrlKey"", ""BusinessName"", ""BrandColor"", ""StripeAccountId"", ""PhoneId"") VALUES ('leatherandblades', 'Leather & Blades', '#D2B48C', '', 1);
-            ");
+            await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_Users"" WHERE ""Id"" = {0}", id);
             await LoadAllData();
-            sessionLogs.Add("SEED_SUCCESS");
-        } catch (Exception ex) { errorMessage = ex.Message; }
+        } catch { }
+    }
+
+    // Local model for data mapping
+    public class NETH_User {
+        public int Id { get; set; }
+        public string Username { get; set; } = "";
+        public string Password { get; set; } = "";
+        public string Role { get; set; } = "";
+        public DateTime CreatedDate { get; set; }
     }
 }
