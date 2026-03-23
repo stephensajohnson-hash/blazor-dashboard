@@ -3,6 +3,7 @@
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.JSInterop
 @using Dashboard
+@using Dashboard.Components
 @using System.Text.Json
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject AppDbContext Db
@@ -36,8 +37,9 @@
                         {
                             var shopName = allShops.FirstOrDefault(x => x.Id == s.ShopId)?.BusinessName ?? "Unknown Shop";
                             var userName = allUsers.FirstOrDefault(x => x.Id == s.UserId)?.Username ?? "NO_USER_LINKED";
+                            var svcCount = serviceCounts.ContainsKey(s.Id) ? serviceCounts[s.Id] : 0;
 
-                            <div class="bg-[#25262b] rounded-xl border border-gray-700 p-5 shadow-lg flex justify-between items-center hover:border-gray-500 transition">
+                            <div class="bg-[#25262b] rounded-xl border border-gray-700 p-5 shadow-lg flex justify-between items-center hover:border-gray-500 transition group">
                                 <div class="flex items-center gap-5">
                                     <div class="w-12 h-12 bg-gray-700 rounded-full flex items-center justify-center text-xl text-[#D2B48C]">
                                         <i class="fas fa-user-tie"></i>
@@ -47,10 +49,12 @@
                                         <div class="flex gap-3 mt-0.5 items-center font-black">
                                             <span class="text-[10px] text-[#D2B48C] uppercase">@shopName</span>
                                             <span class="text-[10px] text-gray-500 font-mono">[@userName]</span>
+                                            <span class="text-[9px] bg-white/5 px-2 py-0.5 rounded text-gray-400 border border-white/10 uppercase">@svcCount Services</span>
                                         </div>
                                     </div>
                                 </div>
-                                <div class="flex gap-4">
+                                <div class="flex gap-4 items-center">
+                                    <button @onclick='() => Nav.NavigateTo($"/admin/neth-services/{s.Id}")' class="bg-[#D2B48C]/10 hover:bg-[#D2B48C] text-[#D2B48C] hover:text-[#1a1b1e] px-4 py-2 rounded text-[10px] font-black uppercase transition border border-[#D2B48C]/20">Manage_Services</button>
                                     <button @onclick="() => OpenEditModal(s)" class="text-[10px] font-black uppercase text-blue-400 hover:underline">Edit</button>
                                     <button @onclick="() => DeleteStylist(s.Id)" class="text-[10px] font-black uppercase text-red-500/50 hover:text-red-500">Delete</button>
                                 </div>
@@ -66,7 +70,7 @@
 @if (showModal && editingStylist != null)
 {
     <div class="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div class="bg-[#25262b] w-full max-w-lg rounded-xl border border-gray-700 shadow-2xl overflow-hidden font-black">
+        <div class="bg-[#25262b] w-full max-w-md rounded-xl border border-gray-700 shadow-2xl overflow-hidden font-black">
             <div class="p-4 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center uppercase text-[11px] tracking-widest text-[#D2B48C]">
                 <span>@(editingStylist.Id == 0 ? "Create Stylist Profile" : "Update Stylist Profile")</span>
                 <button @onclick="CloseModal" class="text-gray-500 hover:text-white text-xl">&times;</button>
@@ -113,6 +117,7 @@
     private List<NETH_Stylist> allStylists = new();
     private List<NETH_Shop> allShops = new();
     private List<NETHUsers.NETH_User> allUsers = new();
+    private Dictionary<int, int> serviceCounts = new();
     private NETH_Stylist? editingStylist;
 
     protected override async Task OnAfterRenderAsync(bool firstRender) {
@@ -123,7 +128,21 @@
         }
     }
 
-    private async Task LoadAllData() { try { allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync(); allShops = await Db.NETH_Shops.AsNoTracking().ToListAsync(); allUsers = await Db.Database.SqlQueryRaw<NETHUsers.NETH_User>(@"SELECT * FROM ""NETH_Users""").ToListAsync(); } catch { } }
+    private async Task LoadAllData() { 
+        try { 
+            allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync(); 
+            allShops = await Db.NETH_Shops.AsNoTracking().ToListAsync(); 
+            allUsers = await Db.Database.SqlQueryRaw<NETHUsers.NETH_User>(@"SELECT * FROM ""NETH_Users""").ToListAsync(); 
+            
+            // Fetch service counts
+            var rawCounts = await Db.NETH_Services
+                .GroupBy(x => x.StylistId)
+                .Select(g => new { StylistId = g.Key, Count = g.Count() })
+                .ToListAsync();
+            serviceCounts = rawCounts.ToDictionary(x => x.StylistId, x => x.Count);
+        } catch { } 
+    }
+
     private void OpenCreateModal() { editingStylist = new NETH_Stylist { Name = "", Bio = "", ShopId = allShops.FirstOrDefault()?.Id ?? 0, PhoneId = 1, StripeAccountId = "" }; showModal = true; }
     private void OpenEditModal(NETH_Stylist s) { editingStylist = new NETH_Stylist { Id = s.Id, Name = s.Name, Bio = s.Bio, ShopId = s.ShopId, UserId = s.UserId, IsIndependent = s.IsIndependent, StripeAccountId = s.StripeAccountId, PhoneId = s.PhoneId }; showModal = true; }
     private void CloseModal() { showModal = false; editingStylist = null; }
