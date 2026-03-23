@@ -1,0 +1,195 @@
+@page "/admin/neth-shops"
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.JSInterop
+@using Dashboard
+@using System.Text.Json
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject AppDbContext Db
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@if (isAuthorized)
+{
+    <div class="min-h-screen bg-[#1a1b1e] text-gray-300 flex font-sans">
+        
+        @* NETH ADMIN SIDEBAR *@
+        <div class="w-64 bg-[#25262b] border-r border-gray-700 p-6 flex flex-col gap-2">
+            <h1 class="text-[#D2B48C] font-black uppercase tracking-tighter mb-8 text-xl">NETH Admin</h1>
+            
+            <a href="/admin/neth-users" class="text-gray-500 hover:text-white px-4 py-2 rounded font-black text-xs uppercase tracking-widest transition">Users</a>
+            <a href="/admin/neth-shops" class="bg-[#D2B48C] text-[#1a1b1e] px-4 py-2 rounded font-black text-xs uppercase tracking-widest transition">Shops</a>
+            <a href="/nethaircut" class="text-gray-500 hover:text-white px-4 py-2 rounded font-black text-xs uppercase tracking-widest transition">Back to Main</a>
+            
+            <div class="mt-auto pt-4 border-t border-gray-700 italic text-[10px] text-gray-600">
+                v1.1.0-shops
+            </div>
+        </div>
+
+        @* MAIN CONTENT *@
+        <div class="flex-1 p-8">
+            <div class="max-w-5xl mx-auto">
+                <div class="flex justify-between items-end mb-8">
+                    <div>
+                        <h2 class="text-2xl font-black text-white uppercase">Shop Management</h2>
+                        <p class="text-xs text-gray-500 font-mono">Configure business profiles and branding</p>
+                    </div>
+                </div>
+
+                @if (isLoading)
+                {
+                    <div class="text-center py-20 animate-pulse font-black text-gray-600 uppercase tracking-widest">Accessing_Registry...</div>
+                }
+                else
+                {
+                    <div class="grid gap-6">
+                        @foreach (var shop in allShops)
+                        {
+                            <div class="bg-[#25262b] rounded-xl border border-gray-700 overflow-hidden shadow-2xl transition hover:border-[#D2B48C]/50">
+                                <div class="p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                                    <div class="flex items-center gap-6">
+                                        <div class="w-16 h-16 rounded-lg shadow-inner flex items-center justify-center text-2xl" 
+                                             style="background-color: @shop.BrandColor; color: @(IsDark(shop.BrandColor) ? "white" : "black")">
+                                            <i class="fas fa-shop"></i>
+                                        </div>
+                                        <div>
+                                            <h3 class="text-xl font-black text-white uppercase tracking-tight">@shop.BusinessName</h3>
+                                            <div class="flex gap-3 mt-1">
+                                                <span class="text-[10px] font-mono text-[#D2B48C]">KEY: @shop.UrlKey</span>
+                                                <span class="text-[10px] font-mono text-gray-500">ID: #@shop.Id</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="flex gap-3">
+                                        <button @onclick="() => OpenEditModal(shop)" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase px-6 py-2 rounded shadow-lg transition">Edit_Profile</button>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@* SHOP EDITOR MODAL *@
+@if (showModal && editingShop != null)
+{
+    <div class="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-[#25262b] w-full max-w-lg rounded-xl border border-gray-700 shadow-2xl overflow-hidden font-black">
+            <div class="p-4 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center uppercase text-[11px] tracking-widest text-[#D2B48C]">
+                <span>Edit Shop Configuration</span>
+                <button @onclick="CloseModal" class="text-gray-500 hover:text-white text-xl">&times;</button>
+            </div>
+            
+            <div class="p-6 space-y-5 text-gray-300">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="col-span-2">
+                        <label class="text-[9px] uppercase text-gray-500 mb-1 block">Business Name</label>
+                        <input @bind="editingShop.BusinessName" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none focus:border-blue-500" />
+                    </div>
+                    <div>
+                        <label class="text-[9px] uppercase text-gray-500 mb-1 block">URL Key (Slug)</label>
+                        <input @bind="editingShop.UrlKey" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none focus:border-blue-500" />
+                    </div>
+                    <div>
+                        <label class="text-[9px] uppercase text-gray-500 mb-1 block">Brand Color (Hex)</label>
+                        <div class="flex gap-2">
+                            <input type="color" @bind="editingShop.BrandColor" class="h-10 w-12 bg-transparent border-none cursor-pointer" />
+                            <input @bind="editingShop.BrandColor" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-xs font-mono text-white outline-none" />
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="text-[9px] uppercase text-gray-500 mb-1 block">Stripe Account ID</label>
+                    <input @bind="editingShop.StripeAccountId" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white font-mono text-xs outline-none focus:border-green-500" placeholder="acct_..." />
+                </div>
+            </div>
+
+            <div class="p-4 bg-black/20 border-t border-gray-700 flex justify-end gap-3">
+                <button @onclick="CloseModal" class="text-[10px] text-gray-500 uppercase px-4 py-2 font-black">Cancel</button>
+                <button @onclick="SaveShop" class="bg-green-600 hover:bg-green-500 text-white text-[10px] uppercase px-8 py-2 rounded font-black shadow-xl">Update_Registry</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool isAuthorized = false;
+    private bool isLoading = true;
+    private List<NETH_Shop> allShops = new();
+    private bool showModal = false;
+    private NETH_Shop? editingShop;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var json = await JS.InvokeAsync<string>("localStorage.getItem", "neth_session");
+            if (string.IsNullOrEmpty(json)) Nav.NavigateTo("/nethaircut");
+            else
+            {
+                isAuthorized = true;
+                await LoadAllShops();
+                isLoading = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task LoadAllShops()
+    {
+        try {
+            allShops = await Db.NETH_Shops.AsNoTracking().ToListAsync();
+        } catch { }
+    }
+
+    private void OpenEditModal(NETH_Shop shop)
+    {
+        // Clone for editing
+        editingShop = new NETH_Shop {
+            Id = shop.Id,
+            BusinessName = shop.BusinessName,
+            UrlKey = shop.UrlKey,
+            BrandColor = shop.BrandColor,
+            StripeAccountId = shop.StripeAccountId,
+            PhoneId = shop.PhoneId
+        };
+        showModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+        editingShop = null;
+    }
+
+    private async Task SaveShop()
+    {
+        if (editingShop == null) return;
+
+        try {
+            await Db.Database.ExecuteSqlRawAsync(
+                @"UPDATE ""NETH_Shops"" SET ""BusinessName"" = {0}, ""UrlKey"" = {1}, ""BrandColor"" = {2}, ""StripeAccountId"" = {3} WHERE ""Id"" = {4}",
+                editingShop.BusinessName, editingShop.UrlKey, editingShop.BrandColor, editingShop.StripeAccountId, editingShop.Id
+            );
+            await LoadAllShops();
+            CloseModal();
+        } catch { }
+    }
+
+    private bool IsDark(string hex)
+    {
+        if (string.IsNullOrEmpty(hex) || !hex.StartsWith("#")) return true;
+        try {
+            var r = int.Parse(hex.Substring(1, 2), System.Globalization.NumberStyles.HexNumber);
+            var g = int.Parse(hex.Substring(3, 2), System.Globalization.NumberStyles.HexNumber);
+            var b = int.Parse(hex.Substring(5, 2), System.Globalization.NumberStyles.HexNumber);
+            var brightness = (r * 299 + g * 587 + b * 114) / 1000;
+            return brightness < 128;
+        } catch { return true; }
+    }
+}
