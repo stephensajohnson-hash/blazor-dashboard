@@ -7,131 +7,153 @@
 @inject NavigationManager NavManager
 @rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode(prerender: false))
 
-<div style="background-color: #1a1b1e; color: #c1c2c5; min-height: 100vh; padding: 2rem; font-family: sans-serif;">
-    <h2 style="color: #D2B48C;">NETH AUTO-RECOVERY MODE</h2>
+<div style="background-color: #1a1b1e; color: #c1c2c5; min-height: 100vh; padding: 2rem; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
     
-    @* STEP-BY-STEP CONSOLE *@
-    <div style="background: #000; padding: 15px; border: 1px solid #0f0; font-family: monospace; font-size: 12px; color: #0f0; line-height: 1.5; margin-bottom: 20px;">
-        <div style="font-weight: bold; border-bottom: 1px solid #0f0; margin-bottom: 5px;">BOOT LOG:</div>
-        @foreach (var line in consoleLogs)
-        {
-            <div>@line</div>
-        }
-    </div>
+    <div style="max-width: 800px; margin: 0 auto;">
+        <h2 style="color: #D2B48C; border-bottom: 2px solid #333; padding-bottom: 10px;">NETH Command Center</h2>
 
-    @if (currentShop != null)
-    {
-        <div style="background: #25262b; padding: 20px; border-radius: 8px; border: 1px solid #444;">
-            <h1 style="margin-top: 0;">@currentShop.BusinessName</h1>
-            <p>Status: <span style="color: #40c057;">Online</span></p>
-            
-            <div style="margin-top: 20px; border-top: 1px solid #333; padding-top: 10px;">
-                <h3>Active Stylists:</h3>
-                <ul>
-                    @foreach (var s in stylists)
-                    {
-                        <li><strong>@s.Name</strong> - @s.Bio</li>
-                    }
-                </ul>
+        @* 1. ERROR & STATUS CONSOLE *@
+        <div style="margin: 20px 0; padding: 15px; background: #000; border: 1px solid #444; border-radius: 8px; font-family: monospace;">
+            <div style="color: #40c057; margin-bottom: 5px;">[SYSTEM STATUS]: @(currentShop == null ? "Searching..." : "Connected to " + currentShop.BusinessName)</div>
+            @if (!string.IsNullOrEmpty(lastErrorMessage))
+            {
+                <div style="color: #ff6b6b; white-space: pre-wrap; padding: 10px; background: rgba(255,0,0,0.1); border: 1px solid #ff6b6b; margin-top: 10px;">
+                    <strong>ERROR:</strong> @lastErrorMessage
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(statusLog))
+            {
+                <div style="color: #fcc419; margin-top: 5px;">[LOG]: @statusLog</div>
+            }
+        </div>
+
+        @* 2. MANUAL OVERRIDE BUTTONS *@
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 30px;">
+            <button @onclick="ForceNukeAndRecreate" style="background: #c92a2a; color: white; padding: 15px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s;">
+                🔥 FORCE NUKE TABLES
+            </button>
+            <button @onclick="ForceSeedData" style="background: #2b8a3e; color: white; padding: 15px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s;">
+                🌱 FORCE SEED JOHN DOE
+            </button>
+        </div>
+
+        @* 3. DATA PREVIEW *@
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div style="background: #25262b; padding: 15px; border-radius: 8px; border: 1px solid #373a40;">
+                <h4 style="margin-top: 0; color: #D2B48C;">Registry Audit</h4>
+                <div style="font-size: 0.85rem; line-height: 1.8;">
+                    <div>Shops: <span style="color:white">@shops.Count</span></div>
+                    <div>Stylists: <span style="color:white">@stylists.Count</span></div>
+                    <div>Clients: <span style="color:white">@clients.Count</span></div>
+                    <div>Appointments: <span style="color:white">@appointments.Count</span></div>
+                </div>
+            </div>
+
+            <div style="background: #25262b; padding: 15px; border-radius: 8px; border: 1px solid #373a40;">
+                <h4 style="margin-top: 0; color: #D2B48C;">Current Selection</h4>
+                <div style="font-size: 0.85rem;">
+                    <div>Target Key: <strong style="color:white">@CurrentStylist</strong></div>
+                    <div>Status: @(currentShop != null ? "✅ Found" : "❌ Not Found")</div>
+                </div>
             </div>
         </div>
-    }
 
-    @* DATA AUDIT *@
-    <div style="margin-top: 2rem; background: #111; padding: 1rem; border-radius: 8px; font-family: monospace; font-size: 0.75rem; color: #888;">
-        <div style="color: #fff; font-weight: bold; margin-bottom: 5px;">DATABASE AUDIT:</div>
-        <div>Shops: @shops.Count</div>
-        <div>Clients: @clients.Count</div>
-        <div>Apps: @appointments.Count</div>
-        <div>Phones: @phones.Count</div>
+        @* 4. RAW DATA LIST *@
+        <div style="margin-top: 30px; background: #111; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 0.7rem;">
+            <div style="color: #666; border-bottom: 1px solid #222; margin-bottom: 10px;">DB CONTENT EXPLORER</div>
+            @if (shops.Any()) {
+                <div style="color: #D2B48C;">[SHOPS]</div>
+                @foreach(var s in shops) { <div>ID: @s.Id | Key: @s.UrlKey | Name: @s.BusinessName</div> }
+            }
+            @if (clients.Any()) {
+                <div style="color: #D2B48C; margin-top: 10px;">[CLIENTS]</div>
+                @foreach(var c in clients) { <div>ID: @c.Id | Name: @c.FirstName @c.LastName | Email: @c.Email</div> }
+            }
+        </div>
     </div>
 </div>
 
 @code {
-    private List<string> consoleLogs = new();
     private string CurrentStylist = "GENERAL";
+    private string lastErrorMessage = "";
+    private string statusLog = "System Ready.";
+    
     private List<NETH_Shop> shops = new();
     private List<NETH_Stylist> stylists = new();
     private List<NETH_Client> clients = new();
     private List<NETH_Appointment> appointments = new();
-    private List<NETH_Phone> phones = new();
     private NETH_Shop? currentShop;
 
     protected override async Task OnInitializedAsync()
     {
-        Log("Initialize started...");
         var uri = NavManager.ToAbsoluteUri(NavManager.Uri);
         var query = QueryHelpers.ParseQuery(uri.Query);
         if (query.TryGetValue("stylist", out var name)) CurrentStylist = name.ToString();
 
-        try 
-        {
-            // FORCE RUN RECOVERY ON EVERY LOAD UNTIL DATA EXISTS
-            var shopCount = await Db.NETH_Shops.CountAsync();
-            if (shopCount == 0)
-            {
-                Log("No shops found. Running Nuke & Pave...");
-                await ExecuteRecovery();
-            }
-            else 
-            {
-                Log("Database has data. Loading...");
-            }
+        await RefreshData();
+    }
 
-            await LoadData();
+    private async Task RefreshData()
+    {
+        try {
+            shops = await Db.NETH_Shops.AsNoTracking().ToListAsync();
+            clients = await Db.NETH_Clients.AsNoTracking().ToListAsync();
+            appointments = await Db.NETH_Appointments.AsNoTracking().ToListAsync();
+            stylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync();
+
+            currentShop = shops.FirstOrDefault(s => s.UrlKey.ToLower() == CurrentStylist.ToLower());
         }
-        catch (Exception ex)
-        {
-            Log($"CRITICAL ERROR: {ex.Message}");
+        catch (Exception ex) { 
+            // Don't crash the whole page, just log it
+            lastErrorMessage = ex.Message; 
         }
     }
 
-    private void Log(string msg) => consoleLogs.Add($"[{DateTime.Now:HH:mm:ss}] {msg}");
-
-    private async Task ExecuteRecovery()
+    private async Task ForceNukeAndRecreate()
     {
-        Log("Dropping tables...");
-        await Db.Database.ExecuteSqlRawAsync(@"
-            DROP TABLE IF EXISTS ""NETH_AppointmentServices""; DROP TABLE IF EXISTS ""NETH_Appointments"";
-            DROP TABLE IF EXISTS ""NETH_ClientNotes""; DROP TABLE IF EXISTS ""NETH_NoteTags"";
-            DROP TABLE IF EXISTS ""NETH_Clients""; DROP TABLE IF EXISTS ""NETH_Media"";
-            DROP TABLE IF EXISTS ""NETH_Services""; DROP TABLE IF EXISTS ""NETH_Stylists"";
-            DROP TABLE IF EXISTS ""NETH_Shops""; DROP TABLE IF EXISTS ""NETH_Phones"";
-        ");
+        statusLog = "Nuking tables...";
+        lastErrorMessage = "";
+        try {
+            await Db.Database.ExecuteSqlRawAsync(@"
+                DROP TABLE IF EXISTS ""NETH_AppointmentServices""; DROP TABLE IF EXISTS ""NETH_Appointments"";
+                DROP TABLE IF EXISTS ""NETH_ClientNotes""; DROP TABLE IF EXISTS ""NETH_NoteTags"";
+                DROP TABLE IF EXISTS ""NETH_Clients""; DROP TABLE IF EXISTS ""NETH_Media"";
+                DROP TABLE IF EXISTS ""NETH_Services""; DROP TABLE IF EXISTS ""NETH_Stylists"";
+                DROP TABLE IF EXISTS ""NETH_Shops""; DROP TABLE IF EXISTS ""NETH_Phones"";
 
-        Log("Recreating tables...");
-        await Db.Database.ExecuteSqlRawAsync(@"
-            CREATE TABLE ""NETH_Phones"" (""Id"" SERIAL PRIMARY KEY, ""Number"" TEXT NOT NULL, ""Type"" TEXT NOT NULL, ""IsBadNumber"" BOOLEAN NOT NULL DEFAULT FALSE);
-            CREATE TABLE ""NETH_Shops"" (""Id"" SERIAL PRIMARY KEY, ""UrlKey"" TEXT NOT NULL, ""BusinessName"" TEXT NOT NULL, ""BrandColor"" TEXT NOT NULL, ""LogoMediaId"" INTEGER NULL, ""StripeAccountId"" TEXT NOT NULL, ""PhoneId"" INTEGER NOT NULL);
-            CREATE TABLE ""NETH_Stylists"" (""Id"" SERIAL PRIMARY KEY, ""ShopId"" INTEGER NOT NULL, ""Name"" TEXT NOT NULL, ""Bio"" TEXT NOT NULL, ""IsIndependent"" BOOLEAN NOT NULL, ""StripeAccountId"" TEXT NOT NULL, ""PhoneId"" INTEGER NOT NULL);
-            CREATE TABLE ""NETH_Clients"" (""Id"" SERIAL PRIMARY KEY, ""FirstName"" TEXT NOT NULL, ""LastName"" TEXT NOT NULL, ""Email"" TEXT NOT NULL, ""PhoneId"" INTEGER NOT NULL);
-            CREATE TABLE ""NETH_Appointments"" (""Id"" SERIAL PRIMARY KEY, ""ShopId"" INTEGER NOT NULL, ""StylistId"" INTEGER NOT NULL, ""ClientId"" INTEGER NOT NULL, ""StartTime"" TIMESTAMP NOT NULL, ""EndTime"" TIMESTAMP NOT NULL, ""Status"" TEXT NOT NULL, ""TotalPrice"" DECIMAL NOT NULL, ""Notes"" TEXT NOT NULL, ""IsPaid"" BOOLEAN NOT NULL);
-            CREATE TABLE ""NETH_Services"" (""Id"" SERIAL PRIMARY KEY, ""StylistId"" INTEGER NOT NULL, ""Name"" TEXT NOT NULL, ""Price"" DECIMAL NOT NULL, ""DurationMinutes"" INTEGER NOT NULL);
-        ");
-
-        Log("Inserting John Doe seed data...");
-        await Db.Database.ExecuteSqlRawAsync(@"
-            INSERT INTO ""NETH_Phones"" (""Number"", ""Type"") VALUES ('9035551111', 'Work'), ('9035552222', 'Mobile');
-            INSERT INTO ""NETH_Shops"" (""UrlKey"", ""BusinessName"", ""BrandColor"", ""StripeAccountId"", ""PhoneId"") VALUES ('leatherandblades', 'Leather & Blades', '#D2B48C', '', 1);
-            INSERT INTO ""NETH_Stylists"" (""ShopId"", ""Name"", ""Bio"", ""IsIndependent"", ""StripeAccountId"", ""PhoneId"") VALUES (1, 'Brandon', 'Master Barber', true, '', 2);
-            INSERT INTO ""NETH_Clients"" (""FirstName"", ""LastName"", ""Email"", ""PhoneId"") VALUES ('John', 'Doe', 'john@test.com', 2);
-            INSERT INTO ""NETH_Appointments"" (""ShopId"", ""StylistId"", ""ClientId"", ""StartTime"", ""EndTime"", ""Status"", ""TotalPrice"", ""Notes"", ""IsPaid"") 
-            VALUES (1, 1, 1, NOW(), NOW() + interval '30 minutes', 'Booked', 35.00, 'Seeded Auto', false);
-        ");
-        Log("Recovery complete.");
+                CREATE TABLE ""NETH_Phones"" (""Id"" SERIAL PRIMARY KEY, ""Number"" TEXT NOT NULL, ""Type"" TEXT NOT NULL, ""IsBadNumber"" BOOLEAN NOT NULL DEFAULT FALSE);
+                CREATE TABLE ""NETH_Media"" (""Id"" SERIAL PRIMARY KEY, ""FileUrl"" TEXT NOT NULL, ""Category"" TEXT NOT NULL, ""Description"" TEXT NOT NULL, ""UploadedDate"" TIMESTAMP NOT NULL);
+                CREATE TABLE ""NETH_Shops"" (""Id"" SERIAL PRIMARY KEY, ""UrlKey"" TEXT NOT NULL, ""BusinessName"" TEXT NOT NULL, ""BrandColor"" TEXT NOT NULL, ""LogoMediaId"" INTEGER NULL, ""StripeAccountId"" TEXT NOT NULL, ""PhoneId"" INTEGER NOT NULL);
+                CREATE TABLE ""NETH_Stylists"" (""Id"" SERIAL PRIMARY KEY, ""ShopId"" INTEGER NOT NULL, ""Name"" TEXT NOT NULL, ""Bio"" TEXT NOT NULL, ""IsIndependent"" BOOLEAN NOT NULL, ""StripeAccountId"" TEXT NOT NULL, ""PhoneId"" INTEGER NOT NULL);
+                CREATE TABLE ""NETH_Services"" (""Id"" SERIAL PRIMARY KEY, ""StylistId"" INTEGER NOT NULL, ""Name"" TEXT NOT NULL, ""Price"" DECIMAL NOT NULL, ""DurationMinutes"" INTEGER NOT NULL);
+                CREATE TABLE ""NETH_Clients"" (""Id"" SERIAL PRIMARY KEY, ""FirstName"" TEXT NOT NULL, ""LastName"" TEXT NOT NULL, ""Email"" TEXT NOT NULL, ""PhoneId"" INTEGER NOT NULL);
+                CREATE TABLE ""NETH_Appointments"" (""Id"" SERIAL PRIMARY KEY, ""ShopId"" INTEGER NOT NULL, ""StylistId"" INTEGER NOT NULL, ""ClientId"" INTEGER NOT NULL, ""StartTime"" TIMESTAMP NOT NULL, ""EndTime"" TIMESTAMP NOT NULL, ""Status"" TEXT NOT NULL, ""TotalPrice"" DECIMAL NOT NULL, ""Notes"" TEXT NOT NULL, ""IsPaid"" BOOLEAN NOT NULL);
+            ");
+            statusLog = "Tables recreated. Refreshing browser...";
+            await Task.Delay(1000);
+            NavManager.NavigateTo(NavManager.Uri, true);
+        }
+        catch (Exception ex) { lastErrorMessage = "NUKE FAILED: " + ex.ToString(); }
     }
 
-    private async Task LoadData()
+    private async Task ForceSeedData()
     {
-        Log("Loading lists into memory...");
-        shops = await Db.NETH_Shops.AsNoTracking().ToListAsync();
-        clients = await Db.NETH_Clients.AsNoTracking().ToListAsync();
-        appointments = await Db.NETH_Appointments.AsNoTracking().ToListAsync();
-        phones = await Db.NETH_Phones.AsNoTracking().ToListAsync();
-        stylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync();
-
-        currentShop = shops.FirstOrDefault(s => s.UrlKey.ToLower() == CurrentStylist.ToLower());
-        if (currentShop != null) Log($"Match found for {CurrentStylist}!");
-        else Log($"No match found for {CurrentStylist}.");
+        statusLog = "Injecting seed data...";
+        lastErrorMessage = "";
+        try {
+            await Db.Database.ExecuteSqlRawAsync(@"
+                INSERT INTO ""NETH_Phones"" (""Number"", ""Type"") VALUES ('9035551111', 'Work'), ('9035552222', 'Mobile');
+                INSERT INTO ""NETH_Shops"" (""UrlKey"", ""BusinessName"", ""BrandColor"", ""StripeAccountId"", ""PhoneId"") VALUES ('leatherandblades', 'Leather & Blades', '#D2B48C', '', 1);
+                INSERT INTO ""NETH_Stylists"" (""ShopId"", ""Name"", ""Bio"", ""IsIndependent"", ""StripeAccountId"", ""PhoneId"") VALUES (1, 'Brandon', 'Master Barber', true, '', 2);
+                INSERT INTO ""NETH_Services"" (""StylistId"", ""Name"", ""Price"", ""DurationMinutes"") VALUES (1, 'Signature Fade', 35.00, 30);
+                INSERT INTO ""NETH_Clients"" (""FirstName"", ""LastName"", ""Email"", ""PhoneId"") VALUES ('John', 'Doe', 'john@test.com', 2);
+                INSERT INTO ""NETH_Appointments"" (""ShopId"", ""StylistId"", ""ClientId"", ""StartTime"", ""EndTime"", ""Status"", ""TotalPrice"", ""Notes"", ""IsPaid"") 
+                VALUES (1, 1, 1, NOW(), NOW() + interval '30 minutes', 'Booked', 35.00, 'Seeded Manually', false);
+            ");
+            statusLog = "Seed successful! Refreshing browser...";
+            await Task.Delay(1000);
+            NavManager.NavigateTo(NavManager.Uri, true);
+        }
+        catch (Exception ex) { lastErrorMessage = "SEED FAILED: " + ex.ToString(); }
     }
 }
