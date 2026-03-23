@@ -3,9 +3,11 @@
 @using Microsoft.AspNetCore.WebUtilities
 @using Microsoft.EntityFrameworkCore
 @using Dashboard
+@using System.Text.Json
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject AppDbContext Db
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <div class="min-h-screen bg-[#1a1b1e] text-gray-300 p-6 font-sans">
     <div class="max-w-4xl mx-auto mb-8">
@@ -18,7 +20,11 @@
         </div>
     </div>
 
-    @if (!isAuthenticated)
+    @if (isLoading)
+    {
+        <div class="text-center py-20 animate-pulse font-black text-gray-600 uppercase tracking-widest">Verifying_Session...</div>
+    }
+    else if (!isAuthenticated)
     {
         <div class="max-w-md mx-auto bg-[#25262b] rounded-xl border border-gray-700 p-8 shadow-2xl">
             <h2 class="text-center font-black uppercase tracking-widest text-gray-400 mb-6">Security Access</h2>
@@ -46,22 +52,62 @@
 
 @code {
     private bool isAuthenticated = false;
+    private bool isLoading = true;
     private string loginUsername = "";
     private string loginPassword = "";
     private string errorMessage = "";
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await CheckSession();
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CheckSession()
+    {
+        try 
+        {
+            var json = await JS.InvokeAsync<string>("localStorage.getItem", "neth_session");
+            if (!string.IsNullOrEmpty(json))
+            {
+                var session = JsonSerializer.Deserialize<SessionData>(json);
+                if (session != null && !string.IsNullOrEmpty(session.Username))
+                {
+                    isAuthenticated = true;
+                }
+            }
+        } catch { }
+    }
+
     private async Task AttemptLogin()
     {
         try {
-            var user = await Db.Database.SqlQueryRaw<int>(
-                @"SELECT ""Id"" as ""Value"" FROM ""NETH_Users"" WHERE ""Username"" = {0} AND ""Password"" = {1} LIMIT 1", 
+            var user = await Db.Database.SqlQueryRaw<NETH_User_Lite>(
+                @"SELECT ""Id"", ""Username"" FROM ""NETH_Users"" WHERE ""Username"" = {0} AND ""Password"" = {1} LIMIT 1", 
                 loginUsername, loginPassword
             ).FirstOrDefaultAsync();
 
-            if (user > 0) isAuthenticated = true;
+            if (user != null) 
+            {
+                isAuthenticated = true;
+                var session = new SessionData { Username = user.Username, Role = "Admin" }; // We'll expand role check later
+                await JS.InvokeVoidAsync("localStorage.setItem", "neth_session", JsonSerializer.Serialize(session));
+            }
             else errorMessage = "LOGIN_DENIED";
         } catch { errorMessage = "DATABASE_OFFLINE"; }
     }
 
-    private void Logout() => isAuthenticated = false;
+    private async Task Logout() 
+    {
+        isAuthenticated = false;
+        await JS.InvokeVoidAsync("localStorage.removeItem", "neth_session");
+        Nav.NavigateTo("/nethaircut", true);
+    }
+
+    public class SessionData { public string Username { get; set; } public string Role { get; set; } }
+    public class NETH_User_Lite { public int Id { get; set; } public string Username { get; set; } }
 }
