@@ -22,7 +22,7 @@
         {
             <div class="spinner-box">
                 <div class="spinner"></div>
-                <p>Hard-Resetting Schema...</p>
+                <p>Processing...</p>
             </div>
         }
         else
@@ -51,6 +51,15 @@
                         <div class="stylist-card">
                             <h3>@stylist.Name</h3>
                             <p class="bio">@stylist.Bio</p>
+                            <div class="services-list">
+                                @foreach (var service in stylist.Services)
+                                {
+                                    <div class="service-row">
+                                        <span>@service.Name</span>
+                                        <span>$@service.Price.ToString("N2")</span>
+                                    </div>
+                                }
+                            </div>
                             <button class="btn-book">Book with @stylist.Name</button>
                         </div>
                     }
@@ -95,16 +104,17 @@
     private async Task LoadAllData()
     {
         try {
-            // We load lists one by one. If one fails, the others (and the Shop) still load.
-            try { shops = await Db.NETH_Shops.AsNoTracking().ToListAsync(); } catch (Exception ex) { dbError += "Shop Load Fail; "; }
-            try { clients = await Db.NETH_Clients.AsNoTracking().ToListAsync(); } catch (Exception ex) { dbError += "Client Load Fail; "; }
-            try { appointments = await Db.NETH_Appointments.AsNoTracking().ToListAsync(); } catch (Exception ex) { dbError += "Appt Load Fail; "; }
+            try { shops = await Db.NETH_Shops.AsNoTracking().ToListAsync(); } catch { }
+            try { clients = await Db.NETH_Clients.AsNoTracking().ToListAsync(); } catch { }
+            try { appointments = await Db.NETH_Appointments.AsNoTracking().ToListAsync(); } catch { }
             try { phones = await Db.NETH_Phones.AsNoTracking().ToListAsync(); } catch { }
 
             string key = CurrentStylist.ToLower().Trim();
-            currentShop = shops.FirstOrDefault(s => s.UrlKey.ToLower() == key);
+            currentShop = await Db.NETH_Shops.AsNoTracking()
+                .Include(s => s.Stylists).ThenInclude(st => st.Services)
+                .FirstOrDefaultAsync(s => s.UrlKey.ToLower() == key);
         }
-        catch (Exception ex) { dbError = $"Critical Load Error: {ex.Message}"; }
+        catch (Exception ex) { dbError = $"Load Error: {ex.Message}"; }
     }
 
     private async Task HardResetAndSeed()
@@ -113,7 +123,6 @@
         dbError = "";
         try 
         {
-            // 1. DROP and RECREATE broken tables to fix missing columns (Category, IsPaid, etc)
             await Db.Database.ExecuteSqlRawAsync(@"
                 DROP TABLE IF EXISTS ""NETH_AppointmentServices"";
                 DROP TABLE IF EXISTS ""NETH_Appointments"";
@@ -121,30 +130,33 @@
                 DROP TABLE IF EXISTS ""NETH_NoteTags"";
                 DROP TABLE IF EXISTS ""NETH_Clients"";
                 DROP TABLE IF EXISTS ""NETH_Media"";
+                DROP TABLE IF EXISTS ""NETH_Services"";
 
                 CREATE TABLE ""NETH_Media"" (""Id"" SERIAL PRIMARY KEY, ""FileUrl"" TEXT NOT NULL, ""Category"" TEXT NOT NULL, ""Description"" TEXT NOT NULL, ""UploadedDate"" TIMESTAMP NOT NULL);
                 CREATE TABLE ""NETH_Clients"" (""Id"" SERIAL PRIMARY KEY, ""FirstName"" TEXT NOT NULL, ""LastName"" TEXT NOT NULL, ""Email"" TEXT NOT NULL, ""PhoneId"" INTEGER NOT NULL);
                 CREATE TABLE ""NETH_Appointments"" (""Id"" SERIAL PRIMARY KEY, ""ShopId"" INTEGER NOT NULL, ""StylistId"" INTEGER NOT NULL, ""ClientId"" INTEGER NOT NULL, ""StartTime"" TIMESTAMP NOT NULL, ""EndTime"" TIMESTAMP NOT NULL, ""Status"" TEXT NOT NULL, ""TotalPrice"" DECIMAL NOT NULL, ""Notes"" TEXT NOT NULL, ""IsPaid"" BOOLEAN NOT NULL);
+                CREATE TABLE ""NETH_Services"" (""Id"" SERIAL PRIMARY KEY, ""StylistId"" INTEGER NOT NULL, ""Name"" TEXT NOT NULL, ""Price"" DECIMAL NOT NULL, ""DurationMinutes"" INTEGER NOT NULL);
             ");
 
-            // 2. Clear out base data to avoid ID conflicts
             await Db.Database.ExecuteSqlRawAsync(@"TRUNCATE TABLE ""NETH_Shops"" RESTART IDENTITY CASCADE; TRUNCATE TABLE ""NETH_Phones"" RESTART IDENTITY CASCADE;");
 
-            // 3. Seed Fresh Base
             var p1 = new NETH_Phone { Number = "9035551111", Type = "Work" };
             var p2 = new NETH_Phone { Number = "9035552222", Type = "Mobile" };
             Db.NETH_Phones.AddRange(p1, p2);
             await Db.SaveChangesAsync();
 
-            var shop = new NETH_Shop { UrlKey = "leatherandblades", BusinessName = "Leather & Blades", PhoneId = p1.Id, BrandColor = "#D2B48C", StripeAccountId = "" };
+            var shop = new NETH_Shop { UrlKey = "leatherandblades", BusinessName = "Leather & Blades", PhoneId = p1.Id };
             Db.NETH_Shops.Add(shop);
             await Db.SaveChangesAsync();
 
-            var brandon = new NETH_Stylist { ShopId = shop.Id, Name = "Brandon", Bio = "Master Barber", PhoneId = p2.Id, IsIndependent = true, StripeAccountId = "" };
+            var brandon = new NETH_Stylist { ShopId = shop.Id, Name = "Brandon", Bio = "Master Barber", PhoneId = p2.Id };
             Db.NETH_Stylists.Add(brandon);
             await Db.SaveChangesAsync();
 
-            // 4. Seed Relational Data
+            var service = new NETH_Service { StylistId = brandon.Id, Name = "Signature Fade", Price = 35.00m, DurationMinutes = 30 };
+            Db.NETH_Services.Add(service);
+            await Db.SaveChangesAsync();
+
             var client = new NETH_Client { FirstName = "John", LastName = "Doe", Email = "john@test.com", PhoneId = p2.Id };
             Db.NETH_Clients.Add(client);
             await Db.SaveChangesAsync();
@@ -152,7 +164,7 @@
             var app = new NETH_Appointment { 
                 ShopId = shop.Id, StylistId = brandon.Id, ClientId = client.Id, 
                 StartTime = DateTime.UtcNow, EndTime = DateTime.UtcNow.AddMinutes(30), 
-                Status = "Booked", IsPaid = false, TotalPrice = 30.00m, Notes = "Fresh Seed" 
+                Status = "Booked", IsPaid = false, TotalPrice = 35.00m, Notes = "Fresh Seed" 
             };
             Db.NETH_Appointments.Add(app);
             await Db.SaveChangesAsync();
@@ -167,8 +179,10 @@
     :root { --dark-bg: #1a1b1e; --card-bg: #25262b; --text-main: #c1c2c5; }
     .app-container { background-color: var(--dark-bg); color: var(--text-main); min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 2rem; font-family: sans-serif; }
     .booking-card { background-color: var(--card-bg); border-radius: 12px; padding: 2rem; width: 100%; max-width: 450px; border: 1px solid #373a40; }
+    .stylist-card { background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; margin-top: 1rem; }
+    .service-row { display: flex; justify-content: space-between; font-size: 0.9rem; padding: 4px 0; border-bottom: 1px solid #444; }
     .btn-book { width: 100%; margin-top: 1rem; padding: 10px; border-radius: 6px; background: #D2B48C; color: #1a1b1e; border: none; font-weight: bold; cursor: pointer; }
-    .btn-seed { width: 100%; padding: 12px; border-radius: 6px; border: none; color: white; font-weight: bold; cursor: pointer; margin-bottom: 5px; }
+    .btn-seed { width: 100%; padding: 12px; border-radius: 6px; border: none; color: white; font-weight: bold; cursor: pointer; }
     .spinner { border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid #D2B48C; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 1rem; }
-    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    @@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 </style>
