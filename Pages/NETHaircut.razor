@@ -15,14 +15,14 @@
 
     <main class="booking-card">
         <div style="background: #000; color: #0f0; padding: 5px; font-family: monospace; font-size: 10px; margin-bottom: 10px; border: 1px solid #333;">
-            KEY: @CurrentStylist | SHOPS: @shops.Count | CLIENTS: @clients.Count | PHONES: @phones.Count
+            DIAGNOSTICS: KEY: @CurrentStylist | SHOPS: @shops.Count | CLIENTS: @clients.Count
         </div>
 
         @if (isLoading)
         {
             <div class="spinner-box">
                 <div class="spinner"></div>
-                <p>Processing Database Update...</p>
+                <p>Processing...</p>
             </div>
         }
         else
@@ -30,16 +30,24 @@
             <div class="maintenance-box" style="margin-bottom: 20px; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 8px; border: 1px solid #444;">
                 <h4 style="color: #fff; margin-bottom: 10px; font-size: 0.9rem;">Database Maintenance</h4>
                 <div style="display: grid; gap: 10px;">
-                    <button class="btn-action" @onclick="OnlyResetSchema" style="background-color: #f39c12;">
-                        Step 1: Nuke & Recreate Tables
+                    <button class="btn-action" @onclick="OnlyResetSchema" style="background-color: #f39c12; color: white; padding: 10px; border: none; border-radius: 4px; cursor: pointer;">
+                        1. Nuke & Recreate Tables
                     </button>
-                    <button class="btn-action" @onclick="OnlySeedData" style="background-color: #27ae60;">
-                        Step 2: Seed John Doe Data
+                    <button class="btn-action" @onclick="OnlySeedData" style="background-color: #27ae60; color: white; padding: 10px; border: none; border-radius: 4px; cursor: pointer;">
+                        2. Seed Data (Raw SQL)
                     </button>
                 </div>
+                
+                @if (!string.IsNullOrEmpty(statusMessage))
+                {
+                    <div style="margin-top: 10px; padding: 8px; background: rgba(0,255,0,0.1); color: #0f0; font-size: 0.75rem; border: 1px solid #0f0;">
+                        @statusMessage
+                    </div>
+                }
+
                 @if (!string.IsNullOrEmpty(dbError))
                 {
-                    <p style="color: #ff4444; font-size: 0.7rem; margin-top: 10px; word-break: break-all; font-family: monospace;">@dbError</p>
+                    <p style="color: #ff4444; font-size: 0.7rem; margin-top: 10px; word-break: break-all;">@dbError</p>
                 }
             </div>
 
@@ -56,16 +64,7 @@
                         <div class="stylist-card">
                             <h3>@stylist.Name</h3>
                             <p class="bio">@stylist.Bio</p>
-                            <div class="services-list">
-                                @foreach (var service in stylist.Services)
-                                {
-                                    <div class="service-row">
-                                        <span>@service.Name</span>
-                                        <span>$@service.Price.ToString("N2")</span>
-                                    </div>
-                                }
-                            </div>
-                            <button class="btn-book">Book with @stylist.Name</button>
+                            <button class="btn-book" style="width: 100%; padding: 10px; margin-top: 10px; background: #D2B48C; border: none; font-weight: bold;">Book with @stylist.Name</button>
                         </div>
                     }
                 </div>
@@ -74,14 +73,12 @@
 
         <div style="margin-top: 3rem; background: #111; padding: 1rem; border-radius: 8px; font-family: monospace; font-size: 0.65rem; color: #aaa; overflow-x: auto; line-height: 1.4;">
             <h4 style="color: #fff; border-bottom: 1px solid #333; padding-bottom: 5px;">LIVE DATA DUMP</h4>
-            <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Shops]</p>
+            <p style="font-weight: bold;">[Shops]</p>
             @foreach(var s in shops) { <div>ID:@s.Id | Key:@s.UrlKey | Name:@s.BusinessName</div> }
-            <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Clients]</p>
+            <p style="font-weight: bold; margin-top: 5px;">[Clients]</p>
             @foreach(var c in clients) { <div>ID:@c.Id | Name:@c.FirstName @c.LastName</div> }
-            <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Appointments]</p>
+            <p style="font-weight: bold; margin-top: 5px;">[Appointments]</p>
             @foreach(var a in appointments) { <div>ID:@a.Id | Client:@a.ClientId | Status:@a.Status</div> }
-            <p style="color: #e67e22; margin-top: 10px; font-weight: bold;">[NETH_Phones]</p>
-            @foreach(var p in phones) { <div>ID:@p.Id | Num:@p.Number | Type:@p.Type</div> }
         </div>
     </main>
 </div>
@@ -91,6 +88,7 @@
     private string FormattedName => CurrentStylist.Replace("%20", " ").ToUpper();
     private bool isLoading = true;
     private string dbError = "";
+    private string statusMessage = "";
 
     private List<NETH_Shop> shops = new();
     private List<NETH_Client> clients = new();
@@ -113,18 +111,21 @@
         try {
             shops = await Db.NETH_Shops.AsNoTracking().ToListAsync();
             phones = await Db.NETH_Phones.AsNoTracking().ToListAsync();
-            try { clients = await Db.NETH_Clients.AsNoTracking().ToListAsync(); } catch { }
-            try { appointments = await Db.NETH_Appointments.AsNoTracking().ToListAsync(); } catch { }
+            clients = await Db.NETH_Clients.AsNoTracking().ToListAsync();
+            appointments = await Db.NETH_Appointments.AsNoTracking().ToListAsync();
 
             string key = CurrentStylist.ToLower().Trim();
-            currentShop = shops.FirstOrDefault(s => s.UrlKey.ToLower() == key);
+            currentShop = await Db.NETH_Shops.AsNoTracking()
+                .Include(s => s.Stylists).ThenInclude(st => st.Services)
+                .FirstOrDefaultAsync(s => s.UrlKey.ToLower() == key);
         }
-        catch (Exception ex) { dbError = $"Load Fail: {ex.Message}"; }
+        catch (Exception ex) { dbError = $"Load Error: {ex.Message}"; }
     }
 
     private async Task OnlyResetSchema()
     {
-        isLoading = true;
+        statusMessage = "Resetting tables...";
+        StateHasChanged();
         try 
         {
             await Db.Database.ExecuteSqlRawAsync(@"
@@ -147,60 +148,50 @@
                 CREATE TABLE ""NETH_Clients"" (""Id"" SERIAL PRIMARY KEY, ""FirstName"" TEXT NOT NULL, ""LastName"" TEXT NOT NULL, ""Email"" TEXT NOT NULL, ""PhoneId"" INTEGER NOT NULL);
                 CREATE TABLE ""NETH_Appointments"" (""Id"" SERIAL PRIMARY KEY, ""ShopId"" INTEGER NOT NULL, ""StylistId"" INTEGER NOT NULL, ""ClientId"" INTEGER NOT NULL, ""StartTime"" TIMESTAMP NOT NULL, ""EndTime"" TIMESTAMP NOT NULL, ""Status"" TEXT NOT NULL, ""TotalPrice"" DECIMAL NOT NULL, ""Notes"" TEXT NOT NULL, ""IsPaid"" BOOLEAN NOT NULL);
             ");
+            statusMessage = "Tables Recreated. Refreshing...";
             await Task.Delay(1000);
             NavManager.NavigateTo(NavManager.Uri, forceLoad: true);
         }
-        catch (Exception ex) { dbError = $"Reset Fail: {ex.Message}"; isLoading = false; }
+        catch (Exception ex) { dbError = $"Reset Fail: {ex.Message}"; }
     }
 
     private async Task OnlySeedData()
     {
-        isLoading = true;
+        statusMessage = "Seeding data via Raw SQL...";
+        StateHasChanged();
         try 
         {
-            var p1 = new NETH_Phone { Number = "9035551111", Type = "Work" };
-            var p2 = new NETH_Phone { Number = "9035552222", Type = "Mobile" };
-            Db.NETH_Phones.AddRange(p1, p2);
-            await Db.SaveChangesAsync();
+            await Db.Database.ExecuteSqlRawAsync(@"
+                -- 1. Phones
+                INSERT INTO ""NETH_Phones"" (""Number"", ""Type"") VALUES ('9035551111', 'Work'), ('9035552222', 'Mobile');
+                
+                -- 2. Shop
+                INSERT INTO ""NETH_Shops"" (""UrlKey"", ""BusinessName"", ""BrandColor"", ""StripeAccountId"", ""PhoneId"") 
+                VALUES ('leatherandblades', 'Leather & Blades', '#D2B48C', '', 1);
+                
+                -- 3. Stylist
+                INSERT INTO ""NETH_Stylists"" (""ShopId"", ""Name"", ""Bio"", ""IsIndependent"", ""StripeAccountId"", ""PhoneId"") 
+                VALUES (1, 'Brandon', 'Master Barber', true, '', 2);
 
-            var shop = new NETH_Shop { UrlKey = "leatherandblades", BusinessName = "Leather & Blades", PhoneId = p1.Id, BrandColor = "#D2B48C", StripeAccountId = "" };
-            Db.NETH_Shops.Add(shop);
-            await Db.SaveChangesAsync();
+                -- 4. Client
+                INSERT INTO ""NETH_Clients"" (""FirstName"", ""LastName"", ""Email"", ""PhoneId"") 
+                VALUES ('John', 'Doe', 'john@test.com', 2);
 
-            var brandon = new NETH_Stylist { ShopId = shop.Id, Name = "Brandon", Bio = "Master Barber", PhoneId = p2.Id, IsIndependent = true, StripeAccountId = "" };
-            Db.NETH_Stylists.Add(brandon);
-            await Db.SaveChangesAsync();
-
-            var service = new NETH_Service { StylistId = brandon.Id, Name = "Signature Fade", Price = 35.00m, DurationMinutes = 30 };
-            Db.NETH_Services.Add(service);
-            await Db.SaveChangesAsync();
-
-            var client = new NETH_Client { FirstName = "John", LastName = "Doe", Email = "john@test.com", PhoneId = p2.Id };
-            Db.NETH_Clients.Add(client);
-            await Db.SaveChangesAsync();
-
-            var app = new NETH_Appointment { 
-                ShopId = shop.Id, StylistId = brandon.Id, ClientId = client.Id, 
-                StartTime = DateTime.UtcNow, EndTime = DateTime.UtcNow.AddMinutes(30), 
-                Status = "Booked", IsPaid = false, TotalPrice = 35.00m, Notes = "Seeded Fresh" 
-            };
-            Db.NETH_Appointments.Add(app);
-            await Db.SaveChangesAsync();
-
+                -- 5. Appointment
+                INSERT INTO ""NETH_Appointments"" (""ShopId"", ""StylistId"", ""ClientId"", ""StartTime"", ""EndTime"", ""Status"", ""TotalPrice"", ""Notes"", ""IsPaid"") 
+                VALUES (1, 1, 1, NOW(), NOW() + interval '30 minutes', 'Booked', 35.00, 'Seeded SQL', false);
+            ");
+            statusMessage = "Seed Complete! Refreshing...";
+            await Task.Delay(1000);
             NavManager.NavigateTo(NavManager.Uri, forceLoad: true);
         }
-        catch (Exception ex) { dbError = $"Seed Fail: {ex.Message}"; isLoading = false; }
+        catch (Exception ex) { dbError = $"Seed Fail: {ex.Message}"; }
     }
 }
 
 <style>
     :root { --dark-bg: #1a1b1e; --card-bg: #25262b; --text-main: #c1c2c5; }
-    .app-container { background-color: var(--dark-bg); color: var(--text-main); min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 2rem; font-family: sans-serif; }
-    .booking-card { background-color: var(--card-bg); border-radius: 12px; padding: 2rem; width: 100%; max-width: 450px; border: 1px solid #373a40; }
-    .stylist-card { background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; margin-top: 1rem; }
-    .service-row { display: flex; justify-content: space-between; font-size: 0.9rem; padding: 4px 0; border-bottom: 1px solid #444; }
-    .btn-book { width: 100%; margin-top: 1rem; padding: 10px; border-radius: 6px; background: #D2B48C; color: #1a1b1e; border: none; font-weight: bold; cursor: pointer; }
-    .btn-action { padding: 12px; border-radius: 6px; border: none; color: white; font-weight: bold; cursor: pointer; text-align: center; }
-    .spinner { border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid #D2B48C; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 1rem; }
+    .app-container { background-color: var(--dark-bg); color: var(--text-main); min-height: 100vh; padding: 2rem; font-family: sans-serif; }
+    .booking-card { background-color: var(--card-bg); border-radius: 12px; padding: 2rem; width: 100%; max-width: 450px; margin: 0 auto; border: 1px solid #373a40; }
     @@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 </style>
