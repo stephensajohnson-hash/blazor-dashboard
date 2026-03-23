@@ -607,6 +607,8 @@ public class NETH_Stylist
     public int PhoneId { get; set; }
     public NETH_Phone Phone { get; set; } = null!;
     public List<NETH_Service> Services { get; set; } = new();
+
+    public int? UserId { get; set; } 
 }
 
 public class NETH_Service
@@ -626,6 +628,8 @@ public class NETH_Client
     public string Email { get; set; } = "";
     public int PhoneId { get; set; }
     public NETH_Phone Phone { get; set; } = null!;
+
+    public int? UserId { get; set; } 
 }
 
 public class NETH_ClientNote
