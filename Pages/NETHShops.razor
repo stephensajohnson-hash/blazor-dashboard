@@ -21,8 +21,9 @@
             <a href="/admin/neth-shops" class="bg-[#D2B48C] text-[#1a1b1e] px-4 py-2 rounded font-black text-xs uppercase tracking-widest transition">Shops</a>
             <a href="/nethaircut" class="text-gray-500 hover:text-white px-4 py-2 rounded font-black text-xs uppercase tracking-widest transition">Back to Main</a>
             
-            <div class="mt-auto pt-4 border-t border-gray-700 italic text-[10px] text-gray-600">
-                v1.1.0-shops
+            <div class="mt-auto pt-4 border-t border-gray-700">
+                <button @onclick="LoadAllShops" class="text-[10px] text-gray-600 hover:text-gray-400 font-mono uppercase tracking-widest">🔄 Force_Reload_Audit</button>
+                <div class="italic text-[10px] text-gray-600 mt-2">v1.1.1-add-enabled</div>
             </div>
         </div>
 
@@ -31,14 +32,22 @@
             <div class="max-w-5xl mx-auto">
                 <div class="flex justify-between items-end mb-8">
                     <div>
-                        <h2 class="text-2xl font-black text-white uppercase">Shop Management</h2>
-                        <p class="text-xs text-gray-500 font-mono">Configure business profiles and branding</p>
+                        <h2 class="text-2xl font-black text-white uppercase tracking-tight">Shop Management</h2>
+                        <p class="text-xs text-gray-500 font-mono">Registry: @allShops.Count active locations</p>
                     </div>
+                    <button @onclick="OpenCreateModal" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase px-6 py-3 rounded shadow-xl transition">＋ Create New Shop</button>
                 </div>
 
                 @if (isLoading)
                 {
                     <div class="text-center py-20 animate-pulse font-black text-gray-600 uppercase tracking-widest">Accessing_Registry...</div>
+                }
+                else if (!allShops.Any())
+                {
+                    <div class="bg-[#25262b] rounded-xl border-2 border-dashed border-gray-700 p-20 text-center">
+                        <div class="text-gray-600 font-black uppercase tracking-[0.2em] mb-2">No Shops Registered</div>
+                        <p class="text-xs text-gray-500">Click the button above to manually add your first location.</p>
+                    </div>
                 }
                 else
                 {
@@ -63,6 +72,7 @@
                                     
                                     <div class="flex gap-3">
                                         <button @onclick="() => OpenEditModal(shop)" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase px-6 py-2 rounded shadow-lg transition">Edit_Profile</button>
+                                        <button @onclick="() => DeleteShop(shop.Id)" class="bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white border border-red-500/20 px-3 py-2 rounded transition shadow-lg"><i class="fas fa-trash"></i></button>
                                     </div>
                                 </div>
                             </div>
@@ -80,7 +90,7 @@
     <div class="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <div class="bg-[#25262b] w-full max-w-lg rounded-xl border border-gray-700 shadow-2xl overflow-hidden font-black">
             <div class="p-4 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center uppercase text-[11px] tracking-widest text-[#D2B48C]">
-                <span>Edit Shop Configuration</span>
+                <span>@(editingShop.Id == 0 ? "New Registry Entry" : "Edit Shop Configuration")</span>
                 <button @onclick="CloseModal" class="text-gray-500 hover:text-white text-xl">&times;</button>
             </div>
             
@@ -88,30 +98,32 @@
                 <div class="grid grid-cols-2 gap-4">
                     <div class="col-span-2">
                         <label class="text-[9px] uppercase text-gray-500 mb-1 block">Business Name</label>
-                        <input @bind="editingShop.BusinessName" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none focus:border-blue-500" />
+                        <input @bind="editingShop.BusinessName" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none focus:border-blue-500" placeholder="e.g. Leather & Blades" />
                     </div>
                     <div>
-                        <label class="text-[9px] uppercase text-gray-500 mb-1 block">URL Key (Slug)</label>
-                        <input @bind="editingShop.UrlKey" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none focus:border-blue-500" />
+                        <label class="text-[9px] uppercase text-gray-500 mb-1 block">URL Key (Lower Case)</label>
+                        <input @bind="editingShop.UrlKey" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none focus:border-blue-500" placeholder="leatherandblades" />
                     </div>
                     <div>
-                        <label class="text-[9px] uppercase text-gray-500 mb-1 block">Brand Color (Hex)</label>
+                        <label class="text-[9px] uppercase text-gray-500 mb-1 block">Brand Color</label>
                         <div class="flex gap-2">
                             <input type="color" @bind="editingShop.BrandColor" class="h-10 w-12 bg-transparent border-none cursor-pointer" />
-                            <input @bind="editingShop.BrandColor" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-xs font-mono text-white outline-none" />
+                            <input @bind="editingShop.BrandColor" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-xs font-mono text-white outline-none uppercase" />
                         </div>
                     </div>
                 </div>
 
                 <div>
-                    <label class="text-[9px] uppercase text-gray-500 mb-1 block">Stripe Account ID</label>
+                    <label class="text-[9px] uppercase text-gray-500 mb-1 block">Stripe Account ID (Optional)</label>
                     <input @bind="editingShop.StripeAccountId" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white font-mono text-xs outline-none focus:border-green-500" placeholder="acct_..." />
                 </div>
             </div>
 
             <div class="p-4 bg-black/20 border-t border-gray-700 flex justify-end gap-3">
                 <button @onclick="CloseModal" class="text-[10px] text-gray-500 uppercase px-4 py-2 font-black">Cancel</button>
-                <button @onclick="SaveShop" class="bg-green-600 hover:bg-green-500 text-white text-[10px] uppercase px-8 py-2 rounded font-black shadow-xl">Update_Registry</button>
+                <button @onclick="SaveShop" class="bg-green-600 hover:bg-green-500 text-white text-[10px] uppercase px-8 py-2 rounded font-black shadow-xl">
+                    @(editingShop.Id == 0 ? "Commit_New_Shop" : "Update_Registry")
+                </button>
             </div>
         </div>
     </div>
@@ -144,12 +156,24 @@
     {
         try {
             allShops = await Db.NETH_Shops.AsNoTracking().ToListAsync();
+            StateHasChanged();
         } catch { }
+    }
+
+    private void OpenCreateModal()
+    {
+        editingShop = new NETH_Shop { 
+            BusinessName = "", 
+            UrlKey = "", 
+            BrandColor = "#D2B48C", 
+            StripeAccountId = "",
+            PhoneId = 1 // Default to first phone for now
+        };
+        showModal = true;
     }
 
     private void OpenEditModal(NETH_Shop shop)
     {
-        // Clone for editing
         editingShop = new NETH_Shop {
             Id = shop.Id,
             BusinessName = shop.BusinessName,
@@ -172,13 +196,35 @@
         if (editingShop == null) return;
 
         try {
-            await Db.Database.ExecuteSqlRawAsync(
-                @"UPDATE ""NETH_Shops"" SET ""BusinessName"" = {0}, ""UrlKey"" = {1}, ""BrandColor"" = {2}, ""StripeAccountId"" = {3} WHERE ""Id"" = {4}",
-                editingShop.BusinessName, editingShop.UrlKey, editingShop.BrandColor, editingShop.StripeAccountId, editingShop.Id
-            );
+            if (editingShop.Id == 0)
+            {
+                // INSERT NEW
+                await Db.Database.ExecuteSqlRawAsync(
+                    @"INSERT INTO ""NETH_Shops"" (""BusinessName"", ""UrlKey"", ""BrandColor"", ""StripeAccountId"", ""PhoneId"") 
+                      VALUES ({0}, {1}, {2}, {3}, {4})",
+                    editingShop.BusinessName, editingShop.UrlKey, editingShop.BrandColor, editingShop.StripeAccountId, editingShop.PhoneId
+                );
+            }
+            else
+            {
+                // UPDATE EXISTING
+                await Db.Database.ExecuteSqlRawAsync(
+                    @"UPDATE ""NETH_Shops"" SET ""BusinessName"" = {0}, ""UrlKey"" = {1}, ""BrandColor"" = {2}, ""StripeAccountId"" = {3} WHERE ""Id"" = {4}",
+                    editingShop.BusinessName, editingShop.UrlKey, editingShop.BrandColor, editingShop.StripeAccountId, editingShop.Id
+                );
+            }
             await LoadAllShops();
             CloseModal();
         } catch { }
+    }
+
+    private async Task DeleteShop(int id)
+    {
+        if (await JS.InvokeAsync<bool>("confirm", "Permanently remove this shop from registry?"))
+        {
+            await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_Shops"" WHERE ""Id"" = {0}", id);
+            await LoadAllShops();
+        }
     }
 
     private bool IsDark(string hex)
