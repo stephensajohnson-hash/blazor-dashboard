@@ -1,0 +1,224 @@
+@page "/admin/neth-stylists"
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.JSInterop
+@using Dashboard
+@using System.Text.Json
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject AppDbContext Db
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@if (isAuthorized)
+{
+    <div class="min-h-screen bg-[#1a1b1e] text-gray-300 flex font-sans">
+        
+        @* NETH ADMIN SIDEBAR *@
+        <div class="w-64 bg-[#25262b] border-r border-gray-700 p-6 flex flex-col gap-2">
+            <h1 class="text-[#D2B48C] font-black uppercase tracking-tighter mb-8 text-xl">NETH Admin</h1>
+            
+            <a href="/admin/neth-users" class="text-gray-500 hover:text-white px-4 py-2 rounded font-black text-xs uppercase tracking-widest transition">Users</a>
+            <a href="/admin/neth-shops" class="text-gray-500 hover:text-white px-4 py-2 rounded font-black text-xs uppercase tracking-widest transition">Shops</a>
+            <a href="/admin/neth-stylists" class="bg-[#D2B48C] text-[#1a1b1e] px-4 py-2 rounded font-black text-xs uppercase tracking-widest transition">Stylists</a>
+            <a href="/nethaircut" class="text-gray-500 hover:text-white px-4 py-2 rounded font-black text-xs uppercase tracking-widest transition">Back to Main</a>
+            
+            <div class="mt-auto pt-4 border-t border-gray-700">
+                <div class="italic text-[10px] text-gray-600">v1.2.0-stylist-mgmt</div>
+            </div>
+        </div>
+
+        @* MAIN CONTENT *@
+        <div class="flex-1 p-8">
+            <div class="max-w-5xl mx-auto">
+                <div class="flex justify-between items-end mb-8">
+                    <div>
+                        <h2 class="text-2xl font-black text-white uppercase tracking-tight">Stylist Registry</h2>
+                        <p class="text-xs text-gray-500 font-mono">Manage barber profiles and user associations</p>
+                    </div>
+                    <button @onclick="OpenCreateModal" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase px-6 py-3 rounded shadow-xl transition">＋ Add Stylist</button>
+                </div>
+
+                @if (isLoading)
+                {
+                    <div class="text-center py-20 animate-pulse font-black text-gray-600 uppercase tracking-widest">Loading_Stylist_Data...</div>
+                }
+                else
+                {
+                    <div class="grid gap-4">
+                        @foreach (var s in allStylists)
+                        {
+                            var shopName = allShops.FirstOrDefault(x => x.Id == s.ShopId)?.BusinessName ?? "Unknown Shop";
+                            var userName = allUsers.FirstOrDefault(x => x.Id == s.UserId)?.Username ?? "NO_USER_LINKED";
+
+                            <div class="bg-[#25262b] rounded-xl border border-gray-700 p-5 shadow-lg flex justify-between items-center hover:border-gray-500 transition">
+                                <div class="flex items-center gap-5">
+                                    <div class="w-12 h-12 bg-gray-700 rounded-full flex items-center justify-center text-xl text-[#D2B48C]">
+                                        <i class="fas fa-user-tie"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="font-black text-white uppercase">@s.Name</h3>
+                                        <div class="flex gap-3 mt-0.5 items-center">
+                                            <span class="text-[10px] font-black text-[#D2B48C] uppercase">@shopName</span>
+                                            <span class="text-[10px] text-gray-500 font-mono">[@userName]</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button @onclick="() => OpenEditModal(s)" class="text-[10px] font-black uppercase text-blue-400 hover:underline">Edit</button>
+                                    <button @onclick="() => DeleteStylist(s.Id)" class="text-[10px] font-black uppercase text-red-500/50 hover:text-red-500">Delete</button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@* STYLIST EDITOR MODAL *@
+@if (showModal && editingStylist != null)
+{
+    <div class="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-[#25262b] w-full max-w-lg rounded-xl border border-gray-700 shadow-2xl overflow-hidden font-black">
+            <div class="p-4 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center uppercase text-[11px] tracking-widest text-[#D2B48C]">
+                <span>@(editingStylist.Id == 0 ? "Create Stylist Profile" : "Update Stylist Profile")</span>
+                <button @onclick="CloseModal" class="text-gray-500 hover:text-white text-xl">&times;</button>
+            </div>
+            
+            <div class="p-6 space-y-4 text-gray-300">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="col-span-2">
+                        <label class="text-[9px] uppercase text-gray-500 mb-1 block">Full Name</label>
+                        <input @bind="editingStylist.Name" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none focus:border-blue-500" />
+                    </div>
+                    
+                    <div class="col-span-2">
+                        <label class="text-[9px] uppercase text-gray-500 mb-1 block">Bio / Specialty</label>
+                        <textarea @bind="editingStylist.Bio" rows="2" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none focus:border-blue-500"></textarea>
+                    </div>
+
+                    <div>
+                        <label class="text-[9px] uppercase text-gray-500 mb-1 block">Assign to Shop</label>
+                        <select @bind="editingStylist.ShopId" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none">
+                            <option value="0">-- Select Shop --</option>
+                            @foreach(var shop in allShops) {
+                                <option value="@shop.Id">@shop.BusinessName</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="text-[9px] uppercase text-gray-500 mb-1 block">Link to User Account</label>
+                        <select @bind="editingStylist.UserId" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none">
+                            <option value="">-- None --</option>
+                            @foreach(var u in allUsers.Where(x => x.Role == "Stylist" || x.Role == "Admin")) {
+                                <option value="@u.Id">@u.Username (@u.Role)</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2 p-3 bg-black/20 rounded border border-gray-800">
+                    <input type="checkbox" @bind="editingStylist.IsIndependent" id="isIndy" class="w-4 h-4" />
+                    <label for="isIndy" class="text-[10px] uppercase font-black text-gray-400">Independent Contractor (Stripe Connected)</label>
+                </div>
+            </div>
+
+            <div class="p-4 bg-black/20 border-t border-gray-700 flex justify-end gap-3">
+                <button @onclick="CloseModal" class="text-[10px] text-gray-500 uppercase px-4 py-2 font-black">Cancel</button>
+                <button @onclick="SaveStylist" class="bg-green-600 hover:bg-green-500 text-white text-[10px] uppercase px-8 py-2 rounded font-black shadow-xl">Commit_Record</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool isAuthorized = false;
+    private bool isLoading = true;
+    private bool showModal = false;
+
+    private List<NETH_Stylist> allStylists = new();
+    private List<NETH_Shop> allShops = new();
+    private List<NETHUsers.NETH_User> allUsers = new(); // Reusing the model from the Users page
+    private NETH_Stylist? editingStylist;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var json = await JS.InvokeAsync<string>("localStorage.getItem", "neth_session");
+            if (string.IsNullOrEmpty(json)) Nav.NavigateTo("/nethaircut");
+            else
+            {
+                isAuthorized = true;
+                await LoadAllData();
+                isLoading = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task LoadAllData()
+    {
+        try {
+            allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync();
+            allShops = await Db.NETH_Shops.AsNoTracking().ToListAsync();
+            allUsers = await Db.Database.SqlQueryRaw<NETHUsers.NETH_User>(@"SELECT * FROM ""NETH_Users""").ToListAsync();
+        } catch { }
+    }
+
+    private void OpenCreateModal()
+    {
+        editingStylist = new NETH_Stylist { Name = "", Bio = "", ShopId = allShops.FirstOrDefault()?.Id ?? 0, PhoneId = 1, StripeAccountId = "" };
+        showModal = true;
+    }
+
+    private void OpenEditModal(NETH_Stylist s)
+    {
+        editingStylist = new NETH_Stylist {
+            Id = s.Id, Name = s.Name, Bio = s.Bio, ShopId = s.ShopId, UserId = s.UserId,
+            IsIndependent = s.IsIndependent, StripeAccountId = s.StripeAccountId, PhoneId = s.PhoneId
+        };
+        showModal = true;
+    }
+
+    private void CloseModal() { showModal = false; editingStylist = null; }
+
+    private async Task SaveStylist()
+    {
+        if (editingStylist == null || editingStylist.ShopId == 0) return;
+
+        try {
+            if (editingStylist.Id == 0)
+            {
+                await Db.Database.ExecuteSqlRawAsync(
+                    @"INSERT INTO ""NETH_Stylists"" (""ShopId"", ""Name"", ""Bio"", ""IsIndependent"", ""StripeAccountId"", ""PhoneId"", ""UserId"") 
+                      VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6})",
+                    editingStylist.ShopId, editingStylist.Name, editingStylist.Bio, editingStylist.IsIndependent, 
+                    editingStylist.StripeAccountId, editingStylist.PhoneId, (object?)editingStylist.UserId ?? DBNull.Value
+                );
+            }
+            else
+            {
+                await Db.Database.ExecuteSqlRawAsync(
+                    @"UPDATE ""NETH_Stylists"" SET ""ShopId"" = {0}, ""Name"" = {1}, ""Bio"" = {2}, ""IsIndependent"" = {3}, 
+                      ""StripeAccountId"" = {4}, ""UserId"" = {5} WHERE ""Id"" = {6}",
+                    editingStylist.ShopId, editingStylist.Name, editingStylist.Bio, editingStylist.IsIndependent, 
+                    editingStylist.StripeAccountId, (object?)editingStylist.UserId ?? DBNull.Value, editingStylist.Id
+                );
+            }
+            await LoadAllData();
+            CloseModal();
+        } catch { }
+    }
+
+    private async Task DeleteStylist(int id)
+    {
+        if (await JS.InvokeAsync<bool>("confirm", "Delete this stylist profile?"))
+        {
+            await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_Stylists"" WHERE ""Id"" = {0}", id);
+            await LoadAllData();
+        }
+    }
+}
