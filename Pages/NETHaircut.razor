@@ -1,83 +1,122 @@
 @page "/nethaircut"
+@using Microsoft.AspNetCore.Components.Web
 @using Microsoft.AspNetCore.WebUtilities
 @using Microsoft.EntityFrameworkCore
 @using Dashboard
-@using System.Data
-@inject Dashboard.AppDbContext Db
-@inject NavigationManager NavManager
-@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode(prerender: false))
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject AppDbContext Db
+@inject NavigationManager Nav
 
-<div style="background-color: #1a1b1e; color: #c1c2c5; min-height: 100vh; padding: 2rem; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+<div class="min-h-screen bg-[#1a1b1e] text-gray-300 p-6 font-sans">
     
-    <div style="max-width: 800px; margin: 0 auto;">
-        <h2 style="color: #D2B48C; border-bottom: 2px solid #333; padding-bottom: 10px;">NETH Command Center</h2>
+    @* HEADER SECTION *@
+    <div class="max-w-4xl mx-auto mb-8">
+        <div class="bg-[#25262b] rounded-xl border border-gray-700 p-6 shadow-2xl">
+            <h1 class="text-2xl font-black text-[#D2B48C] uppercase tracking-widest">NETH Terminal</h1>
+            <p class="text-xs text-gray-500 font-mono mt-1">Status: @(isLoading ? "SYNCING_DB..." : "SYSTEM_READY") | Circuit: Connected</p>
+        </div>
+    </div>
 
-        @* 1. ERROR & STATUS CONSOLE *@
-        <div style="margin: 20px 0; padding: 15px; background: #000; border: 1px solid #444; border-radius: 8px; font-family: monospace;">
-            <div style="color: #40c057; margin-bottom: 5px;">[SYSTEM STATUS]: @(currentShop == null ? "Searching..." : "Connected to " + currentShop.BusinessName)</div>
-            @if (!string.IsNullOrEmpty(lastErrorMessage))
+    <div class="max-w-4xl mx-auto grid md:grid-cols-[1fr_300px] gap-6">
+        
+        @* MAIN CONTROL PANEL *@
+        <div class="space-y-6">
+            <div class="bg-[#25262b] rounded-xl border border-gray-700 overflow-hidden shadow-lg">
+                <div class="p-4 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center">
+                    <span class="text-[10px] font-black uppercase tracking-widest text-gray-400">Database Operations</span>
+                </div>
+                <div class="p-6">
+                    <div class="grid grid-cols-2 gap-4">
+                        <button @onclick="HandleManualReset" class="bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/50 py-4 rounded-lg text-xs font-black uppercase transition tracking-widest shadow-lg">
+                            🔥 Factory Reset
+                        </button>
+                        <button @onclick="HandleManualSeed" class="bg-green-600/20 hover:bg-green-600 text-green-400 hover:text-white border border-green-500/50 py-4 rounded-lg text-xs font-black uppercase transition tracking-widest shadow-lg">
+                            🌱 Seed John Doe
+                        </button>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(statusMessage))
+                    {
+                        <div class="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded text-[11px] font-mono text-blue-400 animate-pulse">
+                            > @statusMessage
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(errorMessage))
+                    {
+                        <div class="mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded text-[11px] font-mono text-red-400">
+                            > ERROR: @errorMessage
+                        </div>
+                    }
+                </div>
+            </div>
+
+            @* SHOP DISPLAY *@
+            @if (currentShop != null)
             {
-                <div style="color: #ff6b6b; white-space: pre-wrap; padding: 10px; background: rgba(255,0,0,0.1); border: 1px solid #ff6b6b; margin-top: 10px;">
-                    <strong>ERROR:</strong> @lastErrorMessage
+                <div class="bg-white rounded-xl shadow-2xl p-8 border border-gray-300 text-gray-800">
+                    <div class="flex items-center gap-4 mb-6">
+                        <div class="w-12 h-12 bg-[#D2B48C] rounded-full flex items-center justify-center text-white shadow-inner">
+                            <i class="fas fa-cut"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-2xl font-black uppercase tracking-tight">@currentShop.BusinessName</h2>
+                            <span class="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded font-black uppercase">Active Registry</span>
+                        </div>
+                    </div>
+
+                    <div class="space-y-4">
+                        @foreach (var s in stylists)
+                        {
+                            <div class="p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition flex justify-between items-center group">
+                                <div>
+                                    <div class="font-black text-gray-800 uppercase">@s.Name</div>
+                                    <div class="text-xs text-gray-500">@s.Bio</div>
+                                </div>
+                                <button class="bg-blue-600 text-white px-6 py-2 rounded text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition shadow-lg">Book</button>
+                            </div>
+                        }
+                    </div>
                 </div>
             }
-            @if (!string.IsNullOrEmpty(statusLog))
-            {
-                <div style="color: #fcc419; margin-top: 5px;">[LOG]: @statusLog</div>
-            }
         </div>
 
-        @* 2. MANUAL OVERRIDE BUTTONS *@
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 30px;">
-            <button @onclick="ForceNukeAndRecreate" style="background: #c92a2a; color: white; padding: 15px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s;">
-                🔥 FORCE NUKE TABLES
-            </button>
-            <button @onclick="ForceSeedData" style="background: #2b8a3e; color: white; padding: 15px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s;">
-                🌱 FORCE SEED JOHN DOE
-            </button>
-        </div>
-
-        @* 3. DATA PREVIEW *@
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-            <div style="background: #25262b; padding: 15px; border-radius: 8px; border: 1px solid #373a40;">
-                <h4 style="margin-top: 0; color: #D2B48C;">Registry Audit</h4>
-                <div style="font-size: 0.85rem; line-height: 1.8;">
-                    <div>Shops: <span style="color:white">@shops.Count</span></div>
-                    <div>Stylists: <span style="color:white">@stylists.Count</span></div>
-                    <div>Clients: <span style="color:white">@clients.Count</span></div>
-                    <div>Appointments: <span style="color:white">@appointments.Count</span></div>
+        @* SIDEBAR AUDIT *@
+        <div class="space-y-6">
+            <div class="bg-[#282b30] rounded-xl border border-gray-700 shadow-2xl p-5">
+                <h4 class="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-4">Ledger Audit</h4>
+                <div class="space-y-3 font-mono text-xs">
+                    <div class="flex justify-between border-b border-gray-700 pb-2">
+                        <span class="text-gray-500">SHOPS</span>
+                        <span class="text-white font-black">@shops.Count</span>
+                    </div>
+                    <div class="flex justify-between border-b border-gray-700 pb-2">
+                        <span class="text-gray-500">CLIENTS</span>
+                        <span class="text-white font-black">@clients.Count</span>
+                    </div>
+                    <div class="flex justify-between border-b border-gray-700 pb-2">
+                        <span class="text-gray-500">APPOINTMENTS</span>
+                        <span class="text-white font-black">@appointments.Count</span>
+                    </div>
                 </div>
             </div>
 
-            <div style="background: #25262b; padding: 15px; border-radius: 8px; border: 1px solid #373a40;">
-                <h4 style="margin-top: 0; color: #D2B48C;">Current Selection</h4>
-                <div style="font-size: 0.85rem;">
-                    <div>Target Key: <strong style="color:white">@CurrentStylist</strong></div>
-                    <div>Status: @(currentShop != null ? "✅ Found" : "❌ Not Found")</div>
-                </div>
+            <div class="bg-black/20 rounded-xl border border-dashed border-gray-700 p-5">
+                <p class="text-[10px] text-gray-500 leading-relaxed italic">
+                    Note: If buttons fail, ensure your circuit hasn't timed out. Refreshing the page will re-sync the session.
+                </p>
             </div>
         </div>
 
-        @* 4. RAW DATA LIST *@
-        <div style="margin-top: 30px; background: #111; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 0.7rem;">
-            <div style="color: #666; border-bottom: 1px solid #222; margin-bottom: 10px;">DB CONTENT EXPLORER</div>
-            @if (shops.Any()) {
-                <div style="color: #D2B48C;">[SHOPS]</div>
-                @foreach(var s in shops) { <div>ID: @s.Id | Key: @s.UrlKey | Name: @s.BusinessName</div> }
-            }
-            @if (clients.Any()) {
-                <div style="color: #D2B48C; margin-top: 10px;">[CLIENTS]</div>
-                @foreach(var c in clients) { <div>ID: @c.Id | Name: @c.FirstName @c.LastName | Email: @c.Email</div> }
-            }
-        </div>
     </div>
 </div>
 
 @code {
-    private string CurrentStylist = "GENERAL";
-    private string lastErrorMessage = "";
-    private string statusLog = "System Ready.";
-    
+    private bool isLoading = true;
+    private string statusMessage = "Standing by.";
+    private string errorMessage = "";
+    private string CurrentStylist = "leatherandblades";
+
     private List<NETH_Shop> shops = new();
     private List<NETH_Stylist> stylists = new();
     private List<NETH_Client> clients = new();
@@ -86,34 +125,36 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var uri = NavManager.ToAbsoluteUri(NavManager.Uri);
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
         var query = QueryHelpers.ParseQuery(uri.Query);
         if (query.TryGetValue("stylist", out var name)) CurrentStylist = name.ToString();
 
-        await RefreshData();
+        await LoadAllData();
+        isLoading = false;
     }
 
-    private async Task RefreshData()
+    private async Task LoadAllData()
     {
-        try {
+        try 
+        {
             shops = await Db.NETH_Shops.AsNoTracking().ToListAsync();
+            stylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync();
             clients = await Db.NETH_Clients.AsNoTracking().ToListAsync();
             appointments = await Db.NETH_Appointments.AsNoTracking().ToListAsync();
-            stylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync();
 
             currentShop = shops.FirstOrDefault(s => s.UrlKey.ToLower() == CurrentStylist.ToLower());
         }
-        catch (Exception ex) { 
-            // Don't crash the whole page, just log it
-            lastErrorMessage = ex.Message; 
-        }
+        catch (Exception ex) { errorMessage = "LOAD_ERR: " + ex.Message; }
     }
 
-    private async Task ForceNukeAndRecreate()
+    private async Task HandleManualReset()
     {
-        statusLog = "Nuking tables...";
-        lastErrorMessage = "";
-        try {
+        statusMessage = "INIT_NUKE_PROTOCOL...";
+        errorMessage = "";
+        StateHasChanged();
+
+        try 
+        {
             await Db.Database.ExecuteSqlRawAsync(@"
                 DROP TABLE IF EXISTS ""NETH_AppointmentServices""; DROP TABLE IF EXISTS ""NETH_Appointments"";
                 DROP TABLE IF EXISTS ""NETH_ClientNotes""; DROP TABLE IF EXISTS ""NETH_NoteTags"";
@@ -122,25 +163,28 @@
                 DROP TABLE IF EXISTS ""NETH_Shops""; DROP TABLE IF EXISTS ""NETH_Phones"";
 
                 CREATE TABLE ""NETH_Phones"" (""Id"" SERIAL PRIMARY KEY, ""Number"" TEXT NOT NULL, ""Type"" TEXT NOT NULL, ""IsBadNumber"" BOOLEAN NOT NULL DEFAULT FALSE);
-                CREATE TABLE ""NETH_Media"" (""Id"" SERIAL PRIMARY KEY, ""FileUrl"" TEXT NOT NULL, ""Category"" TEXT NOT NULL, ""Description"" TEXT NOT NULL, ""UploadedDate"" TIMESTAMP NOT NULL);
                 CREATE TABLE ""NETH_Shops"" (""Id"" SERIAL PRIMARY KEY, ""UrlKey"" TEXT NOT NULL, ""BusinessName"" TEXT NOT NULL, ""BrandColor"" TEXT NOT NULL, ""LogoMediaId"" INTEGER NULL, ""StripeAccountId"" TEXT NOT NULL, ""PhoneId"" INTEGER NOT NULL);
                 CREATE TABLE ""NETH_Stylists"" (""Id"" SERIAL PRIMARY KEY, ""ShopId"" INTEGER NOT NULL, ""Name"" TEXT NOT NULL, ""Bio"" TEXT NOT NULL, ""IsIndependent"" BOOLEAN NOT NULL, ""StripeAccountId"" TEXT NOT NULL, ""PhoneId"" INTEGER NOT NULL);
                 CREATE TABLE ""NETH_Services"" (""Id"" SERIAL PRIMARY KEY, ""StylistId"" INTEGER NOT NULL, ""Name"" TEXT NOT NULL, ""Price"" DECIMAL NOT NULL, ""DurationMinutes"" INTEGER NOT NULL);
                 CREATE TABLE ""NETH_Clients"" (""Id"" SERIAL PRIMARY KEY, ""FirstName"" TEXT NOT NULL, ""LastName"" TEXT NOT NULL, ""Email"" TEXT NOT NULL, ""PhoneId"" INTEGER NOT NULL);
                 CREATE TABLE ""NETH_Appointments"" (""Id"" SERIAL PRIMARY KEY, ""ShopId"" INTEGER NOT NULL, ""StylistId"" INTEGER NOT NULL, ""ClientId"" INTEGER NOT NULL, ""StartTime"" TIMESTAMP NOT NULL, ""EndTime"" TIMESTAMP NOT NULL, ""Status"" TEXT NOT NULL, ""TotalPrice"" DECIMAL NOT NULL, ""Notes"" TEXT NOT NULL, ""IsPaid"" BOOLEAN NOT NULL);
             ");
-            statusLog = "Tables recreated. Refreshing browser...";
+            
+            statusMessage = "NUKE_SUCCESS. REFRESHING...";
             await Task.Delay(1000);
-            NavManager.NavigateTo(NavManager.Uri, true);
+            Nav.NavigateTo(Nav.Uri, true);
         }
-        catch (Exception ex) { lastErrorMessage = "NUKE FAILED: " + ex.ToString(); }
+        catch (Exception ex) { errorMessage = ex.Message; statusMessage = ""; }
     }
 
-    private async Task ForceSeedData()
+    private async Task HandleManualSeed()
     {
-        statusLog = "Injecting seed data...";
-        lastErrorMessage = "";
-        try {
+        statusMessage = "INJECTING_SEED_DATA...";
+        errorMessage = "";
+        StateHasChanged();
+
+        try 
+        {
             await Db.Database.ExecuteSqlRawAsync(@"
                 INSERT INTO ""NETH_Phones"" (""Number"", ""Type"") VALUES ('9035551111', 'Work'), ('9035552222', 'Mobile');
                 INSERT INTO ""NETH_Shops"" (""UrlKey"", ""BusinessName"", ""BrandColor"", ""StripeAccountId"", ""PhoneId"") VALUES ('leatherandblades', 'Leather & Blades', '#D2B48C', '', 1);
@@ -148,12 +192,13 @@
                 INSERT INTO ""NETH_Services"" (""StylistId"", ""Name"", ""Price"", ""DurationMinutes"") VALUES (1, 'Signature Fade', 35.00, 30);
                 INSERT INTO ""NETH_Clients"" (""FirstName"", ""LastName"", ""Email"", ""PhoneId"") VALUES ('John', 'Doe', 'john@test.com', 2);
                 INSERT INTO ""NETH_Appointments"" (""ShopId"", ""StylistId"", ""ClientId"", ""StartTime"", ""EndTime"", ""Status"", ""TotalPrice"", ""Notes"", ""IsPaid"") 
-                VALUES (1, 1, 1, NOW(), NOW() + interval '30 minutes', 'Booked', 35.00, 'Seeded Manually', false);
+                VALUES (1, 1, 1, NOW(), NOW() + interval '30 minutes', 'Booked', 35.00, 'Seed', false);
             ");
-            statusLog = "Seed successful! Refreshing browser...";
+
+            statusMessage = "SEED_SUCCESS. REFRESHING...";
             await Task.Delay(1000);
-            NavManager.NavigateTo(NavManager.Uri, true);
+            Nav.NavigateTo(Nav.Uri, true);
         }
-        catch (Exception ex) { lastErrorMessage = "SEED FAILED: " + ex.ToString(); }
+        catch (Exception ex) { errorMessage = ex.Message; statusMessage = ""; }
     }
 }
