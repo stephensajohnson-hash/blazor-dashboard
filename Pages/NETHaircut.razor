@@ -2,99 +2,66 @@
 @using Microsoft.AspNetCore.WebUtilities
 @using Microsoft.EntityFrameworkCore
 @using Dashboard
+@using System.Data
 @inject Dashboard.AppDbContext Db
 @inject NavigationManager NavManager
 @rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode(prerender: false))
 
-<div class="app-container" style="--brand-color: @(currentShop?.BrandColor ?? "#D2B48C")">
-    <header class="stylist-header">
-        <div class="logo-circle"><i class="fas fa-cut"></i></div>
-        <h1>@FormattedName</h1>
-        <p class="tagline">North East Texas Style & Booking</p>
+<div class="app-container">
+    <header style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #D2B48C;">NETH DIAGNOSTIC MODE</h1>
+        <p style="color: #888;">Step-by-Step Manual Recovery</p>
     </header>
 
-    <main class="booking-card">
-        <div style="background: #000; color: #0f0; padding: 5px; font-family: monospace; font-size: 10px; margin-bottom: 10px; border: 1px solid #333;">
-            DIAGNOSTICS: KEY: @CurrentStylist | SHOPS: @shops.Count | CLIENTS: @clients.Count
+    <main class="booking-card" style="max-width: 600px; margin: 0 auto; background: #25262b; padding: 20px; border-radius: 12px; border: 1px solid #444;">
+        
+        @* PHASE 1: SYSTEM TELEMETRY *@
+        <section style="background: #000; padding: 10px; border: 1px solid #0f0; font-family: monospace; font-size: 11px; color: #0f0; margin-bottom: 20px;">
+            <div>[SYS] Time: @DateTime.Now.ToString("HH:mm:ss")</div>
+            <div>[SYS] Key: @CurrentStylist</div>
+            <div>[DB] Connection State: @Db.Database.GetDbConnection().State</div>
+            <div style="color: yellow;">[DEBUG] @debugLog</div>
+        </section>
+
+        @* PHASE 2: MANUAL CONTROLS *@
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px;">
+            <button @onclick="ActionResetTables" style="background: #e74c3c; color: white; padding: 15px; border: none; border-radius: 5px; font-weight: bold; cursor: pointer;">
+                1. NUKE TABLES
+            </button>
+            <button @onclick="ActionSeedEverything" style="background: #27ae60; color: white; padding: 15px; border: none; border-radius: 5px; font-weight: bold; cursor: pointer;">
+                2. SEED DATA
+            </button>
         </div>
 
-        @if (isLoading)
-        {
-            <div class="spinner-box">
-                <div class="spinner"></div>
-                <p>Processing...</p>
-            </div>
-        }
-        else
-        {
-            <div class="maintenance-box" style="margin-bottom: 20px; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 8px; border: 1px solid #444;">
-                <h4 style="color: #fff; margin-bottom: 10px; font-size: 0.9rem;">Database Maintenance</h4>
-                <div style="display: grid; gap: 10px;">
-                    <button class="btn-action" @onclick="OnlyResetSchema" style="background-color: #f39c12; color: white; padding: 10px; border: none; border-radius: 4px; cursor: pointer;">
-                        1. Nuke & Recreate Tables
-                    </button>
-                    <button class="btn-action" @onclick="OnlySeedData" style="background-color: #27ae60; color: white; padding: 10px; border: none; border-radius: 4px; cursor: pointer;">
-                        2. Seed Data (Raw SQL)
-                    </button>
-                </div>
-                
-                @if (!string.IsNullOrEmpty(statusMessage))
-                {
-                    <div style="margin-top: 10px; padding: 8px; background: rgba(0,255,0,0.1); color: #0f0; font-size: 0.75rem; border: 1px solid #0f0;">
-                        @statusMessage
-                    </div>
-                }
-
-                @if (!string.IsNullOrEmpty(dbError))
-                {
-                    <p style="color: #ff4444; font-size: 0.7rem; margin-top: 10px; word-break: break-all;">@dbError</p>
-                }
-            </div>
-
-            @if (currentShop != null)
+        @* PHASE 3: LIVE TABLE AUDIT *@
+        <div style="background: #1a1b1e; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 12px;">
+            <h4 style="color: #fff; margin-bottom: 10px; border-bottom: 1px solid #333;">DATABASE VERIFICATION</h4>
+            @foreach (var audit in tableAudits)
             {
-                <section class="welcome-text">
-                    <h2>Welcome to @currentShop.BusinessName</h2>
-                    <div class="status-badge"><span class="status-dot"></span> Online</div>
-                </section>
-
-                <div class="stylist-grid">
-                    @foreach (var stylist in currentShop.Stylists)
-                    {
-                        <div class="stylist-card">
-                            <h3>@stylist.Name</h3>
-                            <p class="bio">@stylist.Bio</p>
-                            <button class="btn-book" style="width: 100%; padding: 10px; margin-top: 10px; background: #D2B48C; border: none; font-weight: bold;">Book with @stylist.Name</button>
-                        </div>
-                    }
+                <div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #2a2a2a;">
+                    <span style="color: #aaa;">@audit.Key:</span>
+                    <span style="color: @(audit.Value > 0 ? "#0f0" : "#f00")">@audit.Value rows</span>
                 </div>
             }
-        }
-
-        <div style="margin-top: 3rem; background: #111; padding: 1rem; border-radius: 8px; font-family: monospace; font-size: 0.65rem; color: #aaa; overflow-x: auto; line-height: 1.4;">
-            <h4 style="color: #fff; border-bottom: 1px solid #333; padding-bottom: 5px;">LIVE DATA DUMP</h4>
-            <p style="font-weight: bold;">[Shops]</p>
-            @foreach(var s in shops) { <div>ID:@s.Id | Key:@s.UrlKey | Name:@s.BusinessName</div> }
-            <p style="font-weight: bold; margin-top: 5px;">[Clients]</p>
-            @foreach(var c in clients) { <div>ID:@c.Id | Name:@c.FirstName @c.LastName</div> }
-            <p style="font-weight: bold; margin-top: 5px;">[Appointments]</p>
-            @foreach(var a in appointments) { <div>ID:@a.Id | Client:@a.ClientId | Status:@a.Status</div> }
         </div>
+
+        @* PHASE 4: UI PREVIEW *@
+        @if (currentShop != null)
+        {
+            <div style="margin-top: 20px; padding: 15px; background: rgba(210, 180, 140, 0.1); border: 1px solid #D2B48C; border-radius: 8px;">
+                <h3 style="color: #D2B48C; margin: 0;">@currentShop.BusinessName</h3>
+                <p style="font-size: 0.8rem; color: #888;">Registry match found!</p>
+            </div>
+        }
     </main>
 </div>
 
 @code {
-    private string CurrentStylist { get; set; } = "GENERAL";
-    private string FormattedName => CurrentStylist.Replace("%20", " ").ToUpper();
-    private bool isLoading = true;
-    private string dbError = "";
-    private string statusMessage = "";
-
-    private List<NETH_Shop> shops = new();
-    private List<NETH_Client> clients = new();
-    private List<NETH_Appointment> appointments = new();
-    private List<NETH_Phone> phones = new();
+    private string CurrentStylist = "GENERAL";
+    private string debugLog = "Awaiting user action...";
+    private Dictionary<string, int> tableAudits = new();
     private NETH_Shop? currentShop;
+    private bool isLoading = true;
 
     protected override async Task OnInitializedAsync()
     {
@@ -102,32 +69,36 @@
         var query = QueryHelpers.ParseQuery(uri.Query);
         if (query.TryGetValue("stylist", out var name)) CurrentStylist = name.ToString();
 
-        await LoadAllData();
-        isLoading = false;
+        await RunAudit();
     }
 
-    private async Task LoadAllData()
+    private async Task RunAudit()
     {
-        try {
-            shops = await Db.NETH_Shops.AsNoTracking().ToListAsync();
-            phones = await Db.NETH_Phones.AsNoTracking().ToListAsync();
-            clients = await Db.NETH_Clients.AsNoTracking().ToListAsync();
-            appointments = await Db.NETH_Appointments.AsNoTracking().ToListAsync();
-
-            string key = CurrentStylist.ToLower().Trim();
-            currentShop = await Db.NETH_Shops.AsNoTracking()
-                .Include(s => s.Stylists).ThenInclude(st => st.Services)
-                .FirstOrDefaultAsync(s => s.UrlKey.ToLower() == key);
-        }
-        catch (Exception ex) { dbError = $"Load Error: {ex.Message}"; }
-    }
-
-    private async Task OnlyResetSchema()
-    {
-        statusMessage = "Resetting tables...";
-        StateHasChanged();
-        try 
+        tableAudits.Clear();
+        string[] tables = { "NETH_Shops", "NETH_Stylists", "NETH_Clients", "NETH_Appointments", "NETH_Phones", "NETH_Services" };
+        
+        foreach (var t in tables)
         {
+            try {
+                var count = await Db.Database.SqlQueryRaw<int>($"SELECT COUNT(*)::int as \"Value\" FROM \"{t}\"").FirstOrDefaultAsync();
+                tableAudits.Add(t, count);
+            }
+            catch { tableAudits.Add(t, -1); } // -1 means table missing
+        }
+
+        try {
+            currentShop = await Db.NETH_Shops.AsNoTracking()
+                .Include(s => s.Stylists)
+                .FirstOrDefaultAsync(s => s.UrlKey.ToLower() == CurrentStylist.ToLower());
+        } catch { }
+        
+        StateHasChanged();
+    }
+
+    private async Task ActionResetTables()
+    {
+        debugLog = "Dropping and recreating all NETH tables...";
+        try {
             await Db.Database.ExecuteSqlRawAsync(@"
                 DROP TABLE IF EXISTS ""NETH_AppointmentServices"";
                 DROP TABLE IF EXISTS ""NETH_Appointments"";
@@ -148,50 +119,34 @@
                 CREATE TABLE ""NETH_Clients"" (""Id"" SERIAL PRIMARY KEY, ""FirstName"" TEXT NOT NULL, ""LastName"" TEXT NOT NULL, ""Email"" TEXT NOT NULL, ""PhoneId"" INTEGER NOT NULL);
                 CREATE TABLE ""NETH_Appointments"" (""Id"" SERIAL PRIMARY KEY, ""ShopId"" INTEGER NOT NULL, ""StylistId"" INTEGER NOT NULL, ""ClientId"" INTEGER NOT NULL, ""StartTime"" TIMESTAMP NOT NULL, ""EndTime"" TIMESTAMP NOT NULL, ""Status"" TEXT NOT NULL, ""TotalPrice"" DECIMAL NOT NULL, ""Notes"" TEXT NOT NULL, ""IsPaid"" BOOLEAN NOT NULL);
             ");
-            statusMessage = "Tables Recreated. Refreshing...";
-            await Task.Delay(1000);
-            NavManager.NavigateTo(NavManager.Uri, forceLoad: true);
+            debugLog = "Tables reset successfully.";
+            await RunAudit();
         }
-        catch (Exception ex) { dbError = $"Reset Fail: {ex.Message}"; }
+        catch (Exception ex) { debugLog = "Reset Error: " + ex.Message; }
     }
 
-    private async Task OnlySeedData()
+    private async Task ActionSeedEverything()
     {
-        statusMessage = "Seeding data via Raw SQL...";
-        StateHasChanged();
-        try 
-        {
+        debugLog = "Seeding fresh data...";
+        try {
             await Db.Database.ExecuteSqlRawAsync(@"
-                -- 1. Phones
                 INSERT INTO ""NETH_Phones"" (""Number"", ""Type"") VALUES ('9035551111', 'Work'), ('9035552222', 'Mobile');
-                
-                -- 2. Shop
-                INSERT INTO ""NETH_Shops"" (""UrlKey"", ""BusinessName"", ""BrandColor"", ""StripeAccountId"", ""PhoneId"") 
-                VALUES ('leatherandblades', 'Leather & Blades', '#D2B48C', '', 1);
-                
-                -- 3. Stylist
-                INSERT INTO ""NETH_Stylists"" (""ShopId"", ""Name"", ""Bio"", ""IsIndependent"", ""StripeAccountId"", ""PhoneId"") 
-                VALUES (1, 'Brandon', 'Master Barber', true, '', 2);
-
-                -- 4. Client
-                INSERT INTO ""NETH_Clients"" (""FirstName"", ""LastName"", ""Email"", ""PhoneId"") 
-                VALUES ('John', 'Doe', 'john@test.com', 2);
-
-                -- 5. Appointment
+                INSERT INTO ""NETH_Shops"" (""UrlKey"", ""BusinessName"", ""BrandColor"", ""StripeAccountId"", ""PhoneId"") VALUES ('leatherandblades', 'Leather & Blades', '#D2B48C', '', 1);
+                INSERT INTO ""NETH_Stylists"" (""ShopId"", ""Name"", ""Bio"", ""IsIndependent"", ""StripeAccountId"", ""PhoneId"") VALUES (1, 'Brandon', 'Master Barber', true, '', 2);
+                INSERT INTO ""NETH_Services"" (""StylistId"", ""Name"", ""Price"", ""DurationMinutes"") VALUES (1, 'Signature Fade', 35.00, 30);
+                INSERT INTO ""NETH_Clients"" (""FirstName"", ""LastName"", ""Email"", ""PhoneId"") VALUES ('John', 'Doe', 'john@test.com', 2);
                 INSERT INTO ""NETH_Appointments"" (""ShopId"", ""StylistId"", ""ClientId"", ""StartTime"", ""EndTime"", ""Status"", ""TotalPrice"", ""Notes"", ""IsPaid"") 
-                VALUES (1, 1, 1, NOW(), NOW() + interval '30 minutes', 'Booked', 35.00, 'Seeded SQL', false);
+                VALUES (1, 1, 1, NOW(), NOW() + interval '30 minutes', 'Booked', 35.00, 'Seeded', false);
             ");
-            statusMessage = "Seed Complete! Refreshing...";
-            await Task.Delay(1000);
-            NavManager.NavigateTo(NavManager.Uri, forceLoad: true);
+            debugLog = "Data seeded successfully.";
+            await RunAudit();
         }
-        catch (Exception ex) { dbError = $"Seed Fail: {ex.Message}"; }
+        catch (Exception ex) { debugLog = "Seed Error: " + ex.Message; }
     }
 }
 
 <style>
     :root { --dark-bg: #1a1b1e; --card-bg: #25262b; --text-main: #c1c2c5; }
-    .app-container { background-color: var(--dark-bg); color: var(--text-main); min-height: 100vh; padding: 2rem; font-family: sans-serif; }
-    .booking-card { background-color: var(--card-bg); border-radius: 12px; padding: 2rem; width: 100%; max-width: 450px; margin: 0 auto; border: 1px solid #373a40; }
-    @@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .app-container { background-color: var(--dark-bg); color: var(--text-main); min-height: 100vh; padding: 2rem; font-family: 'Inter', sans-serif; }
+    .booking-card { box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
 </style>
