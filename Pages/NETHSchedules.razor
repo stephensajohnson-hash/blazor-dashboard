@@ -1,0 +1,187 @@
+@page "/admin/neth-schedules"
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.JSInterop
+@using Dashboard
+@using Dashboard.Components
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject AppDbContext Db
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@if (isAuthorized)
+{
+    <div class="min-h-screen bg-[#1a1b1e] text-gray-300 flex font-sans">
+        <NETHAdminSidebar />
+
+        <div class="flex-1 p-8">
+            <div class="max-w-5xl mx-auto">
+                <div class="flex justify-between items-end mb-8">
+                    <div>
+                        <h2 class="text-2xl font-black text-white uppercase tracking-tight">Shift Commander</h2>
+                        <p class="text-xs text-gray-500 font-mono">Manage split-shifts and weekly availability</p>
+                    </div>
+                    <div class="flex gap-4">
+                        <select @onchange="OnStylistChanged" class="bg-[#25262b] border border-gray-700 rounded px-4 py-2 text-white text-[10px] font-black uppercase outline-none focus:border-[#D2B48C]">
+                            <option value="0">-- Select Stylist --</option>
+                            @foreach(var s in allStylists) { <option value="@s.Id">@s.Name</option> }
+                        </select>
+                        @* EMERGENCY INITIALIZATION BUTTON *@
+                        <button @onclick="RepairTable" class="text-[9px] text-gray-600 hover:text-orange-400 font-mono border border-gray-800 px-3 py-1 rounded uppercase transition">Initialize_Table</button>
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrEmpty(statusMessage))
+                {
+                    <div class="mb-6 p-3 bg-blue-900/20 border border-blue-500/30 rounded text-blue-400 font-mono text-[10px] uppercase">
+                        @statusMessage
+                    </div>
+                }
+
+                @if (selectedStylistId > 0)
+                {
+                    <div class="space-y-6">
+                        @foreach (var day in DayNames)
+                        {
+                            var shifts = allSchedules.Where(x => x.DayOfWeek == day.Key).ToList();
+                            
+                            <div class="bg-[#25262b] rounded-xl border border-gray-700 overflow-hidden shadow-xl">
+                                <div class="p-4 bg-black/20 border-b border-gray-800 flex justify-between items-center">
+                                    <h3 class="font-black text-[#D2B48C] uppercase tracking-widest text-xs">@day.Value</h3>
+                                    <button @onclick="() => AddShift(day.Key)" class="text-[9px] font-black bg-blue-600/20 text-blue-400 border border-blue-500/30 px-3 py-1 rounded hover:bg-blue-600 hover:text-white transition">＋ Add Shift Block</button>
+                                </div>
+
+                                <div class="p-4 space-y-3">
+                                    @if (!shifts.Any())
+                                    {
+                                        <div class="text-center py-4 text-gray-600 italic text-[10px] uppercase tracking-widest">No hours scheduled (Off)</div>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var s in shifts)
+                                        {
+                                            <div class="flex items-center gap-4 bg-white/5 p-3 rounded-lg border border-white/5 group">
+                                                <div class="flex items-center gap-2">
+                                                    <span class="text-[9px] text-gray-500 uppercase font-mono">Start</span>
+                                                    <input type="time" @bind="s.StartTime" @bind:format="HH:mm" class="bg-black/40 border border-gray-700 rounded px-2 py-1 text-sm text-[#D2B48C] font-mono" />
+                                                </div>
+                                                <div class="text-gray-700">➔</div>
+                                                <div class="flex items-center gap-2">
+                                                    <span class="text-[9px] text-gray-500 uppercase font-mono">End</span>
+                                                    <input type="time" @bind="s.EndTime" @bind:format="HH:mm" class="bg-black/40 border border-gray-700 rounded px-2 py-1 text-sm text-[#D2B48C] font-mono" />
+                                                </div>
+                                                <button @onclick="() => RemoveShift(s)" class="ml-auto opacity-0 group-hover:opacity-100 text-red-500/50 hover:text-red-500 transition px-2">
+                                                    <i class="fas fa-times"></i>
+                                                </button>
+                                            </div>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <div class="flex justify-end pt-6">
+                            <button @onclick="SaveSchedules" class="bg-green-600 hover:bg-green-500 text-white font-black uppercase text-xs px-10 py-4 rounded-xl shadow-2xl transition tracking-widest">Commit_Weekly_Registry</button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="text-center py-32 border-2 border-dashed border-gray-800 rounded-3xl">
+                        <i class="fas fa-clock text-4xl text-gray-800 mb-4"></i>
+                        <p class="text-gray-600 font-black uppercase tracking-widest text-xs">Awaiting Stylist Selection...</p>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool isAuthorized = false, isLoading = true;
+    private int selectedStylistId = 0;
+    private string statusMessage = "";
+    private List<NETH_Stylist> allStylists = new();
+    private List<NETH_Schedule> allSchedules = new();
+    private List<NETH_Schedule> deletedSchedules = new();
+
+    private Dictionary<int, string> DayNames = new() {
+        {0, "Sunday"}, {1, "Monday"}, {2, "Tuesday"}, {3, "Wednesday"}, {4, "Thursday"}, {5, "Friday"}, {6, "Saturday"}
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) {
+            var json = await JS.InvokeAsync<string>("localStorage.getItem", "neth_session");
+            if (string.IsNullOrEmpty(json)) Nav.NavigateTo("/nethaircut");
+            else { isAuthorized = true; await LoadInitialData(); isLoading = false; StateHasChanged(); }
+        }
+    }
+
+    private async Task LoadInitialData() {
+        try { allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync(); } catch { statusMessage = "DATABASE_SYNC_ERROR"; }
+    }
+
+    private async Task OnStylistChanged(ChangeEventArgs e) {
+        selectedStylistId = int.Parse(e.Value?.ToString() ?? "0");
+        if (selectedStylistId > 0) {
+            try {
+                allSchedules = await Db.NETH_Schedules.Where(x => x.StylistId == selectedStylistId).ToListAsync();
+                deletedSchedules.Clear();
+            } catch { statusMessage = "SELECT_FAILED: TABLE_MAY_NOT_EXIST"; }
+        }
+    }
+
+    private void AddShift(int day) {
+        allSchedules.Add(new NETH_Schedule { 
+            StylistId = selectedStylistId, 
+            DayOfWeek = day, 
+            StartTime = DateTime.Today.AddHours(9), 
+            EndTime = DateTime.Today.AddHours(17), 
+            IsWorkDay = true 
+        });
+    }
+
+    private void RemoveShift(NETH_Schedule s) {
+        if (s.Id != 0) deletedSchedules.Add(s);
+        allSchedules.Remove(s);
+    }
+
+    private async Task SaveSchedules() {
+        try {
+            foreach (var d in deletedSchedules) {
+                await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_Schedules"" WHERE ""Id"" = {0}", d.Id);
+            }
+            foreach (var s in allSchedules) {
+                if (s.Id == 0) {
+                    await Db.Database.ExecuteSqlRawAsync(
+                        @"INSERT INTO ""NETH_Schedules"" (""StylistId"", ""DayOfWeek"", ""StartTime"", ""EndTime"", ""IsWorkDay"") VALUES ({0}, {1}, {2}, {3}, {4})",
+                        s.StylistId, s.DayOfWeek, s.StartTime, s.EndTime, s.IsWorkDay
+                    );
+                } else {
+                    await Db.Database.ExecuteSqlRawAsync(
+                        @"UPDATE ""NETH_Schedules"" SET ""StartTime"" = {0}, ""EndTime"" = {1} WHERE ""Id"" = {2}",
+                        s.StartTime, s.EndTime, s.Id
+                    );
+                }
+            }
+            statusMessage = "SCHEDULE_SYNC_SUCCESSFUL";
+            await OnStylistChanged(new ChangeEventArgs { Value = selectedStylistId });
+        } catch (Exception ex) { statusMessage = "SAVE_ERR: " + ex.Message; }
+    }
+
+    private async Task RepairTable() {
+        try {
+            await Db.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""NETH_Schedules"" (
+                    ""Id"" SERIAL PRIMARY KEY,
+                    ""StylistId"" INTEGER NOT NULL,
+                    ""DayOfWeek"" INTEGER NOT NULL,
+                    ""StartTime"" TIMESTAMP NOT NULL,
+                    ""EndTime"" TIMESTAMP NOT NULL,
+                    ""IsWorkDay"" BOOLEAN NOT NULL DEFAULT TRUE
+                );
+            ");
+            statusMessage = "DATABASE_TABLE_INITIALIZED";
+        } catch (Exception ex) { statusMessage = "REPAIR_FAILED: " + ex.Message; }
+    }
+}

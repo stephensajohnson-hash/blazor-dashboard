@@ -685,6 +685,16 @@ public class NETH_Appointment
     public bool IsPaid { get; set; }
 }
 
+public class NETH_Schedule
+{
+    public int Id { get; set; }
+    public int StylistId { get; set; }
+    public int DayOfWeek { get; set; } // 0=Sun, 6=Sat
+    public DateTime StartTime { get; set; }
+    public DateTime EndTime { get; set; }
+    public bool IsWorkDay { get; set; }
+}
+
 public class NETH_AppointmentService
 {
     public int Id { get; set; }
