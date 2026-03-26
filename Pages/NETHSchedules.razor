@@ -62,12 +62,18 @@
                                             <div class="flex items-center gap-4 bg-white/5 p-3 rounded-lg border border-white/5 group">
                                                 <div class="flex items-center gap-2">
                                                     <span class="text-[9px] text-gray-500 uppercase font-mono">Start</span>
-                                                    <input type="time" @bind="s.StartTime" @bind:format="HH:mm" class="bg-black/40 border border-gray-700 rounded px-2 py-1 text-sm text-[#D2B48C] font-mono" />
+                                                    <input type="time" 
+                                                           value="@s.StartTime.ToString("HH:mm")" 
+                                                           @onchange="@((ChangeEventArgs e) => s.StartTime = UpdateTime(s.StartTime, e.Value?.ToString()))"
+                                                           class="bg-black/40 border border-gray-700 rounded px-2 py-1 text-sm text-[#D2B48C] font-mono" />
                                                 </div>
                                                 <div class="text-gray-700">➔</div>
                                                 <div class="flex items-center gap-2">
                                                     <span class="text-[9px] text-gray-500 uppercase font-mono">End</span>
-                                                    <input type="time" @bind="s.EndTime" @bind:format="HH:mm" class="bg-black/40 border border-gray-700 rounded px-2 py-1 text-sm text-[#D2B48C] font-mono" />
+                                                    <input type="time" 
+                                                           value="@s.EndTime.ToString("HH:mm")" 
+                                                           @onchange="@((ChangeEventArgs e) => s.EndTime = UpdateTime(s.EndTime, e.Value?.ToString()))"
+                                                           class="bg-black/40 border border-gray-700 rounded px-2 py-1 text-sm text-[#D2B48C] font-mono" />
                                                 </div>
                                                 <button @onclick="() => RemoveShift(s)" class="ml-auto opacity-0 group-hover:opacity-100 text-red-500/50 hover:text-red-500 transition px-2">
                                                     <i class="fas fa-times"></i>
@@ -124,19 +130,29 @@
         selectedStylistId = int.Parse(e.Value?.ToString() ?? "0");
         if (selectedStylistId > 0) {
             try {
-                // Using Raw SQL load to bypass DbSet availability issues during transition
                 allSchedules = await Db.Database.SqlQueryRaw<NETH_Schedule>(@"SELECT * FROM ""NETH_Schedules"" WHERE ""StylistId"" = {0}", selectedStylistId).ToListAsync();
                 deletedSchedules.Clear();
             } catch { statusMessage = "SELECT_FAILED: INITIALIZE_TABLE_REQUIRED"; }
         }
     }
 
+    private DateTime UpdateTime(DateTime existing, string? timeString)
+    {
+        if (TimeSpan.TryParse(timeString, out var ts))
+        {
+            // Keep the date, only update the time portion
+            return existing.Date.Add(ts);
+        }
+        return existing;
+    }
+
     private void AddShift(int day) {
+        var today = DateTime.Today;
         allSchedules.Add(new NETH_Schedule { 
             StylistId = selectedStylistId, 
             DayOfWeek = day, 
-            StartTime = DateTime.Today.AddHours(9), 
-            EndTime = DateTime.Today.AddHours(17), 
+            StartTime = today.AddHours(9), 
+            EndTime = today.AddHours(17), 
             IsWorkDay = true 
         });
     }
