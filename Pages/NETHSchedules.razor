@@ -94,7 +94,7 @@
                         }
 
                         <div class="flex justify-end pt-6">
-                            <button @onclick="SaveSchedules" class="bg-green-600 hover:bg-green-500 text-white font-black uppercase text-xs px-10 py-4 rounded-xl shadow-2xl transition tracking-widest">Commit_Weekly_Registry</button>
+                            <button @onclick="SaveSchedules" class="bg-green-600 hover:bg-green-500 text-white font-black uppercase text-xs px-10 py-4 rounded-xl shadow-2xl transition tracking-widest">Save Schedule</button>
                         </div>
                     </div>
                 }
@@ -107,30 +107,30 @@
                 }
             </div>
         </div>
-    </div>
-}
+    }
+</div>
 
 @* COPY TO MODAL *@
 @if (showCopyModal)
 {
     <div class="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div class="bg-[#25262b] w-full max-w-sm rounded-xl border border-gray-700 shadow-2xl overflow-hidden">
-            <div class="p-4 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center uppercase text-[10px] font-black tracking-widest text-[#D2B48C]">
+        <div class="bg-[#25262b] w-full max-w-sm rounded-xl border border-gray-700 shadow-2xl overflow-hidden font-black">
+            <div class="p-4 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center uppercase text-[10px] tracking-widest text-[#D2B48C]">
                 <span>Copy @DayNames[sourceDay] Schedule To:</span>
-                <button @onclick="() => showCopyModal = false" class="text-gray-500 hover:text-white">&times;</button>
+                <button @onclick="() => showCopyModal = false" class="text-gray-500 hover:text-white text-xl">&times;</button>
             </div>
-            <div class="p-6 grid grid-cols-1 gap-2">
+            <div class="p-6 grid grid-cols-1 gap-2 text-gray-300">
                 @foreach (var day in DayNames.Where(x => x.Key != sourceDay))
                 {
                     <label class="flex items-center gap-3 p-3 bg-white/5 rounded border border-white/5 cursor-pointer hover:bg-white/10 transition">
-                        <input type="checkbox" @onchange="((e) => ToggleTargetDay(day.Key, e.Value))" class="w-4 h-4 rounded border-gray-700 bg-black" />
-                        <span class="text-xs font-black uppercase tracking-tight">@day.Value</span>
+                        <input type="checkbox" checked="@targetDays.Contains(day.Key)" @onchange="((e) => ToggleTargetDay(day.Key, e.Value))" class="w-4 h-4" />
+                        <span class="text-xs uppercase tracking-tight">@day.Value</span>
                     </label>
                 }
             </div>
             <div class="p-4 bg-black/20 border-t border-gray-700 flex justify-end gap-3">
                 <button @onclick="() => showCopyModal = false" class="text-[10px] text-gray-500 uppercase px-4 py-2 font-black">Cancel</button>
-                <button @onclick="ExecuteCopy" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] uppercase px-6 py-2 rounded font-black">Apply_Clone</button>
+                <button @onclick="ExecuteCopy" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] uppercase px-6 py-2 rounded font-black shadow-xl">Apply_Clone</button>
             </div>
         </div>
     </div>
@@ -167,6 +167,7 @@
             try {
                 allSchedules = await Db.Database.SqlQueryRaw<NETH_Schedule>(@"SELECT * FROM ""NETH_Schedules"" WHERE ""StylistId"" = {0}", selectedStylistId).ToListAsync();
                 deletedSchedules.Clear();
+                statusMessage = "";
             } catch { statusMessage = "SELECT_FAILED: INITIALIZE_TABLE_REQUIRED"; }
         }
     }
@@ -198,38 +199,30 @@
 
     private void ExecuteCopy() {
         var shiftsToCopy = allSchedules.Where(x => x.DayOfWeek == sourceDay).ToList();
-        
         foreach (var targetDay in targetDays) {
-            // Remove existing UI shifts for target day (database deletes handled on Save)
             var existingTargetShifts = allSchedules.Where(x => x.DayOfWeek == targetDay).ToList();
             foreach (var s in existingTargetShifts) {
                 if (s.Id != 0) deletedSchedules.Add(s);
                 allSchedules.Remove(s);
             }
-
-            // Create new clones
             foreach (var s in shiftsToCopy) {
-                allSchedules.Add(new NETH_Schedule {
-                    StylistId = selectedStylistId,
-                    DayOfWeek = targetDay,
-                    StartTime = s.StartTime,
-                    EndTime = s.EndTime,
-                    IsWorkDay = true
-                });
+                allSchedules.Add(new NETH_Schedule { StylistId = selectedStylistId, DayOfWeek = targetDay, StartTime = s.StartTime, EndTime = s.EndTime, IsWorkDay = true });
             }
         }
         showCopyModal = false;
-        statusMessage = "CLONE_STAGED: CLICK COMMIT TO PERMANENTLY SAVE";
+        statusMessage = "CLONE_STAGED: CLICK SAVE TO PERSIST";
     }
 
     private async Task SaveSchedules() {
         try {
+            statusMessage = "SAVING...";
             foreach (var d in deletedSchedules) await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_Schedules"" WHERE ""Id"" = {0}", d.Id);
+            deletedSchedules.Clear();
             foreach (var s in allSchedules) {
                 if (s.Id == 0) await Db.Database.ExecuteSqlRawAsync(@"INSERT INTO ""NETH_Schedules"" (""StylistId"", ""DayOfWeek"", ""StartTime"", ""EndTime"", ""IsWorkDay"") VALUES ({0}, {1}, {2}, {3}, {4})", s.StylistId, s.DayOfWeek, s.StartTime, s.EndTime, s.IsWorkDay);
-                else await Db.Database.ExecuteSqlRawAsync(@"UPDATE ""NETH_Schedules"" SET ""StartTime"" = {0}, ""EndTime"" = {1} WHERE ""Id"" = {2}", s.StartTime, s.EndTime, s.Id);
+                else await Db.Database.ExecuteSqlRawAsync(@"UPDATE ""NETH_Schedules"" SET ""StartTime"" = {0}, ""EndTime"" = {1}, ""IsWorkDay"" = {2} WHERE ""Id"" = {3}", s.StartTime, s.EndTime, s.IsWorkDay, s.Id);
             }
-            statusMessage = "SCHEDULE_SYNC_SUCCESSFUL";
+            statusMessage = "SCHEDULE_SAVED_SUCCESSFULLY";
             await OnStylistChanged(new ChangeEventArgs { Value = selectedStylistId });
         } catch (Exception ex) { statusMessage = "SAVE_ERR: " + ex.Message; }
     }
