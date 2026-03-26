@@ -614,7 +614,12 @@ public class NETH_Stylist
 public class NETH_Service
 {
     public int Id { get; set; }
+    
     public int StylistId { get; set; }
+
+    [ForeignKey("StylistId")] // Add this attribute
+    public virtual NETH_Stylist? Stylist { get; set; }
+
     public string Name { get; set; } = "";
     public decimal Price { get; set; }
     public int DurationMinutes { get; set; }
