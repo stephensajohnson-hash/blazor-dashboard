@@ -38,26 +38,62 @@
                             var shopName = allShops.FirstOrDefault(x => x.Id == s.ShopId)?.BusinessName ?? "Unknown Shop";
                             var userName = allUsers.FirstOrDefault(x => x.Id == s.UserId)?.Username ?? "NO_USER_LINKED";
                             var svcCount = serviceCounts.ContainsKey(s.Id) ? serviceCounts[s.Id] : 0;
+                            var isExpanded = expandedSchedules.Contains(s.Id);
 
-                            <div class="bg-[#25262b] rounded-xl border border-gray-700 p-5 shadow-lg flex justify-between items-center hover:border-gray-500 transition group">
-                                <div class="flex items-center gap-5">
-                                    <div class="w-12 h-12 bg-gray-700 rounded-full flex items-center justify-center text-xl text-[#D2B48C]">
-                                        <i class="fas fa-user-tie"></i>
-                                    </div>
-                                    <div>
-                                        <h3 class="font-black text-white uppercase tracking-tighter">@s.Name</h3>
-                                        <div class="flex gap-3 mt-0.5 items-center font-black">
-                                            <span class="text-[10px] text-[#D2B48C] uppercase">@shopName</span>
-                                            <span class="text-[10px] text-gray-500 font-mono">[@userName]</span>
-                                            <span class="text-[9px] bg-white/5 px-2 py-0.5 rounded text-gray-400 border border-white/10 uppercase">@svcCount Services</span>
+                            <div class="bg-[#25262b] rounded-xl border border-gray-700 overflow-hidden shadow-lg hover:border-gray-500 transition group">
+                                <div class="p-5 flex justify-between items-center">
+                                    <div class="flex items-center gap-5">
+                                        <div class="w-12 h-12 bg-gray-700 rounded-full flex items-center justify-center text-xl text-[#D2B48C]">
+                                            <i class="fas fa-user-tie"></i>
+                                        </div>
+                                        <div>
+                                            <h3 class="font-black text-white uppercase tracking-tighter">@s.Name</h3>
+                                            <div class="flex gap-3 mt-0.5 items-center font-black">
+                                                <span class="text-[10px] text-[#D2B48C] uppercase">@shopName</span>
+                                                <span class="text-[10px] text-gray-500 font-mono">[@userName]</span>
+                                                <span class="text-[9px] bg-white/5 px-2 py-0.5 rounded text-gray-400 border border-white/10 uppercase">@svcCount Services</span>
+                                                <button @onclick="() => ToggleSchedule(s.Id)" class="text-[9px] text-blue-400 hover:text-white uppercase tracking-widest transition">
+                                                    @(isExpanded ? "− Hide Schedule" : "＋ View Schedule")
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
+                                    <div class="flex gap-4 items-center">
+                                        <button @onclick='() => Nav.NavigateTo($"/admin/neth-services/{s.Id}")' class="bg-[#D2B48C]/10 hover:bg-[#D2B48C] text-[#D2B48C] hover:text-[#1a1b1e] px-4 py-2 rounded text-[10px] font-black uppercase transition border border-[#D2B48C]/20">Services</button>
+                                        <button @onclick="() => OpenEditModal(s)" class="text-[10px] font-black uppercase text-gray-500 hover:text-white transition">Edit</button>
+                                        <button @onclick="() => DeleteStylist(s.Id)" class="text-[10px] font-black uppercase text-red-500/50 hover:text-red-500 transition">Del</button>
+                                    </div>
                                 </div>
-                                <div class="flex gap-4 items-center">
-                                    <button @onclick='() => Nav.NavigateTo($"/admin/neth-services/{s.Id}")' class="bg-[#D2B48C]/10 hover:bg-[#D2B48C] text-[#D2B48C] hover:text-[#1a1b1e] px-4 py-2 rounded text-[10px] font-black uppercase transition border border-[#D2B48C]/20">Manage_Services</button>
-                                    <button @onclick="() => OpenEditModal(s)" class="text-[10px] font-black uppercase text-blue-400 hover:underline">Edit</button>
-                                    <button @onclick="() => DeleteStylist(s.Id)" class="text-[10px] font-black uppercase text-red-500/50 hover:text-red-500">Delete</button>
-                                </div>
+
+                                @if (isExpanded)
+                                {
+                                    <div class="bg-black/20 border-t border-gray-800 p-5 animate-in slide-in-from-top duration-200">
+                                        <div class="flex justify-between items-center mb-4">
+                                            <span class="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">Weekly Availability Preview</span>
+                                            <button @onclick='() => Nav.NavigateTo("/admin/neth-schedules")' class="text-[9px] font-black bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded uppercase shadow-lg transition">Edit Full Schedule</button>
+                                        </div>
+                                        <div class="grid grid-cols-7 gap-2">
+                                            @foreach (var day in DayNames)
+                                            {
+                                                var dayShifts = stylistSchedules.Where(x => x.StylistId == s.Id && x.DayOfWeek == day.Key && x.IsWorkDay).OrderBy(x => x.StartTime).ToList();
+                                                <div class="bg-[#1a1b1e] p-2 rounded border border-gray-800 min-h-[60px]">
+                                                    <div class="text-[8px] font-black uppercase text-gray-600 mb-1">@day.Value.Substring(0, 3)</div>
+                                                    @if (dayShifts.Any())
+                                                    {
+                                                        @foreach (var shift in dayShifts)
+                                                        {
+                                                            <div class="text-[9px] font-mono text-[#D2B48C]">@shift.StartTime.ToString("HH:mm")-@shift.EndTime.ToString("HH:mm")</div>
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="text-[8px] text-gray-700 italic uppercase">Off</div>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                }
                             </div>
                         }
                     </div>
@@ -117,8 +153,14 @@
     private List<NETH_Stylist> allStylists = new();
     private List<NETH_Shop> allShops = new();
     private List<NETHUsers.NETH_User> allUsers = new();
+    private List<NETH_Schedule> stylistSchedules = new();
     private Dictionary<int, int> serviceCounts = new();
+    private HashSet<int> expandedSchedules = new();
     private NETH_Stylist? editingStylist;
+
+    private Dictionary<int, string> DayNames = new() {
+        {0, "Sunday"}, {1, "Monday"}, {2, "Tuesday"}, {3, "Wednesday"}, {4, "Thursday"}, {5, "Friday"}, {6, "Saturday"}
+    };
 
     protected override async Task OnAfterRenderAsync(bool firstRender) {
         if (firstRender) {
@@ -133,14 +175,16 @@
             allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync(); 
             allShops = await Db.NETH_Shops.AsNoTracking().ToListAsync(); 
             allUsers = await Db.Database.SqlQueryRaw<NETHUsers.NETH_User>(@"SELECT * FROM ""NETH_Users""").ToListAsync(); 
+            stylistSchedules = await Db.NETH_Schedules.AsNoTracking().ToListAsync();
             
-            // Fetch service counts
-            var rawCounts = await Db.NETH_Services
-                .GroupBy(x => x.StylistId)
-                .Select(g => new { StylistId = g.Key, Count = g.Count() })
-                .ToListAsync();
-            serviceCounts = rawCounts.ToDictionary(x => x.StylistId, x => x.Count);
+            var rawCounts = await Db.NETH_Services.GroupBy(x => x.StylistId).Select(g => new { Id = g.Key, Count = g.Count() }).ToListAsync();
+            serviceCounts = rawCounts.ToDictionary(x => x.Id, x => x.Count);
         } catch { } 
+    }
+
+    private void ToggleSchedule(int id) {
+        if (expandedSchedules.Contains(id)) expandedSchedules.Remove(id);
+        else expandedSchedules.Add(id);
     }
 
     private void OpenCreateModal() { editingStylist = new NETH_Stylist { Name = "", Bio = "", ShopId = allShops.FirstOrDefault()?.Id ?? 0, PhoneId = 1, StripeAccountId = "" }; showModal = true; }
