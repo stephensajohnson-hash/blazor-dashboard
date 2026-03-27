@@ -25,7 +25,7 @@
         40%, 80% { transform: translateX(10px); }
     }
     .shake-it { animation: neth-shake 0.3s ease-in-out !important; border: 2px solid #ef4444 !important; }
-    .debug-panel { background: #000; border-top: 4px solid #444; color: #0f0; font-family: monospace; font-size: 11px; padding: 20px; z-index: 999; width: 100%; }
+    .debug-panel { background: #000; border-top: 4px solid #444; color: #0f0; font-family: monospace; font-size: 11px; padding: 20px; z-index: 999; width: 100%; margin-top: 50px; }
 </style>
 
 <div class="min-h-screen bg-[#1a1b1e] text-gray-300 flex flex-col">
@@ -57,7 +57,7 @@
                                 <h3 class="text-[10px] font-black text-[#D2B48C] mb-4 uppercase">Services (@totalDuration min)</h3>
                                 @foreach (var svc in filteredServices)
                                 {
-                                    <div @onclick="() => ToggleService(svc)" class="p-3 mb-1 rounded border @(selectedServices.Any(x => x.Id == svc.Id) ? "bg-blue-600/20 border-blue-500 text-white" : "bg-black/20 border-gray-800 text-gray-400") cursor-pointer">
+                                    <div @onclick="() => ToggleService(svc)" class="p-3 mb-1 rounded border @(selectedServices.Any(x => x.Id == svc.Id) ? "bg-blue-600/20 border-blue-500 text-white" : "bg-black/20 border-gray-800 text-gray-400") cursor-pointer transition">
                                         <span class="text-[10px] font-black">@svc.Name (@svc.DurationMinutes m)</span>
                                     </div>
                                 }
@@ -71,7 +71,7 @@
                                         <option value="0">-- Client --</option>
                                         @foreach(var c in allClients) { <option value="@c.Id">@c.FirstName @c.LastName</option> }
                                     </select>
-                                    <button @onclick="CreateAppointment" class="w-full bg-white text-blue-600 font-black py-3 rounded mt-3 shadow-lg">SAVE APPOINTMENT</button>
+                                    <button @onclick="CreateAppointment" class="w-full bg-white text-blue-600 font-black py-3 rounded mt-3 shadow-lg uppercase text-xs">Confirm Booking</button>
                                 </div>
                             }
                         </div>
@@ -87,7 +87,7 @@
                                 }
                             </div>
 
-                            <div class="relative overflow-y-auto bg-[#1a1b1e] h-[600px]">
+                            <div class="relative overflow-y-auto bg-[#1a1b1e] h-[600px] custom-scrollbar">
                                 <div class="grid grid-cols-8 relative neth-grid-container">
                                     <div class="col-span-1 border-r border-gray-800 bg-[#25262b]/50">
                                         @for (int h = 8; h < 20; h++) { <div class="neth-hour-row pr-3 pt-2 text-[10px] font-mono text-gray-600 text-right uppercase">@((h > 12 ? h - 12 : h)):00</div> }
@@ -106,11 +106,10 @@
                                                 @for (DateTime t = shift.StartTime; t < shift.EndTime; t = t.AddMinutes(15))
                                                 {
                                                     var start = t; var end = t.AddMinutes(totalDuration);
-                                                    bool collision = dayApps.Any(a => start < a.EndTime && end > a.StartTime);
-                                                    bool overShift = end > shift.EndTime;
+                                                    var collision = GetCollisionReason(dayApps, start, end, shift.EndTime);
 
-                                                    <div @onclick="() => HandleSlotClick(dayDate, start, collision || overShift)" class="neth-click-slot" style="top: @(GetPx(start))px; height: 25px;">
-                                                        @if (!(collision || overShift)) {
+                                                    <div @onclick="() => HandleSlotClick(dayDate, start, collision)" class="neth-click-slot" style="top: @(GetPx(start))px; height: 25px;">
+                                                        @if (string.IsNullOrEmpty(collision)) {
                                                             <div class="neth-ghost-preview" style="height: @(totalDuration * 1.666)px;">
                                                                 <span class="text-[8px] font-black text-white uppercase">@totalDuration m</span>
                                                             </div>
@@ -122,7 +121,7 @@
                                             @foreach (var app in dayApps)
                                             {
                                                 <div @onclick="() => DeleteApp(app)" @onclick:stopPropagation="true" class="neth-appointment-block" style="top: @(GetPx(app.StartTime))px; height: @(GetH(app.StartTime, app.EndTime))px;">
-                                                    <p class="text-[9px] font-black text-white truncate">@(allClients.FirstOrDefault(c => c.Id == app.ClientId)?.FirstName ?? "User")</p>
+                                                    <p class="text-[9px] font-black text-white truncate">@(allClients.FirstOrDefault(c => c.Id == app.ClientId)?.FirstName ?? "Client")</p>
                                                 </div>
                                             }
 
@@ -141,18 +140,17 @@
         </div>
     </div>
 
-    @* FORCED DEBUG CONSOLE *@
+    @* TERMINAL DEBUG PANEL *@
     <div class="debug-panel">
         <div class="flex justify-between border-b border-green-900 mb-2 pb-1">
-            <span class="font-bold text-white">SYSTEM TERMINAL [CONNECTED]</span>
-            <button @onclick="ClearStylistAppointments" class="text-red-500 text-[10px] uppercase font-bold hover:underline">Reset Stylist Data</button>
+            <span class="font-bold text-white uppercase">System Terminal Console</span>
+            <button @onclick="ClearStylistAppointments" class="text-red-500 text-[10px] uppercase font-bold hover:underline">Reset Stylist Grid</button>
         </div>
-        <div>Active Stylist ID: @selectedStylistId</div>
-        <div>Appointments Loaded: @existingAppointments.Count</div>
+        <div>Weekly Appointments Tracked: @existingAppointments.Count</div>
         @foreach(var a in existingAppointments.OrderBy(x => x.StartTime)) {
-            <div class="opacity-80">> APP ID:@a.Id | @a.StartTime.ToString("ddd HH:mm") - @a.EndTime.ToString("HH:mm") (Client: @a.ClientId)</div>
+            <div class="opacity-80">> APP_REF:@a.Id | @a.StartTime.ToString("ddd HH:mm") - @a.EndTime.ToString("HH:mm") (Ticks: @a.StartTime.Ticks)</div>
         }
-        @if(!string.IsNullOrEmpty(statusMessage)) { <div class="text-white bg-red-900 px-2 mt-1">LOG: @statusMessage</div> }
+        @if(!string.IsNullOrEmpty(statusMessage)) { <div class="text-white bg-red-900 px-2 mt-2">SYSTEM_LOG: @statusMessage</div> }
     </div>
 </div>
 
@@ -162,6 +160,7 @@
     private int selectedStylistId, selectedClientId, viewWeekOffset;
     private string statusMessage = "";
     private DateTime bookingStart;
+    private NETH_Stylist currentStylist;
 
     private List<NETH_Stylist> allStylists = new();
     private List<NETH_Client> allClients = new();
@@ -182,6 +181,19 @@
         }
     }
 
+    private string GetCollisionReason(List<NETH_Appointment> apps, DateTime start, DateTime end, DateTime shiftEnd) {
+        // 1. Shift Boundary Check
+        if (end.TimeOfDay > shiftEnd.TimeOfDay) return "OUTSIDE_SHIFT_BOUNDARIES";
+
+        // 2. Appointment Overlap Check (Normalized to Time of Day to avoid Date mismatches)
+        foreach (var a in apps) {
+            if (start.TimeOfDay < a.EndTime.TimeOfDay && end.TimeOfDay > a.StartTime.TimeOfDay) {
+                return $"COLLISION_WITH_APP_{a.Id}";
+            }
+        }
+        return "";
+    }
+
     private void ChangeWeek(int delta) { viewWeekOffset += delta; isTimeSelected = false; StateHasChanged(); }
     private async Task OnStylistChanged(ChangeEventArgs e) { 
         selectedStylistId = int.Parse(e.Value?.ToString() ?? "0"); 
@@ -190,6 +202,7 @@
 
     private async Task LoadStylistData() {
         if (selectedStylistId == 0) return;
+        currentStylist = await Db.NETH_Stylists.FirstOrDefaultAsync(x => x.Id == selectedStylistId);
         filteredServices = await Db.NETH_Services.Where(x => x.StylistId == selectedStylistId).ToListAsync();
         stylistSchedules = await Db.NETH_Schedules.Where(x => x.StylistId == selectedStylistId).ToListAsync();
         existingAppointments = await Db.NETH_Appointments.Where(x => x.StylistId == selectedStylistId).ToListAsync();
@@ -202,9 +215,9 @@
         StateHasChanged();
     }
 
-    private async Task HandleSlotClick(DateTime date, DateTime time, bool isInvalid) {
-        if (isInvalid) {
-            statusMessage = "COLLISION AT " + time.ToString("HH:mm");
+    private async Task HandleSlotClick(DateTime date, DateTime time, string collision) {
+        if (!string.IsNullOrEmpty(collision)) {
+            statusMessage = $"ERR: {collision} AT {time:HH:mm}";
             isShaking = true; StateHasChanged();
             await Task.Delay(400);
             isShaking = false; StateHasChanged();
@@ -212,7 +225,7 @@
         }
         bookingStart = date.Date.Add(time.TimeOfDay);
         isTimeSelected = true;
-        statusMessage = "";
+        statusMessage = "SLOT_READY";
     }
 
     private async Task DeleteApp(NETH_Appointment app) {
@@ -224,7 +237,7 @@
     }
 
     private async Task ClearStylistAppointments() {
-        if (await JS.InvokeAsync<bool>("confirm", "DANGER: Wipe all data for this stylist?")) {
+        if (await JS.InvokeAsync<bool>("confirm", "WARNING: Reset all records for this stylist?")) {
             await Db.Database.ExecuteSqlRawAsync("DELETE FROM \"NETH_Appointments\" WHERE \"StylistId\" = {0}", selectedStylistId);
             await LoadStylistData();
         }
@@ -234,17 +247,21 @@
     private double GetH(DateTime s, DateTime e) => (e - s).TotalMinutes * 1.666;
 
     private async Task CreateAppointment() {
-        if (selectedClientId == 0 || !selectedServices.Any()) { statusMessage = "MISSING DATA"; return; }
+        if (selectedClientId == 0 || !selectedServices.Any() || currentStylist == null) return;
         try {
             var end = bookingStart.AddMinutes(totalDuration);
-            var stylist = allStylists.FirstOrDefault(x => x.Id == selectedStylistId);
-            if (stylist == null) return;
             
-            await Db.Database.ExecuteSqlRawAsync("INSERT INTO \"NETH_Appointments\" (\"ShopId\", \"StylistId\", \"ClientId\", \"StartTime\", \"EndTime\", \"Status\", \"TotalPrice\", \"IsPaid\", \"Notes\") VALUES ({0}, {1}, {2}, {3}, {4}, 'Booked', {5}, false, '')", stylist.ShopId, selectedStylistId, selectedClientId, bookingStart, end, selectedServices.Sum(s => s.Price));
+            // Re-verify collision before actual save
+            if (existingAppointments.Any(a => bookingStart.TimeOfDay < a.EndTime.TimeOfDay && end.TimeOfDay > a.StartTime.TimeOfDay)) {
+                statusMessage = "ERR: SLOT_OCCUPIED";
+                return;
+            }
+
+            await Db.Database.ExecuteSqlRawAsync("INSERT INTO \"NETH_Appointments\" (\"ShopId\", \"StylistId\", \"ClientId\", \"StartTime\", \"EndTime\", \"Status\", \"TotalPrice\", \"IsPaid\", \"Notes\") VALUES ({0}, {1}, {2}, {3}, {4}, 'Booked', {5}, false, '')", currentStylist.ShopId, selectedStylistId, selectedClientId, bookingStart, end, selectedServices.Sum(s => s.Price));
             var newId = (await Db.Database.SqlQueryRaw<int>("SELECT MAX(\"Id\") as \"Value\" FROM \"NETH_Appointments\"").ToListAsync()).First();
             foreach(var svc in selectedServices) await Db.Database.ExecuteSqlRawAsync("INSERT INTO \"NETH_AppointmentServices\" (\"AppointmentId\", \"ServiceId\", \"PriceAtBooking\", \"DurationAtBooking\") VALUES ({0}, {1}, {2}, {3})", newId, svc.Id, svc.Price, svc.DurationMinutes);
             isTimeSelected = false; selectedServices.Clear(); await LoadStylistData();
-            statusMessage = "APPOINTMENT SAVED";
+            statusMessage = "SAVED";
         } catch (Exception ex) { statusMessage = "ERR: " + ex.Message; }
     }
 }
