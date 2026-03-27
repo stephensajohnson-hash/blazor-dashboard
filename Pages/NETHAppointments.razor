@@ -14,13 +14,17 @@
     .neth-grid-container { height: 1200px; position: relative; background: #1a1b1e; }
     .neth-hour-row { height: 100px; border-bottom: 1px solid rgba(255,255,255,0.05); position: relative; }
     
+    /* Layer 1: Background Shading */
     .neth-shift-zone { position: absolute; left: 0; right: 0; background: rgba(34, 197, 94, 0.08); border-left: 2px solid #22c55e; z-index: 1; pointer-events: none; }
-    .neth-appointment-block { position: absolute; left: 4px; right: 4px; background: #2563eb; border: 1px solid #60a5fa; border-radius: 4px; z-index: 20; padding: 4px; overflow: hidden; cursor: pointer; transition: filter 0.2s; }
-    .neth-appointment-block:hover { filter: brightness(1.2); }
     
-    .neth-click-slot { position: absolute; left: 0; right: 0; z-index: 40; cursor: pointer; }
-    .neth-ghost-preview { position: absolute; top: 0; left: 0; right: 0; border: 2px dashed #60a5fa; background: rgba(96, 165, 250, 0.2); pointer-events: none; opacity: 0; transition: opacity 0.1s; z-index: 50; display: flex; align-items: center; justify-content: center; }
+    /* Layer 2: Clickable Slots (Lowered Z-Index) */
+    .neth-click-slot { position: absolute; left: 0; right: 0; z-index: 10; cursor: pointer; }
+    .neth-ghost-preview { position: absolute; top: 0; left: 0; right: 0; border: 2px dashed #60a5fa; background: rgba(96, 165, 250, 0.2); pointer-events: none; opacity: 0; transition: opacity 0.1s; z-index: 15; display: flex; align-items: center; justify-content: center; }
     .neth-click-slot:hover .neth-ghost-preview { opacity: 1; }
+    
+    /* Layer 3: Existing Appointments (Raised Z-Index to be clickable) */
+    .neth-appointment-block { position: absolute; left: 4px; right: 4px; background: #2563eb; border: 1px solid #60a5fa; border-radius: 4px; z-index: 100; padding: 6px; overflow: hidden; cursor: pointer; transition: transform 0.1s; shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+    .neth-appointment-block:hover { transform: scale(1.02); filter: brightness(1.2); }
     
     .neth-ghost-invalid { border-color: #ef4444; background: rgba(239, 68, 68, 0.3); }
     
@@ -40,7 +44,6 @@
 
     <div class="flex-1 p-8">
         <div class="max-w-7xl mx-auto">
-            @* Top Navigation & Selector *@
             <div class="flex justify-between items-center mb-8">
                 <div>
                     <h2 class="text-2xl font-black text-white uppercase tracking-tight">Appointment Desk</h2>
@@ -59,7 +62,6 @@
                 </div>
             </div>
 
-            @* Alerts *@
             @if (!string.IsNullOrEmpty(statusMessage))
             {
                 <div class="mb-6 p-4 rounded font-mono text-[10px] uppercase flex justify-between items-center @(statusMessage.Contains("ERR") ? "bg-red-900/20 text-red-400 border border-red-500/30" : "bg-blue-900/20 text-blue-400 border border-blue-500/30")">
@@ -71,7 +73,6 @@
             @if (selectedStylistId > 0)
             {
                 <div class="grid grid-cols-1 xl:grid-cols-4 gap-8">
-                    @* Selection Panel *@
                     <div class="xl:col-span-1 space-y-4">
                         <div class="bg-[#25262b] p-5 rounded-xl border border-gray-700 shadow-2xl">
                             <h3 class="text-[10px] font-black uppercase text-[#D2B48C] mb-4 tracking-widest">1. Select Services</h3>
@@ -86,7 +87,7 @@
                             </div>
                             <div class="pt-3 border-t border-gray-800 flex justify-between items-center text-[10px] font-black uppercase">
                                 <span class="text-gray-500">Duration</span>
-                                <span class="text-blue-400">@totalDuration MIN</span>
+                                <span class="text-blue-400 font-mono">@totalDuration MIN</span>
                             </div>
                         </div>
 
@@ -103,14 +104,12 @@
                                     @foreach(var c in allClients) { <option value="@c.Id">@c.FirstName @c.LastName</option> }
                                 </select>
                                 <button @onclick="CreateAppointment" class="w-full bg-white text-blue-600 font-black uppercase text-[10px] py-3.5 rounded hover:bg-gray-100 transition shadow-lg">Confirm Booking</button>
-                                <button @onclick="() => isTimeSelected = false" class="w-full mt-2 text-white/50 text-[9px] font-black uppercase hover:text-white">Clear</button>
+                                <button @onclick="() => { isTimeSelected = false; statusMessage = ＂＂; }" class="w-full mt-2 text-white/50 text-[9px] font-black uppercase hover:text-white">Clear</button>
                             </div>
                         }
                     </div>
 
-                    @* Calendar Grid *@
                     <div class="xl:col-span-3 bg-[#25262b] rounded-xl border border-gray-700 shadow-2xl overflow-hidden flex flex-col">
-                        @* Week Header *@
                         <div class="grid grid-cols-8 bg-black/40 border-b border-gray-700">
                             <div class="p-4 border-r border-gray-800"></div>
                             @for (int i = 0; i < 7; i++)
@@ -123,11 +122,8 @@
                             }
                         </div>
 
-                        @* Scrollable Body *@
                         <div class="relative overflow-y-auto custom-scrollbar bg-[#1a1b1e] h-[700px]">
-                            <div class="grid grid-cols-8 neth-grid-container">
-                                
-                                @* Time Column *@
+                            <div class="grid grid-cols-8 relative neth-grid-container">
                                 <div class="col-span-1 border-r border-gray-800 bg-[#25262b]/50">
                                     @for (int h = 8; h < 20; h++)
                                     {
@@ -137,7 +133,6 @@
                                     }
                                 </div>
 
-                                @* Day Columns *@
                                 @for (int i = 0; i < 7; i++)
                                 {
                                     var dayDate = startOfWeek.AddDays(i);
@@ -145,13 +140,10 @@
                                     var dayApps = existingAppointments.Where(x => x.StartTime.Date == dayDate.Date).ToList();
 
                                     <div class="col-span-1 border-r border-gray-800 relative">
-                                        
-                                        @* Layer 1: Green Shift Backgrounds *@
                                         @foreach (var shift in dayShifts)
                                         {
                                             <div class="neth-shift-zone" style="top: @(GetPx(shift.StartTime))px; height: @(GetH(shift.StartTime, shift.EndTime))px;"></div>
                                             
-                                            @* Layer 2: Interactive Slots (Wrapped inside Shift Loop for 12-1 Gap) *@
                                             @for (DateTime t = shift.StartTime; t < shift.EndTime; t = t.AddMinutes(15))
                                             {
                                                 var slotStart = t;
@@ -159,32 +151,32 @@
                                                 bool hasConflict = dayApps.Any(a => slotStart < a.EndTime && slotEnd > a.StartTime);
                                                 bool isTooLate = slotEnd > shift.EndTime;
 
+                                                @* Pointer-events: none on conflict slots allows click to fall through to the blue block *@
                                                 <div @onclick="() => TrySelectSlot(dayDate, slotStart, hasConflict || isTooLate)" 
-                                                     class="neth-click-slot" style="top: @(GetPx(slotStart))px; height: 25px;">
-                                                    <div class="neth-ghost-preview @(hasConflict || isTooLate ? "neth-ghost-invalid" : "")" 
+                                                     class="neth-click-slot @(hasConflict ? "pointer-events-none" : "")" 
+                                                     style="top: @(GetPx(slotStart))px; height: 25px;">
+                                                    <div class="neth-ghost-preview @(isTooLate ? "neth-ghost-invalid" : "")" 
                                                          style="height: @(totalDuration * 1.666)px;">
-                                                        @if(hasConflict || isTooLate) { <i class="fas fa-ban text-red-500 text-xs"></i> }
+                                                        @if(isTooLate) { <i class="fas fa-ban text-red-500 text-xs"></i> }
                                                         else { <span class="text-[8px] font-black text-white uppercase">@totalDuration m</span> }
                                                     </div>
                                                 </div>
                                             }
                                         }
 
-                                        @* Layer 3: Existing Appointments *@
                                         @foreach (var app in dayApps)
                                         {
                                             var client = allClients.FirstOrDefault(x => x.Id == app.ClientId);
-                                            <div @onclick="() => DeleteApp(app)" class="neth-appointment-block" 
+                                            <div @onclick="() => DeleteApp(app)" @onclick:stopPropagation="true" class="neth-appointment-block" 
                                                  style="top: @(GetPx(app.StartTime))px; height: @(GetH(app.StartTime, app.EndTime))px;">
                                                 <p class="text-[9px] font-black text-white uppercase truncate">@(client?.FirstName ?? "Booked")</p>
                                                 <p class="text-[7px] font-mono text-white/50 uppercase">@app.StartTime.ToString("h:mm")</p>
                                             </div>
                                         }
 
-                                        @* Layer 4: Active Selection Ghost *@
                                         @if(isTimeSelected && bookingStart.Date == dayDate.Date)
                                         {
-                                            <div class="absolute inset-x-1 border-2 border-white bg-blue-500/50 shadow-xl z-30 pointer-events-none @(isShaking ? "shake-it" : "")"
+                                            <div class="absolute inset-x-1 border-2 border-white bg-blue-500/50 shadow-xl z-20 pointer-events-none @(isShaking ? "shake-it" : "")"
                                                  style="top: @(GetPx(bookingStart))px; height: @(totalDuration * 1.666)px;">
                                             </div>
                                         }
@@ -252,7 +244,7 @@
 
     private async Task TrySelectSlot(DateTime date, DateTime time, bool invalid) {
         if (invalid) {
-            statusMessage = "ERR: INVALID_SLOT_SELECTION";
+            statusMessage = "ERR: INVALID_PLACEMENT";
             isShaking = true; StateHasChanged();
             await Task.Delay(300);
             isShaking = false; StateHasChanged();
@@ -264,19 +256,18 @@
     }
 
     private async Task DeleteApp(NETH_Appointment app) {
-        if (await JS.InvokeAsync<bool>("confirm", "Delete this record?")) {
+        if (await JS.InvokeAsync<bool>("confirm", "Delete this appointment?")) {
             await Db.Database.ExecuteSqlRawAsync("DELETE FROM \"NETH_Appointments\" WHERE \"Id\" = {0}", app.Id);
             await Db.Database.ExecuteSqlRawAsync("DELETE FROM \"NETH_AppointmentServices\" WHERE \"AppointmentId\" = {0}", app.Id);
             await LoadStylistData();
         }
     }
 
-    // 1 Hour = 100px. 8am = 0px.
     private double GetPx(DateTime t) => ((t.Hour - 8) + (t.Minute / 60.0)) * 100;
     private double GetH(DateTime s, DateTime e) => (e - s).TotalMinutes * 1.666;
 
     private async Task CreateAppointment() {
-        if (selectedClientId == 0 || !selectedServices.Any()) { statusMessage = "ERR: MISSING_INPUTS"; return; }
+        if (selectedClientId == 0 || !selectedServices.Any()) { statusMessage = "ERR: CLIENT_REQUIRED"; return; }
         try {
             var end = bookingStart.AddMinutes(totalDuration);
             var stylist = allStylists.First(x => x.Id == selectedStylistId);
@@ -289,7 +280,7 @@
                 await Db.Database.ExecuteSqlRawAsync("INSERT INTO \"NETH_AppointmentServices\" (\"AppointmentId\", \"ServiceId\", \"PriceAtBooking\", \"DurationAtBooking\") VALUES ({0}, {1}, {2}, {3})", newId, svc.Id, svc.Price, svc.DurationMinutes);
             }
             isTimeSelected = false; selectedServices.Clear(); await LoadStylistData();
-            statusMessage = "APPOINTMENT_SAVED";
+            statusMessage = "BOOKING_SUCCESSFUL";
         } catch (Exception ex) { statusMessage = "ERR: " + ex.Message; }
     }
 }
