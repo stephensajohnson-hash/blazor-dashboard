@@ -32,11 +32,19 @@
                 </div>
             </div>
 
+            @if (!string.IsNullOrEmpty(statusMessage))
+            {
+                <div class="mb-6 p-4 bg-blue-900/20 border border-blue-500/30 rounded text-blue-400 font-mono text-[10px] uppercase animate-pulse flex justify-between items-center">
+                    <span>@statusMessage</span>
+                    <button @onclick='() => statusMessage = ""' class="text-white/50">&times;</button>
+                </div>
+            }
+
             @if (selectedStylistId > 0)
             {
                 <div class="grid grid-cols-1 xl:grid-cols-4 gap-8">
                     
-                    @* LEFT PANEL *@
+                    @* LEFT PANEL: SELECTION SUMMARY *@
                     <div class="xl:col-span-1 space-y-6">
                         <div class="bg-[#25262b] p-6 rounded-xl border border-gray-700 shadow-xl">
                             <label class="text-[10px] font-black uppercase text-[#D2B48C] mb-4 block tracking-widest">Services</label>
@@ -90,7 +98,7 @@
                         </div>
 
                         <div class="relative h-[700px] overflow-y-auto custom-scrollbar bg-[#1a1b1e]">
-                            <div class="grid grid-cols-8 relative" style="height: 1200px;"> @* Increased height for better scale *@
+                            <div class="grid grid-cols-8 relative" style="height: 1200px;">
                                 
                                 @* TIME LABELS *@
                                 <div class="col-span-1 border-r border-gray-800 bg-[#25262b] z-20">
@@ -98,7 +106,6 @@
                                     {
                                         <div class="h-[100px] border-b border-gray-800/30 pr-3 pt-1 text-[10px] font-mono text-gray-600 text-right uppercase relative">
                                             @((h > 12 ? h - 12 : h)):00 @(h >= 12 ? "PM" : "AM")
-                                            @* 30m Tic Mark Label *@
                                             <div class="absolute top-[50px] right-2 text-[8px] opacity-30">:30</div>
                                         </div>
                                     }
@@ -112,14 +119,14 @@
                                     var dayApps = existingAppointments.Where(x => x.StartTime.Date == dayDate.Date).ToList();
 
                                     <div class="col-span-1 border-r border-gray-800 relative">
-                                        @* VISUAL TICK MARKS (Every 30m) *@
+                                        @* VISUAL TICK MARKS *@
                                         @for(int h=0; h<12; h++) 
                                         { 
                                             <div class="absolute w-full border-b border-gray-800/20" style="top: @(h * 100)px; height: 50px;"></div> 
                                             <div class="absolute w-full border-b border-gray-800/10" style="top: @(h * 100 + 50)px; height: 50px; border-style: dashed;"></div>
                                         }
 
-                                        @* CLICKABLE SLOTS (Subdivided into 15m chunks) *@
+                                        @* CLICKABLE SLOTS *@
                                         @foreach (var shift in dayShifts)
                                         {
                                             for(DateTime t = shift.StartTime; t < shift.EndTime; t = t.AddMinutes(15))
@@ -127,7 +134,7 @@
                                                 var slotTime = t; 
                                                 <div @onclick="() => SetBookingTime(dayDate, slotTime)" 
                                                      class="absolute left-0 right-0 bg-green-500/5 hover:bg-green-500/20 z-0 border-t border-transparent hover:border-green-400/30 cursor-pointer" 
-                                                     style="top: @(GetPixelOffset(t))px; height: 25px;"> @* 25px = 15 mins *@
+                                                     style="top: @(GetPixelOffset(t))px; height: 25px;">
                                                 </div>
                                             }
                                         }
@@ -141,15 +148,16 @@
                                             <div class="absolute left-1 right-1 bg-blue-600 border border-blue-400 rounded shadow-lg z-10 p-1 overflow-hidden" 
                                                  style="top: @(top)px; height: @(height)px;">
                                                 <div class="text-[9px] font-black text-white uppercase truncate">@(client?.FirstName ?? "N/A")</div>
-                                                <div class="text-[7px] font-mono text-white/70">@app.StartTime.ToString("h:mm")</div>
+                                                <div class="text-[7px] font-mono text-white/70">@app.StartTime.ToString("h:mm tt")</div>
                                             </div>
                                         }
 
-                                        @* NEW APPOINTMENT GHOST PREVIEW *@
+                                        @* GHOST PREVIEW *@
                                         @if(isTimeSelected && bookingStart.Date == dayDate.Date)
                                         {
-                                            <div class="absolute left-1 right-1 bg-blue-400/40 border-2 border-dashed border-blue-400 z-30 pointer-events-none"
+                                            <div class="absolute left-1 right-1 bg-blue-400/40 border-2 border-dashed border-blue-400 z-30 pointer-events-none flex items-center justify-center overflow-hidden"
                                                  style="top: @(GetPixelOffset(bookingStart))px; height: @(totalDuration * 1.666)px;">
+                                                <span class="text-[8px] font-black text-blue-100 uppercase bg-blue-600/50 px-1 rounded">@totalDuration Min</span>
                                             </div>
                                         }
                                     </div>
@@ -184,13 +192,17 @@
         if (firstRender) {
             var json = await JS.InvokeAsync<string>("localStorage.getItem", "neth_session");
             if (string.IsNullOrEmpty(json)) Nav.NavigateTo("/nethaircut");
-            else { isAuthorized = true; allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync(); allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync(); 
+            else { 
+                isAuthorized = true; 
+                allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync(); 
+                allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync(); 
                 if (PreSelectedStylistId > 0) { selectedStylistId = PreSelectedStylistId; await LoadStylistData(); }
-                StateHasChanged(); }
+                StateHasChanged(); 
+            }
         }
     }
 
-    private void ChangeWeek(int delta) { viewWeekOffset += delta; }
+    private void ChangeWeek(int delta) { viewWeekOffset += delta; isTimeSelected = false; }
     private async Task OnStylistChanged(ChangeEventArgs e) { selectedStylistId = int.Parse(e.Value?.ToString() ?? "0"); await LoadStylistData(); }
 
     private async Task LoadStylistData() {
@@ -198,6 +210,7 @@
         filteredServices = await Db.NETH_Services.Where(x => x.StylistId == selectedStylistId).ToListAsync();
         stylistSchedules = await Db.NETH_Schedules.Where(x => x.StylistId == selectedStylistId).ToListAsync();
         existingAppointments = await Db.NETH_Appointments.Where(x => x.StylistId == selectedStylistId).ToListAsync();
+        StateHasChanged();
     }
 
     private void ToggleService(NETH_Service svc) {
@@ -210,7 +223,6 @@
         isTimeSelected = true;
     }
 
-    // New Math: 1 hour = 100 pixels. 1 min = 1.666px.
     private double GetPixelOffset(DateTime time) {
         double hoursFromEight = (time.Hour - 8) + (time.Minute / 60.0);
         return hoursFromEight * 100;
@@ -221,20 +233,49 @@
     }
 
     private async Task CreateAppointment() {
-        if (selectedClientId == 0 || selectedStylistId == 0) return;
+        if (selectedClientId == 0 || selectedStylistId == 0 || !selectedServices.Any()) {
+            statusMessage = "ERR: MISSING_REQUIRED_FIELDS"; return;
+        }
         try {
             var end = bookingStart.AddMinutes(totalDuration);
             var stylist = allStylists.First(x => x.Id == selectedStylistId);
             var totalPrice = selectedServices.Sum(x => x.Price);
 
+            // Using explicit empty string for Notes to satisfy NOT NULL constraint
             await Db.Database.ExecuteSqlRawAsync(
                 @"INSERT INTO ""NETH_Appointments"" (""ShopId"", ""StylistId"", ""ClientId"", ""StartTime"", ""EndTime"", ""Status"", ""TotalPrice"", ""IsPaid"", ""Notes"") 
                   VALUES ({0}, {1}, {2}, {3}, {4}, 'Booked', {5}, false, '')",
                 stylist.ShopId, selectedStylistId, selectedClientId, bookingStart, end, totalPrice
             );
 
+            // Alising MAX(Id) as "Value" for SqlQueryRaw mapper
+            var idResult = await Db.Database.SqlQueryRaw<int>(@"SELECT MAX(""Id"") as ""Value"" FROM ""NETH_Appointments""").ToListAsync();
+            var newId = idResult.FirstOrDefault();
+
+            foreach(var svc in selectedServices) {
+                await Db.Database.ExecuteSqlRawAsync(
+                    @"INSERT INTO ""NETH_AppointmentServices"" (""AppointmentId"", ""ServiceId"", ""PriceAtBooking"", ""DurationAtBooking"") 
+                      VALUES ({0}, {1}, {2}, {3})",
+                    newId, svc.Id, svc.Price, svc.DurationMinutes
+                );
+            }
+
+            statusMessage = "SUCCESS: APPOINTMENT_BOOKED";
             isTimeSelected = false;
+            selectedServices.Clear();
             await LoadStylistData();
         } catch (Exception ex) { statusMessage = "ERR: " + ex.Message; }
+    }
+
+    private async Task RepairTables() {
+        try {
+            await Db.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""NETH_Appointments"" (
+                    ""Id"" SERIAL PRIMARY KEY, ""ShopId"" INTEGER NOT NULL, ""StylistId"" INTEGER NOT NULL, ""ClientId"" INTEGER NOT NULL, 
+                    ""StartTime"" TIMESTAMP NOT NULL, ""EndTime"" TIMESTAMP NOT NULL, ""Status"" TEXT NOT NULL DEFAULT 'Booked', 
+                    ""TotalPrice"" DECIMAL NOT NULL, ""Notes"" TEXT NOT NULL DEFAULT '', ""IsPaid"" BOOLEAN NOT NULL DEFAULT FALSE
+                );");
+            statusMessage = "DATABASE_VERIFIED";
+        } catch (Exception ex) { statusMessage = "REPAIR_ERR: " + ex.Message; }
     }
 }
