@@ -25,7 +25,7 @@
         40%, 80% { transform: translateX(10px); }
     }
     .shake-it { animation: neth-shake 0.3s ease-in-out !important; border: 2px solid #ef4444 !important; }
-    .debug-panel { background: #000; border-top: 4px solid #444; color: #0f0; font-family: monospace; font-size: 11px; padding: 20px; z-index: 999; }
+    .debug-panel { background: #000; border-top: 4px solid #444; color: #0f0; font-family: monospace; font-size: 11px; padding: 20px; z-index: 999; width: 100%; }
 </style>
 
 <div class="min-h-screen bg-[#1a1b1e] text-gray-300 flex flex-col">
@@ -71,7 +71,7 @@
                                         <option value="0">-- Client --</option>
                                         @foreach(var c in allClients) { <option value="@c.Id">@c.FirstName @c.LastName</option> }
                                     </select>
-                                    <button @onclick="CreateAppointment" class="w-full bg-white text-blue-600 font-black py-3 rounded mt-3">SAVE</button>
+                                    <button @onclick="CreateAppointment" class="w-full bg-white text-blue-600 font-black py-3 rounded mt-3 shadow-lg">SAVE APPOINTMENT</button>
                                 </div>
                             }
                         </div>
@@ -144,20 +144,21 @@
     @* FORCED DEBUG CONSOLE *@
     <div class="debug-panel">
         <div class="flex justify-between border-b border-green-900 mb-2 pb-1">
-            <span class="font-bold">SYSTEM TERMINAL [CONNECTED]</span>
-            <button @onclick="ClearStylistAppointments" class="text-red-500 text-[9px] hover:underline">RESET ALL STYLIST APPS</button>
+            <span class="font-bold text-white">SYSTEM TERMINAL [CONNECTED]</span>
+            <button @onclick="ClearStylistAppointments" class="text-red-500 text-[10px] uppercase font-bold hover:underline">Reset Stylist Data</button>
         </div>
-        <div>Total Appointments Known: @existingAppointments.Count</div>
+        <div>Active Stylist ID: @selectedStylistId</div>
+        <div>Appointments Loaded: @existingAppointments.Count</div>
         @foreach(var a in existingAppointments.OrderBy(x => x.StartTime)) {
-            <div class="opacity-80">> ID:@a.Id | @a.StartTime.ToString("ddd HH:mm") - @a.EndTime.ToString("HH:mm")</div>
+            <div class="opacity-80">> APP ID:@a.Id | @a.StartTime.ToString("ddd HH:mm") - @a.EndTime.ToString("HH:mm") (Client: @a.ClientId)</div>
         }
-        @if(!string.IsNullOrEmpty(statusMessage)) { <div class="text-white bg-red-900 px-2 mt-1">@statusMessage</div> }
+        @if(!string.IsNullOrEmpty(statusMessage)) { <div class="text-white bg-red-900 px-2 mt-1">LOG: @statusMessage</div> }
     </div>
 </div>
 
 @code {
     [Parameter] public int PreSelectedStylistId { get; set; }
-    private bool isAuthorized, isTimeSelected, isShaking;
+    private bool isTimeSelected, isShaking;
     private int selectedStylistId, selectedClientId, viewWeekOffset;
     private string statusMessage = "";
     private DateTime bookingStart;
@@ -203,7 +204,7 @@
 
     private async Task HandleSlotClick(DateTime date, DateTime time, bool isInvalid) {
         if (isInvalid) {
-            statusMessage = "COLLISION DETECTED";
+            statusMessage = "COLLISION AT " + time.ToString("HH:mm");
             isShaking = true; StateHasChanged();
             await Task.Delay(400);
             isShaking = false; StateHasChanged();
@@ -215,7 +216,7 @@
     }
 
     private async Task DeleteApp(NETH_Appointment app) {
-        if (await JS.InvokeAsync<bool>("confirm", "Delete?")) {
+        if (await JS.InvokeAsync<bool>("confirm", "Delete this appointment?")) {
             await Db.Database.ExecuteSqlRawAsync("DELETE FROM \"NETH_Appointments\" WHERE \"Id\" = {0}", app.Id);
             await Db.Database.ExecuteSqlRawAsync("DELETE FROM \"NETH_AppointmentServices\" WHERE \"AppointmentId\" = {0}", app.Id);
             await LoadStylistData();
@@ -223,7 +224,7 @@
     }
 
     private async Task ClearStylistAppointments() {
-        if (await JS.InvokeAsync<bool>("confirm", "DANGER: Wipe all appointments for this stylist?")) {
+        if (await JS.InvokeAsync<bool>("confirm", "DANGER: Wipe all data for this stylist?")) {
             await Db.Database.ExecuteSqlRawAsync("DELETE FROM \"NETH_Appointments\" WHERE \"StylistId\" = {0}", selectedStylistId);
             await LoadStylistData();
         }
@@ -233,15 +234,17 @@
     private double GetH(DateTime s, DateTime e) => (e - s).TotalMinutes * 1.666;
 
     private async Task CreateAppointment() {
-        if (selectedClientId == 0 || !selectedServices.Any()) return;
+        if (selectedClientId == 0 || !selectedServices.Any()) { statusMessage = "MISSING DATA"; return; }
         try {
             var end = bookingStart.AddMinutes(totalDuration);
-            var shopId = stylistSchedules.FirstOrDefault()?.ShopId ?? 1;
-            await Db.Database.ExecuteSqlRawAsync("INSERT INTO \"NETH_Appointments\" (\"ShopId\", \"StylistId\", \"ClientId\", \"StartTime\", \"EndTime\", \"Status\", \"TotalPrice\", \"IsPaid\", \"Notes\") VALUES ({0}, {1}, {2}, {3}, {4}, 'Booked', {5}, false, '')", shopId, selectedStylistId, selectedClientId, bookingStart, end, selectedServices.Sum(s => s.Price));
+            var stylist = allStylists.FirstOrDefault(x => x.Id == selectedStylistId);
+            if (stylist == null) return;
+            
+            await Db.Database.ExecuteSqlRawAsync("INSERT INTO \"NETH_Appointments\" (\"ShopId\", \"StylistId\", \"ClientId\", \"StartTime\", \"EndTime\", \"Status\", \"TotalPrice\", \"IsPaid\", \"Notes\") VALUES ({0}, {1}, {2}, {3}, {4}, 'Booked', {5}, false, '')", stylist.ShopId, selectedStylistId, selectedClientId, bookingStart, end, selectedServices.Sum(s => s.Price));
             var newId = (await Db.Database.SqlQueryRaw<int>("SELECT MAX(\"Id\") as \"Value\" FROM \"NETH_Appointments\"").ToListAsync()).First();
             foreach(var svc in selectedServices) await Db.Database.ExecuteSqlRawAsync("INSERT INTO \"NETH_AppointmentServices\" (\"AppointmentId\", \"ServiceId\", \"PriceAtBooking\", \"DurationAtBooking\") VALUES ({0}, {1}, {2}, {3})", newId, svc.Id, svc.Price, svc.DurationMinutes);
             isTimeSelected = false; selectedServices.Clear(); await LoadStylistData();
-            statusMessage = "SAVED";
+            statusMessage = "APPOINTMENT SAVED";
         } catch (Exception ex) { statusMessage = "ERR: " + ex.Message; }
     }
 }
