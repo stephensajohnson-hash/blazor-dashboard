@@ -34,7 +34,7 @@
 
             @if (!string.IsNullOrEmpty(statusMessage))
             {
-                <div class="mb-6 p-4 bg-blue-900/20 border border-blue-500/30 rounded text-blue-400 font-mono text-[10px] uppercase animate-pulse flex justify-between items-center">
+                <div class="mb-6 p-4 bg-blue-900/20 border border-blue-500/30 rounded text-blue-400 font-mono text-[10px] uppercase flex justify-between items-center">
                     <span>@statusMessage</span>
                     <button @onclick='() => statusMessage = ""' class="text-white/50">&times;</button>
                 </div>
@@ -44,7 +44,7 @@
             {
                 <div class="grid grid-cols-1 xl:grid-cols-4 gap-8">
                     
-                    @* LEFT PANEL: SELECTION SUMMARY *@
+                    @* LEFT PANEL *@
                     <div class="xl:col-span-1 space-y-6">
                         <div class="bg-[#25262b] p-6 rounded-xl border border-gray-700 shadow-xl">
                             <label class="text-[10px] font-black uppercase text-[#D2B48C] mb-4 block tracking-widest">Services</label>
@@ -58,7 +58,7 @@
                                 }
                             </div>
                             <div class="pt-4 border-t border-gray-800 flex justify-between items-center">
-                                <span class="text-[10px] font-black text-gray-500 uppercase">Duration:</span>
+                                <span class="text-[10px] font-black text-gray-500 uppercase">Est. Duration:</span>
                                 <span class="text-blue-400 font-mono font-black">@totalDuration MINS</span>
                             </div>
                         </div>
@@ -78,7 +78,7 @@
                                 </select>
 
                                 <button @onclick="CreateAppointment" class="w-full mt-4 bg-white text-blue-600 font-black uppercase text-[10px] py-4 rounded-lg shadow-xl hover:bg-gray-100 transition">Save Appointment</button>
-                                <button @onclick="() => isTimeSelected = false" class="w-full mt-2 text-white/50 text-[9px] uppercase font-black hover:text-white">Cancel</button>
+                                <button @onclick="() => isTimeSelected = false" class="w-full mt-2 text-white/50 text-[9px] uppercase font-black hover:text-white">Cancel / Move</button>
                             </div>
                         }
                     </div>
@@ -120,35 +120,37 @@
 
                                     <div class="col-span-1 border-r border-gray-800 relative">
                                         @* VISUAL TICK MARKS *@
-                                        @for(int h=0; h<12; h++) 
-                                        { 
+                                        @for(int h=0; h<12; h++) { 
                                             <div class="absolute w-full border-b border-gray-800/20" style="top: @(h * 100)px; height: 50px;"></div> 
                                             <div class="absolute w-full border-b border-gray-800/10" style="top: @(h * 100 + 50)px; height: 50px; border-style: dashed;"></div>
                                         }
 
-                                        @* CLICKABLE SLOTS *@
+                                        @* CLICKABLE SLOTS WITH FIXED HOVER HEIGHT *@
                                         @foreach (var shift in dayShifts)
                                         {
                                             for(DateTime t = shift.StartTime; t < shift.EndTime; t = t.AddMinutes(15))
                                             {
                                                 var slotTime = t; 
+                                                bool hasConflict = dayApps.Any(a => slotTime >= a.StartTime && slotTime < a.EndTime);
+                                                
                                                 <div @onclick="() => SetBookingTime(dayDate, slotTime)" 
-                                                     class="absolute left-0 right-0 bg-green-500/5 hover:bg-green-500/20 z-0 border-t border-transparent hover:border-green-400/30 cursor-pointer" 
+                                                     class="absolute left-0 right-0 z-0 border-t border-transparent transition-all cursor-pointer @(hasConflict ? "pointer-events-none opacity-0" : "bg-green-500/5 hover:bg-green-500/20 hover:z-40")" 
                                                      style="top: @(GetPixelOffset(t))px; height: 25px;">
                                                 </div>
                                             }
                                         }
 
-                                        @* BOOKED APPOINTMENTS *@
+                                        @* BOOKED APPOINTMENTS - CLICK TO REMOVE *@
                                         @foreach (var app in dayApps)
                                         {
                                             var client = allClients.FirstOrDefault(x => x.Id == app.ClientId);
                                             var top = GetPixelOffset(app.StartTime);
                                             var height = GetPixelHeight(app.StartTime, app.EndTime);
-                                            <div class="absolute left-1 right-1 bg-blue-600 border border-blue-400 rounded shadow-lg z-10 p-1 overflow-hidden" 
+                                            <div @onclick="() => HandleExistingClick(app)" 
+                                                 class="absolute left-1 right-1 bg-blue-600 border border-blue-400 rounded shadow-lg z-10 p-1 overflow-hidden cursor-help hover:brightness-125 transition" 
                                                  style="top: @(top)px; height: @(height)px;">
                                                 <div class="text-[9px] font-black text-white uppercase truncate">@(client?.FirstName ?? "N/A")</div>
-                                                <div class="text-[7px] font-mono text-white/70">@app.StartTime.ToString("h:mm tt")</div>
+                                                <div class="text-[7px] font-mono text-white/70">@app.StartTime.ToString("h:mm")</div>
                                             </div>
                                         }
 
@@ -192,13 +194,11 @@
         if (firstRender) {
             var json = await JS.InvokeAsync<string>("localStorage.getItem", "neth_session");
             if (string.IsNullOrEmpty(json)) Nav.NavigateTo("/nethaircut");
-            else { 
-                isAuthorized = true; 
-                allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync(); 
-                allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync(); 
-                if (PreSelectedStylistId > 0) { selectedStylistId = PreSelectedStylistId; await LoadStylistData(); }
-                StateHasChanged(); 
-            }
+            else { isAuthorized = true; 
+                   allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync(); 
+                   allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync(); 
+                   if (PreSelectedStylistId > 0) { selectedStylistId = PreSelectedStylistId; await LoadStylistData(); }
+                   StateHasChanged(); }
         }
     }
 
@@ -223,59 +223,35 @@
         isTimeSelected = true;
     }
 
-    private double GetPixelOffset(DateTime time) {
-        double hoursFromEight = (time.Hour - 8) + (time.Minute / 60.0);
-        return hoursFromEight * 100;
+    private async Task HandleExistingClick(NETH_Appointment app) {
+        if (await JS.InvokeAsync<bool>("confirm", $"Delete appointment for {allClients.FirstOrDefault(c => c.Id == app.ClientId)?.FirstName}?")) {
+            await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_Appointments"" WHERE ""Id"" = {0}", app.Id);
+            await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_AppointmentServices"" WHERE ""AppointmentId"" = {0}", app.Id);
+            await LoadStylistData();
+        }
     }
 
-    private double GetPixelHeight(DateTime start, DateTime end) {
-        return (end - start).TotalMinutes * 1.666;
-    }
+    private double GetPixelOffset(DateTime time) => ((time.Hour - 8) + (time.Minute / 60.0)) * 100;
+    private double GetPixelHeight(DateTime start, DateTime end) => (end - start).TotalMinutes * 1.666;
 
     private async Task CreateAppointment() {
-        if (selectedClientId == 0 || selectedStylistId == 0 || !selectedServices.Any()) {
-            statusMessage = "ERR: MISSING_REQUIRED_FIELDS"; return;
-        }
+        if (selectedClientId == 0 || selectedStylistId == 0 || !selectedServices.Any()) { statusMessage = "ERR: MISSING_FIELDS"; return; }
         try {
             var end = bookingStart.AddMinutes(totalDuration);
             var stylist = allStylists.First(x => x.Id == selectedStylistId);
-            var totalPrice = selectedServices.Sum(x => x.Price);
-
-            // Using explicit empty string for Notes to satisfy NOT NULL constraint
-            await Db.Database.ExecuteSqlRawAsync(
-                @"INSERT INTO ""NETH_Appointments"" (""ShopId"", ""StylistId"", ""ClientId"", ""StartTime"", ""EndTime"", ""Status"", ""TotalPrice"", ""IsPaid"", ""Notes"") 
-                  VALUES ({0}, {1}, {2}, {3}, {4}, 'Booked', {5}, false, '')",
-                stylist.ShopId, selectedStylistId, selectedClientId, bookingStart, end, totalPrice
-            );
-
-            // Alising MAX(Id) as "Value" for SqlQueryRaw mapper
+            await Db.Database.ExecuteSqlRawAsync(@"INSERT INTO ""NETH_Appointments"" (""ShopId"", ""StylistId"", ""ClientId"", ""StartTime"", ""EndTime"", ""Status"", ""TotalPrice"", ""IsPaid"", ""Notes"") VALUES ({0}, {1}, {2}, {3}, {4}, 'Booked', {5}, false, '')", stylist.ShopId, selectedStylistId, selectedClientId, bookingStart, end, selectedServices.Sum(s => s.Price));
+            
             var idResult = await Db.Database.SqlQueryRaw<int>(@"SELECT MAX(""Id"") as ""Value"" FROM ""NETH_Appointments""").ToListAsync();
             var newId = idResult.FirstOrDefault();
 
             foreach(var svc in selectedServices) {
-                await Db.Database.ExecuteSqlRawAsync(
-                    @"INSERT INTO ""NETH_AppointmentServices"" (""AppointmentId"", ""ServiceId"", ""PriceAtBooking"", ""DurationAtBooking"") 
-                      VALUES ({0}, {1}, {2}, {3})",
-                    newId, svc.Id, svc.Price, svc.DurationMinutes
-                );
+                await Db.Database.ExecuteSqlRawAsync(@"INSERT INTO ""NETH_AppointmentServices"" (""AppointmentId"", ""ServiceId"", ""PriceAtBooking"", ""DurationAtBooking"") VALUES ({0}, {1}, {2}, {3})", newId, svc.Id, svc.Price, svc.DurationMinutes);
             }
 
-            statusMessage = "SUCCESS: APPOINTMENT_BOOKED";
             isTimeSelected = false;
             selectedServices.Clear();
             await LoadStylistData();
+            statusMessage = "BOOKED";
         } catch (Exception ex) { statusMessage = "ERR: " + ex.Message; }
-    }
-
-    private async Task RepairTables() {
-        try {
-            await Db.Database.ExecuteSqlRawAsync(@"
-                CREATE TABLE IF NOT EXISTS ""NETH_Appointments"" (
-                    ""Id"" SERIAL PRIMARY KEY, ""ShopId"" INTEGER NOT NULL, ""StylistId"" INTEGER NOT NULL, ""ClientId"" INTEGER NOT NULL, 
-                    ""StartTime"" TIMESTAMP NOT NULL, ""EndTime"" TIMESTAMP NOT NULL, ""Status"" TEXT NOT NULL DEFAULT 'Booked', 
-                    ""TotalPrice"" DECIMAL NOT NULL, ""Notes"" TEXT NOT NULL DEFAULT '', ""IsPaid"" BOOLEAN NOT NULL DEFAULT FALSE
-                );");
-            statusMessage = "DATABASE_VERIFIED";
-        } catch (Exception ex) { statusMessage = "REPAIR_ERR: " + ex.Message; }
     }
 }
