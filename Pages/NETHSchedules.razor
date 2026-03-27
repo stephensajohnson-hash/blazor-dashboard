@@ -63,7 +63,10 @@
                                         @if (shifts.Any())
                                         {
                                             <button @onclick="() => OpenCopyModal(day.Key)" class="text-[9px] text-gray-500 hover:text-white flex items-center gap-1 uppercase transition">
-                                                <i class="fas fa-copy"></i> Copy to...
+                                                <i class="fas fa-copy"></i> Copy
+                                            </button>
+                                            <button @onclick="() => ClearDay(day.Key)" class="text-[9px] text-red-500/50 hover:text-red-500 flex items-center gap-1 uppercase transition ml-2">
+                                                <i class="fas fa-trash-alt"></i> Clear Day
                                             </button>
                                         }
                                     </div>
@@ -73,7 +76,7 @@
                                 <div class="p-4 space-y-3">
                                     @if (!shifts.Any())
                                     {
-                                        <div class="text-center py-4 text-gray-600 italic text-[10px] uppercase tracking-widest">No hours scheduled (Off)</div>
+                                        <div class="text-center py-4 text-gray-600 italic text-[10px] uppercase tracking-widest">Off / No Shifts</div>
                                     }
                                     else
                                     {
@@ -193,7 +196,7 @@
             allSchedules = await Db.Database.SqlQueryRaw<NETH_Schedule>(@"SELECT * FROM ""NETH_Schedules"" WHERE ""StylistId"" = {0}", id).ToListAsync();
             deletedSchedules.Clear();
             errorMessage = "";
-        } catch { errorMessage = "TABLE_ERROR: REBUILD MAY BE REQUIRED VIA DB CONSOLE"; }
+        } catch { errorMessage = "TABLE_ERROR: ACCESS DENIED OR MISSING RELATION"; }
     }
 
     private DateTime UpdateTime(DateTime existing, string? timeString) {
@@ -210,6 +213,14 @@
         allSchedules.Remove(s);
     }
 
+    private void ClearDay(int dayOfWeek) {
+        var toRemove = allSchedules.Where(x => x.DayOfWeek == dayOfWeek).ToList();
+        foreach (var s in toRemove) {
+            if (s.Id != 0) deletedSchedules.Add(s);
+            allSchedules.Remove(s);
+        }
+    }
+
     private void OpenCopyModal(int day) {
         sourceDay = day;
         targetDays.Clear();
@@ -224,11 +235,7 @@
     private void ExecuteCopy() {
         var shiftsToCopy = allSchedules.Where(x => x.DayOfWeek == sourceDay).ToList();
         foreach (var targetDay in targetDays) {
-            var existingTargetShifts = allSchedules.Where(x => x.DayOfWeek == targetDay).ToList();
-            foreach (var s in existingTargetShifts) {
-                if (s.Id != 0) deletedSchedules.Add(s);
-                allSchedules.Remove(s);
-            }
+            ClearDay(targetDay);
             foreach (var s in shiftsToCopy) {
                 allSchedules.Add(new NETH_Schedule { StylistId = selectedStylistId, DayOfWeek = targetDay, StartTime = s.StartTime, EndTime = s.EndTime, IsWorkDay = true });
             }
