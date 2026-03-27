@@ -18,7 +18,6 @@
             <div class="flex justify-between items-center mb-8">
                 <div>
                     <h2 class="text-2xl font-black text-white uppercase tracking-tight">Appointment Desk</h2>
-                    @* Added Month/Year display *@
                     <p class="text-xs text-[#D2B48C] font-mono uppercase tracking-widest">@startOfWeek.ToString("MMMM yyyy")</p>
                 </div>
                 <div class="flex gap-2 items-center">
@@ -91,14 +90,16 @@
                         </div>
 
                         <div class="relative h-[700px] overflow-y-auto custom-scrollbar bg-[#1a1b1e]">
-                            <div class="grid grid-cols-8 relative" style="height: 960px;"> @* 12 hours * 80px *@
+                            <div class="grid grid-cols-8 relative" style="height: 1200px;"> @* Increased height for better scale *@
                                 
                                 @* TIME LABELS *@
                                 <div class="col-span-1 border-r border-gray-800 bg-[#25262b] z-20">
                                     @for (int h = 8; h < 20; h++)
                                     {
-                                        <div class="h-[80px] border-b border-gray-800/30 pr-3 pt-1 text-[10px] font-mono text-gray-600 text-right uppercase">
+                                        <div class="h-[100px] border-b border-gray-800/30 pr-3 pt-1 text-[10px] font-mono text-gray-600 text-right uppercase relative">
                                             @((h > 12 ? h - 12 : h)):00 @(h >= 12 ? "PM" : "AM")
+                                            @* 30m Tic Mark Label *@
+                                            <div class="absolute top-[50px] right-2 text-[8px] opacity-30">:30</div>
                                         </div>
                                     }
                                 </div>
@@ -111,18 +112,24 @@
                                     var dayApps = existingAppointments.Where(x => x.StartTime.Date == dayDate.Date).ToList();
 
                                     <div class="col-span-1 border-r border-gray-800 relative">
-                                        @* HOUR MARKERS *@
-                                        @for(int h=0; h<12; h++) { <div class="absolute w-full border-b border-gray-800/20" style="top: @(h * 80)px; height: 80px;"></div> }
+                                        @* VISUAL TICK MARKS (Every 30m) *@
+                                        @for(int h=0; h<12; h++) 
+                                        { 
+                                            <div class="absolute w-full border-b border-gray-800/20" style="top: @(h * 100)px; height: 50px;"></div> 
+                                            <div class="absolute w-full border-b border-gray-800/10" style="top: @(h * 100 + 50)px; height: 50px; border-style: dashed;"></div>
+                                        }
 
-                                        @* AVAILABLE SHIFTS *@
+                                        @* CLICKABLE SLOTS (Subdivided into 15m chunks) *@
                                         @foreach (var shift in dayShifts)
                                         {
-                                            var top = GetPixelOffset(shift.StartTime);
-                                            var height = GetPixelHeight(shift.StartTime, shift.EndTime);
-                                            <div @onclick="() => SetBookingTime(dayDate, shift.StartTime)" 
-                                                 class="absolute left-0 right-0 bg-green-500/5 border-x border-green-500/10 cursor-pointer hover:bg-green-500/10 transition-all z-0" 
-                                                 style="top: @(top)px; height: @(height)px;">
-                                            </div>
+                                            for(DateTime t = shift.StartTime; t < shift.EndTime; t = t.AddMinutes(15))
+                                            {
+                                                var slotTime = t; 
+                                                <div @onclick="() => SetBookingTime(dayDate, slotTime)" 
+                                                     class="absolute left-0 right-0 bg-green-500/5 hover:bg-green-500/20 z-0 border-t border-transparent hover:border-green-400/30 cursor-pointer" 
+                                                     style="top: @(GetPixelOffset(t))px; height: 25px;"> @* 25px = 15 mins *@
+                                                </div>
+                                            }
                                         }
 
                                         @* BOOKED APPOINTMENTS *@
@@ -131,10 +138,18 @@
                                             var client = allClients.FirstOrDefault(x => x.Id == app.ClientId);
                                             var top = GetPixelOffset(app.StartTime);
                                             var height = GetPixelHeight(app.StartTime, app.EndTime);
-                                            <div class="absolute left-1 right-1 bg-blue-600/40 border border-blue-400/50 rounded shadow-lg z-10 p-1 overflow-hidden" 
+                                            <div class="absolute left-1 right-1 bg-blue-600 border border-blue-400 rounded shadow-lg z-10 p-1 overflow-hidden" 
                                                  style="top: @(top)px; height: @(height)px;">
-                                                <div class="text-[9px] font-black text-white uppercase truncate">@(client?.FirstName ?? "Unknown") @(client?.LastName ?? "")</div>
-                                                <div class="text-[8px] font-mono text-white/70">@app.StartTime.ToString("h:mm") - @app.EndTime.ToString("h:mm")</div>
+                                                <div class="text-[9px] font-black text-white uppercase truncate">@(client?.FirstName ?? "N/A")</div>
+                                                <div class="text-[7px] font-mono text-white/70">@app.StartTime.ToString("h:mm")</div>
+                                            </div>
+                                        }
+
+                                        @* NEW APPOINTMENT GHOST PREVIEW *@
+                                        @if(isTimeSelected && bookingStart.Date == dayDate.Date)
+                                        {
+                                            <div class="absolute left-1 right-1 bg-blue-400/40 border-2 border-dashed border-blue-400 z-30 pointer-events-none"
+                                                 style="top: @(GetPixelOffset(bookingStart))px; height: @(totalDuration * 1.666)px;">
                                             </div>
                                         }
                                     </div>
@@ -150,9 +165,9 @@
 
 @code {
     [Parameter] public int PreSelectedStylistId { get; set; }
-    private bool isAuthorized = false, isTimeSelected = false, showToast = false;
+    private bool isAuthorized = false, isTimeSelected = false;
     private int selectedStylistId = 0, selectedClientId = 0, viewWeekOffset = 0;
-    private string statusMessage = "", customerName = "";
+    private string statusMessage = "";
     private DateTime bookingStart;
     
     private List<NETH_Stylist> allStylists = new();
@@ -163,28 +178,20 @@
     private List<NETH_Appointment> existingAppointments = new();
 
     private DateTime startOfWeek => DateTime.Today.AddDays(-(int)DateTime.Today.DayOfWeek).AddDays(viewWeekOffset * 7);
-    private int totalDuration => selectedServices.Sum(x => x.DurationMinutes);
+    private int totalDuration => selectedServices.Any() ? selectedServices.Sum(x => x.DurationMinutes) : 30;
 
     protected override async Task OnAfterRenderAsync(bool firstRender) {
         if (firstRender) {
             var json = await JS.InvokeAsync<string>("localStorage.getItem", "neth_session");
             if (string.IsNullOrEmpty(json)) Nav.NavigateTo("/nethaircut");
-            else { 
-                isAuthorized = true; 
-                allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync();
-                allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync();
+            else { isAuthorized = true; allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync(); allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync(); 
                 if (PreSelectedStylistId > 0) { selectedStylistId = PreSelectedStylistId; await LoadStylistData(); }
-                StateHasChanged(); 
-            }
+                StateHasChanged(); }
         }
     }
 
-    private async Task OnStylistChanged(ChangeEventArgs e) {
-        selectedStylistId = int.Parse(e.Value?.ToString() ?? "0");
-        await LoadStylistData();
-    }
-
     private void ChangeWeek(int delta) { viewWeekOffset += delta; }
+    private async Task OnStylistChanged(ChangeEventArgs e) { selectedStylistId = int.Parse(e.Value?.ToString() ?? "0"); await LoadStylistData(); }
 
     private async Task LoadStylistData() {
         if (selectedStylistId == 0) return;
@@ -203,19 +210,18 @@
         isTimeSelected = true;
     }
 
-    // Fixed math: 8 AM is 0px. Each hour is 80px.
+    // New Math: 1 hour = 100 pixels. 1 min = 1.666px.
     private double GetPixelOffset(DateTime time) {
-        var hoursFromEight = (time.Hour - 8) + (time.Minute / 60.0);
-        return Math.Max(0, hoursFromEight * 80);
+        double hoursFromEight = (time.Hour - 8) + (time.Minute / 60.0);
+        return hoursFromEight * 100;
     }
 
     private double GetPixelHeight(DateTime start, DateTime end) {
-        var durationHours = (end - start).TotalHours;
-        return durationHours * 80;
+        return (end - start).TotalMinutes * 1.666;
     }
 
     private async Task CreateAppointment() {
-        if (selectedClientId == 0 || !selectedServices.Any()) return;
+        if (selectedClientId == 0 || selectedStylistId == 0) return;
         try {
             var end = bookingStart.AddMinutes(totalDuration);
             var stylist = allStylists.First(x => x.Id == selectedStylistId);
@@ -227,24 +233,8 @@
                 stylist.ShopId, selectedStylistId, selectedClientId, bookingStart, end, totalPrice
             );
 
-            var result = await Db.Database.SqlQueryRaw<int>(@"SELECT MAX(""Id"") as ""Value"" FROM ""NETH_Appointments""").ToListAsync();
-            var newId = result.FirstOrDefault();
-
-            foreach(var svc in selectedServices) {
-                await Db.Database.ExecuteSqlRawAsync(
-                    @"INSERT INTO ""NETH_AppointmentServices"" (""AppointmentId"", ""ServiceId"", ""PriceAtBooking"", ""DurationAtBooking"") 
-                      VALUES ({0}, {1}, {2}, {3})",
-                    newId, svc.Id, svc.Price, svc.DurationMinutes
-                );
-            }
-
             isTimeSelected = false;
             await LoadStylistData();
-            statusMessage = "APPOINTMENT_SAVED";
         } catch (Exception ex) { statusMessage = "ERR: " + ex.Message; }
-    }
-
-    private async Task RepairTables() {
-        await Db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""NETH_Appointments"" (""Id"" SERIAL PRIMARY KEY, ""ShopId"" INTEGER NOT NULL, ""StylistId"" INTEGER NOT NULL, ""ClientId"" INTEGER NOT NULL, ""StartTime"" TIMESTAMP NOT NULL, ""EndTime"" TIMESTAMP NOT NULL, ""Status"" TEXT NOT NULL DEFAULT 'Booked', ""TotalPrice"" DECIMAL NOT NULL, ""Notes"" TEXT NOT NULL DEFAULT '', ""IsPaid"" BOOLEAN NOT NULL DEFAULT FALSE);");
     }
 }
