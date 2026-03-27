@@ -78,8 +78,9 @@
                                     <input type="date" @bind="bookingDate" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-3 text-xs text-white outline-none" />
                                 </div>
                                 <div>
-                                    <label class="text-[9px] text-gray-500 uppercase block mb-1">Start Time</label>
-                                    <input type="time" @bind="bookingTime" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-3 text-xs text-white outline-none" />
+                                    <label class="text-[9px] text-gray-500 uppercase block mb-1">Start Time (15m Intervals)</label>
+                                    @* step="900" is 15 minutes in seconds *@
+                                    <input type="time" step="900" @bind="bookingTime" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-3 text-xs text-white outline-none" />
                                 </div>
                                 <div class="col-span-2">
                                     <label class="text-[9px] text-gray-500 uppercase block mb-1">Notes</label>
@@ -160,26 +161,34 @@
             var end = start.AddMinutes(totalDuration);
             var stylist = allStylists.First(x => x.Id == selectedStylistId);
 
+            // 1. Insert Main Appointment
             await Db.Database.ExecuteSqlRawAsync(
                 @"INSERT INTO ""NETH_Appointments"" (""ShopId"", ""StylistId"", ""ClientId"", ""StartTime"", ""EndTime"", ""Status"", ""TotalPrice"", ""IsPaid"", ""Notes"") 
                   VALUES ({0}, {1}, {2}, {3}, {4}, 'Booked', {5}, false, {6})",
                 stylist.ShopId, selectedStylistId, selectedClientId, start, end, totalPrice, appointmentNotes ?? ""
             );
 
-            var newId = await Db.Database.SqlQueryRaw<int>(@"SELECT MAX(""Id"") FROM ""NETH_Appointments""").FirstOrDefaultAsync();
+            // 2. Fix for "column t.Value does not exist" - alias the result as "Value"
+            var result = await Db.Database.SqlQueryRaw<int>(@"SELECT MAX(""Id"") as ""Value"" FROM ""NETH_Appointments""").ToListAsync();
+            var newId = result.FirstOrDefault();
 
-            foreach(var svc in selectedServices) {
-                await Db.Database.ExecuteSqlRawAsync(
-                    @"INSERT INTO ""NETH_AppointmentServices"" (""AppointmentId"", ""ServiceId"", ""PriceAtBooking"", ""DurationAtBooking"") 
-                      VALUES ({0}, {1}, {2}, {3})",
-                    newId, svc.Id, svc.Price, svc.DurationMinutes
-                );
+            if (newId > 0) {
+                // 3. Snapshot Services
+                foreach(var svc in selectedServices) {
+                    await Db.Database.ExecuteSqlRawAsync(
+                        @"INSERT INTO ""NETH_AppointmentServices"" (""AppointmentId"", ""ServiceId"", ""PriceAtBooking"", ""DurationAtBooking"") 
+                          VALUES ({0}, {1}, {2}, {3})",
+                        newId, svc.Id, svc.Price, svc.DurationMinutes
+                    );
+                }
+
+                statusMessage = "SUCCESS: APPOINTMENT_REGISTERED";
+                selectedServices.Clear();
+                appointmentNotes = "";
+                StateHasChanged();
+            } else {
+                statusMessage = "ERR: COULD_NOT_RETRIEVE_APPOINTMENT_ID";
             }
-
-            statusMessage = "SUCCESS: APPOINTMENT_REGISTERED";
-            selectedServices.Clear();
-            appointmentNotes = "";
-            StateHasChanged();
         } catch (Exception ex) { statusMessage = "ERR: " + ex.Message; }
     }
 
@@ -190,6 +199,10 @@
                     ""Id"" SERIAL PRIMARY KEY, ""ShopId"" INTEGER NOT NULL, ""StylistId"" INTEGER NOT NULL, 
                     ""ClientId"" INTEGER NOT NULL, ""StartTime"" TIMESTAMP NOT NULL, ""EndTime"" TIMESTAMP NOT NULL, 
                     ""Status"" TEXT NOT NULL DEFAULT 'Booked', ""TotalPrice"" DECIMAL NOT NULL, ""Notes"" TEXT NOT NULL DEFAULT '', ""IsPaid"" BOOLEAN NOT NULL DEFAULT FALSE
+                );
+                CREATE TABLE IF NOT EXISTS ""NETH_AppointmentServices"" (
+                    ""Id"" SERIAL PRIMARY KEY, ""AppointmentId"" INTEGER NOT NULL, ""ServiceId"" INTEGER NOT NULL, 
+                    ""PriceAtBooking"" DECIMAL NOT NULL, ""DurationAtBooking"" INTEGER NOT NULL
                 );");
             statusMessage = "TABLE_REGISTRY_VERIFIED";
         } catch (Exception ex) { statusMessage = "REPAIR_ERR: " + ex.Message; }
