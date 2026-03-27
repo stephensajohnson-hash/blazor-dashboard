@@ -25,7 +25,7 @@
     .animate-shake {
         animation: neth-shake 0.3s ease-in-out !important;
         border: 2px solid #ef4444 !important;
-        background-color: rgba(239, 68, 68, 0.5) !important;
+        background-color: rgba(239, 68, 68, 0.6) !important;
     }
 </style>
 
@@ -83,7 +83,7 @@
 
                         @if (isTimeSelected)
                         {
-                            <div class="bg-blue-600 p-6 rounded-xl shadow-2xl animate-in zoom-in-95 duration-200">
+                            <div class="bg-blue-600 p-6 rounded-xl shadow-2xl @(isShaking ? "animate-shake" : "")">
                                 <label class="text-[10px] font-black uppercase text-white/70 mb-2 block tracking-widest">Confirm Slot</label>
                                 <div class="text-white font-black uppercase leading-tight">
                                     <div class="text-sm">@bookingStart.ToString("dddd, MMM dd")</div>
@@ -135,27 +135,29 @@
                                         @* SHIFT RENDERING *@
                                         @foreach (var shift in dayShifts)
                                         {
-                                            @* 1. THE GREEN BOX *@
+                                            @* GREEN BOX *@
                                             <div class="absolute inset-x-0 bg-green-500/10 border-x border-green-500/20 z-0"
                                                  style="top: @(GetPixelOffset(shift.StartTime))px; height: @(GetPixelHeight(shift.StartTime, shift.EndTime))px;">
                                             </div>
 
-                                            @* 2. THE CLICKABLE 15m SLOTS *@
+                                            @* INTERACTIVE 15m SLOTS *@
                                             @for(DateTime t = shift.StartTime; t < shift.EndTime; t = t.AddMinutes(15))
                                             {
                                                 var slotStart = t;
                                                 var slotEnd = t.AddMinutes(totalDuration);
-                                                bool isBlocked = dayApps.Any(a => slotStart < a.EndTime && slotEnd > a.StartTime);
-                                                bool isTooLong = slotEnd > shift.EndTime;
+                                                
+                                                @* Collision Logic *@
+                                                bool isCollision = dayApps.Any(a => slotStart < a.EndTime && slotEnd > a.StartTime);
+                                                bool isOffShift = slotEnd > shift.EndTime;
 
-                                                <div @onclick="() => HandleSlotClick(dayDate, slotStart, isBlocked || isTooLong)" 
+                                                <div @onclick="() => HandleSlotClick(dayDate, slotStart, isCollision || isOffShift)" 
                                                      class="absolute left-0 right-0 z-40 group cursor-pointer" 
                                                      style="top: @(GetPixelOffset(slotStart))px; height: 25px;">
                                                     
                                                     <div class="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 z-50 flex items-center justify-center border-2 border-dashed
-                                                                @(isBlocked || isTooLong ? "bg-red-500/40 border-red-500 animate-pulse" : "bg-blue-500/30 border-blue-400")"
+                                                                @(isCollision || isOffShift ? "bg-red-500/40 border-red-500 animate-pulse" : "bg-blue-500/30 border-blue-400")"
                                                          style="height: @(totalDuration * 1.666)px; width: 100%; top: 0;">
-                                                        @if(isBlocked || isTooLong) { <i class="fas fa-ban text-white text-xs"></i> }
+                                                        @if(isCollision || isOffShift) { <i class="fas fa-ban text-white text-xs"></i> }
                                                     </div>
                                                 </div>
                                             }
@@ -173,7 +175,7 @@
                                             </div>
                                         }
 
-                                        @* SELECTED PREVIEW *@
+                                        @* PLACED GHOST *@
                                         @if(isTimeSelected && bookingStart.Date == dayDate.Date)
                                         {
                                             <div class="absolute left-1 right-1 bg-blue-500 border-2 border-white z-30 pointer-events-none flex items-center justify-center overflow-hidden shadow-2xl @(isShaking ? "animate-shake" : "")"
@@ -240,10 +242,10 @@
 
     private async Task HandleSlotClick(DateTime date, DateTime baseTime, bool isInvalid) {
         if (isInvalid) {
-            statusMessage = "ERR: COLLISION DETECTED";
+            statusMessage = "ERR: Invalid placement (collision or out of shift).";
             isShaking = true;
             StateHasChanged();
-            await Task.Delay(300);
+            await Task.Delay(400);
             isShaking = false;
             StateHasChanged();
             return;
@@ -270,7 +272,15 @@
             var end = bookingStart.AddMinutes(totalDuration);
             var stylist = allStylists.First(x => x.Id == selectedStylistId);
             bool overlap = existingAppointments.Any(a => a.StylistId == selectedStylistId && bookingStart < a.EndTime && end > a.StartTime);
-            if (overlap) { statusMessage = "ERR: SLOT TAKEN"; await LoadStylistData(); return; }
+            if (overlap) { 
+                statusMessage = "ERR: Slot is already taken."; 
+                isShaking = true;
+                StateHasChanged();
+                await Task.Delay(400);
+                isShaking = false;
+                await LoadStylistData(); 
+                return; 
+            }
 
             await Db.Database.ExecuteSqlRawAsync("INSERT INTO \"NETH_Appointments\" (\"ShopId\", \"StylistId\", \"ClientId\", \"StartTime\", \"EndTime\", \"Status\", \"TotalPrice\", \"IsPaid\", \"Notes\") VALUES ({0}, {1}, {2}, {3}, {4}, 'Booked', {5}, false, '')", stylist.ShopId, selectedStylistId, selectedClientId, bookingStart, end, selectedServices.Sum(s => s.Price));
             var idResult = await Db.Database.SqlQueryRaw<int>("SELECT MAX(\"Id\") as \"Value\" FROM \"NETH_Appointments\"").ToListAsync();
