@@ -16,21 +16,20 @@
     
     .neth-shift-zone { position: absolute; left: 0; right: 0; background: rgba(34, 197, 94, 0.08); border-left: 2px solid #22c55e; z-index: 1; pointer-events: none; }
     
-    /* Click slots are Layer 10 */
     .neth-click-slot { position: absolute; left: 0; right: 0; z-index: 10; cursor: pointer; }
     .neth-ghost-preview { position: absolute; top: 0; left: 0; right: 0; border: 2px dashed #60a5fa; background: rgba(96, 165, 250, 0.2); pointer-events: none; opacity: 0; transition: opacity 0.1s; z-index: 15; display: flex; align-items: center; justify-content: center; }
-    .neth-click-slot:hover .neth-ghost-preview { opacity: 1; }
     
-    /* Existing appointments are Layer 100 to stay on top of slots */
+    /* Only show ghost if the slot is NOT invalid */
+    .neth-click-slot:hover .neth-ghost-active { opacity: 1; }
+    .neth-ghost-hidden { display: none !important; }
+    
     .neth-appointment-block { position: absolute; left: 4px; right: 4px; background: #2563eb; border: 1px solid #60a5fa; border-radius: 4px; z-index: 100; padding: 6px; overflow: hidden; cursor: pointer; transition: transform 0.1s; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
     .neth-appointment-block:hover { transform: scale(1.01); filter: brightness(1.2); }
-    
-    .neth-ghost-invalid { border-color: #ef4444 !important; background: rgba(239, 68, 68, 0.4) !important; }
     
     @@keyframes neth-shake {
         0%, 100% { transform: translateX(0); }
         20%, 60% { transform: translateX(-10px); }
-        40%, 80% { transform: translateX(10px); }
+        40%, 80% { transform: translateX(6px); }
     }
     .shake-it { animation: neth-shake 0.3s ease-in-out !important; border: 2px solid #ef4444 !important; background-color: rgba(239, 68, 68, 0.5) !important; }
 
@@ -73,7 +72,7 @@
             {
                 <div class="grid grid-cols-1 xl:grid-cols-4 gap-8">
                     <div class="xl:col-span-1 space-y-4">
-                        <div class="bg-[#25262b] p-5 rounded-xl border border-gray-700 shadow-2xl">
+                        <div class="bg-[#25262b] p-5 rounded-xl border border-gray-700 shadow-2xl @(isShaking ? "shake-it" : "")">
                             <h3 class="text-[10px] font-black uppercase text-[#D2B48C] mb-4 tracking-widest">1. Select Services</h3>
                             <div class="space-y-1.5 mb-4 max-h-[350px] overflow-y-auto pr-1 custom-scrollbar">
                                 @foreach (var svc in filteredServices)
@@ -92,7 +91,7 @@
 
                         @if (isTimeSelected)
                         {
-                            <div class="bg-blue-600 p-5 rounded-xl shadow-2xl @(isShaking ? "shake-it" : "")">
+                            <div class="bg-blue-600 p-5 rounded-xl shadow-2xl">
                                 <h3 class="text-[10px] font-black uppercase text-white/70 mb-3 tracking-widest">2. Booking Details</h3>
                                 <div class="mb-4">
                                     <p class="text-white font-black uppercase text-lg leading-none">@bookingStart.ToString("h:mm tt")</p>
@@ -148,17 +147,18 @@
                                                 var slotStart = t;
                                                 var slotEnd = t.AddMinutes(totalDuration);
                                                 
-                                                // REFINED COLLISION: Checks if ANY part of the 30/45/60m block hits an app
+                                                // FULL SPAN CHECK
                                                 bool hasConflict = dayApps.Any(a => slotStart < a.EndTime && slotEnd > a.StartTime);
                                                 bool isTooLate = slotEnd > shift.EndTime;
+                                                bool isInvalid = hasConflict || isTooLate;
 
-                                                <div @onclick='() => HandleSlotClick(dayDate, slotStart, hasConflict || isTooLate)' 
+                                                <div @onclick='() => HandleSlotClick(dayDate, slotStart, isInvalid)' 
                                                      class="neth-click-slot" 
                                                      style="top: @(GetPx(slotStart))px; height: 25px;">
-                                                    <div class='neth-ghost-preview @(hasConflict || isTooLate ? "neth-ghost-invalid" : "")' 
+                                                    @* Ghost preview only show if valid; otherwise hidden *@
+                                                    <div class='neth-ghost-preview @(isInvalid ? "neth-ghost-hidden" : "neth-ghost-active")' 
                                                          style="height: @(totalDuration * 1.666)px;">
-                                                        @if(hasConflict || isTooLate) { <i class="fas fa-ban text-red-500 text-xs"></i> }
-                                                        else { <span class="text-[8px] font-black text-white uppercase">@totalDuration m</span> }
+                                                        <span class="text-[8px] font-black text-white uppercase">@totalDuration m</span>
                                                     </div>
                                                 </div>
                                             }
@@ -176,7 +176,7 @@
 
                                         @if(isTimeSelected && bookingStart.Date == dayDate.Date)
                                         {
-                                            <div class="absolute inset-x-1 border-2 border-white bg-blue-500/50 shadow-xl z-20 pointer-events-none @(isShaking ? "shake-it" : "")"
+                                            <div class="absolute inset-x-1 border-2 border-white bg-blue-500/50 shadow-xl z-20 pointer-events-none"
                                                  style="top: @(GetPx(bookingStart))px; height: @(totalDuration * 1.666)px;">
                                             </div>
                                         }
@@ -244,7 +244,7 @@
 
     private async Task HandleSlotClick(DateTime date, DateTime time, bool invalid) {
         if (invalid) {
-            statusMessage = "ERR: COLLISION_DETECTED";
+            statusMessage = "ERR: SLOT OCCUPIED";
             isShaking = true; StateHasChanged();
             await Task.Delay(300);
             isShaking = false; StateHasChanged();
