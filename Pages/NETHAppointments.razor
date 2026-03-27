@@ -132,7 +132,7 @@
                                                     (slotStart <= a.StartTime && slotEnd >= a.EndTime)
                                                 );
 
-                                                <div @onclick="() => { if(!overlaps) SetBookingTime(dayDate, slotStart); else statusMessage = $＂ERR: OVERLAP DETECTED AT {slotStart.ToString(\"h:mm tt\")}＂; }" 
+                                                <div @onclick='() => { if(!overlaps) SetBookingTime(dayDate, slotStart); else statusMessage = "ERR: OVERLAP DETECTED"; }' 
                                                      class="absolute left-0 right-0 z-40 border-t border-transparent transition-all group" 
                                                      style="top: @(GetPixelOffset(slotStart))px; height: 25px;">
                                                     
@@ -198,11 +198,13 @@
         if (firstRender) {
             var json = await JS.InvokeAsync<string>("localStorage.getItem", "neth_session");
             if (string.IsNullOrEmpty(json)) Nav.NavigateTo("/nethaircut");
-            else { isAuthorized = true; 
-                   allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync(); 
-                   allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync(); 
-                   if (PreSelectedStylistId > 0) { selectedStylistId = PreSelectedStylistId; await LoadStylistData(); }
-                   StateHasChanged(); }
+            else { 
+                isAuthorized = true; 
+                allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync(); 
+                allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync(); 
+                if (PreSelectedStylistId > 0) { selectedStylistId = PreSelectedStylistId; await LoadStylistData(); }
+                StateHasChanged(); 
+            }
         }
     }
 
@@ -229,9 +231,9 @@
     }
 
     private async Task HandleExistingClick(NETH_Appointment app) {
-        if (await JS.InvokeAsync<bool>("confirm", $"Delete appointment for {allClients.FirstOrDefault(c => c.Id == app.ClientId)?.FirstName}?")) {
-            await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_Appointments"" WHERE ""Id"" = {0}", app.Id);
-            await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_AppointmentServices"" WHERE ""AppointmentId"" = {0}", app.Id);
+        if (await JS.InvokeAsync<bool>("confirm", "Delete appointment?")) {
+            await Db.Database.ExecuteSqlRawAsync("DELETE FROM \"NETH_Appointments\" WHERE \"Id\" = {0}", app.Id);
+            await Db.Database.ExecuteSqlRawAsync("DELETE FROM \"NETH_AppointmentServices\" WHERE \"AppointmentId\" = {0}", app.Id);
             await LoadStylistData();
         }
     }
@@ -247,12 +249,12 @@
             bool overlap = existingAppointments.Any(a => a.StylistId == selectedStylistId && bookingStart < a.EndTime && end > a.StartTime);
             if (overlap) { statusMessage = "ERR: SLOT_NO_LONGER_AVAILABLE"; return; }
 
-            await Db.Database.ExecuteSqlRawAsync(@"INSERT INTO ""NETH_Appointments"" (""ShopId"", ""StylistId"", ""ClientId"", ""StartTime"", ""EndTime"", ""Status"", ""TotalPrice"", ""IsPaid"", ""Notes"") VALUES ({0}, {1}, {2}, {3}, {4}, 'Booked', {5}, false, '')", stylist.ShopId, selectedStylistId, selectedClientId, bookingStart, end, selectedServices.Sum(s => s.Price));
-            var idResult = await Db.Database.SqlQueryRaw<int>(@"SELECT MAX(""Id"") as ""Value"" FROM ""NETH_Appointments""").ToListAsync();
+            await Db.Database.ExecuteSqlRawAsync("INSERT INTO \"NETH_Appointments\" (\"ShopId\", \"StylistId\", \"ClientId\", \"StartTime\", \"EndTime\", \"Status\", \"TotalPrice\", \"IsPaid\", \"Notes\") VALUES ({0}, {1}, {2}, {3}, {4}, 'Booked', {5}, false, '')", stylist.ShopId, selectedStylistId, selectedClientId, bookingStart, end, selectedServices.Sum(s => s.Price));
+            var idResult = await Db.Database.SqlQueryRaw<int>("SELECT MAX(\"Id\") as \"Value\" FROM \"NETH_Appointments\"").ToListAsync();
             var newId = idResult.FirstOrDefault();
 
             foreach(var svc in selectedServices) {
-                await Db.Database.ExecuteSqlRawAsync(@"INSERT INTO ""NETH_AppointmentServices"" (""AppointmentId"", ""ServiceId"", ""PriceAtBooking"", ""DurationAtBooking"") VALUES ({0}, {1}, {2}, {3})", newId, svc.Id, svc.Price, svc.DurationMinutes);
+                await Db.Database.ExecuteSqlRawAsync("INSERT INTO \"NETH_AppointmentServices\" (\"AppointmentId\", \"ServiceId\", \"PriceAtBooking\", \"DurationAtBooking\") VALUES ({0}, {1}, {2}, {3})", newId, svc.Id, svc.Price, svc.DurationMinutes);
             }
             isTimeSelected = false;
             selectedServices.Clear();
