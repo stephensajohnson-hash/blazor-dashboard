@@ -44,7 +44,6 @@
             {
                 <div class="grid grid-cols-1 xl:grid-cols-4 gap-8">
                     
-                    @* LEFT PANEL *@
                     <div class="xl:col-span-1 space-y-6">
                         <div class="bg-[#25262b] p-6 rounded-xl border border-gray-700 shadow-xl">
                             <label class="text-[10px] font-black uppercase text-[#D2B48C] mb-4 block tracking-widest">Services</label>
@@ -83,7 +82,6 @@
                         }
                     </div>
 
-                    @* THE GRID *@
                     <div class="xl:col-span-3 bg-[#25262b] rounded-xl border border-gray-700 shadow-xl overflow-hidden flex flex-col">
                         <div class="grid grid-cols-8 border-b border-gray-700 bg-black/20">
                             <div class="p-4 border-r border-gray-700"></div>
@@ -99,8 +97,6 @@
 
                         <div class="relative h-[700px] overflow-y-auto custom-scrollbar bg-[#1a1b1e]">
                             <div class="grid grid-cols-8 relative" style="height: 1200px;">
-                                
-                                @* TIME SCALE *@
                                 <div class="col-span-1 border-r border-gray-800 bg-[#25262b] z-20">
                                     @for (int h = 8; h < 20; h++)
                                     {
@@ -111,7 +107,6 @@
                                     }
                                 </div>
 
-                                @* DAY COLUMNS *@
                                 @for (int i = 0; i < 7; i++)
                                 {
                                     var dayDate = startOfWeek.AddDays(i);
@@ -119,13 +114,11 @@
                                     var dayApps = existingAppointments.Where(x => x.StartTime.Date == dayDate.Date).ToList();
 
                                     <div class="col-span-1 border-r border-gray-800 relative">
-                                        @* HOUR/HALF-HOUR TICK MARKS *@
                                         @for(int h=0; h<12; h++) { 
                                             <div class="absolute w-full border-b border-gray-800/20" style="top: @(h * 100)px; height: 50px;"></div> 
                                             <div class="absolute w-full border-b border-gray-800/10" style="top: @(h * 100 + 50)px; height: 50px; border-style: dashed;"></div>
                                         }
 
-                                        @* CLICKABLE SLOTS - NOW WITH PROACTIVE OVERLAP CHECK *@
                                         @foreach (var shift in dayShifts)
                                         {
                                             for(DateTime t = shift.StartTime; t < shift.EndTime; t = t.AddMinutes(15))
@@ -133,18 +126,16 @@
                                                 var slotStart = t; 
                                                 var slotEnd = t.AddMinutes(totalDuration);
                                                 
-                                                // CRITICAL: Check if this block would overlap ANY existing appointment
                                                 bool overlaps = dayApps.Any(a => 
                                                     (slotStart >= a.StartTime && slotStart < a.EndTime) || 
                                                     (slotEnd > a.StartTime && slotEnd <= a.EndTime) ||
                                                     (slotStart <= a.StartTime && slotEnd >= a.EndTime)
                                                 );
 
-                                                <div @onclick="() => { if(!overlaps) SetBookingTime(dayDate, slotStart); else statusMessage = $＂ERR: OVERLAP DETECTED AT {slotStart:h:mm tt}＂; }" 
+                                                <div @onclick="() => { if(!overlaps) SetBookingTime(dayDate, slotStart); else statusMessage = $＂ERR: OVERLAP DETECTED AT {slotStart.ToString(\"h:mm tt\")}＂; }" 
                                                      class="absolute left-0 right-0 z-40 border-t border-transparent transition-all group" 
                                                      style="top: @(GetPixelOffset(slotStart))px; height: 25px;">
                                                     
-                                                    @* HOVER GHOST: Now draws full height of selected services immediately *@
                                                     <div class="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 flex items-center justify-center border-2 border-dashed
                                                                 @(overlaps ? "bg-red-500/20 border-red-500 cursor-not-allowed" : "bg-blue-500/10 border-blue-500 cursor-pointer")"
                                                          style="height: @(totalDuration * 1.666)px; width: 100%; top: 0;">
@@ -155,7 +146,6 @@
                                             }
                                         }
 
-                                        @* EXISTING APPOINTMENTS *@
                                         @foreach (var app in dayApps)
                                         {
                                             var client = allClients.FirstOrDefault(x => x.Id == app.ClientId);
@@ -169,7 +159,6 @@
                                             </div>
                                         }
 
-                                        @* SELECTED PLACEMENT GHOST (STAYS AFTER CLICK) *@
                                         @if(isTimeSelected && bookingStart.Date == dayDate.Date)
                                         {
                                             <div class="absolute left-1 right-1 bg-blue-400 border-2 border-blue-200 z-30 pointer-events-none flex items-center justify-center overflow-hidden shadow-2xl"
@@ -203,8 +192,6 @@
     private List<NETH_Appointment> existingAppointments = new();
 
     private DateTime startOfWeek => DateTime.Today.AddDays(-(int)DateTime.Today.DayOfWeek).AddDays(viewWeekOffset * 7);
-    
-    // Fallback to 30 minutes if no services selected to ensure ghost always has size
     private int totalDuration => selectedServices.Any() ? selectedServices.Sum(x => x.DurationMinutes) : 30;
 
     protected override async Task OnAfterRenderAsync(bool firstRender) {
@@ -233,7 +220,6 @@
     private void ToggleService(NETH_Service svc) {
         if (selectedServices.Any(x => x.Id == svc.Id)) selectedServices.RemoveAll(x => x.Id == svc.Id);
         else selectedServices.Add(svc);
-        // Instant state refresh to update ghost size
         StateHasChanged();
     }
 
@@ -255,24 +241,19 @@
 
     private async Task CreateAppointment() {
         if (selectedClientId == 0 || selectedStylistId == 0 || !selectedServices.Any()) { statusMessage = "ERR: MISSING_FIELDS"; return; }
-        
         try {
             var end = bookingStart.AddMinutes(totalDuration);
             var stylist = allStylists.First(x => x.Id == selectedStylistId);
-            
-            // Final safety check for overlap before saving
             bool overlap = existingAppointments.Any(a => a.StylistId == selectedStylistId && bookingStart < a.EndTime && end > a.StartTime);
             if (overlap) { statusMessage = "ERR: SLOT_NO_LONGER_AVAILABLE"; return; }
 
             await Db.Database.ExecuteSqlRawAsync(@"INSERT INTO ""NETH_Appointments"" (""ShopId"", ""StylistId"", ""ClientId"", ""StartTime"", ""EndTime"", ""Status"", ""TotalPrice"", ""IsPaid"", ""Notes"") VALUES ({0}, {1}, {2}, {3}, {4}, 'Booked', {5}, false, '')", stylist.ShopId, selectedStylistId, selectedClientId, bookingStart, end, selectedServices.Sum(s => s.Price));
-            
             var idResult = await Db.Database.SqlQueryRaw<int>(@"SELECT MAX(""Id"") as ""Value"" FROM ""NETH_Appointments""").ToListAsync();
             var newId = idResult.FirstOrDefault();
 
             foreach(var svc in selectedServices) {
                 await Db.Database.ExecuteSqlRawAsync(@"INSERT INTO ""NETH_AppointmentServices"" (""AppointmentId"", ""ServiceId"", ""PriceAtBooking"", ""DurationAtBooking"") VALUES ({0}, {1}, {2}, {3})", newId, svc.Id, svc.Price, svc.DurationMinutes);
             }
-
             isTimeSelected = false;
             selectedServices.Clear();
             await LoadStylistData();
