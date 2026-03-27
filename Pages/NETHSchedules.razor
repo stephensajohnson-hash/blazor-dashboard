@@ -10,7 +10,19 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
-<div class="min-h-screen bg-[#1a1b1e] text-gray-300 flex font-sans">
+<div class="min-h-screen bg-[#1a1b1e] text-gray-300 flex font-sans relative">
+    
+    @* FLOATING SUCCESS TOAST *@
+    @if (showToast)
+    {
+        <div class="fixed top-8 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-top duration-300">
+            <div class="bg-green-600 text-white px-8 py-4 rounded-full shadow-2xl flex items-center gap-3 border border-green-400/30">
+                <i class="fas fa-check-circle"></i>
+                <span class="text-xs font-black uppercase tracking-widest">Schedule Saved Successfully</span>
+            </div>
+        </div>
+    }
+
     @if (isAuthorized)
     {
         <NETHAdminSidebar />
@@ -20,25 +32,20 @@
                 <div class="flex justify-between items-end mb-8">
                     <div>
                         <h2 class="text-2xl font-black text-white uppercase tracking-tight">Shift Commander</h2>
-                        <p class="text-xs text-gray-500 font-mono">Manage split-shifts and weekly availability</p>
+                        <p class="text-xs text-gray-500 font-mono">Manage weekly operating hours</p>
                     </div>
                     <div class="flex gap-4">
                         <select @onchange="OnStylistChanged" value="@selectedStylistId" class="bg-[#25262b] border border-gray-700 rounded px-4 py-2 text-white text-[10px] font-black uppercase outline-none focus:border-[#D2B48C]">
                             <option value="0">-- Select Stylist --</option>
                             @foreach(var s in allStylists) { <option value="@s.Id">@s.Name</option> }
                         </select>
-                        <button @onclick="RepairTable" class="text-[9px] text-orange-500 hover:text-orange-400 font-mono border border-orange-900/50 px-3 py-1 rounded uppercase transition">Force_Rebuild_Table</button>
                     </div>
                 </div>
 
-                @if (!string.IsNullOrEmpty(statusMessage))
+                @if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    <div class="mb-6 p-4 rounded flex justify-between items-center animate-in fade-in slide-in-from-top duration-300 @(statusMessage.Contains("ERR") ? "bg-red-900/40 border border-red-500/50 text-red-200" : "bg-green-900/40 border border-green-500/50 text-green-200")">
-                        <span class="font-mono text-[10px] font-black uppercase tracking-widest">
-                            <i class="fas @(statusMessage.Contains("ERR") ? "fa-exclamation-triangle" : "fa-check-circle") mr-2"></i>
-                            @statusMessage
-                        </span>
-                        <button @onclick='() => statusMessage = ""' class="opacity-50 hover:opacity-100">&times;</button>
+                    <div class="mb-6 p-4 bg-red-900/40 border border-red-500/50 text-red-200 rounded font-mono text-[10px] uppercase">
+                        ERR: @errorMessage
                     </div>
                 }
 
@@ -143,9 +150,9 @@
 
 @code {
     [Parameter] public int DefaultStylistId { get; set; }
-    private bool isAuthorized = false, isLoading = true, showCopyModal = false;
+    private bool isAuthorized = false, isLoading = true, showCopyModal = false, showToast = false;
     private int selectedStylistId = 0, sourceDay = 0;
-    private string statusMessage = "";
+    private string errorMessage = "";
     private List<NETH_Stylist> allStylists = new();
     private List<NETH_Schedule> allSchedules = new();
     private List<NETH_Schedule> deletedSchedules = new();
@@ -173,22 +180,20 @@
     }
 
     private async Task LoadInitialData() {
-        try { allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync(); } catch { statusMessage = "ERR: DATABASE_SYNC_FAILED"; }
+        try { allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync(); } catch { errorMessage = "DATABASE_SYNC_FAILED"; }
     }
 
     private async Task OnStylistChanged(ChangeEventArgs e) {
         selectedStylistId = int.Parse(e.Value?.ToString() ?? "0");
-        if (selectedStylistId > 0) {
-            await LoadStylistSchedule(selectedStylistId);
-        }
+        if (selectedStylistId > 0) await LoadStylistSchedule(selectedStylistId);
     }
 
     private async Task LoadStylistSchedule(int id) {
         try {
             allSchedules = await Db.Database.SqlQueryRaw<NETH_Schedule>(@"SELECT * FROM ""NETH_Schedules"" WHERE ""StylistId"" = {0}", id).ToListAsync();
             deletedSchedules.Clear();
-            statusMessage = "";
-        } catch { statusMessage = "ERR: TABLE_NOT_FOUND_REBUILD_REQUIRED"; }
+            errorMessage = "";
+        } catch { errorMessage = "TABLE_ERROR: REBUILD MAY BE REQUIRED VIA DB CONSOLE"; }
     }
 
     private DateTime UpdateTime(DateTime existing, string? timeString) {
@@ -229,14 +234,11 @@
             }
         }
         showCopyModal = false;
-        statusMessage = "SCHEDULE_STAGED: CLICK SAVE TO COMMIT";
     }
 
     private async Task SaveSchedules() {
         try {
-            statusMessage = "INITIATING_SAVE...";
-            StateHasChanged();
-
+            errorMessage = "";
             foreach (var d in deletedSchedules) await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_Schedules"" WHERE ""Id"" = {0}", d.Id);
             deletedSchedules.Clear();
 
@@ -245,17 +247,16 @@
                 else await Db.Database.ExecuteSqlRawAsync(@"UPDATE ""NETH_Schedules"" SET ""StartTime"" = {0}, ""EndTime"" = {1}, ""IsWorkDay"" = {2} WHERE ""Id"" = {3}", s.StartTime, s.EndTime, s.IsWorkDay, s.Id);
             }
             
-            statusMessage = "SUCCESS: Stylist schedule updated and saved.";
             await LoadStylistSchedule(selectedStylistId);
-        } catch (Exception ex) { 
-            statusMessage = "ERR: " + ex.Message; 
-        }
+            await TriggerToast();
+        } catch (Exception ex) { errorMessage = ex.Message; }
     }
 
-    private async Task RepairTable() {
-        try {
-            await Db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""NETH_Schedules"" (""Id"" SERIAL PRIMARY KEY, ""StylistId"" INTEGER NOT NULL, ""DayOfWeek"" INTEGER NOT NULL, ""StartTime"" TIMESTAMP NOT NULL, ""EndTime"" TIMESTAMP NOT NULL, ""IsWorkDay"" BOOLEAN NOT NULL DEFAULT TRUE);");
-            statusMessage = "SUCCESS: Schedule table initialized.";
-        } catch (Exception ex) { statusMessage = "ERR: " + ex.Message; }
+    private async Task TriggerToast() {
+        showToast = true;
+        StateHasChanged();
+        await Task.Delay(3000);
+        showToast = false;
+        StateHasChanged();
     }
 }
