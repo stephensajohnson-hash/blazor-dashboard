@@ -31,8 +31,6 @@
             }
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                
-                @* STEP 1 & 2: STYLIST & SERVICES *@
                 <div class="space-y-6">
                     <div class="bg-[#25262b] p-6 rounded-xl border border-gray-700 shadow-xl">
                         <label class="text-[10px] font-black uppercase text-[#D2B48C] mb-2 block tracking-widest">1. Select Stylist</label>
@@ -62,7 +60,6 @@
                     }
                 </div>
 
-                @* STEP 3 & 4: DATE & CLIENT *@
                 <div class="lg:col-span-2 space-y-6">
                     @if (selectedStylistId > 0 && selectedServices.Any())
                     {
@@ -81,15 +78,19 @@
                                     <input type="date" @bind="bookingDate" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-3 text-xs text-white outline-none" />
                                 </div>
                                 <div>
-                                    <label class="text-[9px] text-gray-500 uppercase block mb-1">Start Time (12h)</label>
+                                    <label class="text-[9px] text-gray-500 uppercase block mb-1">Start Time</label>
                                     <input type="time" @bind="bookingTime" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-3 text-xs text-white outline-none" />
+                                </div>
+                                <div class="col-span-2">
+                                    <label class="text-[9px] text-gray-500 uppercase block mb-1">Notes</label>
+                                    <textarea @bind="appointmentNotes" rows="2" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-3 text-xs text-white outline-none" placeholder="Optional notes..."></textarea>
                                 </div>
                             </div>
 
                             <div class="mt-8 p-6 bg-black/40 rounded-xl border border-gray-800">
-                                <div class="flex justify-between items-center">
-                                    <div class="text-[10px] font-black uppercase tracking-widest text-gray-500">Summary</div>
-                                    <div class="text-[10px] font-mono text-[#D2B48C]">@totalDuration MIN TOTAL</div>
+                                <div class="flex justify-between items-center text-xs font-black uppercase">
+                                    <span class="text-gray-500">Summary</span>
+                                    <span class="text-[#D2B48C]">@totalDuration MIN TOTAL</span>
                                 </div>
                                 <div class="text-2xl font-black text-white mt-2">@totalPrice.ToString("C")</div>
                                 <button @onclick="CreateAppointment" class="w-full mt-6 bg-blue-600 hover:bg-blue-500 text-white font-black uppercase text-xs py-4 rounded-xl shadow-2xl transition tracking-widest">Create_Appointment_Record</button>
@@ -106,7 +107,7 @@
     [Parameter] public int PreSelectedStylistId { get; set; }
     private bool isAuthorized = false;
     private int selectedStylistId = 0, selectedClientId = 0;
-    private string statusMessage = "";
+    private string statusMessage = "", appointmentNotes = "";
     private List<NETH_Stylist> allStylists = new();
     private List<NETH_Client> allClients = new();
     private List<NETH_Service> filteredServices = new();
@@ -159,17 +160,14 @@
             var end = start.AddMinutes(totalDuration);
             var stylist = allStylists.First(x => x.Id == selectedStylistId);
 
-            // 1. Insert Main Appointment
             await Db.Database.ExecuteSqlRawAsync(
-                @"INSERT INTO ""NETH_Appointments"" (""ShopId"", ""StylistId"", ""ClientId"", ""StartTime"", ""EndTime"", ""Status"", ""TotalPrice"", ""IsPaid"") 
-                  VALUES ({0}, {1}, {2}, {3}, {4}, 'Booked', {5}, false)",
-                stylist.ShopId, selectedStylistId, selectedClientId, start, end, totalPrice
+                @"INSERT INTO ""NETH_Appointments"" (""ShopId"", ""StylistId"", ""ClientId"", ""StartTime"", ""EndTime"", ""Status"", ""TotalPrice"", ""IsPaid"", ""Notes"") 
+                  VALUES ({0}, {1}, {2}, {3}, {4}, 'Booked', {5}, false, {6})",
+                stylist.ShopId, selectedStylistId, selectedClientId, start, end, totalPrice, appointmentNotes ?? ""
             );
 
-            // 2. Get the new ID
             var newId = await Db.Database.SqlQueryRaw<int>(@"SELECT MAX(""Id"") FROM ""NETH_Appointments""").FirstOrDefaultAsync();
 
-            // 3. Snapshot Services
             foreach(var svc in selectedServices) {
                 await Db.Database.ExecuteSqlRawAsync(
                     @"INSERT INTO ""NETH_AppointmentServices"" (""AppointmentId"", ""ServiceId"", ""PriceAtBooking"", ""DurationAtBooking"") 
@@ -180,6 +178,7 @@
 
             statusMessage = "SUCCESS: APPOINTMENT_REGISTERED";
             selectedServices.Clear();
+            appointmentNotes = "";
             StateHasChanged();
         } catch (Exception ex) { statusMessage = "ERR: " + ex.Message; }
     }
@@ -190,11 +189,7 @@
                 CREATE TABLE IF NOT EXISTS ""NETH_Appointments"" (
                     ""Id"" SERIAL PRIMARY KEY, ""ShopId"" INTEGER NOT NULL, ""StylistId"" INTEGER NOT NULL, 
                     ""ClientId"" INTEGER NOT NULL, ""StartTime"" TIMESTAMP NOT NULL, ""EndTime"" TIMESTAMP NOT NULL, 
-                    ""Status"" TEXT NOT NULL DEFAULT 'Booked', ""TotalPrice"" DECIMAL NOT NULL, ""Notes"" TEXT, ""IsPaid"" BOOLEAN NOT NULL DEFAULT FALSE
-                );
-                CREATE TABLE IF NOT EXISTS ""NETH_AppointmentServices"" (
-                    ""Id"" SERIAL PRIMARY KEY, ""AppointmentId"" INTEGER NOT NULL, ""ServiceId"" INTEGER NOT NULL, 
-                    ""PriceAtBooking"" DECIMAL NOT NULL, ""DurationAtBooking"" INTEGER NOT NULL
+                    ""Status"" TEXT NOT NULL DEFAULT 'Booked', ""TotalPrice"" DECIMAL NOT NULL, ""Notes"" TEXT NOT NULL DEFAULT '', ""IsPaid"" BOOLEAN NOT NULL DEFAULT FALSE
                 );");
             statusMessage = "TABLE_REGISTRY_VERIFIED";
         } catch (Exception ex) { statusMessage = "REPAIR_ERR: " + ex.Message; }
