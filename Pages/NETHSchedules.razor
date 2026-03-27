@@ -26,7 +26,7 @@
                             <option value="0">-- Select Stylist --</option>
                             @foreach(var s in allStylists) { <option value="@s.Id">@s.Name</option> }
                         </select>
-                        <button @onclick="RepairTable" class="text-[9px] text-gray-600 hover:text-orange-400 font-mono border border-gray-800 px-3 py-1 rounded uppercase transition">Initialize_Table</button>
+                        <button @onclick="RepairTable" class="text-[9px] text-orange-500 hover:text-orange-400 font-mono border border-orange-900/50 px-3 py-1 rounded uppercase transition">Force_Rebuild_Table</button>
                     </div>
                 </div>
 
@@ -94,7 +94,7 @@
                         }
 
                         <div class="flex justify-end pt-6">
-                            <button @onclick="SaveSchedules" class="bg-green-600 hover:bg-green-500 text-white font-black uppercase text-xs px-10 py-4 rounded-xl shadow-2xl transition tracking-widest">Save Schedule</button>
+                            <button @onclick="SaveSchedules" class="bg-blue-600 hover:bg-blue-500 text-white font-black uppercase text-xs px-12 py-4 rounded-xl shadow-2xl transition tracking-widest">Save Schedule</button>
                         </div>
                     </div>
                 }
@@ -168,7 +168,7 @@
                 allSchedules = await Db.Database.SqlQueryRaw<NETH_Schedule>(@"SELECT * FROM ""NETH_Schedules"" WHERE ""StylistId"" = {0}", selectedStylistId).ToListAsync();
                 deletedSchedules.Clear();
                 statusMessage = "";
-            } catch { statusMessage = "SELECT_FAILED: INITIALIZE_TABLE_REQUIRED"; }
+            } catch { statusMessage = "TABLE_NOT_FOUND: PLEASE CLICK FORCE_REBUILD"; }
         }
     }
 
@@ -215,22 +215,50 @@
 
     private async Task SaveSchedules() {
         try {
-            statusMessage = "SAVING...";
-            foreach (var d in deletedSchedules) await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_Schedules"" WHERE ""Id"" = {0}", d.Id);
-            deletedSchedules.Clear();
-            foreach (var s in allSchedules) {
-                if (s.Id == 0) await Db.Database.ExecuteSqlRawAsync(@"INSERT INTO ""NETH_Schedules"" (""StylistId"", ""DayOfWeek"", ""StartTime"", ""EndTime"", ""IsWorkDay"") VALUES ({0}, {1}, {2}, {3}, {4})", s.StylistId, s.DayOfWeek, s.StartTime, s.EndTime, s.IsWorkDay);
-                else await Db.Database.ExecuteSqlRawAsync(@"UPDATE ""NETH_Schedules"" SET ""StartTime"" = {0}, ""EndTime"" = {1}, ""IsWorkDay"" = {2} WHERE ""Id"" = {3}", s.StartTime, s.EndTime, s.IsWorkDay, s.Id);
+            statusMessage = "INITIATING_SAVE...";
+            StateHasChanged();
+
+            foreach (var d in deletedSchedules) {
+                await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_Schedules"" WHERE ""Id"" = {0}", d.Id);
             }
+            deletedSchedules.Clear();
+
+            foreach (var s in allSchedules) {
+                if (s.Id == 0) {
+                    await Db.Database.ExecuteSqlRawAsync(
+                        @"INSERT INTO ""NETH_Schedules"" (""StylistId"", ""DayOfWeek"", ""StartTime"", ""EndTime"", ""IsWorkDay"") VALUES ({0}, {1}, {2}, {3}, {4})",
+                        s.StylistId, s.DayOfWeek, s.StartTime, s.EndTime, s.IsWorkDay
+                    );
+                } else {
+                    await Db.Database.ExecuteSqlRawAsync(
+                        @"UPDATE ""NETH_Schedules"" SET ""StartTime"" = {0}, ""EndTime"" = {1}, ""IsWorkDay"" = {2} WHERE ""Id"" = {3}",
+                        s.StartTime, s.EndTime, s.IsWorkDay, s.Id
+                    );
+                }
+            }
+            
             statusMessage = "SCHEDULE_SAVED_SUCCESSFULLY";
             await OnStylistChanged(new ChangeEventArgs { Value = selectedStylistId });
-        } catch (Exception ex) { statusMessage = "SAVE_ERR: " + ex.Message; }
+        } catch (Exception ex) { 
+            statusMessage = "SAVE_ERR: " + ex.Message; 
+        }
     }
 
     private async Task RepairTable() {
         try {
-            await Db.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS ""NETH_Schedules"" (""Id"" SERIAL PRIMARY KEY, ""StylistId"" INTEGER NOT NULL, ""DayOfWeek"" INTEGER NOT NULL, ""StartTime"" TIMESTAMP NOT NULL, ""EndTime"" TIMESTAMP NOT NULL, ""IsWorkDay"" BOOLEAN NOT NULL DEFAULT TRUE);");
-            statusMessage = "DATABASE_TABLE_INITIALIZED";
-        } catch (Exception ex) { statusMessage = "REPAIR_FAILED: " + ex.Message; }
+            // First, check if it exists at all
+            await Db.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""NETH_Schedules"" (
+                    ""Id"" SERIAL PRIMARY KEY,
+                    ""StylistId"" INTEGER NOT NULL,
+                    ""DayOfWeek"" INTEGER NOT NULL,
+                    ""StartTime"" TIMESTAMP NOT NULL,
+                    ""EndTime"" TIMESTAMP NOT NULL,
+                    ""IsWorkDay"" BOOLEAN NOT NULL DEFAULT TRUE
+                );
+            ");
+            statusMessage = "DATABASE_SYNC_COMPLETE";
+            if (selectedStylistId > 0) await OnStylistChanged(new ChangeEventArgs { Value = selectedStylistId });
+        } catch (Exception ex) { statusMessage = "REBUILD_ERR: " + ex.Message; }
     }
 }
