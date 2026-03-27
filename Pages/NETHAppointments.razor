@@ -1,0 +1,202 @@
+@page "/admin/neth-appointments"
+@page "/admin/neth-appointments/{PreSelectedStylistId:int}"
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.JSInterop
+@using Dashboard
+@using Dashboard.Components
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject AppDbContext Db
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<div class="min-h-screen bg-[#1a1b1e] text-gray-300 flex font-sans">
+    <NETHAdminSidebar />
+
+    <div class="flex-1 p-8">
+        <div class="max-w-6xl mx-auto">
+            <div class="flex justify-between items-end mb-8">
+                <div>
+                    <h2 class="text-2xl font-black text-white uppercase tracking-tight">Appointment Desk</h2>
+                    <p class="text-xs text-gray-500 font-mono">Registry: Booking & Session Management</p>
+                </div>
+                <button @onclick="RepairTables" class="text-[9px] text-gray-600 hover:text-orange-400 font-mono border border-gray-800 px-3 py-1 rounded uppercase transition">Verify_Tables</button>
+            </div>
+
+            @if (!string.IsNullOrEmpty(statusMessage))
+            {
+                <div class="mb-6 p-4 bg-blue-900/20 border border-blue-500/30 rounded text-blue-400 font-mono text-[10px] uppercase animate-pulse">
+                    @statusMessage
+                </div>
+            }
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                
+                @* STEP 1 & 2: STYLIST & SERVICES *@
+                <div class="space-y-6">
+                    <div class="bg-[#25262b] p-6 rounded-xl border border-gray-700 shadow-xl">
+                        <label class="text-[10px] font-black uppercase text-[#D2B48C] mb-2 block tracking-widest">1. Select Stylist</label>
+                        <select @onchange="OnStylistChanged" value="@selectedStylistId" class="w-full bg-[#1a1b1e] border border-gray-700 rounded px-4 py-3 text-white text-xs font-black uppercase outline-none focus:border-blue-500">
+                            <option value="0">-- Choose Barber --</option>
+                            @foreach(var s in allStylists) { <option value="@s.Id">@s.Name</option> }
+                        </select>
+                    </div>
+
+                    @if (selectedStylistId > 0)
+                    {
+                        <div class="bg-[#25262b] p-6 rounded-xl border border-gray-700 shadow-xl">
+                            <label class="text-[10px] font-black uppercase text-[#D2B48C] mb-4 block tracking-widest">2. Select Services</label>
+                            <div class="space-y-2">
+                                @foreach (var svc in filteredServices)
+                                {
+                                    <div @onclick="() => ToggleService(svc)" class="flex justify-between items-center p-3 rounded border @(selectedServices.Any(x => x.Id == svc.Id) ? "bg-blue-600/20 border-blue-500 text-white" : "bg-black/20 border-gray-800 text-gray-400") cursor-pointer transition">
+                                        <div>
+                                            <div class="text-[11px] font-black uppercase">@svc.Name</div>
+                                            <div class="text-[9px] font-mono opacity-60">@svc.DurationMinutes MINS</div>
+                                        </div>
+                                        <div class="text-[11px] font-black">@svc.Price.ToString("C")</div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                @* STEP 3 & 4: DATE & CLIENT *@
+                <div class="lg:col-span-2 space-y-6">
+                    @if (selectedStylistId > 0 && selectedServices.Any())
+                    {
+                        <div class="bg-[#25262b] p-6 rounded-xl border border-gray-700 shadow-xl">
+                            <label class="text-[10px] font-black uppercase text-[#D2B48C] mb-4 block tracking-widest">3. Details & Time</label>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div class="col-span-2">
+                                    <label class="text-[9px] text-gray-500 uppercase block mb-1">Select Client</label>
+                                    <select @bind="selectedClientId" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-3 text-xs text-white outline-none">
+                                        <option value="0">-- Select Registered Client --</option>
+                                        @foreach(var c in allClients) { <option value="@c.Id">@c.FirstName @c.LastName</option> }
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="text-[9px] text-gray-500 uppercase block mb-1">Date</label>
+                                    <input type="date" @bind="bookingDate" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-3 text-xs text-white outline-none" />
+                                </div>
+                                <div>
+                                    <label class="text-[9px] text-gray-500 uppercase block mb-1">Start Time (12h)</label>
+                                    <input type="time" @bind="bookingTime" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-3 text-xs text-white outline-none" />
+                                </div>
+                            </div>
+
+                            <div class="mt-8 p-6 bg-black/40 rounded-xl border border-gray-800">
+                                <div class="flex justify-between items-center">
+                                    <div class="text-[10px] font-black uppercase tracking-widest text-gray-500">Summary</div>
+                                    <div class="text-[10px] font-mono text-[#D2B48C]">@totalDuration MIN TOTAL</div>
+                                </div>
+                                <div class="text-2xl font-black text-white mt-2">@totalPrice.ToString("C")</div>
+                                <button @onclick="CreateAppointment" class="w-full mt-6 bg-blue-600 hover:bg-blue-500 text-white font-black uppercase text-xs py-4 rounded-xl shadow-2xl transition tracking-widest">Create_Appointment_Record</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public int PreSelectedStylistId { get; set; }
+    private bool isAuthorized = false;
+    private int selectedStylistId = 0, selectedClientId = 0;
+    private string statusMessage = "";
+    private List<NETH_Stylist> allStylists = new();
+    private List<NETH_Client> allClients = new();
+    private List<NETH_Service> filteredServices = new();
+    private List<NETH_Service> selectedServices = new();
+    
+    private DateTime bookingDate = DateTime.Today;
+    private DateTime bookingTime = DateTime.Today.AddHours(9);
+
+    private int totalDuration => selectedServices.Sum(x => x.DurationMinutes);
+    private decimal totalPrice => selectedServices.Sum(x => x.Price);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) {
+            var json = await JS.InvokeAsync<string>("localStorage.getItem", "neth_session");
+            if (string.IsNullOrEmpty(json)) Nav.NavigateTo("/nethaircut");
+            else { 
+                isAuthorized = true; 
+                allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync();
+                allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync();
+                if (PreSelectedStylistId > 0) {
+                    selectedStylistId = PreSelectedStylistId;
+                    await LoadStylistData();
+                }
+                StateHasChanged(); 
+            }
+        }
+    }
+
+    private async Task OnStylistChanged(ChangeEventArgs e) {
+        selectedStylistId = int.Parse(e.Value?.ToString() ?? "0");
+        selectedServices.Clear();
+        await LoadStylistData();
+    }
+
+    private async Task LoadStylistData() {
+        if (selectedStylistId == 0) return;
+        filteredServices = await Db.NETH_Services.Where(x => x.StylistId == selectedStylistId).ToListAsync();
+    }
+
+    private void ToggleService(NETH_Service svc) {
+        if (selectedServices.Any(x => x.Id == svc.Id)) selectedServices.RemoveAll(x => x.Id == svc.Id);
+        else selectedServices.Add(svc);
+    }
+
+    private async Task CreateAppointment() {
+        if (selectedClientId == 0) { statusMessage = "ERR: SELECT_CLIENT_REQUIRED"; return; }
+        
+        try {
+            var start = bookingDate.Date.Add(bookingTime.TimeOfDay);
+            var end = start.AddMinutes(totalDuration);
+            var stylist = allStylists.First(x => x.Id == selectedStylistId);
+
+            // 1. Insert Main Appointment
+            await Db.Database.ExecuteSqlRawAsync(
+                @"INSERT INTO ""NETH_Appointments"" (""ShopId"", ""StylistId"", ""ClientId"", ""StartTime"", ""EndTime"", ""Status"", ""TotalPrice"", ""IsPaid"") 
+                  VALUES ({0}, {1}, {2}, {3}, {4}, 'Booked', {5}, false)",
+                stylist.ShopId, selectedStylistId, selectedClientId, start, end, totalPrice
+            );
+
+            // 2. Get the new ID
+            var newId = await Db.Database.SqlQueryRaw<int>(@"SELECT MAX(""Id"") FROM ""NETH_Appointments""").FirstOrDefaultAsync();
+
+            // 3. Snapshot Services
+            foreach(var svc in selectedServices) {
+                await Db.Database.ExecuteSqlRawAsync(
+                    @"INSERT INTO ""NETH_AppointmentServices"" (""AppointmentId"", ""ServiceId"", ""PriceAtBooking"", ""DurationAtBooking"") 
+                      VALUES ({0}, {1}, {2}, {3})",
+                    newId, svc.Id, svc.Price, svc.DurationMinutes
+                );
+            }
+
+            statusMessage = "SUCCESS: APPOINTMENT_REGISTERED";
+            selectedServices.Clear();
+            StateHasChanged();
+        } catch (Exception ex) { statusMessage = "ERR: " + ex.Message; }
+    }
+
+    private async Task RepairTables() {
+        try {
+            await Db.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""NETH_Appointments"" (
+                    ""Id"" SERIAL PRIMARY KEY, ""ShopId"" INTEGER NOT NULL, ""StylistId"" INTEGER NOT NULL, 
+                    ""ClientId"" INTEGER NOT NULL, ""StartTime"" TIMESTAMP NOT NULL, ""EndTime"" TIMESTAMP NOT NULL, 
+                    ""Status"" TEXT NOT NULL DEFAULT 'Booked', ""TotalPrice"" DECIMAL NOT NULL, ""Notes"" TEXT, ""IsPaid"" BOOLEAN NOT NULL DEFAULT FALSE
+                );
+                CREATE TABLE IF NOT EXISTS ""NETH_AppointmentServices"" (
+                    ""Id"" SERIAL PRIMARY KEY, ""AppointmentId"" INTEGER NOT NULL, ""ServiceId"" INTEGER NOT NULL, 
+                    ""PriceAtBooking"" DECIMAL NOT NULL, ""DurationAtBooking"" INTEGER NOT NULL
+                );");
+            statusMessage = "TABLE_REGISTRY_VERIFIED";
+        } catch (Exception ex) { statusMessage = "REPAIR_ERR: " + ex.Message; }
+    }
+}
