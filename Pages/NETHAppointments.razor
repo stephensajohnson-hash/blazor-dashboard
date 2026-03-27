@@ -11,12 +11,10 @@
 @inject IJSRuntime JS
 
 <style>
-    /* Custom Scrollbar for the Grid */
     .custom-scrollbar::-webkit-scrollbar { width: 6px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: #1a1b1e; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
 
-    /* The "No" Shake Animation */
     @@keyframes neth-shake {
         0% { transform: translateX(0); }
         25% { transform: translateX(-8px); }
@@ -53,7 +51,7 @@
 
             @if (!string.IsNullOrEmpty(statusMessage))
             {
-                <div class="mb-6 p-4 @(statusMessage.StartsWith("ERR") ? "bg-red-900/20 border-red-500/30 text-red-400" : "bg-green-900/20 border-green-500/30 text-green-400") border rounded font-mono text-[10px] uppercase flex justify-between items-center animate-in fade-in duration-300">
+                <div class="mb-6 p-4 @(statusMessage.StartsWith("ERR") ? "bg-red-900/20 border-red-500/30 text-red-400" : "bg-blue-900/20 border-blue-500/30 text-blue-400") border rounded font-mono text-[10px] uppercase flex justify-between items-center animate-in fade-in duration-300">
                     <span class="flex items-center gap-2 font-black">
                         <i class="fas @(statusMessage.StartsWith("ERR") ? "fa-hand-paper" : "fa-check-circle")"></i>
                         @statusMessage
@@ -66,7 +64,6 @@
             {
                 <div class="grid grid-cols-1 xl:grid-cols-4 gap-8">
                     
-                    @* LEFT PANEL *@
                     <div class="xl:col-span-1 space-y-6">
                         <div class="bg-[#25262b] p-6 rounded-xl border border-gray-700 shadow-xl">
                             <label class="text-[10px] font-black uppercase text-[#D2B48C] mb-4 block tracking-widest">Services</label>
@@ -88,7 +85,7 @@
                         @if (isTimeSelected)
                         {
                             <div class="bg-blue-600 p-6 rounded-xl shadow-2xl animate-in zoom-in-95 duration-200">
-                                <label class="text-[10px] font-black uppercase text-white/70 mb-2 block tracking-widest">Selected Slot</label>
+                                <label class="text-[10px] font-black uppercase text-white/70 mb-2 block tracking-widest">Confirm Slot</label>
                                 <div class="text-white font-black uppercase leading-tight">
                                     <div class="text-sm">@bookingStart.ToString("dddd, MMM dd")</div>
                                     <div class="text-xl">@bookingStart.ToString("h:mm tt")</div>
@@ -105,7 +102,6 @@
                         }
                     </div>
 
-                    @* WEEKLY GRID *@
                     <div class="xl:col-span-3 bg-[#25262b] rounded-xl border border-gray-700 shadow-xl overflow-hidden flex flex-col">
                         <div class="grid grid-cols-8 border-b border-gray-700 bg-black/20">
                             <div class="p-4 border-r border-gray-700"></div>
@@ -138,44 +134,43 @@
                                     var dayApps = existingAppointments.Where(x => x.StartTime.Date == dayDate.Date).ToList();
 
                                     <div class="col-span-1 border-r border-gray-800 relative">
-                                        @* HALF-HOUR TICK MARKS *@
+                                        @* GRID MARKS *@
                                         @for(int h=0; h<12; h++) { 
                                             <div class="absolute w-full border-b border-gray-800/20" style="top: @(h * 100)px; height: 50px;"></div> 
                                             <div class="absolute w-full border-b border-gray-800/10" style="top: @(h * 100 + 50)px; height: 50px; border-style: dashed;"></div>
                                         }
 
-                                        @* GREEN AVAILABILITY LAYER *@
+                                        @* CORRECTED GREEN SHADING (Individual blocks) *@
                                         @foreach (var shift in dayShifts)
                                         {
                                             <div class="absolute inset-x-0 bg-green-500/10 border-x border-green-500/20 z-0 pointer-events-none"
                                                  style="top: @(GetPixelOffset(shift.StartTime))px; height: @(GetPixelHeight(shift.StartTime, shift.EndTime))px;">
                                             </div>
-                                        }
 
-                                        @* INTERACTIVE CLICKABLE SLOTS *@
-                                        @foreach (var shift in dayShifts)
-                                        {
+                                            @* CLICKABLE SLOTS - Limited to shift boundaries *@
                                             for(DateTime t = shift.StartTime; t < shift.EndTime; t = t.AddMinutes(15))
                                             {
                                                 var slotStart = t; 
                                                 var slotEnd = t.AddMinutes(totalDuration);
+                                                // Real-time overlap check for hover
                                                 bool overlaps = dayApps.Any(a => slotStart < a.EndTime && slotEnd > a.StartTime);
+                                                // Check if the appointment block would bleed past the end of the shift
+                                                bool outOfBounds = slotEnd > shift.EndTime;
 
-                                                <div @onclick='() => HandleSlotClick(dayDate, slotStart, overlaps)' 
+                                                <div @onclick='() => HandleSlotClick(dayDate, slotStart, overlaps || outOfBounds)' 
                                                      class="absolute left-0 right-0 z-40 border-t border-transparent group" 
                                                      style="top: @(GetPixelOffset(slotStart))px; height: 25px;">
                                                     
                                                     <div class="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 flex items-center justify-center border-2 border-dashed
-                                                                @(overlaps ? "bg-red-500/30 border-red-500 cursor-not-allowed" : "bg-blue-500/20 border-blue-500 cursor-pointer")"
+                                                                @(overlaps || outOfBounds ? "bg-red-500/30 border-red-500 cursor-not-allowed" : "bg-blue-500/20 border-blue-500 cursor-pointer")"
                                                          style="height: @(totalDuration * 1.666)px; width: 100%; top: 0;">
-                                                        @if(overlaps) { <i class="fas fa-ban text-red-500 text-xs"></i> }
-                                                        else { <span class="text-[8px] font-black text-blue-200 uppercase tracking-tighter">@totalDuration Min Slot</span> }
+                                                        @if(overlaps || outOfBounds) { <i class="fas fa-ban text-red-500 text-xs"></i> }
+                                                        else { <span class="text-[8px] font-black text-blue-200 uppercase tracking-tighter">@totalDuration Min</span> }
                                                     </div>
                                                 </div>
                                             }
                                         }
 
-                                        @* EXISTING APPOINTMENTS *@
                                         @foreach (var app in dayApps)
                                         {
                                             var client = allClients.FirstOrDefault(x => x.Id == app.ClientId);
@@ -189,12 +184,11 @@
                                             </div>
                                         }
 
-                                        @* PLACEMENT PREVIEW (SHAKING ON ERROR) *@
                                         @if(isTimeSelected && bookingStart.Date == dayDate.Date)
                                         {
                                             <div class="absolute left-1 right-1 bg-blue-500 border-2 border-white/50 z-30 pointer-events-none flex items-center justify-center overflow-hidden shadow-2xl @(isShaking ? "animate-shake" : "")"
                                                  style="top: @(GetPixelOffset(bookingStart))px; height: @(totalDuration * 1.666)px;">
-                                                <span class="text-[9px] font-black text-white uppercase px-1 rounded bg-blue-700">Booking: @totalDuration Mins</span>
+                                                <span class="text-[9px] font-black text-white uppercase px-1 rounded bg-blue-700">@totalDuration Min Block</span>
                                             </div>
                                         }
                                     </div>
@@ -256,7 +250,7 @@
 
     private async Task HandleSlotClick(DateTime date, DateTime baseTime, bool overlaps) {
         if (overlaps) {
-            statusMessage = "ERR: Slot is blocked by an existing appointment.";
+            statusMessage = "ERR: SLOT IS BLOCKED OR OUTSIDE SHIFT BOUNDARIES";
             isShaking = true;
             StateHasChanged();
             await Task.Delay(400);
@@ -270,7 +264,7 @@
     }
 
     private async Task HandleExistingClick(NETH_Appointment app) {
-        if (await JS.InvokeAsync<bool>("confirm", "Delete this appointment and clear the slot?")) {
+        if (await JS.InvokeAsync<bool>("confirm", "Delete this appointment?")) {
             await Db.Database.ExecuteSqlRawAsync("DELETE FROM \"NETH_Appointments\" WHERE \"Id\" = {0}", app.Id);
             await Db.Database.ExecuteSqlRawAsync("DELETE FROM \"NETH_AppointmentServices\" WHERE \"AppointmentId\" = {0}", app.Id);
             await LoadStylistData();
@@ -281,12 +275,12 @@
     private double GetPixelHeight(DateTime start, DateTime end) => (end - start).TotalMinutes * 1.666;
 
     private async Task CreateAppointment() {
-        if (selectedClientId == 0 || selectedStylistId == 0 || !selectedServices.Any()) { statusMessage = "ERR: Select client and at least one service."; return; }
+        if (selectedClientId == 0 || selectedStylistId == 0 || !selectedServices.Any()) { statusMessage = "ERR: SELECT CLIENT AND SERVICES"; return; }
         try {
             var end = bookingStart.AddMinutes(totalDuration);
             var stylist = allStylists.First(x => x.Id == selectedStylistId);
             bool overlap = existingAppointments.Any(a => a.StylistId == selectedStylistId && bookingStart < a.EndTime && end > a.StartTime);
-            if (overlap) { statusMessage = "ERR: This slot was just taken. Please choose another."; await LoadStylistData(); return; }
+            if (overlap) { statusMessage = "ERR: OVERLAP DETECTED"; await LoadStylistData(); return; }
 
             await Db.Database.ExecuteSqlRawAsync("INSERT INTO \"NETH_Appointments\" (\"ShopId\", \"StylistId\", \"ClientId\", \"StartTime\", \"EndTime\", \"Status\", \"TotalPrice\", \"IsPaid\", \"Notes\") VALUES ({0}, {1}, {2}, {3}, {4}, 'Booked', {5}, false, '')", stylist.ShopId, selectedStylistId, selectedClientId, bookingStart, end, selectedServices.Sum(s => s.Price));
             var idResult = await Db.Database.SqlQueryRaw<int>("SELECT MAX(\"Id\") as \"Value\" FROM \"NETH_Appointments\"").ToListAsync();
@@ -298,7 +292,7 @@
             isTimeSelected = false;
             selectedServices.Clear();
             await LoadStylistData();
-            statusMessage = "Appointment confirmed successfully.";
+            statusMessage = "APPOINTMENT SAVED";
         } catch (Exception ex) { statusMessage = "ERR: " + ex.Message; }
     }
 }
