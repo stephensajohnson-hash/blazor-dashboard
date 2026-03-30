@@ -9,6 +9,58 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
+@* FAIL-SAFE FontAwesome Loader *@
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+<style>
+    .neth-grid-container { height: 1200px; position: relative; background: #1a1b1e; }
+    .neth-hour-row { height: 100px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    
+    .note-card { 
+        background: #25262b; 
+        padding: 1.5rem; 
+        border-radius: 0.75rem; 
+        border: 1px solid #374151; 
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4); 
+        position: relative; 
+        transition: all 0.2s ease;
+    }
+    .note-card:hover { border-color: #4b5563; }
+
+    /* Hover Action Container */
+    .note-actions {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        display: flex;
+        gap: 0.5rem;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+    }
+    .note-card:hover .note-actions { opacity: 1; }
+
+    .action-btn {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 0.5rem;
+        transition: all 0.2s;
+        color: white;
+    }
+
+    @@keyframes neth-shake {
+        0%, 100% { transform: translateX(0); }
+        20%, 60% { transform: translateX(-10px); }
+        40%, 80% { transform: translateX(10px); }
+    }
+    .shake-it { animation: neth-shake 0.3s ease-in-out !important; border: 2px solid #ef4444 !important; }
+    .debug-panel { background: #000; border-top: 4px solid #444; color: #0f0; font-family: monospace; font-size: 11px; padding: 20px; z-index: 999; width: 100%; margin-top: 50px; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
+</style>
+
 <div class="min-h-screen bg-[#1a1b1e] text-gray-300 flex font-sans">
     <NETHAdminSidebar />
 
@@ -20,7 +72,7 @@
                     <p class="text-[10px] text-[#D2B48C] font-mono uppercase tracking-widest">Formula Ledger</p>
                 </div>
                 <button @onclick="() => OpenModal()" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded font-black uppercase text-[10px] transition shadow-lg">
-                    + Create Entry
+                    <i class="fa-solid fa-plus mr-2"></i> Create Entry
                 </button>
             </div>
 
@@ -51,14 +103,14 @@
             <div class="space-y-4">
                 @foreach (var note in displayNotes)
                 {
-                    <div class="bg-[#25262b] p-6 rounded-xl border border-gray-700 shadow-xl relative group transition-all hover:border-gray-500">
-                        @* Hover Actions *@
-                        <div class="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button @onclick="() => OpenModal(note)" class="p-2 bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white rounded-lg transition">
-                                <i class="fas fa-edit text-xs"></i>
+                    <div class="note-card group">
+                        @* Action Buttons with forced icon visibility *@
+                        <div class="note-actions">
+                            <button @onclick="() => OpenModal(note)" class="action-btn bg-blue-600/20 hover:bg-blue-600 border border-blue-500/30">
+                                <i class="fa-solid fa-pen-to-square text-xs"></i>
                             </button>
-                            <button @onclick="() => DeleteNote(note.Id)" class="p-2 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white rounded-lg transition">
-                                <i class="fas fa-trash text-xs"></i>
+                            <button @onclick="() => DeleteNote(note.Id)" class="action-btn bg-red-600/20 hover:bg-red-600 border border-red-500/30">
+                                <i class="fa-solid fa-trash-can text-xs"></i>
                             </button>
                         </div>
 
@@ -69,14 +121,14 @@
                                 <span class="text-[10px] font-black text-white uppercase tracking-widest border-l border-gray-700 pl-3">@note.ShortDesc</span>
                             }
                         </div>
-                        <p class="text-gray-400 text-sm leading-relaxed whitespace-pre-wrap">@note.Text</p>
+                        <p class="text-gray-400 text-sm leading-relaxed whitespace-pre-wrap pr-16">@note.Text</p>
                     </div>
                 }
 
                 @if (!displayNotes.Any() && selectedClientId > 0)
                 {
                     <div class="text-center py-20 border-2 border-dashed border-gray-800 rounded-xl">
-                        <p class="text-gray-600 text-xs uppercase font-black tracking-widest">No entries found.</p>
+                        <p class="text-gray-600 text-xs uppercase font-black tracking-widest">No entries found for this client.</p>
                     </div>
                 }
             </div>
@@ -87,9 +139,12 @@
 @if (showModal)
 {
     <div class="fixed inset-0 bg-black/90 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
-        <div class="bg-[#25262b] w-full max-w-xl rounded-2xl border border-gray-700 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div class="bg-[#25262b] w-full max-w-xl rounded-2xl border border-gray-700 shadow-2xl overflow-hidden">
             <div class="p-6 border-b border-gray-800 flex justify-between items-center bg-black/20">
-                <h3 class="text-white font-black uppercase text-xs tracking-widest">@(editingNoteId == 0 ? "New Entry" : "Edit Entry")</h3>
+                <h3 class="text-white font-black uppercase text-xs tracking-widest">
+                    <i class="fa-solid @(editingNoteId == 0 ? "fa-plus" : "fa-pen") mr-2"></i>
+                    @(editingNoteId == 0 ? "New Entry" : "Edit Entry")
+                </h3>
                 <button @onclick="() => showModal = false" class="text-gray-500 hover:text-white text-2xl">&times;</button>
             </div>
             <div class="p-8 space-y-5">
@@ -100,26 +155,26 @@
                     </div>
                     <div class="space-y-1">
                         <label class="text-[9px] font-black uppercase text-gray-500">Short Description</label>
-                        <input type="text" @bind="modalShortDesc" placeholder="e.g. Highlights, Trim, etc." 
+                        <input type="text" @bind="modalShortDesc" placeholder="e.g. Full Color, Fade" 
                                class="w-full bg-black/40 border border-gray-700 rounded-lg p-3 text-white text-xs outline-none focus:border-blue-500" />
                     </div>
                 </div>
 
                 <div class="space-y-1">
                     <label class="text-[9px] font-black uppercase text-gray-500">Full Note / Formula</label>
-                    <textarea @bind="modalFullNote" placeholder="Detailed history..." 
+                    <textarea @bind="modalFullNote" placeholder="Enter formulas or specific preferences..." 
                               class="w-full h-48 bg-black/40 border border-gray-700 rounded-xl p-4 text-white text-sm outline-none focus:border-blue-500 resize-none"></textarea>
                 </div>
                 
                 <div class="flex gap-3 pt-2">
                     <button @onclick="SaveEntry" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-black uppercase text-[10px] py-4 rounded-xl transition shadow-xl tracking-widest">
-                        @(editingNoteId == 0 ? "Add to History" : "Update Entry")
+                        <i class="fa-solid fa-check mr-2"></i> @(editingNoteId == 0 ? "Save to History" : "Update Entry")
                     </button>
                 </div>
             </div>
         </div>
     </div>
-}
+</div>
 
 @code {
     private bool showModal = false;
@@ -148,12 +203,6 @@
     {
         if (firstRender)
         {
-            // Update Schema on load to ensure new columns exist
-            await Db.Database.ExecuteSqlRawAsync(@"
-                ALTER TABLE ""NETH_ClientNotes"" ADD COLUMN IF NOT EXISTS ""ShortDescription"" TEXT;
-                ALTER TABLE ""NETH_ClientNotes"" ADD COLUMN IF NOT EXISTS ""ManualDate"" TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
-            ");
-
             allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync();
             allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync();
 
