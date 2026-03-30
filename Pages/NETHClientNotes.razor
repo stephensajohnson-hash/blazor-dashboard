@@ -19,10 +19,17 @@
                     <h2 class="text-2xl font-black text-white uppercase tracking-tight">Client Notes</h2>
                     <p class="text-[10px] text-[#D2B48C] font-mono uppercase tracking-widest">History & Formulas</p>
                 </div>
-                <button @onclick="() => showAddModal = true" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded font-black uppercase text-[10px] transition shadow-lg">
+                <button @onclick="OpenAddModal" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded font-black uppercase text-[10px] transition shadow-lg">
                     + Add New Note
                 </button>
             </div>
+
+            @if (!string.IsNullOrEmpty(localError))
+            {
+                <div class="mb-4 p-3 bg-red-900/20 border border-red-500/50 text-red-400 text-[10px] font-mono uppercase">
+                    @localError
+                </div>
+            }
 
             <div class="grid grid-cols-2 gap-4 mb-8">
                 <div class="space-y-1">
@@ -41,27 +48,25 @@
                 </div>
             </div>
 
-            @if (clientNotes.Any())
-            {
-                <div class="space-y-4">
-                    @foreach (var note in clientNotes.OrderByDescending(n => n.CreatedAt))
-                    {
-                        <div class="bg-[#25262b] p-6 rounded-xl border border-gray-700 shadow-xl relative group">
-                            <div class="flex justify-between items-start mb-4">
-                                <span class="text-[10px] font-mono text-blue-400">@note.CreatedAt.ToString("MMM dd, yyyy")</span>
-                                <button @onclick="() => DeleteNote(note.Id)" class="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-400 transition text-xs">Delete</button>
-                            </div>
-                            <p class="text-gray-200 text-sm leading-relaxed whitespace-pre-wrap">@note.NoteText</p>
+            <div class="space-y-4">
+                @foreach (var note in displayNotes)
+                {
+                    <div class="bg-[#25262b] p-6 rounded-xl border border-gray-700 shadow-xl relative group">
+                        <div class="flex justify-between items-start mb-4">
+                            <span class="text-[10px] font-mono text-blue-400">@note.DateStr</span>
+                            <button @onclick="() => DeleteNote(note.Id)" class="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-400 transition text-xs">Delete</button>
                         </div>
-                    }
-                </div>
-            }
-            else if (selectedClientId > 0)
-            {
-                <div class="text-center py-20 border-2 border-dashed border-gray-800 rounded-xl">
-                    <p class="text-gray-600 text-xs uppercase font-black tracking-widest">No notes found for this client.</p>
-                </div>
-            }
+                        <p class="text-gray-200 text-sm leading-relaxed whitespace-pre-wrap">@note.Text</p>
+                    </div>
+                }
+
+                @if (!displayNotes.Any() && selectedClientId > 0)
+                {
+                    <div class="text-center py-20 border-2 border-dashed border-gray-800 rounded-xl">
+                        <p class="text-gray-600 text-xs uppercase font-black tracking-widest">No history found for this client.</p>
+                    </div>
+                }
+            </div>
         </div>
     </div>
 </div>
@@ -71,15 +76,15 @@
     <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
         <div class="bg-[#25262b] w-full max-w-lg rounded-2xl border border-gray-700 shadow-2xl overflow-hidden">
             <div class="p-6 border-b border-gray-800 flex justify-between items-center">
-                <h3 class="text-white font-black uppercase text-xs tracking-widest">New Client Note</h3>
-                <button @onclick="() => showAddModal = false" class="text-gray-500 hover:text-white">&times;</button>
+                <h3 class="text-white font-black uppercase text-xs tracking-widest">New Entry</h3>
+                <button @onclick="() => showAddModal = false" class="text-gray-500 hover:text-white text-2xl">&times;</button>
             </div>
             <div class="p-6 space-y-4">
-                <textarea @bind="newNoteText" placeholder="Enter formulas, preferences, or history..." 
+                <textarea @bind="newNoteText" placeholder="Enter color formulas or client preferences..." 
                           class="w-full h-40 bg-black/20 border border-gray-700 rounded-xl p-4 text-white text-sm outline-none focus:border-blue-500 resize-none"></textarea>
                 
                 <div class="flex gap-3 pt-2">
-                    <button @onclick="SaveNote" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-black uppercase text-[10px] py-3 rounded-lg transition shadow-lg">Save Note</button>
+                    <button @onclick="SaveNote" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-black uppercase text-[10px] py-3 rounded-lg transition shadow-lg">Save Entry</button>
                     <button @onclick="() => showAddModal = false" class="px-6 bg-gray-800 text-gray-400 font-black uppercase text-[10px] py-3 rounded-lg hover:bg-gray-700 transition">Cancel</button>
                 </div>
             </div>
@@ -92,23 +97,33 @@
     private int selectedStylistId = 0;
     private int selectedClientId = 0;
     private string newNoteText = "";
+    private string localError = "";
     private List<NETH_Stylist> allStylists = new();
     private List<NETH_Client> allClients = new();
-    private List<NETH_ClientNote> clientNotes = new();
+    private List<NoteDisplay> displayNotes = new();
 
-    protected override async Task OnInitializedAsync()
+    public class NoteDisplay {
+        public int Id { get; set; }
+        public string Text { get; set; } = "";
+        public string DateStr { get; set; } = "";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync();
-        allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync();
+        if (firstRender)
+        {
+            allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync();
+            allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync();
 
-        // Catch QueryString Parameters
-        var uri = Nav.ToAbsoluteUri(Nav.Uri);
-        if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query).TryGetValue("StylistId", out var sId))
-            selectedStylistId = int.Parse(sId);
-        if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query).TryGetValue("ClientId", out var cId))
-            selectedClientId = int.Parse(cId);
+            var uri = Nav.ToAbsoluteUri(Nav.Uri);
+            var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+            
+            if (query.TryGetValue("StylistId", out var sId)) selectedStylistId = int.Parse(sId ?? "0");
+            if (query.TryGetValue("ClientId", out var cId)) selectedClientId = int.Parse(cId ?? "0");
 
-        if (selectedClientId > 0) await LoadNotes();
+            if (selectedClientId > 0) await LoadNotes();
+            StateHasChanged();
+        }
     }
 
     private async Task OnStylistChanged(ChangeEventArgs e)
@@ -126,42 +141,58 @@
     private async Task LoadNotes()
     {
         if (selectedClientId == 0) return;
-        clientNotes = await Db.NETH_ClientNotes
-            .Where(x => x.ClientId == selectedClientId)
-            .OrderByDescending(x => x.CreatedAt)
-            .ToListAsync();
+        try {
+            // Using Raw SQL and a local DTO to bypass model property mismatches
+            var rawData = await Db.Database.SqlQueryRaw<NoteSqlResult>(
+                "SELECT \"Id\", \"NoteText\", \"CreatedAt\" FROM \"NETH_ClientNotes\" WHERE \"ClientId\" = {0} ORDER BY \"CreatedAt\" DESC", 
+                selectedClientId
+            ).ToListAsync();
+
+            displayNotes = rawData.Select(x => new NoteDisplay {
+                Id = x.Id,
+                Text = x.NoteText,
+                DateStr = x.CreatedAt.ToString("MMM dd, yyyy")
+            }).ToList();
+        } catch (Exception ex) { localError = "LOAD_ERR: " + ex.Message; }
         StateHasChanged();
+    }
+
+    private void OpenAddModal() {
+        if (selectedClientId == 0 || selectedStylistId == 0) {
+            localError = "PLEASE SELECT A STYLIST AND CLIENT FIRST";
+            return;
+        }
+        localError = "";
+        showAddModal = true;
     }
 
     private async Task SaveNote()
     {
-        if (selectedClientId == 0 || selectedStylistId == 0 || string.IsNullOrWhiteSpace(newNoteText)) return;
-
-        var note = new NETH_ClientNote
-        {
-            ClientId = selectedClientId,
-            StylistId = selectedStylistId,
-            NoteText = newNoteText,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        Db.NETH_ClientNotes.Add(note);
-        await Db.SaveChangesAsync();
-        
-        newNoteText = "";
-        showAddModal = false;
-        await LoadNotes();
+        if (string.IsNullOrWhiteSpace(newNoteText)) return;
+        try {
+            await Db.Database.ExecuteSqlRawAsync(
+                "INSERT INTO \"NETH_ClientNotes\" (\"ClientId\", \"StylistId\", \"NoteText\", \"CreatedAt\") VALUES ({0}, {1}, {2}, {3})",
+                selectedClientId, selectedStylistId, newNoteText, DateTime.UtcNow
+            );
+            newNoteText = "";
+            showAddModal = false;
+            await LoadNotes();
+        } catch (Exception ex) { localError = "SAVE_ERR: " + ex.Message; }
     }
 
     private async Task DeleteNote(int id)
     {
-        if (!await JS.InvokeAsync<bool>("confirm", "Delete this note?")) return;
-        var note = await Db.NETH_ClientNotes.FindAsync(id);
-        if (note != null)
-        {
-            Db.NETH_ClientNotes.Remove(note);
-            await Db.SaveChangesAsync();
+        if (!await JS.InvokeAsync<bool>("confirm", "Delete this record?")) return;
+        try {
+            await Db.Database.ExecuteSqlRawAsync("DELETE FROM \"NETH_ClientNotes\" WHERE \"Id\" = {0}", id);
             await LoadNotes();
-        }
+        } catch (Exception ex) { localError = "DEL_ERR: " + ex.Message; }
+    }
+
+    // Local result helper to match DB exactly
+    private class NoteSqlResult {
+        public int Id { get; set; }
+        public string NoteText { get; set; } = "";
+        public DateTime CreatedAt { get; set; }
     }
 }
