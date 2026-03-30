@@ -17,12 +17,36 @@
     .neth-click-slot { position: absolute; left: 0; right: 0; z-index: 10; cursor: pointer; }
     .neth-ghost-preview { position: absolute; top: 0; left: 0; right: 0; border: 2px dashed #60a5fa; background: rgba(96, 165, 250, 0.2); pointer-events: none; opacity: 0; z-index: 15; display: flex; align-items: center; justify-content: center; }
     .neth-click-slot:hover .neth-ghost-preview { opacity: 1; }
-    .neth-appointment-block { position: absolute; left: 4px; right: 4px; background: #2563eb; border: 1px solid #60a5fa; border-radius: 4px; z-index: 100; padding: 6px; overflow: hidden; cursor: pointer; }
+
+    /* Group Container for Appointments */
+    .neth-appointment-group { 
+        position: absolute; 
+        left: 4px; 
+        right: 4px; 
+        z-index: 100; 
+        border: 2px solid rgba(255,255,255,0.3); 
+        border-radius: 6px; 
+        overflow: hidden; 
+        cursor: pointer; 
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+        transition: transform 0.1s, border-color 0.2s;
+    }
+    .neth-appointment-group:hover { transform: scale(1.01); border-color: white; z-index: 110; }
     
+    .neth-service-segment { 
+        width: 100%; 
+        border-bottom: 1px solid rgba(0,0,0,0.1); 
+        display: flex; 
+        flex-direction: column; 
+        justify-content: center; 
+        padding: 0 6px;
+    }
+    .neth-service-segment:last-child { border-bottom: none; }
+
     @@keyframes neth-shake {
         0%, 100% { transform: translateX(0); }
         20%, 60% { transform: translateX(-10px); }
-        40%, 80% { transform: translateX(10px); }
+        40%, 80% { transform: translateX(6px); }
     }
     .shake-it { animation: neth-shake 0.3s ease-in-out !important; border: 2px solid #ef4444 !important; }
     .debug-panel { background: #000; border-top: 4px solid #444; color: #0f0; font-family: monospace; font-size: 11px; padding: 20px; z-index: 999; width: 100%; margin-top: 50px; }
@@ -58,6 +82,7 @@
                                 @foreach (var svc in filteredServices)
                                 {
                                     <div @onclick="() => ToggleService(svc)" class="p-3 mb-1 rounded border @(selectedServices.Any(x => x.Id == svc.Id) ? "bg-blue-600/20 border-blue-500 text-white" : "bg-black/20 border-gray-800 text-gray-400") cursor-pointer transition">
+                                        <div class="w-3 h-3 rounded-full mr-2 inline-block" style="background: @GetServiceColor(svc.Name)"></div>
                                         <span class="text-[10px] font-black">@svc.Name (@svc.DurationMinutes m)</span>
                                     </div>
                                 }
@@ -68,7 +93,7 @@
                                 <div class="bg-blue-600 p-5 rounded-xl shadow-2xl">
                                     <p class="text-white font-black uppercase text-lg">@bookingStart.ToString("h:mm tt")</p>
                                     <select @bind="selectedClientId" class="w-full bg-black/20 border border-white/20 rounded p-3 text-xs text-white mt-3">
-                                        <option value="0">-- Select Client --</option>
+                                        <option value="0">-- Client --</option>
                                         @foreach(var c in allClients) { <option value="@c.Id">@c.FirstName @c.LastName</option> }
                                     </select>
                                     <button @onclick="CreateAppointment" class="w-full bg-white text-blue-600 font-black py-3 rounded mt-3 shadow-lg uppercase text-xs">Confirm Booking</button>
@@ -106,8 +131,6 @@
                                                 @for (DateTime t = shift.StartTime; t < shift.EndTime; t = t.AddMinutes(15))
                                                 {
                                                     var start = t; var end = t.AddMinutes(totalDuration);
-                                                    
-                                                    // FIX: Collision logic must check that it's the SAME day
                                                     bool collision = dayApps.Any(a => start.TimeOfDay < a.EndTime.TimeOfDay && end.TimeOfDay > a.StartTime.TimeOfDay);
                                                     bool overShift = end.TimeOfDay > shift.EndTime.TimeOfDay;
 
@@ -123,8 +146,29 @@
 
                                             @foreach (var app in dayApps)
                                             {
-                                                <div @onclick="() => DeleteApp(app)" @onclick:stopPropagation="true" class="neth-appointment-block" style="top: @(GetPx(app.StartTime))px; height: @(GetH(app.StartTime, app.EndTime))px;">
-                                                    <p class="text-[9px] font-black text-white truncate">@(allClients.FirstOrDefault(c => c.Id == app.ClientId)?.FirstName ?? "Client")</p>
+                                                var client = allClients.FirstOrDefault(x => x.Id == app.ClientId);
+                                                var appServices = allAppointmentServices.Where(x => x.AppointmentId == app.Id).ToList();
+                                                
+                                                <div @onclick="() => DeleteApp(app)" @onclick:stopPropagation="true" class="neth-appointment-group" 
+                                                     style="top: @(GetPx(app.StartTime))px; height: @(GetH(app.StartTime, app.EndTime))px;">
+                                                    
+                                                    @if (appServices.Any())
+                                                    {
+                                                        @foreach (var aps in appServices)
+                                                        {
+                                                            var svcName = allServices.FirstOrDefault(s => s.Id == aps.ServiceId)?.Name ?? "Service";
+                                                            <div class="neth-service-segment" style="height: @(aps.DurationAtBooking * 1.666)px; background: @GetServiceColor(svcName)">
+                                                                <p class="text-[8px] font-black text-white uppercase truncate leading-tight">@svcName</p>
+                                                                <p class="text-[7px] font-mono text-black/50 font-bold">@(client?.FirstName ?? "User")</p>
+                                                            </div>
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="neth-service-segment h-full bg-blue-600">
+                                                            <p class="text-[9px] font-black text-white truncate">@(client?.FirstName ?? "User")</p>
+                                                        </div>
+                                                    }
                                                 </div>
                                             }
 
@@ -154,7 +198,6 @@
         @foreach(var a in existingAppointments.OrderBy(x => x.StartTime)) {
             <div class="opacity-80">> APP_REF:@a.Id | @a.StartTime.ToString("ddd HH:mm") - @a.EndTime.ToString("HH:mm") (@a.StartTime.Date.ToShortDateString())</div>
         }
-        @if(!string.IsNullOrEmpty(statusMessage)) { <div class="text-white bg-red-900 px-2 mt-2">SYSTEM_LOG: @statusMessage</div> }
     </div>
 </div>
 
@@ -168,10 +211,12 @@
 
     private List<NETH_Stylist> allStylists = new();
     private List<NETH_Client> allClients = new();
+    private List<NETH_Service> allServices = new();
     private List<NETH_Service> filteredServices = new();
     private List<NETH_Service> selectedServices = new();
     private List<NETH_Schedule> stylistSchedules = new();
     private List<NETH_Appointment> existingAppointments = new();
+    private List<NETH_AppointmentService> allAppointmentServices = new();
 
     private DateTime startOfWeek => DateTime.Today.AddDays(-(int)DateTime.Today.DayOfWeek).AddDays(viewWeekOffset * 7);
     private int totalDuration => selectedServices.Any() ? selectedServices.Sum(x => x.DurationMinutes) : 30;
@@ -180,12 +225,23 @@
         if (firstRender) {
             allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync(); 
             allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync(); 
+            allServices = await Db.NETH_Services.AsNoTracking().ToListAsync();
             if (PreSelectedStylistId > 0) { selectedStylistId = PreSelectedStylistId; await LoadStylistData(); }
             StateHasChanged(); 
         }
     }
 
-    private void ChangeWeek(int delta) { viewWeekOffset += delta; isTimeSelected = false; StateHasChanged(); }
+    private string GetServiceColor(string name) {
+        if (string.IsNullOrEmpty(name)) return "#3b82f6";
+        var lower = name.ToLower();
+        if (lower.Contains("cut")) return "#ef4444"; // Red
+        if (lower.Contains("beard")) return "#f59e0b"; // Amber
+        if (lower.Contains("shave")) return "#10b981"; // Emerald
+        if (lower.Contains("color")) return "#8b5cf6"; // Violet
+        if (lower.Contains("wash")) return "#06b6d4"; // Cyan
+        return "#6366f1"; // Indigo default
+    }
+
     private async Task OnStylistChanged(ChangeEventArgs e) { 
         selectedStylistId = int.Parse(e.Value?.ToString() ?? "0"); 
         await LoadStylistData(); 
@@ -197,6 +253,10 @@
         filteredServices = await Db.NETH_Services.Where(x => x.StylistId == selectedStylistId).ToListAsync();
         stylistSchedules = await Db.NETH_Schedules.Where(x => x.StylistId == selectedStylistId).ToListAsync();
         existingAppointments = await Db.NETH_Appointments.Where(x => x.StylistId == selectedStylistId).ToListAsync();
+        
+        var appIds = existingAppointments.Select(x => x.Id).ToList();
+        allAppointmentServices = await Db.NETH_AppointmentServices.Where(x => appIds.Contains(x.AppointmentId)).ToListAsync();
+        
         StateHasChanged();
     }
 
@@ -237,12 +297,12 @@
     private double GetPx(DateTime t) => ((t.Hour - 8) + (t.Minute / 60.0)) * 100;
     private double GetH(DateTime s, DateTime e) => (e - s).TotalMinutes * 1.666;
 
+    private void ChangeWeek(int delta) { viewWeekOffset += delta; isTimeSelected = false; StateHasChanged(); }
+
     private async Task CreateAppointment() {
         if (selectedClientId == 0 || !selectedServices.Any() || currentStylist == null) return;
         try {
             var end = bookingStart.AddMinutes(totalDuration);
-            
-            // FIX: Ensure server-side collision check also respects the DATE
             if (existingAppointments.Any(a => a.StartTime.Date == bookingStart.Date && bookingStart.TimeOfDay < a.EndTime.TimeOfDay && end.TimeOfDay > a.StartTime.TimeOfDay)) {
                 statusMessage = "ERR: SLOT_OCCUPIED_ON_THIS_DAY";
                 return;
