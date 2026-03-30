@@ -20,18 +20,19 @@
                 <div class="flex justify-between items-end mb-8">
                     <div>
                         <h2 class="text-2xl font-black text-white uppercase tracking-tight">@stylistName Offered Services</h2>
-                        <p class="text-xs text-gray-500 font-mono">Manage pricing and durations for specific barber offerings</p>
+                        <p class="text-xs text-gray-500 font-mono">Manage pricing, durations, and calendar colors</p>
                     </div>
                     <div class="flex gap-4">
-                        <button @onclick="RepairTable" class="text-[9px] text-gray-600 hover:text-orange-400 font-mono border border-gray-800 px-3 py-1 rounded uppercase">Repair_Table</button>
+                        @* ONE TIME REPAIR BUTTON *@
+                        <button @onclick="RepairTable" class="text-[9px] text-gray-600 hover:text-orange-400 font-mono border border-gray-800 px-3 py-1 rounded uppercase transition">Sync_Database_Schema</button>
                         <button @onclick="OpenCreateModal" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase px-6 py-3 rounded shadow-xl transition">＋ Add Service</button>
                     </div>
                 </div>
 
                 @if (!string.IsNullOrEmpty(dbError))
                 {
-                    <div class="mb-6 p-4 bg-red-900/20 border border-red-500/50 rounded text-red-400 font-mono text-[10px] uppercase">
-                        CRITICAL_DB_ERR: @dbError
+                    <div class="mb-6 p-4 @(dbError.Contains("SUCCESS") ? "bg-green-900/20 border-green-500/50 text-green-400" : "bg-red-900/20 border-red-500/50 text-red-400") rounded font-mono text-[10px] uppercase">
+                        @dbError
                     </div>
                 }
 
@@ -45,6 +46,7 @@
                         <table class="w-full text-left">
                             <thead>
                                 <tr class="text-[10px] font-black uppercase text-gray-500 bg-black/20">
+                                    <th class="p-4 w-16 text-center">Color</th>
                                     <th class="p-4">Service Name</th>
                                     <th class="p-4">Price</th>
                                     <th class="p-4">Duration</th>
@@ -55,12 +57,15 @@
                                 @if (!stylistServices.Any())
                                 {
                                     <tr>
-                                        <td colspan="4" class="p-10 text-center text-gray-600 font-black uppercase tracking-widest">No Services Found</td>
+                                        <td colspan="5" class="p-10 text-center text-gray-600 font-black uppercase tracking-widest">No Services Found</td>
                                     </tr>
                                 }
                                 @foreach (var svc in stylistServices)
                                 {
                                     <tr class="border-b border-gray-800 hover:bg-white/5 transition">
+                                        <td class="p-4 text-center">
+                                            <div class="w-6 h-6 rounded-full border border-white/10 mx-auto" style="background-color: @svc.Color"></div>
+                                        </td>
                                         <td class="p-4 font-black text-white uppercase">@svc.Name</td>
                                         <td class="p-4 font-mono text-[#D2B48C]">$@svc.Price.ToString("N2")</td>
                                         <td class="p-4 font-mono text-gray-500">@svc.DurationMinutes min</td>
@@ -92,6 +97,15 @@
                     <label class="text-[9px] uppercase text-gray-500 mb-1 block tracking-widest">Service Name</label>
                     <input @bind="editingService.Name" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none focus:border-blue-500" />
                 </div>
+
+                <div>
+                    <label class="text-[9px] uppercase text-gray-500 mb-1 block tracking-widest">Calendar Display Color</label>
+                    <div class="flex gap-3">
+                        <input type="color" @bind="editingService.Color" class="w-12 h-10 bg-transparent border-none cursor-pointer" />
+                        <input @bind="editingService.Color" class="flex-1 bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white font-mono text-xs uppercase outline-none" placeholder="#3B82F6" />
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="text-[9px] uppercase text-gray-500 mb-1 block tracking-widest">Price ($)</label>
@@ -141,8 +155,8 @@
         } catch (Exception ex) { dbError = ex.Message; }
     }
 
-    private void OpenCreateModal() { editingService = new NETH_Service { StylistId = StylistId, Name = "", Price = 0, DurationMinutes = 30 }; showModal = true; }
-    private void OpenEditModal(NETH_Service svc) { editingService = new NETH_Service { Id = svc.Id, StylistId = svc.StylistId, Name = svc.Name, Price = svc.Price, DurationMinutes = svc.DurationMinutes }; showModal = true; }
+    private void OpenCreateModal() { editingService = new NETH_Service { StylistId = StylistId, Name = "", Price = 0, DurationMinutes = 30, Color = "#3b82f6" }; showModal = true; }
+    private void OpenEditModal(NETH_Service svc) { editingService = new NETH_Service { Id = svc.Id, StylistId = svc.StylistId, Name = svc.Name, Price = svc.Price, DurationMinutes = svc.DurationMinutes, Color = string.IsNullOrEmpty(svc.Color) ? "#3b82f6" : svc.Color }; showModal = true; }
     private void CloseModal() { showModal = false; editingService = null; }
 
     private async Task SaveService()
@@ -152,15 +166,15 @@
             if (editingService.Id == 0) 
             {
                 await Db.Database.ExecuteSqlRawAsync(
-                    @"INSERT INTO ""NETH_Services"" (""StylistId"", ""Name"", ""Price"", ""DurationMinutes"") VALUES ({0}, {1}, {2}, {3})", 
-                    editingService.StylistId, editingService.Name, editingService.Price, editingService.DurationMinutes
+                    @"INSERT INTO ""NETH_Services"" (""StylistId"", ""Name"", ""Price"", ""DurationMinutes"", ""Color"") VALUES ({0}, {1}, {2}, {3}, {4})", 
+                    editingService.StylistId, editingService.Name, editingService.Price, editingService.DurationMinutes, editingService.Color
                 );
             }
             else 
             {
                 await Db.Database.ExecuteSqlRawAsync(
-                    @"UPDATE ""NETH_Services"" SET ""Name"" = {0}, ""Price"" = {1}, ""DurationMinutes"" = {2} WHERE ""Id"" = {3}", 
-                    editingService.Name, editingService.Price, editingService.DurationMinutes, editingService.Id
+                    @"UPDATE ""NETH_Services"" SET ""Name"" = {0}, ""Price"" = {1}, ""DurationMinutes"" = {2}, ""Color"" = {3} WHERE ""Id"" = {4}", 
+                    editingService.Name, editingService.Price, editingService.DurationMinutes, editingService.Color, editingService.Id
                 );
             }
             await LoadAllData(); 
@@ -173,18 +187,18 @@
     private async Task RepairTable()
     {
         try {
+            // This SQL adds the column ONLY if it doesn't exist
             await Db.Database.ExecuteSqlRawAsync(@"
-                CREATE TABLE IF NOT EXISTS ""NETH_Services"" (
-                    ""Id"" SERIAL PRIMARY KEY, 
-                    ""StylistId"" INTEGER NOT NULL, 
-                    ""Name"" TEXT NOT NULL, 
-                    ""Price"" DECIMAL NOT NULL, 
-                    ""DurationMinutes"" INTEGER NOT NULL
-                );
+                DO $$ 
+                BEGIN 
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='NETH_Services' AND column_name='Color') THEN
+                        ALTER TABLE ""NETH_Services"" ADD COLUMN ""Color"" TEXT DEFAULT '#3b82f6';
+                    END IF;
+                END $$;
             ");
             await LoadAllData();
-            dbError = "TABLE_REPAIRED_SUCCESSFULLY";
-        } catch (Exception ex) { dbError = "REPAIR_FAILED: " + ex.Message; }
+            dbError = "DATABASE_SYNC_SUCCESSFUL";
+        } catch (Exception ex) { dbError = "SCHEMA_REPAIR_FAILED: " + ex.Message; }
     }
 
     private async Task DeleteService(int id) 

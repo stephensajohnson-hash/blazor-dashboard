@@ -618,12 +618,19 @@ public class NETH_Service
     
     public int StylistId { get; set; }
 
-    [ForeignKey("StylistId")] // Add this attribute
+    [ForeignKey("StylistId")]
     public virtual NETH_Stylist? Stylist { get; set; }
 
     public string Name { get; set; } = "";
+    
     public decimal Price { get; set; }
+    
     public int DurationMinutes { get; set; }
+
+    /// <summary>
+    /// Hexadecimal color code for calendar display (e.g., #3b82f6)
+    /// </summary>
+    public string Color { get; set; } = "#3b82f6";
 }
 
 public class NETH_Client
