@@ -68,7 +68,12 @@
                         <h2 class="text-2xl font-black text-white uppercase tracking-tight">Appointment Desk</h2>
                         <p class="text-xs text-[#D2B48C] font-mono">@startOfWeek.ToString("MMMM yyyy")</p>
                     </div>
-                    <div class="flex gap-4">
+                    <div class="flex gap-4 items-center">
+                        @* OBVIOUS REPAIR BUTTON *@
+                        <button @onclick="ManualRepair" class="px-3 py-1.5 border border-orange-500/50 text-orange-400 text-[10px] font-black uppercase rounded hover:bg-orange-500 hover:text-white transition shadow-lg">
+                            Fix Missing DB Tables
+                        </button>
+
                         <select @onchange="OnStylistChanged" value="@selectedStylistId" class="bg-[#25262b] border border-gray-700 rounded px-4 py-2 text-white text-[10px] font-black uppercase outline-none focus:border-blue-500">
                             <option value="0">-- Select Barber --</option>
                             @foreach(var s in allStylists) { <option value="@s.Id">@s.Name</option> }
@@ -156,7 +161,6 @@
                                                 {
                                                     var start = t; var end = t.AddMinutes(totalDuration);
                                                     
-                                                    // BLOCK OVERLAPS (Checks entire span)
                                                     bool collision = dayApps.Any(a => start.TimeOfDay < a.EndTime.TimeOfDay && end.TimeOfDay > a.StartTime.TimeOfDay);
                                                     bool overShift = end.TimeOfDay > shift.EndTime.TimeOfDay;
 
@@ -178,7 +182,6 @@
                                                 <div @onclick="() => DeleteApp(app)" @onclick:stopPropagation="true" class="neth-appointment-group group" 
                                                      style="top: @(GetPx(app.StartTime))px; height: @(GetH(app.StartTime, app.EndTime))px;">
                                                     
-                                                    @* ACTION BAR: Notes Icon fix *@
                                                     <div class="absolute top-1 right-1 hidden group-hover:flex gap-1 z-50">
                                                         <button @onclick="() => GoToNotes(app.ClientId)" @onclick:stopPropagation="true" title="Client Notes"
                                                                 class="bg-black/60 hover:bg-green-500 text-white w-6 h-6 flex items-center justify-center rounded backdrop-blur-md transition-colors border border-white/20">
@@ -227,9 +230,9 @@
             <span class="font-bold text-white uppercase tracking-widest">System Monitor</span>
             <button @onclick="ClearStylistAppointments" class="text-red-500 text-[10px] uppercase font-bold hover:underline">Clear Stylist Apps</button>
         </div>
-        <div>Active Stylist: @selectedStylistId | Appointments: @existingAppointments.Count</div>
+        <div>Barber ID: @selectedStylistId | Apps: @existingAppointments.Count</div>
         @foreach(var a in existingAppointments.OrderBy(x => x.StartTime)) {
-            <div class="opacity-60 text-[10px]">> REF:@a.Id | @a.StartTime.ToString("ddd HH:mm") - @a.EndTime.ToString("HH:mm") (@a.StartTime.ToShortDateString())</div>
+            <div class="opacity-60 text-[10px]">> REF:@a.Id | @a.StartTime.ToString("ddd HH:mm") - @a.EndTime.ToString("HH:mm")</div>
         }
         @if(!string.IsNullOrEmpty(statusMessage)) { <div class="text-white bg-red-900 px-2 mt-2 font-bold uppercase text-[10px]">LOG: @statusMessage</div> }
     </div>
@@ -257,12 +260,32 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender) {
         if (firstRender) {
+            await RunRepair(); // Attempt auto-repair on load
             allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync(); 
             allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync(); 
             allServices = await Db.NETH_Services.AsNoTracking().ToListAsync();
             if (PreSelectedStylistId > 0) { selectedStylistId = PreSelectedStylistId; await LoadStylistData(); }
             StateHasChanged(); 
         }
+    }
+
+    private async Task ManualRepair() {
+        await RunRepair();
+        statusMessage = "DB_REPAIR_TRIED: Check Notes now.";
+        StateHasChanged();
+    }
+
+    private async Task RunRepair() {
+        try {
+            await Db.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""NETH_ClientNotes"" (
+                    ""Id"" SERIAL PRIMARY KEY,
+                    ""ClientId"" INTEGER NOT NULL,
+                    ""StylistId"" INTEGER NOT NULL,
+                    ""NoteText"" TEXT NOT NULL,
+                    ""CreatedAt"" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );");
+        } catch { /* Silent fail for auto-repair */ }
     }
 
     private async Task OnStylistChanged(ChangeEventArgs e) { 
@@ -272,17 +295,6 @@
 
     private async Task LoadStylistData() {
         if (selectedStylistId == 0) return;
-        
-        // AUTO-REPAIR MISSING TABLE
-        await Db.Database.ExecuteSqlRawAsync(@"
-            CREATE TABLE IF NOT EXISTS ""NETH_ClientNotes"" (
-                ""Id"" SERIAL PRIMARY KEY,
-                ""ClientId"" INTEGER NOT NULL,
-                ""StylistId"" INTEGER NOT NULL,
-                ""NoteText"" TEXT NOT NULL,
-                ""CreatedAt"" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );");
-
         currentStylist = await Db.NETH_Stylists.FirstOrDefaultAsync(x => x.Id == selectedStylistId);
         filteredServices = await Db.NETH_Services.Where(x => x.StylistId == selectedStylistId).ToListAsync();
         stylistSchedules = await Db.NETH_Schedules.Where(x => x.StylistId == selectedStylistId).ToListAsync();
@@ -297,7 +309,6 @@
         } else {
             allAppointmentServices.Clear();
         }
-        
         StateHasChanged();
     }
 
@@ -347,17 +358,14 @@
         if (selectedClientId == 0 || !selectedServices.Any() || currentStylist == null) return;
         try {
             var end = bookingStart.AddMinutes(totalDuration);
-            // Redundant check for safety
             if (existingAppointments.Any(a => a.StartTime.Date == bookingStart.Date && bookingStart.TimeOfDay < a.EndTime.TimeOfDay && end.TimeOfDay > a.StartTime.TimeOfDay)) {
                 statusMessage = "ERR: SLOT_BLOCKED";
                 return;
             }
 
             await Db.Database.ExecuteSqlRawAsync("INSERT INTO \"NETH_Appointments\" (\"ShopId\", \"StylistId\", \"ClientId\", \"StartTime\", \"EndTime\", \"Status\", \"TotalPrice\", \"IsPaid\", \"Notes\") VALUES ({0}, {1}, {2}, {3}, {4}, 'Booked', {5}, false, '')", currentStylist.ShopId, selectedStylistId, selectedClientId, bookingStart, end, selectedServices.Sum(s => s.Price));
-            
             var idResult = await Db.Database.SqlQueryRaw<int>("SELECT MAX(\"Id\") as \"Value\" FROM \"NETH_Appointments\"").ToListAsync();
             var newId = idResult.FirstOrDefault();
-
             foreach(var svc in selectedServices) {
                 await Db.Database.ExecuteSqlRawAsync("INSERT INTO \"NETH_AppointmentServices\" (\"AppointmentId\", \"ServiceId\", \"PriceAtBooking\", \"DurationAtBooking\") VALUES ({0}, {1}, {2}, {3})", newId, svc.Id, svc.Price, svc.DurationMinutes);
             }
