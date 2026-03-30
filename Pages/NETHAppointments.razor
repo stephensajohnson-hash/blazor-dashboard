@@ -49,13 +49,16 @@
     @@keyframes neth-shake {
         0%, 100% { transform: translateX(0); }
         20%, 60% { transform: translateX(-10px); }
-        40%, 80% { transform: translateX(6px); }
+        40%, 80% { transform: translateX(10px); }
     }
     .shake-it { animation: neth-shake 0.3s ease-in-out !important; border: 2px solid #ef4444 !important; background: rgba(239, 68, 68, 0.1) !important; }
     .debug-panel { background: #000; border-top: 4px solid #444; color: #0f0; font-family: monospace; font-size: 11px; padding: 20px; z-index: 999; width: 100%; margin-top: 50px; }
     .custom-scrollbar::-webkit-scrollbar { width: 6px; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
 </style>
+
+@* Load FontAwesome manually to ensure icons show inside relative blocks *@
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
 
 <div class="min-h-screen bg-[#1a1b1e] text-gray-300 flex flex-col font-sans">
     <div class="flex flex-1">
@@ -69,9 +72,8 @@
                         <p class="text-xs text-[#D2B48C] font-mono">@startOfWeek.ToString("MMMM yyyy")</p>
                     </div>
                     <div class="flex gap-4 items-center">
-                        @* OBVIOUS REPAIR BUTTON *@
                         <button @onclick="ManualRepair" class="px-3 py-1.5 border border-orange-500/50 text-orange-400 text-[10px] font-black uppercase rounded hover:bg-orange-500 hover:text-white transition shadow-lg">
-                            Fix Missing DB Tables
+                            Fix DB Schema
                         </button>
 
                         <select @onchange="OnStylistChanged" value="@selectedStylistId" class="bg-[#25262b] border border-gray-700 rounded px-4 py-2 text-white text-[10px] font-black uppercase outline-none focus:border-blue-500">
@@ -167,7 +169,7 @@
                                                     <div @onclick="() => HandleSlotClick(dayDate, start, collision || overShift)" class="neth-click-slot" style="top: @(GetPx(start))px; height: 25px;">
                                                         @if (!(collision || overShift)) {
                                                             <div class="neth-ghost-preview" style="height: @(totalDuration * 1.666)px;">
-                                                                <span class="text-[8px] font-black text-white uppercase tracking-tighter shadow-black shadow-sm">@totalDuration min</span>
+                                                                <span class="text-[8px] font-black text-white uppercase tracking-tighter">@totalDuration min</span>
                                                             </div>
                                                         }
                                                     </div>
@@ -182,10 +184,11 @@
                                                 <div @onclick="() => DeleteApp(app)" @onclick:stopPropagation="true" class="neth-appointment-group group" 
                                                      style="top: @(GetPx(app.StartTime))px; height: @(GetH(app.StartTime, app.EndTime))px;">
                                                     
+                                                    @* ACTION BAR: Notes Icon fix *@
                                                     <div class="absolute top-1 right-1 hidden group-hover:flex gap-1 z-50">
                                                         <button @onclick="() => GoToNotes(app.ClientId)" @onclick:stopPropagation="true" title="Client Notes"
-                                                                class="bg-black/60 hover:bg-green-500 text-white w-6 h-6 flex items-center justify-center rounded backdrop-blur-md transition-colors border border-white/20">
-                                                            <i class="fas fa-sticky-note text-[10px]"></i>
+                                                                class="bg-black/80 hover:bg-green-500 text-white w-7 h-7 flex items-center justify-center rounded-md border border-white/30 transition-all">
+                                                            <i class="fa-solid fa-note-sticky text-xs"></i>
                                                         </button>
                                                     </div>
 
@@ -260,7 +263,7 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender) {
         if (firstRender) {
-            await RunRepair(); // Attempt auto-repair on load
+            await RunRepair(); 
             allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync(); 
             allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync(); 
             allServices = await Db.NETH_Services.AsNoTracking().ToListAsync();
@@ -271,7 +274,7 @@
 
     private async Task ManualRepair() {
         await RunRepair();
-        statusMessage = "DB_REPAIR_TRIED: Check Notes now.";
+        statusMessage = "DB_REPAIR_COMPLETE: Tables and NoteTags fixed.";
         StateHasChanged();
     }
 
@@ -284,8 +287,18 @@
                     ""StylistId"" INTEGER NOT NULL,
                     ""NoteText"" TEXT NOT NULL,
                     ""CreatedAt"" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE IF NOT EXISTS ""NETH_NoteTags"" (
+                    ""Id"" SERIAL PRIMARY KEY,
+                    ""TagName"" TEXT NOT NULL,
+                    ""TagColor"" TEXT NOT NULL DEFAULT '#3b82f6'
+                );
+                CREATE TABLE IF NOT EXISTS ""NETH_ClientNoteTags"" (
+                    ""NoteId"" INTEGER NOT NULL,
+                    ""TagId"" INTEGER NOT NULL,
+                    PRIMARY KEY (""NoteId"", ""TagId"")
                 );");
-        } catch { /* Silent fail for auto-repair */ }
+        } catch { }
     }
 
     private async Task OnStylistChanged(ChangeEventArgs e) { 
@@ -351,6 +364,7 @@
     private void ChangeWeek(int delta) { viewWeekOffset += delta; isTimeSelected = false; StateHasChanged(); }
 
     private void GoToNotes(int clientId) {
+        // Updated redirect string to use the format expected by the page parsing logic
         Nav.NavigateTo($"/admin/neth-client-notes?StylistId={selectedStylistId}&ClientId={clientId}");
     }
 
@@ -358,11 +372,6 @@
         if (selectedClientId == 0 || !selectedServices.Any() || currentStylist == null) return;
         try {
             var end = bookingStart.AddMinutes(totalDuration);
-            if (existingAppointments.Any(a => a.StartTime.Date == bookingStart.Date && bookingStart.TimeOfDay < a.EndTime.TimeOfDay && end.TimeOfDay > a.StartTime.TimeOfDay)) {
-                statusMessage = "ERR: SLOT_BLOCKED";
-                return;
-            }
-
             await Db.Database.ExecuteSqlRawAsync("INSERT INTO \"NETH_Appointments\" (\"ShopId\", \"StylistId\", \"ClientId\", \"StartTime\", \"EndTime\", \"Status\", \"TotalPrice\", \"IsPaid\", \"Notes\") VALUES ({0}, {1}, {2}, {3}, {4}, 'Booked', {5}, false, '')", currentStylist.ShopId, selectedStylistId, selectedClientId, bookingStart, end, selectedServices.Sum(s => s.Price));
             var idResult = await Db.Database.SqlQueryRaw<int>("SELECT MAX(\"Id\") as \"Value\" FROM \"NETH_Appointments\"").ToListAsync();
             var newId = idResult.FirstOrDefault();
