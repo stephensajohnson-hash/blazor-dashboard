@@ -1,5 +1,4 @@
 @page "/admin/neth-client-notes"
-@page "/admin/neth-client-notes/{PreSelectedStylistId:int}/{PreSelectedClientId:int}"
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.JSInterop
@@ -10,337 +9,159 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
-<style>
-    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
-    
-    .neth-note-card {
-        background: #25262b;
-        border: 1px solid #374151;
-        border-radius: 8px;
-        padding: 16px;
-        transition: transform 0.1s, border-color 0.2s;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
-    }
-    .neth-note-card:hover {
-        transform: translateY(-2px);
-        border-color: #60a5fa;
-    }
-</style>
-
 <div class="min-h-screen bg-[#1a1b1e] text-gray-300 flex font-sans">
     <NETHAdminSidebar />
 
     <div class="flex-1 p-8">
-        <div class="max-w-6xl mx-auto">
-            @* HEADER & SELECTORS *@
-            <div class="flex justify-between items-end mb-8 border-b border-gray-800 pb-6">
+        <div class="max-w-4xl mx-auto">
+            <div class="flex justify-between items-center mb-8">
                 <div>
-                    <h2 class="text-2xl font-black text-white uppercase tracking-tight">Client Notes & History</h2>
-                    <p class="text-xs text-[#D2B48C] font-mono uppercase tracking-widest mt-1">Dossier Management</p>
+                    <h2 class="text-2xl font-black text-white uppercase tracking-tight">Client Notes</h2>
+                    <p class="text-[10px] text-[#D2B48C] font-mono uppercase tracking-widest">History & Formulas</p>
                 </div>
-                <div class="flex gap-4">
-                    <select @onchange="OnStylistChanged" value="@selectedStylistId" class="bg-[#25262b] border border-gray-700 rounded px-4 py-2 text-white text-[10px] font-black uppercase outline-none focus:border-blue-500 shadow-xl">
-                        <option value="0">-- 1. Select Barber --</option>
+                <button @onclick="() => showAddModal = true" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded font-black uppercase text-[10px] transition shadow-lg">
+                    + Add New Note
+                </button>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 mb-8">
+                <div class="space-y-1">
+                    <label class="text-[9px] font-black uppercase text-gray-500 ml-1">Select Stylist</label>
+                    <select @onchange="OnStylistChanged" value="@selectedStylistId" class="w-full bg-[#25262b] border border-gray-700 rounded p-3 text-white text-xs outline-none focus:border-blue-500">
+                        <option value="0">-- Select Stylist --</option>
                         @foreach(var s in allStylists) { <option value="@s.Id">@s.Name</option> }
                     </select>
-
-                    <select @onchange="OnClientChanged" value="@selectedClientId" disabled="@(selectedStylistId == 0)" class="bg-[#25262b] border border-gray-700 rounded px-4 py-2 text-white text-[10px] font-black uppercase outline-none focus:border-blue-500 shadow-xl disabled:opacity-50">
-                        <option value="0">-- 2. Select Client --</option>
-                        @foreach(var c in stylistClients) { <option value="@c.Id">@c.FirstName @c.LastName</option> }
+                </div>
+                <div class="space-y-1">
+                    <label class="text-[9px] font-black uppercase text-gray-500 ml-1">Select Client</label>
+                    <select @onchange="OnClientChanged" value="@selectedClientId" class="w-full bg-[#25262b] border border-gray-700 rounded p-3 text-white text-xs outline-none focus:border-blue-500">
+                        <option value="0">-- Select Client --</option>
+                        @foreach(var c in allClients) { <option value="@c.Id">@c.FirstName @c.LastName</option> }
                     </select>
-
-                    <button @onclick="OpenCreateModal" disabled="@(selectedClientId == 0)" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase px-6 py-2 rounded shadow-xl transition disabled:opacity-50 disabled:cursor-not-allowed">
-                        ＋ Add Note
-                    </button>
                 </div>
             </div>
 
-            @if (!string.IsNullOrEmpty(statusMessage))
+            @if (clientNotes.Any())
             {
-                <div class="mb-6 p-4 rounded font-mono text-[10px] uppercase flex justify-between items-center @(statusMessage.Contains("ERR") ? "bg-red-900/20 text-red-400 border border-red-500/30" : "bg-green-900/20 text-green-400 border border-green-500/30")">
-                    <span>@statusMessage</span>
-                    <button @onclick='() => statusMessage = ""' class="opacity-50 hover:opacity-100">&times;</button>
+                <div class="space-y-4">
+                    @foreach (var note in clientNotes.OrderByDescending(n => n.CreatedAt))
+                    {
+                        <div class="bg-[#25262b] p-6 rounded-xl border border-gray-700 shadow-xl relative group">
+                            <div class="flex justify-between items-start mb-4">
+                                <span class="text-[10px] font-mono text-blue-400">@note.CreatedAt.ToString("MMM dd, yyyy")</span>
+                                <button @onclick="() => DeleteNote(note.Id)" class="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-400 transition text-xs">Delete</button>
+                            </div>
+                            <p class="text-gray-200 text-sm leading-relaxed whitespace-pre-wrap">@note.NoteText</p>
+                        </div>
+                    }
                 </div>
             }
-
-            @* NOTES GRID *@
-            @if (selectedClientId > 0)
+            else if (selectedClientId > 0)
             {
-                if (!clientNotes.Any())
-                {
-                    <div class="text-center py-20 bg-[#25262b] rounded-xl border border-gray-800 border-dashed">
-                        <i class="fas fa-folder-open text-4xl text-gray-700 mb-4 block"></i>
-                        <p class="text-gray-500 font-black uppercase tracking-widest text-xs">No records found for this client.</p>
-                    </div>
-                }
-                else
-                {
-                    <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-                        @foreach (var note in clientNotes.OrderByDescending(n => n.EventYear).ThenByDescending(n => n.EventMonth).ThenByDescending(n => n.EventDay).ThenByDescending(n => n.CreatedDate))
-                        {
-                            <div class="neth-note-card flex flex-col">
-                                <div class="flex justify-between items-start mb-3">
-                                    <h3 class="text-white font-black uppercase text-sm leading-tight">@note.ShortDescription</h3>
-                                    <div class="flex gap-2">
-                                        <button @onclick="() => OpenEditModal(note)" class="text-gray-500 hover:text-blue-400 transition"><i class="fas fa-edit text-xs"></i></button>
-                                        <button @onclick="() => DeleteNote(note.Id)" class="text-gray-500 hover:text-red-500 transition"><i class="fas fa-trash text-xs"></i></button>
-                                    </div>
-                                </div>
-                                
-                                <div class="flex gap-2 mb-3 border-b border-gray-800 pb-3">
-                                    @if (note.EventYear.HasValue)
-                                    {
-                                        <span class="bg-black/40 text-gray-400 text-[9px] font-mono px-2 py-1 rounded border border-gray-700">
-                                            <i class="far fa-calendar-alt mr-1"></i> @note.EventYear-@(note.EventMonth?.ToString("D2"))-@(note.EventDay?.ToString("D2"))
-                                        </span>
-                                    }
-                                    @if (note.ServiceId.HasValue)
-                                    {
-                                        var svcName = allServices.FirstOrDefault(s => s.Id == note.ServiceId)?.Name;
-                                        if (!string.IsNullOrEmpty(svcName)) {
-                                            <span class="bg-blue-900/20 text-blue-400 text-[9px] font-black uppercase px-2 py-1 rounded border border-blue-800/50">@svcName</span>
-                                        }
-                                    }
-                                </div>
-
-                                <p class="text-xs text-gray-400 flex-1 whitespace-pre-wrap leading-relaxed mb-4">@note.LongDescription</p>
-
-                                @* Tags Area (Read Only display for V1) *@
-                                @if (note.Tags != null && note.Tags.Any())
-                                {
-                                    <div class="flex flex-wrap gap-1 mt-auto pt-3 border-t border-gray-800">
-                                        @foreach(var tag in note.Tags)
-                                        {
-                                            <span class="text-[8px] font-black uppercase px-2 py-0.5 rounded-full border border-white/10" style="background-color: @tag.HexColor; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.8);">
-                                                @tag.Name
-                                            </span>
-                                        }
-                                    </div>
-                                }
-                                <div class="text-[8px] font-mono text-gray-600 mt-3 text-right">Logged: @note.CreatedDate.ToString("MMM dd, yyyy")</div>
-                            </div>
-                        }
-                    </div>
-                }
-            }
-            else if (selectedStylistId > 0)
-            {
-                <div class="text-center py-20">
-                    <p class="text-gray-600 font-black uppercase tracking-widest text-[10px] animate-pulse">Awaiting Client Selection...</p>
+                <div class="text-center py-20 border-2 border-dashed border-gray-800 rounded-xl">
+                    <p class="text-gray-600 text-xs uppercase font-black tracking-widest">No notes found for this client.</p>
                 </div>
             }
         </div>
     </div>
 </div>
 
-@* CREATE / EDIT MODAL *@
-@if (showModal && editingNote != null)
+@if (showAddModal)
 {
-    <div class="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4 text-gray-300">
-        <div class="bg-[#25262b] w-full max-w-2xl rounded-xl border border-gray-700 shadow-2xl overflow-hidden">
-            <div class="p-4 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center uppercase text-[11px] font-black tracking-widest text-[#D2B48C]">
-                <span>@(editingNote.Id == 0 ? "New Client Dossier Entry" : "Update Entry")</span>
-                <button @onclick="CloseModal" class="text-gray-500 hover:text-white text-lg leading-none">&times;</button>
+    <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
+        <div class="bg-[#25262b] w-full max-w-lg rounded-2xl border border-gray-700 shadow-2xl overflow-hidden">
+            <div class="p-6 border-b border-gray-800 flex justify-between items-center">
+                <h3 class="text-white font-black uppercase text-xs tracking-widest">New Client Note</h3>
+                <button @onclick="() => showAddModal = false" class="text-gray-500 hover:text-white">&times;</button>
             </div>
-            
-            <div class="p-6 space-y-5 max-h-[70vh] overflow-y-auto custom-scrollbar">
+            <div class="p-6 space-y-4">
+                <textarea @bind="newNoteText" placeholder="Enter formulas, preferences, or history..." 
+                          class="w-full h-40 bg-black/20 border border-gray-700 rounded-xl p-4 text-white text-sm outline-none focus:border-blue-500 resize-none"></textarea>
                 
-                @* Row 1: Short Desc & Date *@
-                <div class="grid grid-cols-3 gap-4">
-                    <div class="col-span-2">
-                        <label class="text-[9px] uppercase font-black text-gray-500 mb-1 block tracking-widest">Short Summary (Headline)</label>
-                        <input @bind="editingNote.ShortDescription" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2.5 text-white text-sm outline-none focus:border-blue-500 font-bold" placeholder="e.g., Wedding Haircut Prep" />
-                    </div>
-                    <div class="col-span-1">
-                        <label class="text-[9px] uppercase font-black text-gray-500 mb-1 block tracking-widest">Event Date (Opt)</label>
-                        <input type="date" @bind="modalDateProxy" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2.5 text-white text-sm outline-none focus:border-[#D2B48C] font-mono custom-calendar-icon" />
-                    </div>
+                <div class="flex gap-3 pt-2">
+                    <button @onclick="SaveNote" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-black uppercase text-[10px] py-3 rounded-lg transition shadow-lg">Save Note</button>
+                    <button @onclick="() => showAddModal = false" class="px-6 bg-gray-800 text-gray-400 font-black uppercase text-[10px] py-3 rounded-lg hover:bg-gray-700 transition">Cancel</button>
                 </div>
-
-                @* Row 2: Linked Service *@
-                <div>
-                    <label class="text-[9px] uppercase font-black text-gray-500 mb-1 block tracking-widest">Linked Service (Opt)</label>
-                    <select @bind="editingNote.ServiceId" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2.5 text-white text-sm outline-none focus:border-blue-500">
-                        <option value="">-- None --</option>
-                        @foreach(var svc in allServices.Where(s => s.StylistId == selectedStylistId)) {
-                            <option value="@svc.Id">@svc.Name</option>
-                        }
-                    </select>
-                </div>
-
-                @* Row 3: Long Description *@
-                <div>
-                    <label class="text-[9px] uppercase font-black text-gray-500 mb-1 block tracking-widest">Detailed Notes</label>
-                    <textarea @bind="editingNote.LongDescription" rows="6" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-3 text-white text-sm outline-none focus:border-blue-500 custom-scrollbar" placeholder="Enter formulas, preferences, conversation details..."></textarea>
-                </div>
-
-            </div>
-            
-            <div class="p-4 bg-black/40 border-t border-gray-700 flex justify-end gap-3">
-                <button @onclick="CloseModal" class="text-[10px] text-gray-500 hover:text-white uppercase px-4 py-2 font-black transition">Cancel</button>
-                <button @onclick="SaveNote" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] uppercase px-8 py-2.5 rounded font-black shadow-xl transition">
-                    @(editingNote.Id == 0 ? "Save Entry" : "Commit Changes")
-                </button>
             </div>
         </div>
     </div>
 }
 
 @code {
-    [Parameter] public int PreSelectedStylistId { get; set; }
-    [Parameter] public int PreSelectedClientId { get; set; }
-    
-    private bool isAuthorized = false;
-    private bool showModal = false;
-    private int selectedStylistId, selectedClientId;
-    private string statusMessage = "";
-    
-    // Proxy for the HTML Date Picker to map to Year/Month/Day
-    private DateTime? modalDateProxy;
-
+    private bool showAddModal = false;
+    private int selectedStylistId = 0;
+    private int selectedClientId = 0;
+    private string newNoteText = "";
     private List<NETH_Stylist> allStylists = new();
-    private List<NETH_Client> stylistClients = new();
-    private List<NETH_Service> allServices = new();
+    private List<NETH_Client> allClients = new();
     private List<NETH_ClientNote> clientNotes = new();
-    
-    private NETH_ClientNote? editingNote;
 
-    protected override async Task OnAfterRenderAsync(bool firstRender) {
-        if (firstRender) {
-            var json = await JS.InvokeAsync<string>("localStorage.getItem", "neth_session");
-            if (string.IsNullOrEmpty(json)) Nav.NavigateTo("/nethaircut");
-            else { 
-                isAuthorized = true; 
-                allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync(); 
-                allServices = await Db.NETH_Services.AsNoTracking().ToListAsync();
-                
-                if (PreSelectedStylistId > 0) { 
-                    selectedStylistId = PreSelectedStylistId; 
-                    await LoadClientsForStylist();
-                    if (PreSelectedClientId > 0) {
-                        selectedClientId = PreSelectedClientId;
-                        await LoadNotes();
-                    }
-                }
-                StateHasChanged(); 
-            }
-        }
+    protected override async Task OnInitializedAsync()
+    {
+        allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync();
+        allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync();
+
+        // Catch QueryString Parameters
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query).TryGetValue("StylistId", out var sId))
+            selectedStylistId = int.Parse(sId);
+        if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query).TryGetValue("ClientId", out var cId))
+            selectedClientId = int.Parse(cId);
+
+        if (selectedClientId > 0) await LoadNotes();
     }
 
-    private async Task OnStylistChanged(ChangeEventArgs e) { 
-        selectedStylistId = int.Parse(e.Value?.ToString() ?? "0"); 
-        selectedClientId = 0;
-        clientNotes.Clear();
-        await LoadClientsForStylist(); 
-    }
-
-    private async Task LoadClientsForStylist() {
-        if (selectedStylistId == 0) { stylistClients.Clear(); return; }
-        
-        // Assuming you have a way to link clients to stylists. If Clients are global, just load them all.
-        // For now, loading all clients as fallback. Update this WHERE clause if you have a mapping table.
-        stylistClients = await Db.NETH_Clients.AsNoTracking().ToListAsync();
+    private async Task OnStylistChanged(ChangeEventArgs e)
+    {
+        selectedStylistId = int.Parse(e.Value?.ToString() ?? "0");
         StateHasChanged();
     }
 
-    private async Task OnClientChanged(ChangeEventArgs e) {
+    private async Task OnClientChanged(ChangeEventArgs e)
+    {
         selectedClientId = int.Parse(e.Value?.ToString() ?? "0");
         await LoadNotes();
     }
 
-    private async Task LoadNotes() {
-        if (selectedClientId == 0) { clientNotes.Clear(); return; }
-        
-        // EF Core Include to get the Tags easily
+    private async Task LoadNotes()
+    {
+        if (selectedClientId == 0) return;
         clientNotes = await Db.NETH_ClientNotes
-            .Include(n => n.Tags)
-            .Where(n => n.ClientId == selectedClientId && n.StylistId == selectedStylistId)
+            .Where(x => x.ClientId == selectedClientId)
+            .OrderByDescending(x => x.CreatedAt)
             .ToListAsync();
-            
         StateHasChanged();
     }
 
-    private void OpenCreateModal() { 
-        editingNote = new NETH_ClientNote { 
-            ClientId = selectedClientId, 
-            StylistId = selectedStylistId, 
-            CreatedDate = DateTime.Now 
-        }; 
-        modalDateProxy = DateTime.Today;
-        showModal = true; 
+    private async Task SaveNote()
+    {
+        if (selectedClientId == 0 || selectedStylistId == 0 || string.IsNullOrWhiteSpace(newNoteText)) return;
+
+        var note = new NETH_ClientNote
+        {
+            ClientId = selectedClientId,
+            StylistId = selectedStylistId,
+            NoteText = newNoteText,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        Db.NETH_ClientNotes.Add(note);
+        await Db.SaveChangesAsync();
+        
+        newNoteText = "";
+        showAddModal = false;
+        await LoadNotes();
     }
 
-    private void OpenEditModal(NETH_ClientNote note) { 
-        // Create a detached copy for the modal so we don't live-edit the grid
-        editingNote = new NETH_ClientNote { 
-            Id = note.Id, 
-            ClientId = note.ClientId, 
-            StylistId = note.StylistId, 
-            ServiceId = note.ServiceId,
-            ShortDescription = note.ShortDescription,
-            LongDescription = note.LongDescription,
-            EventYear = note.EventYear,
-            EventMonth = note.EventMonth,
-            EventDay = note.EventDay,
-            CreatedDate = note.CreatedDate
-        }; 
-        
-        if (note.EventYear.HasValue && note.EventMonth.HasValue && note.EventDay.HasValue) {
-            modalDateProxy = new DateTime(note.EventYear.Value, note.EventMonth.Value, note.EventDay.Value);
-        } else {
-            modalDateProxy = null;
-        }
-        
-        showModal = true; 
-    }
-    
-    private void CloseModal() { showModal = false; editingNote = null; }
-
-    private async Task SaveNote() {
-        if (editingNote == null) return;
-        
-        try {
-            // Map the Date Picker back to Year/Month/Day
-            if (modalDateProxy.HasValue) {
-                editingNote.EventYear = modalDateProxy.Value.Year;
-                editingNote.EventMonth = modalDateProxy.Value.Month;
-                editingNote.EventDay = modalDateProxy.Value.Day;
-            } else {
-                editingNote.EventYear = null;
-                editingNote.EventMonth = null;
-                editingNote.EventDay = null;
-            }
-
-            if (editingNote.Id == 0) {
-                Db.NETH_ClientNotes.Add(editingNote);
-                statusMessage = "ENTRY CREATED";
-            } else {
-                Db.NETH_ClientNotes.Update(editingNote);
-                statusMessage = "ENTRY UPDATED";
-            }
-            
-            // Standard EF Core Save - Much safer for related entities!
+    private async Task DeleteNote(int id)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Delete this note?")) return;
+        var note = await Db.NETH_ClientNotes.FindAsync(id);
+        if (note != null)
+        {
+            Db.NETH_ClientNotes.Remove(note);
             await Db.SaveChangesAsync();
-            await LoadNotes(); 
-            CloseModal();
-        } catch (Exception ex) {
-            statusMessage = "ERR: " + ex.Message;
+            await LoadNotes();
         }
-    }
-
-    private async Task DeleteNote(int id) { 
-        if (await JS.InvokeAsync<bool>("confirm", "Permanently delete this dossier entry?")) { 
-            try {
-                var note = await Db.NETH_ClientNotes.FindAsync(id);
-                if (note != null) {
-                    Db.NETH_ClientNotes.Remove(note);
-                    await Db.SaveChangesAsync();
-                    statusMessage = "ENTRY DELETED";
-                    await LoadNotes(); 
-                }
-            } catch (Exception ex) { statusMessage = "ERR: " + ex.Message; }
-        } 
     }
 }
