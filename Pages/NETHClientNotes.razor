@@ -118,8 +118,12 @@
             var uri = Nav.ToAbsoluteUri(Nav.Uri);
             var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
             
-            if (query.TryGetValue("StylistId", out var sId)) selectedStylistId = int.Parse(sId ?? "0");
-            if (query.TryGetValue("ClientId", out var cId)) selectedClientId = int.Parse(cId ?? "0");
+            // Fixed StringValues conversion for the compiler
+            if (query.TryGetValue("StylistId", out var sId) && !string.IsNullOrEmpty(sId)) 
+                selectedStylistId = int.Parse(sId.ToString());
+            
+            if (query.TryGetValue("ClientId", out var cId) && !string.IsNullOrEmpty(cId)) 
+                selectedClientId = int.Parse(cId.ToString());
 
             if (selectedClientId > 0) await LoadNotes();
             StateHasChanged();
@@ -142,7 +146,6 @@
     {
         if (selectedClientId == 0) return;
         try {
-            // Using Raw SQL and a local DTO to bypass model property mismatches
             var rawData = await Db.Database.SqlQueryRaw<NoteSqlResult>(
                 "SELECT \"Id\", \"NoteText\", \"CreatedAt\" FROM \"NETH_ClientNotes\" WHERE \"ClientId\" = {0} ORDER BY \"CreatedAt\" DESC", 
                 selectedClientId
@@ -189,7 +192,6 @@
         } catch (Exception ex) { localError = "DEL_ERR: " + ex.Message; }
     }
 
-    // Local result helper to match DB exactly
     private class NoteSqlResult {
         public int Id { get; set; }
         public string NoteText { get; set; } = "";
