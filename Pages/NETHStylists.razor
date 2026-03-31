@@ -192,16 +192,31 @@
 
     private void CloseModal() { showModal = false; editingStylist = null; avatarBuffer = null; }
 
-    private async Task HandleFileSelected(InputFileChangeEventArgs e) {
-        try {
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        try
+        {
             var file = e.File;
             if (file == null) return;
-            using var stream = file.OpenReadStream(2 * 1024 * 1024);
-            avatarBuffer = new byte[file.Size];
-            await stream.ReadAsync(avatarBuffer);
+
+            // Use a 3MB limit for safety
+            long maxFileSize = 1024 * 1024 * 3; 
+            
+            // Use a MemoryStream to ensure the entire file is read properly
+            using var ms = new MemoryStream();
+            await file.OpenReadStream(maxFileSize).CopyToAsync(ms);
+            
+            avatarBuffer = ms.ToArray();
             avatarContentType = file.ContentType;
             avatarFileName = file.Name;
-        } catch { statusMessage = "ERR: File too large."; }
+            
+            statusMessage = "IMAGE_READY: " + file.Name;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            statusMessage = "FILE_ERR: " + ex.Message;
+        }
     }
 
     private async Task SaveStylist() {
