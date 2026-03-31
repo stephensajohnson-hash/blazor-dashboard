@@ -15,9 +15,7 @@
     .neth-hour-row { height: 100px; border-bottom: 1px solid rgba(255,255,255,0.05); }
     .neth-shift-zone { position: absolute; left: 0; right: 0; background: rgba(34, 197, 94, 0.08); border-left: 2px solid #22c55e; z-index: 1; pointer-events: none; }
     .neth-click-slot { position: absolute; left: 0; right: 0; z-index: 10; cursor: pointer; }
-    .neth-ghost-preview { position: absolute; top: 0; left: 0; right: 0; border: 2px dashed #60a5fa; background: rgba(96, 165, 250, 0.2); pointer-events: none; opacity: 0; z-index: 15; display: flex; align-items: center; justify-content: center; }
-    .neth-click-slot:hover .neth-ghost-preview { opacity: 1; }
-
+    
     .neth-appointment-group { 
         position: absolute; 
         left: 4px; 
@@ -25,14 +23,13 @@
         z-index: 100; 
         border: 2px solid rgba(255,255,255,0.4); 
         border-radius: 6px; 
-        overflow: visible; /* Changed to visible to allow avatar hover zoom */
         cursor: pointer; 
         box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
         transition: transform 0.1s, border-color 0.2s;
         display: flex;
         flex-direction: column;
     }
-    .neth-appointment-group:hover { transform: scale(1.01); border-color: white; z-index: 110; }
+    .neth-appointment-group:hover { transform: scale(1.01); border-color: white; z-index: 200; }
     
     .neth-service-segment { 
         width: 100%; 
@@ -45,31 +42,32 @@
         text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
         position: relative;
     }
-    .neth-service-segment:last-child { border-bottom: none; }
 
-    /* Client Avatar on Block */
+    /* Client Avatar Logic */
     .mini-client-avatar {
         width: 18px;
         height: 18px;
         border-radius: 50%;
         border: 1px solid white;
         background: #1a1b1e;
-        margin-right: 4px;
+        margin-right: 6px;
         flex-shrink: 0;
-        transition: all 0.3s ease;
-        z-index: 10;
         object-fit: cover;
+        transition: all 0.2s ease-in-out;
     }
 
-    /* Hover Zoom Action */
+    /* The "Pop-Out" Effect: Fixed size, high Z-index, ignores parent overflow */
     .neth-appointment-group:hover .mini-client-avatar {
-        transform: scale(4);
-        margin-right: 15px;
-        box-shadow: 0 0 20px rgba(0,0,0,0.8);
-        border-width: 0.5px;
+        position: absolute;
+        width: 80px;
+        height: 80px;
+        top: -40px;
+        left: -20px;
+        z-index: 500;
+        box-shadow: 0 0 25px rgba(0,0,0,0.9);
+        border: 2px solid #D2B48C;
     }
 
-    /* Stylist Header Avatar */
     .stylist-head-avatar {
         width: 48px;
         height: 48px;
@@ -79,16 +77,9 @@
         background: #25262b;
     }
 
-    @@keyframes neth-shake {
-        0%, 100% { transform: translateX(0); }
-        20%, 60% { transform: translateX(-10px); }
-        40%, 80% { transform: translateX(10px); }
-    }
-    .shake-it { animation: neth-shake 0.3s ease-in-out !important; border: 2px solid #ef4444 !important; }
-    .debug-panel { background: #000; border-top: 4px solid #444; color: #0f0; font-family: monospace; font-size: 11px; padding: 20px; z-index: 999; width: 100%; margin-top: 50px; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
 </style>
-
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
 
 <div class="min-h-screen bg-[#1a1b1e] text-gray-300 flex flex-col font-sans">
     <div class="flex flex-1">
@@ -100,7 +91,7 @@
                     <div class="flex items-center gap-4">
                         @if (currentStylist?.AvatarId > 0)
                         {
-                            <img src="/neth-images/@currentStylist.AvatarId" class="stylist-head-avatar" />
+                            <img src="/neth-images/@currentStylist.AvatarId" class="stylist-head-avatar shadow-2xl" />
                         }
                         <div>
                             <h2 class="text-2xl font-black text-white uppercase tracking-tight">
@@ -124,7 +115,7 @@
                 {
                     <div class="grid grid-cols-1 xl:grid-cols-4 gap-8">
                         <div class="xl:col-span-1 space-y-4">
-                            <div class="bg-[#25262b] p-5 rounded-xl border border-gray-700 @(isShaking ? "shake-it" : "") shadow-2xl transition-colors">
+                            <div class="bg-[#25262b] p-5 rounded-xl border border-gray-700 shadow-2xl transition-colors">
                                 <h3 class="text-[10px] font-black uppercase text-[#D2B48C] mb-4 tracking-widest">1. Services (@totalDuration min)</h3>
                                 @foreach (var svc in filteredServices)
                                 {
@@ -139,7 +130,7 @@
 
                             @if (isTimeSelected)
                             {
-                                <div class="bg-blue-600 p-5 rounded-xl shadow-2xl">
+                                <div class="bg-blue-600 p-5 rounded-xl shadow-2xl animate-in slide-in-from-bottom-2">
                                     <p class="text-white font-black uppercase text-lg leading-none">@bookingStart.ToString("h:mm tt")</p>
                                     <select @bind="selectedClientId" class="w-full bg-black/20 border border-white/20 rounded p-3 text-xs text-white mt-4 outline-none">
                                         <option value="0">-- Select Client --</option>
@@ -151,12 +142,12 @@
                         </div>
 
                         <div class="xl:col-span-3 bg-[#25262b] rounded-xl border border-gray-700 overflow-hidden flex flex-col shadow-2xl">
-                            <div class="grid grid-cols-8 bg-black/40 border-b border-gray-700">
-                                <div class="p-4 border-r border-gray-800"></div>
+                            <div class="grid grid-cols-8 bg-black/40 border-b border-gray-700 font-black uppercase text-[9px] text-gray-500">
+                                <div class="p-4 border-r border-gray-800">TIME</div>
                                 @for (int i = 0; i < 7; i++) {
                                     <div class="p-3 text-center border-r border-gray-800">
-                                        <p class="text-[9px] font-black text-gray-600 uppercase">@startOfWeek.AddDays(i).ToString("ddd")</p>
-                                        <p class="text-sm font-black text-white">@startOfWeek.AddDays(i).Day</p>
+                                        <p>@startOfWeek.AddDays(i).ToString("ddd")</p>
+                                        <p class="text-white text-sm">@startOfWeek.AddDays(i).Day</p>
                                     </div>
                                 }
                             </div>
@@ -201,9 +192,10 @@
                                                 <div @onclick="() => DeleteApp(app)" @onclick:stopPropagation="true" class="neth-appointment-group group" 
                                                      style="top: @(GetPx(app.StartTime))px; height: @(GetH(app.StartTime, app.EndTime))px;">
                                                     
+                                                    @* Notes Icon *@
                                                     <div class="absolute top-1 right-1 hidden group-hover:flex gap-1 z-50">
                                                         <button @onclick="() => GoToNotes(app.ClientId)" @onclick:stopPropagation="true"
-                                                                class="bg-black/80 hover:bg-green-500 text-white w-7 h-7 flex items-center justify-center rounded-md border border-white/30 transition-all">
+                                                                class="bg-black/80 hover:bg-green-500 text-white w-7 h-7 flex items-center justify-center rounded-md border border-white/30 transition-all shadow-xl">
                                                             <i class="fa-solid fa-note-sticky text-xs"></i>
                                                         </button>
                                                     </div>
@@ -215,12 +207,12 @@
                                                             var aps = appServices[j];
                                                             var svc = allServices.FirstOrDefault(s => s.Id == aps.ServiceId);
                                                             <div class="neth-service-segment" style="height: @(aps.DurationAtBooking * 1.666)px; background: @(svc?.Color ?? "#3b82f6")">
-                                                                <div class="flex items-center overflow-hidden">
+                                                                <div class="flex items-center overflow-visible">
                                                                     @if (j == 0) {
                                                                         @if (client?.AvatarId > 0) {
-                                                                            <img src="/neth-images/@client.AvatarId" class="mini-client-avatar" />
+                                                                            <img src="/neth-images/@client.AvatarId" class="mini-client-avatar shadow-sm" />
                                                                         } else {
-                                                                            <div class="mini-client-avatar flex items-center justify-center text-[7px] font-black text-white bg-black/40">
+                                                                            <div class="mini-client-avatar flex items-center justify-center text-[7px] font-black text-white bg-black/60 uppercase">
                                                                                 @client?.FirstName?[0]@client?.LastName?[0]
                                                                             </div>
                                                                         }
@@ -238,7 +230,7 @@
 
                                             @if(isTimeSelected && bookingStart.Date == dayDate.Date)
                                             {
-                                                <div class="absolute inset-x-1 border-2 border-white bg-blue-500/50 z-20 pointer-events-none rounded-md" style="top: @(GetPx(bookingStart))px; height: @(totalDuration * 1.666)px;"></div>
+                                                <div class="absolute inset-x-1 border-2 border-white bg-blue-500/40 z-20 pointer-events-none rounded-md" style="top: @(GetPx(bookingStart))px; height: @(totalDuration * 1.666)px;"></div>
                                             }
                                         </div>
                                     }
@@ -249,14 +241,6 @@
                 }
             </div>
         </div>
-    </div>
-
-    <div class="debug-panel">
-        <div class="flex justify-between border-b border-green-900 mb-2 pb-1">
-            <span class="font-bold text-white uppercase tracking-widest">Monitor</span>
-            <button @onclick="ClearStylistAppointments" class="text-red-500 text-[10px] hover:underline uppercase">Wipe Grid</button>
-        </div>
-        <div>Apps Tracking: @existingAppointments.Count | Stylist: @selectedStylistId</div>
     </div>
 </div>
 
@@ -329,13 +313,6 @@
         if (await JS.InvokeAsync<bool>("confirm", "Delete booking?")) {
             await Db.Database.ExecuteSqlRawAsync("DELETE FROM \"NETH_Appointments\" WHERE \"Id\" = {0}", app.Id);
             await Db.Database.ExecuteSqlRawAsync("DELETE FROM \"NETH_AppointmentServices\" WHERE \"AppointmentId\" = {0}", app.Id);
-            await LoadStylistData();
-        }
-    }
-
-    private async Task ClearStylistAppointments() {
-        if (await JS.InvokeAsync<bool>("confirm", "Wipe all data?")) {
-            await Db.Database.ExecuteSqlRawAsync("DELETE FROM \"NETH_Appointments\" WHERE \"StylistId\" = {0}", selectedStylistId);
             await LoadStylistData();
         }
     }
