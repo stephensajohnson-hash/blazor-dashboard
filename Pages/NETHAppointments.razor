@@ -25,7 +25,7 @@
         z-index: 100; 
         border: 2px solid rgba(255,255,255,0.4); 
         border-radius: 6px; 
-        overflow: hidden; 
+        overflow: visible; /* Changed to visible to allow avatar hover zoom */
         cursor: pointer; 
         box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
         transition: transform 0.1s, border-color 0.2s;
@@ -43,8 +43,41 @@
         padding: 0 8px;
         min-height: 15px;
         text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+        position: relative;
     }
     .neth-service-segment:last-child { border-bottom: none; }
+
+    /* Client Avatar on Block */
+    .mini-client-avatar {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 1px solid white;
+        background: #1a1b1e;
+        margin-right: 4px;
+        flex-shrink: 0;
+        transition: all 0.3s ease;
+        z-index: 10;
+        object-fit: cover;
+    }
+
+    /* Hover Zoom Action */
+    .neth-appointment-group:hover .mini-client-avatar {
+        transform: scale(4);
+        margin-right: 15px;
+        box-shadow: 0 0 20px rgba(0,0,0,0.8);
+        border-width: 0.5px;
+    }
+
+    /* Stylist Header Avatar */
+    .stylist-head-avatar {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        border: 2px solid #374151;
+        object-fit: cover;
+        background: #25262b;
+    }
 
     @@keyframes neth-shake {
         0%, 100% { transform: translateX(0); }
@@ -55,7 +88,6 @@
     .debug-panel { background: #000; border-top: 4px solid #444; color: #0f0; font-family: monospace; font-size: 11px; padding: 20px; z-index: 999; width: 100%; margin-top: 50px; }
 </style>
 
-@* Essential FontAwesome CDN *@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
 
 <div class="min-h-screen bg-[#1a1b1e] text-gray-300 flex flex-col font-sans">
@@ -65,13 +97,20 @@
         <div class="flex-1 p-8">
             <div class="max-w-7xl mx-auto">
                 <div class="flex justify-between items-center mb-8">
-                    <div>
-                        <h2 class="text-2xl font-black text-white uppercase tracking-tight">Appointment Desk</h2>
-                        <p class="text-xs text-[#D2B48C] font-mono">@startOfWeek.ToString("MMMM yyyy")</p>
+                    <div class="flex items-center gap-4">
+                        @if (currentStylist?.AvatarId > 0)
+                        {
+                            <img src="/neth-images/@currentStylist.AvatarId" class="stylist-head-avatar" />
+                        }
+                        <div>
+                            <h2 class="text-2xl font-black text-white uppercase tracking-tight">
+                                @(currentStylist?.Name ?? "Appointment Desk")
+                            </h2>
+                            <p class="text-xs text-[#D2B48C] font-mono uppercase tracking-widest">@startOfWeek.ToString("MMMM yyyy")</p>
+                        </div>
                     </div>
+                    
                     <div class="flex gap-4 items-center">
-                        <button @onclick="ManualRepair" class="px-3 py-1.5 border border-orange-500 text-orange-400 text-[9px] font-black uppercase rounded hover:bg-orange-500 hover:text-white transition">Fix Notes DB</button>
-
                         <select @onchange="OnStylistChanged" value="@selectedStylistId" class="bg-[#25262b] border border-gray-700 rounded px-4 py-2 text-white text-[10px] font-black uppercase outline-none focus:border-blue-500">
                             <option value="0">-- Select Stylist --</option>
                             @foreach(var s in allStylists) { <option value="@s.Id">@s.Name</option> }
@@ -84,7 +123,6 @@
                 @if (selectedStylistId > 0)
                 {
                     <div class="grid grid-cols-1 xl:grid-cols-4 gap-8">
-                        @* Service Sidebar *@
                         <div class="xl:col-span-1 space-y-4">
                             <div class="bg-[#25262b] p-5 rounded-xl border border-gray-700 @(isShaking ? "shake-it" : "") shadow-2xl transition-colors">
                                 <h3 class="text-[10px] font-black uppercase text-[#D2B48C] mb-4 tracking-widest">1. Services (@totalDuration min)</h3>
@@ -112,7 +150,6 @@
                             }
                         </div>
 
-                        @* Calendar Grid *@
                         <div class="xl:col-span-3 bg-[#25262b] rounded-xl border border-gray-700 overflow-hidden flex flex-col shadow-2xl">
                             <div class="grid grid-cols-8 bg-black/40 border-b border-gray-700">
                                 <div class="p-4 border-r border-gray-800"></div>
@@ -164,7 +201,6 @@
                                                 <div @onclick="() => DeleteApp(app)" @onclick:stopPropagation="true" class="neth-appointment-group group" 
                                                      style="top: @(GetPx(app.StartTime))px; height: @(GetH(app.StartTime, app.EndTime))px;">
                                                     
-                                                    @* Notes Icon *@
                                                     <div class="absolute top-1 right-1 hidden group-hover:flex gap-1 z-50">
                                                         <button @onclick="() => GoToNotes(app.ClientId)" @onclick:stopPropagation="true"
                                                                 class="bg-black/80 hover:bg-green-500 text-white w-7 h-7 flex items-center justify-center rounded-md border border-white/30 transition-all">
@@ -179,8 +215,21 @@
                                                             var aps = appServices[j];
                                                             var svc = allServices.FirstOrDefault(s => s.Id == aps.ServiceId);
                                                             <div class="neth-service-segment" style="height: @(aps.DurationAtBooking * 1.666)px; background: @(svc?.Color ?? "#3b82f6")">
-                                                                <p class="text-[9px] font-black text-white uppercase truncate leading-none">@(svc?.Name ?? "Service")</p>
-                                                                @if (j == 0) { <p class="text-[8px] font-bold text-white/90 truncate mt-1">@(client?.FirstName)</p> }
+                                                                <div class="flex items-center overflow-hidden">
+                                                                    @if (j == 0) {
+                                                                        @if (client?.AvatarId > 0) {
+                                                                            <img src="/neth-images/@client.AvatarId" class="mini-client-avatar" />
+                                                                        } else {
+                                                                            <div class="mini-client-avatar flex items-center justify-center text-[7px] font-black text-white bg-black/40">
+                                                                                @client?.FirstName?[0]@client?.LastName?[0]
+                                                                            </div>
+                                                                        }
+                                                                        <p class="text-[8px] font-bold text-white/90 truncate">@(client?.FirstName)</p>
+                                                                    }
+                                                                    else {
+                                                                        <p class="text-[8px] font-black text-white uppercase truncate leading-none">@(svc?.Name ?? "Service")</p>
+                                                                    }
+                                                                </div>
                                                             </div>
                                                         }
                                                     }
@@ -208,7 +257,6 @@
             <button @onclick="ClearStylistAppointments" class="text-red-500 text-[10px] hover:underline uppercase">Wipe Grid</button>
         </div>
         <div>Apps Tracking: @existingAppointments.Count | Stylist: @selectedStylistId</div>
-        @if(!string.IsNullOrEmpty(statusMessage)) { <div class="text-white bg-red-900 px-2 mt-2 font-bold uppercase text-[10px]">LOG: @statusMessage</div> }
     </div>
 </div>
 
@@ -218,7 +266,7 @@
     private int selectedStylistId, selectedClientId, viewWeekOffset;
     private string statusMessage = "";
     private DateTime bookingStart;
-    private NETH_Stylist currentStylist;
+    private NETH_Stylist? currentStylist;
 
     private List<NETH_Stylist> allStylists = new();
     private List<NETH_Client> allClients = new();
@@ -240,22 +288,6 @@
             if (PreSelectedStylistId > 0) { selectedStylistId = PreSelectedStylistId; await LoadStylistData(); }
             StateHasChanged(); 
         }
-    }
-
-    private async Task ManualRepair() {
-        try {
-            await Db.Database.ExecuteSqlRawAsync(@"
-                CREATE TABLE IF NOT EXISTS ""NETH_ClientNotes"" (
-                    ""Id"" SERIAL PRIMARY KEY, ""ClientId"" INTEGER NOT NULL, ""StylistId"" INTEGER NOT NULL, ""NoteText"" TEXT NOT NULL, ""CreatedAt"" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-                );
-                CREATE TABLE IF NOT EXISTS ""NETH_NoteTags"" (
-                    ""Id"" SERIAL PRIMARY KEY, ""TagName"" TEXT NOT NULL, ""TagColor"" TEXT NOT NULL DEFAULT '#3b82f6'
-                );
-                CREATE TABLE IF NOT EXISTS ""NETH_ClientNoteTags"" (
-                    ""NETH_ClientNoteId"" INTEGER NOT NULL, ""NETH_NoteTagId"" INTEGER NOT NULL, PRIMARY KEY (""NETH_ClientNoteId"", ""NETH_NoteTagId"")
-                );");
-            statusMessage = "DB_FIXED";
-        } catch (Exception ex) { statusMessage = "FIX_ERR: " + ex.Message; }
     }
 
     private async Task OnStylistChanged(ChangeEventArgs e) { 
