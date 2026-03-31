@@ -605,16 +605,20 @@ public class NETH_Stylist
 {
     public int Id { get; set; }
     public int ShopId { get; set; }
-    public NETH_Shop Shop { get; set; } = null!;
+    public virtual NETH_Shop Shop { get; set; } = null!;
     public string Name { get; set; } = "";
     public string Bio { get; set; } = "";
     public bool IsIndependent { get; set; }
     public string StripeAccountId { get; set; } = "";
     public int PhoneId { get; set; }
-    public NETH_Phone Phone { get; set; } = null!;
-    public List<NETH_Service> Services { get; set; } = new();
+    public virtual NETH_Phone Phone { get; set; } = null!;
+    public virtual List<NETH_Service> Services { get; set; } = new();
+    public int? UserId { get; set; }
 
-    public int? UserId { get; set; } 
+    // New Avatar Link
+    public int? AvatarId { get; set; }
+    [ForeignKey("AvatarId")]
+    public virtual NETH_StoredImage? Avatar { get; set; }
 }
 
 public class NETH_Service

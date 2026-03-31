@@ -1,9 +1,9 @@
 @page "/admin/neth-stylists"
 @using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.JSInterop
 @using Dashboard
-@using Dashboard.Components
 @using System.Text.Json
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject AppDbContext Db
@@ -13,96 +13,66 @@
 @if (isAuthorized)
 {
     <div class="min-h-screen bg-[#1a1b1e] text-gray-300 flex font-sans">
-        
         <NETHAdminSidebar />
 
         <div class="flex-1 p-8">
             <div class="max-w-5xl mx-auto">
                 <div class="flex justify-between items-end mb-8">
                     <div>
-                        <h2 class="text-2xl font-black text-white uppercase tracking-tight">Stylist Registry</h2>
-                        <p class="text-xs text-gray-500 font-mono">Manage barber profiles and user associations</p>
+                        <h2 class="text-3xl font-black text-white uppercase tracking-tighter italic">Stylist Roster</h2>
+                        <p class="text-[10px] text-gray-500 font-mono uppercase tracking-[0.2em]">Active Personnel: @allStylists.Count</p>
                     </div>
-                    <button @onclick="OpenCreateModal" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase px-6 py-3 rounded shadow-xl transition">＋ Add Stylist</button>
+                    <div class="flex gap-3">
+                        @* REPAIR DATABASE BUTTON *@
+                        <button @onclick="RepairDatabase" class="bg-orange-600/10 hover:bg-orange-600 text-orange-500 hover:text-white text-[9px] font-black uppercase px-4 py-3 rounded-lg border border-orange-500/20 transition">
+                            <i class="fa-solid fa-database mr-1"></i> Repair DB Schema
+                        </button>
+                        <button @onclick="OpenCreateModal" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase px-6 py-3 rounded-lg shadow-xl transition tracking-widest">
+                            ＋ Recruit Stylist
+                        </button>
+                    </div>
                 </div>
 
-                @if (isLoading)
+                @if (!string.IsNullOrEmpty(statusMessage))
                 {
-                    <div class="text-center py-20 animate-pulse font-black text-gray-600 uppercase tracking-widest">Loading_Stylist_Data...</div>
-                }
-                else
-                {
-                    <div class="grid gap-4">
-                        @foreach (var s in allStylists)
-                        {
-                            var shopName = allShops.FirstOrDefault(x => x.Id == s.ShopId)?.BusinessName ?? "Unknown Shop";
-                            var userName = allUsers.FirstOrDefault(x => x.Id == s.UserId)?.Username ?? "NO_USER_LINKED";
-                            var svcCount = serviceCounts.ContainsKey(s.Id) ? serviceCounts[s.Id] : 0;
-                            var isExpanded = expandedSchedules.Contains(s.Id);
-
-                            <div class="bg-[#25262b] rounded-xl border border-gray-700 overflow-hidden shadow-lg hover:border-gray-500 transition group">
-                                <div class="p-5 flex justify-between items-center">
-                                    <div class="flex items-center gap-5">
-                                        <div class="w-12 h-12 bg-gray-700 rounded-full flex items-center justify-center text-xl text-[#D2B48C]">
-                                            <i class="fas fa-user-tie"></i>
-                                        </div>
-                                        <div>
-                                            <h3 class="font-black text-white uppercase tracking-tighter">@s.Name</h3>
-                                            <div class="flex gap-3 mt-0.5 items-center font-black">
-                                                <span class="text-[10px] text-[#D2B48C] uppercase">@shopName</span>
-                                                <span class="text-[10px] text-gray-500 font-mono">[@userName]</span>
-                                                <span class="text-[9px] bg-white/5 px-2 py-0.5 rounded text-gray-400 border border-white/10 uppercase">@svcCount Services</span>
-                                                <button @onclick="() => ToggleSchedule(s.Id)" class="text-[9px] text-blue-400 hover:text-white uppercase tracking-widest transition">
-                                                    @(isExpanded ? "− Hide Schedule" : "＋ View Schedule")
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="flex gap-3 items-center">
-                                        @* DIRECT BOOKING TRIGGER *@
-                                        <button @onclick='() => Nav.NavigateTo($"/admin/neth-appointments/{s.Id}")' class="bg-green-600/10 hover:bg-green-600 text-green-500 hover:text-white px-4 py-2 rounded text-[10px] font-black uppercase transition border border-green-500/20">Book Now</button>
-
-                                        <button @onclick='() => Nav.NavigateTo($"/admin/neth-services/{s.Id}")' class="bg-[#D2B48C]/10 hover:bg-[#D2B48C] text-[#D2B48C] hover:text-[#1a1b1e] px-4 py-2 rounded text-[10px] font-black uppercase transition border border-[#D2B48C]/20">Services</button>
-                                        <button @onclick="() => OpenEditModal(s)" class="text-[10px] font-black uppercase text-gray-500 hover:text-white transition">Edit</button>
-                                        <button @onclick="() => DeleteStylist(s.Id)" class="text-[10px] font-black uppercase text-red-500/50 hover:text-red-500 transition">Del</button>
-                                    </div>
-                                </div>
-
-                                @if (isExpanded)
-                                {
-                                    <div class="bg-black/20 border-t border-gray-800 p-6 animate-in slide-in-from-top duration-200">
-                                        <div class="flex justify-between items-center mb-6">
-                                            <span class="text-[11px] font-black uppercase tracking-[0.2em] text-gray-400">Weekly Availability</span>
-                                            @* DEEP-LINKED SCHEDULE EDITOR *@
-                                            <button @onclick='() => Nav.NavigateTo($"/admin/neth-schedules/{s.Id}")' class="text-[10px] font-black bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded uppercase shadow-lg transition">Edit Full Schedule</button>
-                                        </div>
-                                        <div class="grid grid-cols-7 gap-3">
-                                            @foreach (var day in DayNames)
-                                            {
-                                                var dayShifts = stylistSchedules.Where(x => x.StylistId == s.Id && x.DayOfWeek == day.Key && x.IsWorkDay).OrderBy(x => x.StartTime).ToList();
-                                                <div class="bg-[#1a1b1e] p-3 rounded-lg border border-gray-800 min-h-[80px] shadow-inner">
-                                                    <div class="text-[10px] font-black uppercase text-gray-600 mb-2 border-b border-gray-800 pb-1">@day.Value.Substring(0, 3)</div>
-                                                    @if (dayShifts.Any())
-                                                    {
-                                                        @foreach (var shift in dayShifts)
-                                                        {
-                                                            <div class="text-[11px] font-mono text-[#D2B48C] leading-relaxed">@shift.StartTime.ToString("h:mm tt")</div>
-                                                            <div class="text-[11px] font-mono text-[#D2B48C] mb-1">@shift.EndTime.ToString("h:mm tt")</div>
-                                                        }
-                                                    }
-                                                    else
-                                                    {
-                                                        <div class="text-[10px] text-gray-700 italic uppercase mt-2">Off</div>
-                                                    }
-                                                </div>
-                                            }
-                                        </div>
-                                    </div>
-                                }
-                            </div>
-                        }
+                    <div class="mb-6 p-4 rounded-lg font-mono text-[10px] uppercase flex justify-between items-center @(statusMessage.Contains("ERR") ? "bg-red-900/20 text-red-400 border border-red-500/30" : "bg-blue-900/20 text-blue-400 border border-blue-500/30")">
+                        <span>@statusMessage</span>
+                        <button @onclick='() => statusMessage = ""' class="opacity-50 hover:opacity-100 text-xl">&times;</button>
                     </div>
                 }
+
+                <div class="grid gap-4">
+                    @foreach (var stylist in allStylists)
+                    {
+                        <div class="bg-[#25262b] rounded-xl border border-gray-700 p-5 flex items-center justify-between group hover:border-gray-500 transition-all relative">
+                            <div class="flex items-center gap-5">
+                                <div class="w-14 h-14 rounded-full overflow-hidden border-2 border-gray-800 bg-black flex items-center justify-center shadow-lg">
+                                    @if (stylist.AvatarId.HasValue)
+                                    {
+                                        <img src="/neth-images/@stylist.AvatarId" class="w-full h-full object-cover" alt="Stylist Avatar" />
+                                    }
+                                    else
+                                    {
+                                        <i class="fa-solid fa-user-tie text-gray-700 text-xl"></i>
+                                    }
+                                </div>
+                                <div>
+                                    <h3 class="text-lg font-black text-white uppercase tracking-tight">@stylist.Name</h3>
+                                    <p class="text-[10px] text-gray-500 font-mono uppercase">@stylist.Shop?.BusinessName // @(stylist.IsIndependent ? "Independent" : "Staff")</p>
+                                </div>
+                            </div>
+
+                            <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button @onclick="() => OpenEditModal(stylist)" class="w-9 h-9 flex items-center justify-center bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white rounded-lg border border-blue-500/30 transition-all">
+                                    <i class="fa-solid fa-user-gear text-xs"></i>
+                                </button>
+                                <button @onclick="() => DeleteStylist(stylist.Id, stylist.AvatarId)" class="w-9 h-9 flex items-center justify-center bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white rounded-lg border border-red-500/30 transition-all">
+                                    <i class="fa-solid fa-trash-can text-xs"></i>
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
             </div>
         </div>
     </div>
@@ -110,100 +80,174 @@
 
 @if (showModal && editingStylist != null)
 {
-    <div class="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div class="bg-[#25262b] w-full max-w-md rounded-xl border border-gray-700 shadow-2xl overflow-hidden font-black">
-            <div class="p-4 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center uppercase text-[11px] tracking-widest text-[#D2B48C]">
-                <span>@(editingStylist.Id == 0 ? "Create Stylist Profile" : "Update Stylist Profile")</span>
-                <button @onclick="CloseModal" class="text-gray-500 hover:text-white text-xl">&times;</button>
+    <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div class="bg-[#25262b] w-full max-w-xl rounded-2xl border border-gray-700 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div class="p-5 border-b border-gray-800 flex justify-between items-center bg-black/20">
+                <h3 class="text-white font-black uppercase text-xs tracking-[0.3em]">Stylist Configuration</h3>
+                <button @onclick="CloseModal" class="text-gray-500 hover:text-white text-2xl">&times;</button>
             </div>
             
-            <div class="p-6 space-y-4 text-gray-300">
+            <div class="p-8 space-y-6">
+                <div class="flex justify-center mb-6">
+                    <div class="relative group">
+                        <div class="w-24 h-24 rounded-full overflow-hidden border-4 border-gray-800 bg-black flex items-center justify-center shadow-2xl">
+                            @if (avatarBuffer != null) { <img src="data:@avatarContentType;base64,@Convert.ToBase64String(avatarBuffer)" class="w-full h-full object-cover" /> }
+                            else if (editingStylist.AvatarId.HasValue) { <img src="/neth-images/@editingStylist.AvatarId" class="w-full h-full object-cover" /> }
+                            else { <i class="fa-solid fa-user-tie text-gray-700 text-3xl"></i> }
+                        </div>
+                        <label class="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer rounded-full">
+                            <i class="fa-solid fa-camera text-white"></i>
+                            <InputFile OnChange="HandleFileSelected" class="absolute inset-0 opacity-0 cursor-pointer" />
+                        </label>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-2 gap-4">
                     <div class="col-span-2">
-                        <label class="text-[9px] uppercase text-gray-500 mb-1 block tracking-widest">Full Name</label>
-                        <input @bind="editingStylist.Name" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none focus:border-blue-500" />
-                    </div>
-                    <div class="col-span-2">
-                        <label class="text-[9px] uppercase text-gray-500 mb-1 block tracking-widest">Bio / Specialty</label>
-                        <textarea @bind="editingStylist.Bio" rows="2" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none focus:border-blue-500"></textarea>
+                        <label class="text-[9px] font-black uppercase text-gray-500 mb-1.5 block ml-1">Full Name</label>
+                        <input @bind="editingStylist.Name" class="w-full bg-black/40 border border-gray-700 rounded-xl p-3 text-white outline-none focus:border-blue-500" />
                     </div>
                     <div>
-                        <label class="text-[9px] uppercase text-gray-500 mb-1 block tracking-widest">Assign to Shop</label>
-                        <select @bind="editingStylist.ShopId" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none">
-                            <option value="0">-- Select Shop --</option>
+                        <label class="text-[9px] font-black uppercase text-gray-500 mb-1.5 block ml-1">Assigned Shop</label>
+                        <select @bind="editingStylist.ShopId" class="w-full bg-black/40 border border-gray-700 rounded-xl p-3 text-white outline-none focus:border-blue-500">
                             @foreach(var shop in allShops) { <option value="@shop.Id">@shop.BusinessName</option> }
                         </select>
                     </div>
-                    <div>
-                        <label class="text-[9px] uppercase text-gray-500 mb-1 block tracking-widest">Link to User Account</label>
-                        <select @bind="editingStylist.UserId" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none">
-                            <option value="">-- None --</option>
-                            @foreach(var u in allUsers.Where(x => x.Role == "Stylist" || x.Role == "Admin")) { <option value="@u.Id">@u.Username (@u.Role)</option> }
-                        </select>
+                    <div class="flex items-end pb-3">
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" @bind="editingStylist.IsIndependent" class="w-4 h-4 rounded bg-black border-gray-700" />
+                            <span class="text-[10px] font-black uppercase text-gray-400">Independent Contractor</span>
+                        </label>
                     </div>
                 </div>
+
+                <div>
+                    <label class="text-[9px] font-black uppercase text-gray-500 mb-1.5 block ml-1">Professional Bio</label>
+                    <textarea @bind="editingStylist.Bio" class="w-full h-24 bg-black/40 border border-gray-700 rounded-xl p-4 text-white text-sm outline-none focus:border-blue-500 resize-none"></textarea>
+                </div>
             </div>
-            <div class="p-4 bg-black/20 border-t border-gray-700 flex justify-end gap-3">
-                <button @onclick="CloseModal" class="text-[10px] text-gray-500 uppercase px-4 py-2 font-black">Cancel</button>
-                <button @onclick="SaveStylist" class="bg-green-600 hover:bg-green-500 text-white text-[10px] uppercase px-8 py-2 rounded font-black shadow-xl">Commit_Record</button>
+
+            <div class="p-5 bg-black/20 border-t border-gray-800 flex justify-end gap-3">
+                <button @onclick="CloseModal" class="text-[10px] text-gray-600 uppercase px-6 py-2 font-black hover:text-white transition">Cancel</button>
+                <button @onclick="SaveStylist" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] uppercase px-10 py-3 rounded-xl font-black shadow-2xl transition">
+                    @(isSaving ? "Uploading..." : "Commit_Personnel_Record")
+                </button>
             </div>
         </div>
     </div>
 }
 
 @code {
-    private bool isAuthorized = false;
-    private bool isLoading = true;
-    private bool showModal = false;
+    private bool isAuthorized = false, isLoading = true, isSaving = false, showModal = false;
     private List<NETH_Stylist> allStylists = new();
     private List<NETH_Shop> allShops = new();
-    private List<NETHUsers.NETH_User> allUsers = new();
-    private List<NETH_Schedule> stylistSchedules = new();
-    private Dictionary<int, int> serviceCounts = new();
-    private HashSet<int> expandedSchedules = new();
     private NETH_Stylist? editingStylist;
+    private string statusMessage = "";
 
-    private Dictionary<int, string> DayNames = new() {
-        {0, "Sunday"}, {1, "Monday"}, {2, "Tuesday"}, {3, "Wednesday"}, {4, "Thursday"}, {5, "Friday"}, {6, "Saturday"}
-    };
+    private byte[]? avatarBuffer;
+    private string avatarContentType = "";
+    private string avatarFileName = "";
 
     protected override async Task OnAfterRenderAsync(bool firstRender) {
         if (firstRender) {
             var json = await JS.InvokeAsync<string>("localStorage.getItem", "neth_session");
             if (string.IsNullOrEmpty(json)) Nav.NavigateTo("/nethaircut");
-            else { isAuthorized = true; await LoadAllData(); isLoading = false; StateHasChanged(); }
+            else { isAuthorized = true; await LoadData(); isLoading = false; StateHasChanged(); }
         }
     }
 
-    private async Task LoadAllData() { 
+    private async Task LoadData() { 
         try { 
-            allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync(); 
-            allShops = await Db.NETH_Shops.AsNoTracking().ToListAsync(); 
-            allUsers = await Db.Database.SqlQueryRaw<NETHUsers.NETH_User>(@"SELECT * FROM ""NETH_Users""").ToListAsync(); 
-            stylistSchedules = await Db.NETH_Schedules.AsNoTracking().ToListAsync();
-            
-            var rawCounts = await Db.NETH_Services.GroupBy(x => x.StylistId).Select(g => new { Id = g.Key, Count = g.Count() }).ToListAsync();
-            serviceCounts = rawCounts.ToDictionary(x => x.Id, x => x.Count);
+            allStylists = await Db.NETH_Stylists.Include(s => s.Shop).AsNoTracking().ToListAsync(); 
+            allShops = await Db.NETH_Shops.AsNoTracking().ToListAsync();
+            StateHasChanged(); 
         } catch { } 
     }
 
-    private void ToggleSchedule(int id) {
-        if (expandedSchedules.Contains(id)) expandedSchedules.Remove(id);
-        else expandedSchedules.Add(id);
+    private async Task RepairDatabase() {
+        try {
+            await Db.Database.ExecuteSqlRawAsync(@"
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='NETH_Stylists' AND column_name='AvatarId') THEN
+                        ALTER TABLE ""NETH_Stylists"" ADD COLUMN ""AvatarId"" INTEGER;
+                    END IF;
+                END $$;");
+            statusMessage = "SUCCESS: AvatarId column synchronized.";
+        } catch (Exception ex) { statusMessage = "ERR: " + ex.Message; }
     }
 
-    private void OpenCreateModal() { editingStylist = new NETH_Stylist { Name = "", Bio = "", ShopId = allShops.FirstOrDefault()?.Id ?? 0, PhoneId = 1, StripeAccountId = "" }; showModal = true; }
-    private void OpenEditModal(NETH_Stylist s) { editingStylist = new NETH_Stylist { Id = s.Id, Name = s.Name, Bio = s.Bio, ShopId = s.ShopId, UserId = s.UserId, IsIndependent = s.IsIndependent, StripeAccountId = s.StripeAccountId, PhoneId = s.PhoneId }; showModal = true; }
-    private void CloseModal() { showModal = false; editingStylist = null; }
+    private void OpenCreateModal() { 
+        editingStylist = new NETH_Stylist { ShopId = allShops.FirstOrDefault()?.Id ?? 0, PhoneId = 1 }; 
+        avatarBuffer = null; showModal = true; 
+    }
+    
+    private void OpenEditModal(NETH_Stylist stylist) { 
+        editingStylist = new NETH_Stylist { 
+            Id = stylist.Id, Name = stylist.Name, Bio = stylist.Bio, 
+            ShopId = stylist.ShopId, IsIndependent = stylist.IsIndependent, 
+            PhoneId = stylist.PhoneId, AvatarId = stylist.AvatarId 
+        }; 
+        avatarBuffer = null; showModal = true; 
+    }
+
+    private void CloseModal() { showModal = false; editingStylist = null; avatarBuffer = null; }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e) {
+        try {
+            var file = e.File;
+            if (file == null) return;
+            using var stream = file.OpenReadStream(2 * 1024 * 1024);
+            avatarBuffer = new byte[file.Size];
+            await stream.ReadAsync(avatarBuffer);
+            avatarContentType = file.ContentType;
+            avatarFileName = file.Name;
+        } catch { statusMessage = "ERR: File too large."; }
+    }
 
     private async Task SaveStylist() {
-        if (editingStylist == null || editingStylist.ShopId == 0) return;
+        if (editingStylist == null || isSaving) return;
+        isSaving = true;
         try {
-            if (editingStylist.Id == 0) await Db.Database.ExecuteSqlRawAsync(@"INSERT INTO ""NETH_Stylists"" (""ShopId"", ""Name"", ""Bio"", ""IsIndependent"", ""StripeAccountId"", ""PhoneId"", ""UserId"") VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6})", editingStylist.ShopId, editingStylist.Name, editingStylist.Bio, editingStylist.IsIndependent, editingStylist.StripeAccountId, editingStylist.PhoneId, editingStylist.UserId);
-            else await Db.Database.ExecuteSqlRawAsync(@"UPDATE ""NETH_Stylists"" SET ""ShopId"" = {0}, ""Name"" = {1}, ""Bio"" = {2}, ""IsIndependent"" = {3}, ""StripeAccountId"" = {4}, ""UserId"" = {5} WHERE ""Id"" = {6}", editingStylist.ShopId, editingStylist.Name, editingStylist.Bio, editingStylist.IsIndependent, editingStylist.StripeAccountId, editingStylist.UserId, editingStylist.Id);
-            await LoadAllData(); CloseModal();
-        } catch { }
+            int? finalAvatarId = editingStylist.AvatarId;
+
+            if (avatarBuffer != null) {
+                if (editingStylist.AvatarId.HasValue) {
+                    await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_StoredImages"" WHERE ""Id"" = {0}", editingStylist.AvatarId.Value);
+                }
+                var newImg = new NETH_StoredImage {
+                    Data = avatarBuffer, ContentType = avatarContentType,
+                    FileName = avatarFileName, Category = "StylistAvatar", UploadedAt = DateTime.UtcNow
+                };
+                Db.NETH_StoredImages.Add(newImg);
+                await Db.SaveChangesAsync();
+                finalAvatarId = newImg.Id;
+            }
+
+            if (editingStylist.Id == 0) {
+                await Db.Database.ExecuteSqlRawAsync(
+                    @"INSERT INTO ""NETH_Stylists"" (""Name"", ""Bio"", ""ShopId"", ""IsIndependent"", ""PhoneId"", ""StripeAccountId"", ""AvatarId"") 
+                      VALUES ({0}, {1}, {2}, {3}, {4}, '', {5})", 
+                    editingStylist.Name, editingStylist.Bio, editingStylist.ShopId, editingStylist.IsIndependent, editingStylist.PhoneId, finalAvatarId
+                );
+            } else {
+                await Db.Database.ExecuteSqlRawAsync(
+                    @"UPDATE ""NETH_Stylists"" SET ""Name"" = {0}, ""Bio"" = {1}, ""ShopId"" = {2}, ""IsIndependent"" = {3}, ""AvatarId"" = {4} 
+                      WHERE ""Id"" = {5}", 
+                    editingStylist.Name, editingStylist.Bio, editingStylist.ShopId, editingStylist.IsIndependent, finalAvatarId, editingStylist.Id
+                );
+            }
+            
+            await LoadData(); CloseModal();
+            statusMessage = "PERSONNEL_RECORD_UPDATED";
+        } catch (Exception ex) { statusMessage = "ERR: " + ex.Message; }
+        finally { isSaving = false; }
     }
 
-    private async Task DeleteStylist(int id) { if (await JS.InvokeAsync<bool>("confirm", "Delete?")) { await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_Stylists"" WHERE ""Id"" = {0}", id); await LoadAllData(); } }
+    private async Task DeleteStylist(int id, int? avatarId) { 
+        if (await JS.InvokeAsync<bool>("confirm", "Delete stylist profile?")) {
+            if (avatarId.HasValue) await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_StoredImages"" WHERE ""Id"" = {0}", avatarId.Value);
+            await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_Stylists"" WHERE ""Id"" = {0}", id); 
+            await LoadData(); 
+        } 
+    }
 }
