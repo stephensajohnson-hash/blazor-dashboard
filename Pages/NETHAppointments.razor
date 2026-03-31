@@ -12,24 +12,44 @@
 
 <style>
     .neth-grid-container { height: 1200px; position: relative; background: #1a1b1e; }
-    .neth-hour-row { height: 100px; border-bottom: 1px solid rgba(255,255,255,0.05); }
-    .neth-shift-zone { position: absolute; left: 0; right: 0; background: rgba(34, 197, 94, 0.08); border-left: 2px solid #22c55e; z-index: 1; pointer-events: none; }
+    .neth-hour-row { height: 100px; border-bottom: 1px solid rgba(255,255,255,0.08); position: relative; }
+    
+    /* 30-Minute Tick Mark */
+    .neth-hour-row::after {
+        content: "";
+        position: absolute;
+        top: 50px;
+        left: 0;
+        right: 0;
+        border-bottom: 1px dashed rgba(255,255,255,0.03);
+    }
+
+    .neth-shift-zone { position: absolute; left: 0; right: 0; background: rgba(34, 197, 94, 0.05); border-left: 2px solid #22c55e; z-index: 1; pointer-events: none; }
     .neth-click-slot { position: absolute; left: 0; right: 0; z-index: 10; cursor: pointer; }
     
+    /* Ghost preview now only shows a dashed box, no text */
+    .neth-ghost-preview { 
+        position: absolute; top: 0; left: 0; right: 0; 
+        border: 1px dashed rgba(96, 165, 250, 0.4); 
+        background: rgba(96, 165, 250, 0.1); 
+        pointer-events: none; opacity: 0; z-index: 15; 
+    }
+    .neth-click-slot:hover .neth-ghost-preview { opacity: 1; }
+
     .neth-appointment-group { 
         position: absolute; 
         left: 4px; 
         right: 4px; 
         z-index: 100; 
-        border: 2px solid rgba(255,255,255,0.4); 
-        border-radius: 6px; 
+        border: 1px solid rgba(255,255,255,0.3); 
+        border-radius: 4px; 
         cursor: pointer; 
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
         transition: transform 0.1s, border-color 0.2s;
         display: flex;
         flex-direction: column;
     }
-    .neth-appointment-group:hover { transform: scale(1.01); border-color: white; z-index: 200; }
+    .neth-appointment-group:hover { border-color: white; z-index: 200; }
     
     .neth-service-segment { 
         width: 100%; 
@@ -37,35 +57,42 @@
         display: flex; 
         flex-direction: column; 
         justify-content: center; 
-        padding: 0 8px;
+        padding: 0 6px;
         min-height: 15px;
-        text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.8);
         position: relative;
     }
 
-    /* Client Avatar Logic */
+    /* Client Avatar / Initials Logic */
     .mini-client-avatar {
         width: 18px;
         height: 18px;
         border-radius: 50%;
         border: 1px solid white;
-        background: #1a1b1e;
+        background: #25262b;
         margin-right: 6px;
         flex-shrink: 0;
         object-fit: cover;
-        transition: all 0.2s ease-in-out;
+        transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 7px; /* Base size for initials */
+        font-weight: 900;
+        color: white;
     }
 
-    /* The "Pop-Out" Effect: Fixed size, high Z-index, ignores parent overflow */
+    /* Pop-Out Zoom Fix: Scale the container AND the font */
     .neth-appointment-group:hover .mini-client-avatar {
         position: absolute;
         width: 80px;
         height: 80px;
-        top: -40px;
-        left: -20px;
+        top: -30px;
+        left: -10px;
         z-index: 500;
-        box-shadow: 0 0 25px rgba(0,0,0,0.9);
+        box-shadow: 0 10px 25px rgba(0,0,0,0.9);
         border: 2px solid #D2B48C;
+        font-size: 24px; /* Scaled initials */
     }
 
     .stylist-head-avatar {
@@ -155,7 +182,11 @@
                             <div class="relative overflow-y-auto bg-[#1a1b1e] h-[650px] custom-scrollbar">
                                 <div class="grid grid-cols-8 relative neth-grid-container">
                                     <div class="col-span-1 border-r border-gray-800 bg-[#25262b]/50">
-                                        @for (int h = 8; h < 20; h++) { <div class="neth-hour-row pr-3 pt-2 text-[10px] font-mono text-gray-600 text-right uppercase">@((h > 12 ? h - 12 : h)):00</div> }
+                                        @for (int h = 8; h < 20; h++) { 
+                                            <div class="neth-hour-row pr-3 pt-2 text-[10px] font-mono text-gray-600 text-right uppercase">
+                                                @((h > 12 ? h - 12 : h)):00
+                                            </div> 
+                                        }
                                     </div>
 
                                     @for (int i = 0; i < 7; i++)
@@ -176,9 +207,7 @@
 
                                                     <div @onclick="() => HandleSlotClick(dayDate, start, collision || overShift)" class="neth-click-slot" style="top: @(GetPx(start))px; height: 25px;">
                                                         @if (!(collision || overShift)) {
-                                                            <div class="neth-ghost-preview" style="height: @(totalDuration * 1.666)px;">
-                                                                <span class="text-[8px] font-black text-white uppercase tracking-tighter">@totalDuration min</span>
-                                                            </div>
+                                                            <div class="neth-ghost-preview" style="height: @(totalDuration * 1.666)px;"></div>
                                                         }
                                                     </div>
                                                 }
@@ -192,7 +221,6 @@
                                                 <div @onclick="() => DeleteApp(app)" @onclick:stopPropagation="true" class="neth-appointment-group group" 
                                                      style="top: @(GetPx(app.StartTime))px; height: @(GetH(app.StartTime, app.EndTime))px;">
                                                     
-                                                    @* Notes Icon *@
                                                     <div class="absolute top-1 right-1 hidden group-hover:flex gap-1 z-50">
                                                         <button @onclick="() => GoToNotes(app.ClientId)" @onclick:stopPropagation="true"
                                                                 class="bg-black/80 hover:bg-green-500 text-white w-7 h-7 flex items-center justify-center rounded-md border border-white/30 transition-all shadow-xl">
@@ -212,7 +240,7 @@
                                                                         @if (client?.AvatarId > 0) {
                                                                             <img src="/neth-images/@client.AvatarId" class="mini-client-avatar shadow-sm" />
                                                                         } else {
-                                                                            <div class="mini-client-avatar flex items-center justify-center text-[7px] font-black text-white bg-black/60 uppercase">
+                                                                            <div class="mini-client-avatar shadow-sm">
                                                                                 @client?.FirstName?[0]@client?.LastName?[0]
                                                                             </div>
                                                                         }
