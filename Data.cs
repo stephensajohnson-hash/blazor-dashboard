@@ -79,6 +79,7 @@ public class AppDbContext : DbContext
     public DbSet<NETH_Media> NETH_Media { get; set; }
     public DbSet<NETH_AppointmentService> NETH_AppointmentsService { get; set; }
     public DbSet<NETH_Schedule> NETH_Schedules { get; set; }
+    public DbSet<NETH_StoredImage> NETH_StoredImages { get; set; } // New NETH Specific Image Store
 }
 
 public class BulletItem 
@@ -588,12 +589,16 @@ public class NETH_Shop
     public string UrlKey { get; set; } = "";
     public string BusinessName { get; set; } = "";
     public string BrandColor { get; set; } = "#D2B48C";
-    public int? LogoMediaId { get; set; }
-    public NETH_Media? Logo { get; set; }
+    
+    // Linked to the new binary image table
+    public int? LogoId { get; set; }
+    [ForeignKey("LogoId")]
+    public virtual NETH_StoredImage? Logo { get; set; }
+
     public string StripeAccountId { get; set; } = "";
     public int PhoneId { get; set; }
-    public NETH_Phone Phone { get; set; } = null!;
-    public List<NETH_Stylist> Stylists { get; set; } = new();
+    public virtual NETH_Phone Phone { get; set; } = null!;
+    public virtual List<NETH_Stylist> Stylists { get; set; } = new();
 }
 
 public class NETH_Stylist
@@ -710,4 +715,15 @@ public class NETH_AppointmentService
     public int ServiceId { get; set; }
     public decimal PriceAtBooking { get; set; }
     public int DurationAtBooking { get; set; }
+}
+
+public class NETH_StoredImage
+{
+    public int Id { get; set; }
+    public byte[] Data { get; set; } = Array.Empty<byte>();
+    public string ContentType { get; set; } = "image/jpeg";
+    public string FileName { get; set; } = "";
+    public string Category { get; set; } = "General"; // e.g. "Portfolio", "ShopLogo", "UserUpload"
+    public string? AltText { get; set; }
+    public DateTime UploadedAt { get; set; } = DateTime.UtcNow;
 }

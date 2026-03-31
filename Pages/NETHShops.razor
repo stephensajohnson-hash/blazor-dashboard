@@ -1,5 +1,6 @@
 @page "/admin/neth-shops"
 @using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.JSInterop
 @using Dashboard
@@ -22,8 +23,19 @@
                         <h2 class="text-2xl font-black text-white uppercase tracking-tight">Shop Management</h2>
                         <p class="text-xs text-gray-500 font-mono">Registry: @allShops.Count active locations</p>
                     </div>
-                    <button @onclick="OpenCreateModal" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase px-6 py-3 rounded shadow-xl transition">＋ Create New Shop</button>
+                    <div class="flex gap-3">
+                        <button @onclick="RepairDatabase" class="bg-orange-600/20 hover:bg-orange-600 text-orange-500 hover:text-white text-[9px] font-black uppercase px-4 py-3 rounded border border-orange-500/30 transition">Fix DB Schema</button>
+                        <button @onclick="OpenCreateModal" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase px-6 py-3 rounded shadow-xl transition">＋ Create New Shop</button>
+                    </div>
                 </div>
+
+                @if (!string.IsNullOrEmpty(statusMessage))
+                {
+                    <div class="mb-6 p-4 rounded font-mono text-[10px] uppercase flex justify-between items-center @(statusMessage.Contains("ERR") ? "bg-red-900/20 text-red-400 border border-red-500/30" : "bg-blue-900/20 text-blue-400 border border-blue-500/30")">
+                        <span>@statusMessage</span>
+                        <button @onclick='() => statusMessage = ""' class="opacity-50 hover:opacity-100">&times;</button>
+                    </div>
+                }
 
                 @if (isLoading)
                 {
@@ -37,10 +49,19 @@
                             <div class="bg-[#25262b] rounded-xl border border-gray-700 overflow-hidden shadow-2xl transition hover:border-[#D2B48C]/50">
                                 <div class="p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                                     <div class="flex items-center gap-6">
-                                        <div class="w-16 h-16 rounded-lg shadow-inner flex items-center justify-center text-2xl" 
-                                             style="background-color: @shop.BrandColor; color: @(IsDark(shop.BrandColor) ? "white" : "black")">
-                                            <i class="fas fa-shop"></i>
-                                        </div>
+                                        @if (shop.LogoId.HasValue)
+                                        {
+                                            <div class="w-16 h-16 rounded-lg overflow-hidden border border-gray-700 shadow-inner bg-black flex items-center justify-center">
+                                                <img src="/db-images/@shop.LogoId" class="w-full h-full object-cover" alt="Logo" />
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="w-16 h-16 rounded-lg shadow-inner flex items-center justify-center text-2xl" 
+                                                 style="background-color: @shop.BrandColor; color: @(IsDark(shop.BrandColor) ? "white" : "black")">
+                                                <i class="fas fa-shop"></i>
+                                            </div>
+                                        }
                                         <div>
                                             <h3 class="text-xl font-black text-white uppercase tracking-tight">@shop.BusinessName</h3>
                                             <div class="flex gap-3 mt-1 font-mono text-[10px]">
@@ -51,7 +72,7 @@
                                     </div>
                                     <div class="flex gap-3">
                                         <button @onclick="() => OpenEditModal(shop)" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase px-6 py-2 rounded shadow-lg transition">Edit_Profile</button>
-                                        <button @onclick="() => DeleteShop(shop.Id)" class="bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white border border-red-500/20 px-3 py-2 rounded transition shadow-lg"><i class="fas fa-trash"></i></button>
+                                        <button @onclick="() => DeleteShop(shop.Id, shop.LogoId)" class="bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white border border-red-500/20 px-3 py-2 rounded transition shadow-lg"><i class="fas fa-trash"></i></button>
                                     </div>
                                 </div>
                             </div>
@@ -66,44 +87,68 @@
 @if (showModal && editingShop != null)
 {
     <div class="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div class="bg-[#25262b] w-full max-w-lg rounded-xl border border-gray-700 shadow-2xl overflow-hidden font-black">
-            <div class="p-4 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center uppercase text-[11px] tracking-widest text-[#D2B48C]">
+        <div class="bg-[#25262b] w-full max-w-lg rounded-xl border border-gray-700 shadow-2xl overflow-hidden">
+            <div class="p-4 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center uppercase text-[11px] font-black tracking-widest text-[#D2B48C]">
                 <span>@(editingShop.Id == 0 ? "New Registry Entry" : "Edit Shop Configuration")</span>
                 <button @onclick="CloseModal" class="text-gray-500 hover:text-white text-xl">&times;</button>
             </div>
             <div class="p-6 space-y-5 text-gray-300">
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="col-span-2">
-                        <label class="text-[9px] uppercase text-gray-500 mb-1 block">Business Name</label>
+                <div class="space-y-4">
+                    <div>
+                        <label class="text-[9px] font-black uppercase text-gray-500 mb-1 block">Business Name</label>
                         <input @bind="editingShop.BusinessName" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none focus:border-blue-500" />
                     </div>
-                    <div>
-                        <label class="text-[9px] uppercase text-gray-500 mb-1 block">URL Key (Lower Case)</label>
-                        <input @bind="editingShop.UrlKey" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none focus:border-blue-500" />
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="text-[9px] font-black uppercase text-gray-500 mb-1 block">URL Key</label>
+                            <input @bind="editingShop.UrlKey" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none focus:border-blue-500" />
+                        </div>
+                        <div>
+                            <label class="text-[9px] font-black uppercase text-gray-500 mb-1 block">Brand Color</label>
+                            <div class="flex gap-2">
+                                <input type="color" @bind="editingShop.BrandColor" class="h-10 w-12 bg-transparent border-none cursor-pointer" />
+                                <input @bind="editingShop.BrandColor" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-xs font-mono text-white outline-none uppercase" />
+                            </div>
+                        </div>
                     </div>
+
                     <div>
-                        <label class="text-[9px] uppercase text-gray-500 mb-1 block">Brand Color</label>
-                        <div class="flex gap-2">
-                            <input type="color" @bind="editingShop.BrandColor" class="h-10 w-12 bg-transparent border-none cursor-pointer" />
-                            <input @bind="editingShop.BrandColor" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-xs font-mono text-white outline-none uppercase" />
+                        <label class="text-[9px] font-black uppercase text-gray-500 mb-2 block">Shop Logo</label>
+                        <div class="flex items-center gap-4 p-4 bg-black/20 border border-dashed border-gray-700 rounded-lg">
+                            <div class="w-12 h-12 bg-gray-800 rounded flex items-center justify-center overflow-hidden">
+                                @if (logoBuffer != null) { <img src="data:@logoContentType;base64,@Convert.ToBase64String(logoBuffer)" class="w-full h-full object-cover" /> }
+                                else if (editingShop.LogoId.HasValue) { <img src="/db-images/@editingShop.LogoId" class="w-full h-full object-cover" /> }
+                                else { <i class="fas fa-image text-gray-600"></i> }
+                            </div>
+                            <div class="flex-1">
+                                <InputFile OnChange="HandleFileSelected" class="text-[10px] text-gray-400" />
+                                <p class="text-[8px] text-gray-600 uppercase mt-1">PNG, JPG preferred. Max 2MB.</p>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
             <div class="p-4 bg-black/20 border-t border-gray-700 flex justify-end gap-3">
                 <button @onclick="CloseModal" class="text-[10px] text-gray-500 uppercase px-4 py-2 font-black">Cancel</button>
-                <button @onclick="SaveShop" class="bg-green-600 hover:bg-green-500 text-white text-[10px] uppercase px-8 py-2 rounded font-black shadow-xl">Commit_Registry</button>
+                <button @onclick="SaveShop" class="bg-green-600 hover:bg-green-500 text-white text-[10px] uppercase px-8 py-2 rounded font-black shadow-xl transition">
+                    @(isSaving ? "Processing..." : "Commit_Registry")
+                </button>
             </div>
         </div>
     </div>
 }
 
 @code {
-    private bool isAuthorized = false;
-    private bool isLoading = true;
+    private bool isAuthorized = false, isLoading = true, isSaving = false, showModal = false;
     private List<NETH_Shop> allShops = new();
-    private bool showModal = false;
     private NETH_Shop? editingShop;
+    private string statusMessage = "";
+
+    // Image Upload State
+    private byte[]? logoBuffer;
+    private string logoContentType = "";
+    private string logoFileName = "";
 
     protected override async Task OnAfterRenderAsync(bool firstRender) {
         if (firstRender) {
@@ -113,20 +158,126 @@
         }
     }
 
-    private async Task LoadAllShops() { try { allShops = await Db.NETH_Shops.AsNoTracking().ToListAsync(); StateHasChanged(); } catch { } }
-    private void OpenCreateModal() { editingShop = new NETH_Shop { BrandColor = "#D2B48C", PhoneId = 1, StripeAccountId = "" }; showModal = true; }
-    private void OpenEditModal(NETH_Shop shop) { editingShop = new NETH_Shop { Id = shop.Id, BusinessName = shop.BusinessName, UrlKey = shop.UrlKey, BrandColor = shop.BrandColor, PhoneId = shop.PhoneId, StripeAccountId = shop.StripeAccountId }; showModal = true; }
-    private void CloseModal() { showModal = false; editingShop = null; }
-
-    private async Task SaveShop() {
-        if (editingShop == null) return;
-        try {
-            if (editingShop.Id == 0) await Db.Database.ExecuteSqlRawAsync(@"INSERT INTO ""NETH_Shops"" (""BusinessName"", ""UrlKey"", ""BrandColor"", ""StripeAccountId"", ""PhoneId"") VALUES ({0}, {1}, {2}, {3}, {4})", editingShop.BusinessName, editingShop.UrlKey, editingShop.BrandColor, editingShop.StripeAccountId, editingShop.PhoneId);
-            else await Db.Database.ExecuteSqlRawAsync(@"UPDATE ""NETH_Shops"" SET ""BusinessName"" = {0}, ""UrlKey"" = {1}, ""BrandColor"" = {2}, ""StripeAccountId"" = {3} WHERE ""Id"" = {4}", editingShop.BusinessName, editingShop.UrlKey, editingShop.BrandColor, editingShop.StripeAccountId, editingShop.Id);
-            await LoadAllShops(); CloseModal();
-        } catch { }
+    private async Task LoadAllShops() { 
+        try { allShops = await Db.NETH_Shops.AsNoTracking().ToListAsync(); StateHasChanged(); } catch { } 
     }
 
-    private async Task DeleteShop(int id) { if (await JS.InvokeAsync<bool>("confirm", "Delete shop?")) { await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_Shops"" WHERE ""Id"" = {0}", id); await LoadAllShops(); } }
-    private bool IsDark(string hex) { if (string.IsNullOrEmpty(hex) || !hex.StartsWith("#")) return true; try { var r = int.Parse(hex.Substring(1, 2), System.Globalization.NumberStyles.HexNumber); var g = int.Parse(hex.Substring(3, 2), System.Globalization.NumberStyles.HexNumber); var b = int.Parse(hex.Substring(5, 2), System.Globalization.NumberStyles.HexNumber); return ((r * 299 + g * 587 + b * 114) / 1000) < 128; } catch { return true; } }
+    private async Task RepairDatabase() {
+        try {
+            await Db.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""NETH_StoredImages"" (
+                    ""Id"" SERIAL PRIMARY KEY,
+                    ""Data"" BYTEA NOT NULL,
+                    ""ContentType"" TEXT NOT NULL,
+                    ""FileName"" TEXT NOT NULL,
+                    ""Category"" TEXT NOT NULL DEFAULT 'General',
+                    ""AltText"" TEXT,
+                    ""UploadedAt"" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='NETH_Shops' AND column_name='LogoId') THEN
+                        ALTER TABLE ""NETH_Shops"" ADD COLUMN ""LogoId"" INTEGER;
+                    END IF;
+                END $$;
+            ");
+            statusMessage = "DATABASE REPAIRED: Tables and columns synchronized.";
+        } catch (Exception ex) { statusMessage = "ERR: " + ex.Message; }
+    }
+
+    private void OpenCreateModal() { 
+        editingShop = new NETH_Shop { BrandColor = "#D2B48C", PhoneId = 1, StripeAccountId = "" }; 
+        logoBuffer = null; showModal = true; 
+    }
+    
+    private void OpenEditModal(NETH_Shop shop) { 
+        editingShop = new NETH_Shop { 
+            Id = shop.Id, 
+            BusinessName = shop.BusinessName, 
+            UrlKey = shop.UrlKey, 
+            BrandColor = shop.BrandColor, 
+            PhoneId = shop.PhoneId, 
+            StripeAccountId = shop.StripeAccountId,
+            LogoId = shop.LogoId
+        }; 
+        logoBuffer = null; showModal = true; 
+    }
+
+    private void CloseModal() { showModal = false; editingShop = null; logoBuffer = null; }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e) {
+        var file = e.File;
+        if (file == null) return;
+        
+        using var stream = file.OpenReadStream(2 * 1024 * 1024); // 2MB limit
+        logoBuffer = new byte[file.Size];
+        await stream.ReadAsync(logoBuffer);
+        logoContentType = file.ContentType;
+        logoFileName = file.Name;
+    }
+
+    private async Task SaveShop() {
+        if (editingShop == null || isSaving) return;
+        isSaving = true;
+        try {
+            int? newLogoId = editingShop.LogoId;
+
+            // HANDLE IMAGE UPLOAD & OLD IMAGE CLEANUP
+            if (logoBuffer != null) {
+                // Delete existing logo from DB to prevent orphaned data
+                if (editingShop.LogoId.HasValue) {
+                    await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_StoredImages"" WHERE ""Id"" = {0}", editingShop.LogoId.Value);
+                }
+
+                // Insert new logo
+                await Db.Database.ExecuteSqlRawAsync(
+                    @"INSERT INTO ""NETH_StoredImages"" (""Data"", ""ContentType"", ""FileName"", ""Category"", ""UploadedAt"") 
+                      VALUES ({0}, {1}, {2}, 'ShopLogo', {3})",
+                    logoBuffer, logoContentType, logoFileName, DateTime.UtcNow
+                );
+
+                // Get the ID of the image we just inserted
+                var idRes = await Db.Database.SqlQueryRaw<int>(@"SELECT MAX(""Id"") as ""Value"" FROM ""NETH_StoredImages""").ToListAsync();
+                newLogoId = idRes.FirstOrDefault();
+            }
+
+            if (editingShop.Id == 0) {
+                await Db.Database.ExecuteSqlRawAsync(
+                    @"INSERT INTO ""NETH_Shops"" (""BusinessName"", ""UrlKey"", ""BrandColor"", ""StripeAccountId"", ""PhoneId"", ""LogoId"") 
+                      VALUES ({0}, {1}, {2}, {3}, {4}, {5})", 
+                    editingShop.BusinessName, editingShop.UrlKey, editingShop.BrandColor, editingShop.StripeAccountId, editingShop.PhoneId, newLogoId
+                );
+            } else {
+                await Db.Database.ExecuteSqlRawAsync(
+                    @"UPDATE ""NETH_Shops"" SET ""BusinessName"" = {0}, ""UrlKey"" = {1}, ""BrandColor"" = {2}, ""StripeAccountId"" = {3}, ""LogoId"" = {4} 
+                      WHERE ""Id"" = {5}", 
+                    editingShop.BusinessName, editingShop.UrlKey, editingShop.BrandColor, editingShop.StripeAccountId, newLogoId, editingShop.Id
+                );
+            }
+            
+            statusMessage = "SHOP REGISTRY UPDATED";
+            await LoadAllShops(); 
+            CloseModal();
+        } catch (Exception ex) { statusMessage = "ERR: " + ex.Message; }
+        finally { isSaving = false; }
+    }
+
+    private async Task DeleteShop(int id, int? logoId) { 
+        if (await JS.InvokeAsync<bool>("confirm", "Permanently delete shop profile?")) {
+            if (logoId.HasValue) {
+                await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_StoredImages"" WHERE ""Id"" = {0}", logoId.Value);
+            }
+            await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_Shops"" WHERE ""Id"" = {0}", id); 
+            await LoadAllShops(); 
+        } 
+    }
+
+    private bool IsDark(string hex) { 
+        if (string.IsNullOrEmpty(hex) || !hex.StartsWith("#")) return true; 
+        try { 
+            var r = int.Parse(hex.Substring(1, 2), System.Globalization.NumberStyles.HexNumber); 
+            var g = int.Parse(hex.Substring(3, 2), System.Globalization.NumberStyles.HexNumber); 
+            var b = int.Parse(hex.Substring(5, 2), System.Globalization.NumberStyles.HexNumber); 
+            return ((r * 299 + g * 587 + b * 114) / 1000) < 128; 
+        } catch { return true; } 
+    }
 }
