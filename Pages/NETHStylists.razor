@@ -10,6 +10,79 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
+@* Fail-safe FontAwesome Loader *@
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+<style>
+    .neth-stylist-card {
+        background: #25262b;
+        border-radius: 1rem;
+        border: 1px solid #374151;
+        overflow: hidden;
+        position: relative;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        padding: 1.25rem;
+    }
+
+    .neth-stylist-card:hover {
+        border-color: #4b5563;
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px -5px rgba(0, 0, 0, 0.5);
+    }
+
+    /* Hover Action Container (Edit/Delete) */
+    .stylist-hover-actions {
+        position: absolute;
+        top: 0.75rem;
+        right: 0.75rem;
+        display: flex;
+        gap: 0.5rem;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+        z-index: 20;
+    }
+    .neth-stylist-card:hover .stylist-hover-actions { opacity: 1; }
+
+    .action-btn-sm {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 0.5rem;
+        transition: all 0.2s;
+        color: white !important;
+    }
+
+    /* Avatar Styling */
+    .avatar-frame {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        overflow: hidden;
+        border: 2px solid #374151;
+        background: #1a1b1e;
+        flex-shrink: 0;
+    }
+    .avatar-frame img { width: 100%; height: 100%; object-fit: cover; }
+
+    /* Operational Buttons (Always Visible) */
+    .op-btn {
+        font-size: 9px;
+        font-weight: 900;
+        text-transform: uppercase;
+        padding: 0.5rem 1rem;
+        border-radius: 0.5rem;
+        transition: all 0.2s;
+        letter-spacing: 0.05em;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
+</style>
+
 @if (isAuthorized)
 {
     <div class="min-h-screen bg-[#1a1b1e] text-gray-300 flex font-sans">
@@ -17,20 +90,14 @@
 
         <div class="flex-1 p-8">
             <div class="max-w-5xl mx-auto">
-                <div class="flex justify-between items-end mb-8">
+                <div class="flex justify-between items-end mb-10">
                     <div>
                         <h2 class="text-3xl font-black text-white uppercase tracking-tighter italic">Stylist Roster</h2>
-                        <p class="text-[10px] text-gray-500 font-mono uppercase tracking-[0.2em]">Active Personnel: @allStylists.Count</p>
+                        <p class="text-[10px] text-gray-500 font-mono uppercase tracking-[0.2em]">Personnel_Total: @allStylists.Count</p>
                     </div>
-                    <div class="flex gap-3">
-                        @* REPAIR DATABASE BUTTON *@
-                        <button @onclick="RepairDatabase" class="bg-orange-600/10 hover:bg-orange-600 text-orange-500 hover:text-white text-[9px] font-black uppercase px-4 py-3 rounded-lg border border-orange-500/20 transition">
-                            <i class="fa-solid fa-database mr-1"></i> Repair DB Schema
-                        </button>
-                        <button @onclick="OpenCreateModal" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase px-6 py-3 rounded-lg shadow-xl transition tracking-widest">
-                            ＋ Recruit Stylist
-                        </button>
-                    </div>
+                    <button @onclick="OpenCreateModal" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase px-8 py-3 rounded-xl shadow-xl transition tracking-widest">
+                        ＋ Recruit Stylist
+                    </button>
                 </div>
 
                 @if (!string.IsNullOrEmpty(statusMessage))
@@ -41,96 +108,123 @@
                     </div>
                 }
 
-                <div class="grid gap-4">
-                    @foreach (var stylist in allStylists)
-                    {
-                        <div class="bg-[#25262b] rounded-xl border border-gray-700 p-5 flex items-center justify-between group hover:border-gray-500 transition-all relative">
-                            <div class="flex items-center gap-5">
-                                <div class="w-14 h-14 rounded-full overflow-hidden border-2 border-gray-800 bg-black flex items-center justify-center shadow-lg">
+                @if (isLoading)
+                {
+                    <div class="text-center py-20 animate-pulse font-black text-gray-600 uppercase tracking-widest">Scanning_Biometrics...</div>
+                }
+                else
+                {
+                    <div class="grid gap-4">
+                        @foreach (var stylist in allStylists)
+                        {
+                            <div class="neth-stylist-card group">
+                                @* AVATAR *@
+                                <div class="avatar-frame mr-5">
                                     @if (stylist.AvatarId.HasValue)
                                     {
-                                        <img src="/neth-images/@stylist.AvatarId" class="w-full h-full object-cover" alt="Stylist Avatar" />
+                                        <img src="/neth-images/@stylist.AvatarId" alt="@stylist.Name" />
                                     }
                                     else
                                     {
-                                        <i class="fa-solid fa-user-tie text-gray-700 text-xl"></i>
+                                        <div class="w-full h-full flex items-center justify-center text-gray-700 bg-gray-900">
+                                            <i class="fa-solid fa-user-tie text-2xl"></i>
+                                        </div>
                                     }
                                 </div>
-                                <div>
+
+                                @* INFO *@
+                                <div class="flex-1">
                                     <h3 class="text-lg font-black text-white uppercase tracking-tight">@stylist.Name</h3>
-                                    <p class="text-[10px] text-gray-500 font-mono uppercase">@stylist.Shop?.BusinessName // @(stylist.IsIndependent ? "Independent" : "Staff")</p>
+                                    <p class="text-[9px] text-gray-500 font-mono uppercase tracking-widest">
+                                        @stylist.Shop?.BusinessName // @(stylist.IsIndependent ? "Contractor" : "Staff")
+                                    </p>
+                                </div>
+
+                                @* OPERATIONAL BUTTONS (Always Visible) *@
+                                <div class="flex gap-2 mr-12">
+                                    <button @onclick='() => Nav.NavigateTo($"/admin/neth-stylist-schedule/{stylist.Id}")' 
+                                            class="op-btn bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700">
+                                        <i class="fa-solid fa-clock mr-1.5 opacity-50"></i> Schedule
+                                    </button>
+                                    <button @onclick='() => Nav.NavigateTo($"/admin/neth-appointments/{stylist.Id}")' 
+                                            class="op-btn bg-blue-600/10 hover:bg-blue-600 text-blue-400 hover:text-white border border-blue-500/30">
+                                        <i class="fa-solid fa-calendar-plus mr-1.5 opacity-50"></i> Book
+                                    </button>
+                                </div>
+
+                                @* HOVER ACTIONS (Edit/Delete) *@
+                                <div class="stylist-hover-actions">
+                                    <button @onclick="() => OpenEditModal(stylist)" class="action-btn-sm bg-blue-600/20 hover:bg-blue-600 border border-blue-500/30">
+                                        <i class="fa-solid fa-pen-to-square text-xs"></i>
+                                    </button>
+                                    <button @onclick="() => DeleteStylist(stylist.Id, stylist.AvatarId)" class="action-btn-sm bg-red-600/20 hover:bg-red-600 border border-red-500/30">
+                                        <i class="fa-solid fa-trash-can text-xs"></i>
+                                    </button>
                                 </div>
                             </div>
-
-                            <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button @onclick="() => OpenEditModal(stylist)" class="w-9 h-9 flex items-center justify-center bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white rounded-lg border border-blue-500/30 transition-all">
-                                    <i class="fa-solid fa-user-gear text-xs"></i>
-                                </button>
-                                <button @onclick="() => DeleteStylist(stylist.Id, stylist.AvatarId)" class="w-9 h-9 flex items-center justify-center bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white rounded-lg border border-red-500/30 transition-all">
-                                    <i class="fa-solid fa-trash-can text-xs"></i>
-                                </button>
-                            </div>
-                        </div>
-                    }
-                </div>
+                        }
+                    </div>
+                }
             </div>
         </div>
     </div>
 }
 
+@* (Modal code remains identical to previous version, including HandleFileSelected fixes) *@
 @if (showModal && editingStylist != null)
 {
     <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-4">
         <div class="bg-[#25262b] w-full max-w-xl rounded-2xl border border-gray-700 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div class="p-5 border-b border-gray-800 flex justify-between items-center bg-black/20">
-                <h3 class="text-white font-black uppercase text-xs tracking-[0.3em]">Stylist Configuration</h3>
+                <h3 class="text-white font-black uppercase text-xs tracking-[0.3em]">Stylist Profile</h3>
                 <button @onclick="CloseModal" class="text-gray-500 hover:text-white text-2xl">&times;</button>
             </div>
             
             <div class="p-8 space-y-6">
-                <div class="flex justify-center mb-6">
+                @* Avatar Upload Circle *@
+                <div class="flex justify-center mb-4">
                     <div class="relative group">
-                        <div class="w-24 h-24 rounded-full overflow-hidden border-4 border-gray-800 bg-black flex items-center justify-center shadow-2xl">
+                        <div class="w-28 h-28 rounded-full overflow-hidden border-4 border-gray-800 bg-black flex items-center justify-center shadow-2xl">
                             @if (avatarBuffer != null) { <img src="data:@avatarContentType;base64,@Convert.ToBase64String(avatarBuffer)" class="w-full h-full object-cover" /> }
                             else if (editingStylist.AvatarId.HasValue) { <img src="/neth-images/@editingStylist.AvatarId" class="w-full h-full object-cover" /> }
-                            else { <i class="fa-solid fa-user-tie text-gray-700 text-3xl"></i> }
+                            else { <i class="fa-solid fa-user-tie text-gray-700 text-4xl"></i> }
                         </div>
                         <label class="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer rounded-full">
-                            <i class="fa-solid fa-camera text-white"></i>
+                            <i class="fa-solid fa-camera text-white text-xl"></i>
                             <InputFile OnChange="HandleFileSelected" class="absolute inset-0 opacity-0 cursor-pointer" />
                         </label>
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-2 gap-5">
                     <div class="col-span-2">
-                        <label class="text-[9px] font-black uppercase text-gray-500 mb-1.5 block ml-1">Full Name</label>
-                        <input @bind="editingStylist.Name" class="w-full bg-black/40 border border-gray-700 rounded-xl p-3 text-white outline-none focus:border-blue-500" />
+                        <label class="text-[9px] font-black uppercase text-gray-500 mb-1.5 block ml-1">Display Name</label>
+                        <input @bind="editingStylist.Name" class="w-full bg-black/40 border border-gray-700 rounded-xl p-3 text-white outline-none focus:border-blue-500" placeholder="e.g. Stephens Johnson" />
                     </div>
                     <div>
-                        <label class="text-[9px] font-black uppercase text-gray-500 mb-1.5 block ml-1">Assigned Shop</label>
+                        <label class="text-[9px] font-black uppercase text-gray-500 mb-1.5 block ml-1">Primary Location</label>
                         <select @bind="editingStylist.ShopId" class="w-full bg-black/40 border border-gray-700 rounded-xl p-3 text-white outline-none focus:border-blue-500">
                             @foreach(var shop in allShops) { <option value="@shop.Id">@shop.BusinessName</option> }
                         </select>
                     </div>
-                    <div class="flex items-end pb-3">
+                    <div class="flex items-center pt-5">
                         <label class="flex items-center gap-3 cursor-pointer">
-                            <input type="checkbox" @bind="editingStylist.IsIndependent" class="w-4 h-4 rounded bg-black border-gray-700" />
-                            <span class="text-[10px] font-black uppercase text-gray-400">Independent Contractor</span>
+                            <input type="checkbox" @bind="editingStylist.IsIndependent" class="w-4 h-4 rounded bg-black border-gray-700 text-blue-600 focus:ring-0" />
+                            <span class="text-[10px] font-black uppercase text-gray-400">Independent</span>
                         </label>
                     </div>
                 </div>
 
                 <div>
-                    <label class="text-[9px] font-black uppercase text-gray-500 mb-1.5 block ml-1">Professional Bio</label>
-                    <textarea @bind="editingStylist.Bio" class="w-full h-24 bg-black/40 border border-gray-700 rounded-xl p-4 text-white text-sm outline-none focus:border-blue-500 resize-none"></textarea>
+                    <label class="text-[9px] font-black uppercase text-gray-500 mb-1.5 block ml-1">Stylist Bio</label>
+                    <textarea @bind="editingStylist.Bio" class="w-full h-28 bg-black/40 border border-gray-700 rounded-xl p-4 text-white text-sm outline-none focus:border-blue-500 resize-none" placeholder="Experience, specialties..."></textarea>
                 </div>
             </div>
 
             <div class="p-5 bg-black/20 border-t border-gray-800 flex justify-end gap-3">
                 <button @onclick="CloseModal" class="text-[10px] text-gray-600 uppercase px-6 py-2 font-black hover:text-white transition">Cancel</button>
-                <button @onclick="SaveStylist" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] uppercase px-10 py-3 rounded-xl font-black shadow-2xl transition">
-                    @(isSaving ? "Uploading..." : "Commit_Personnel_Record")
+                <button @onclick="SaveStylist" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] uppercase px-10 py-3 rounded-xl font-black shadow-2xl transition tracking-widest">
+                    @(isSaving ? "Saving..." : "Commit_Record")
                 </button>
             </div>
         </div>
@@ -164,18 +258,6 @@
         } catch { } 
     }
 
-    private async Task RepairDatabase() {
-        try {
-            await Db.Database.ExecuteSqlRawAsync(@"
-                DO $$ BEGIN
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='NETH_Stylists' AND column_name='AvatarId') THEN
-                        ALTER TABLE ""NETH_Stylists"" ADD COLUMN ""AvatarId"" INTEGER;
-                    END IF;
-                END $$;");
-            statusMessage = "SUCCESS: AvatarId column synchronized.";
-        } catch (Exception ex) { statusMessage = "ERR: " + ex.Message; }
-    }
-
     private void OpenCreateModal() { 
         editingStylist = new NETH_Stylist { ShopId = allShops.FirstOrDefault()?.Id ?? 0, PhoneId = 1 }; 
         avatarBuffer = null; showModal = true; 
@@ -192,31 +274,16 @@
 
     private void CloseModal() { showModal = false; editingStylist = null; avatarBuffer = null; }
 
-    private async Task HandleFileSelected(InputFileChangeEventArgs e)
-    {
-        try
-        {
+    private async Task HandleFileSelected(InputFileChangeEventArgs e) {
+        try {
             var file = e.File;
             if (file == null) return;
-
-            // Use a 3MB limit for safety
-            long maxFileSize = 1024 * 1024 * 3; 
-            
-            // Use a MemoryStream to ensure the entire file is read properly
             using var ms = new MemoryStream();
-            await file.OpenReadStream(maxFileSize).CopyToAsync(ms);
-            
+            await file.OpenReadStream(3 * 1024 * 1024).CopyToAsync(ms);
             avatarBuffer = ms.ToArray();
             avatarContentType = file.ContentType;
             avatarFileName = file.Name;
-            
-            statusMessage = "IMAGE_READY: " + file.Name;
-            StateHasChanged();
-        }
-        catch (Exception ex)
-        {
-            statusMessage = "FILE_ERR: " + ex.Message;
-        }
+        } catch { statusMessage = "ERR: File too large."; }
     }
 
     private async Task SaveStylist() {
@@ -253,13 +320,13 @@
             }
             
             await LoadData(); CloseModal();
-            statusMessage = "PERSONNEL_RECORD_UPDATED";
+            statusMessage = "Personnel Record Finalized.";
         } catch (Exception ex) { statusMessage = "ERR: " + ex.Message; }
         finally { isSaving = false; }
     }
 
     private async Task DeleteStylist(int id, int? avatarId) { 
-        if (await JS.InvokeAsync<bool>("confirm", "Delete stylist profile?")) {
+        if (await JS.InvokeAsync<bool>("confirm", "Permanently remove stylist from registry?")) {
             if (avatarId.HasValue) await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_StoredImages"" WHERE ""Id"" = {0}", avatarId.Value);
             await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_Stylists"" WHERE ""Id"" = {0}", id); 
             await LoadData(); 
