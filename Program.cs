@@ -102,9 +102,23 @@ app.UseStaticFiles();
 app.UseAntiforgery();
 
 // =========================================================
-// 3. API ROUTES (Image Uploads)
+// 3. API ROUTES (Image Serving & Uploads)
 // =========================================================
 
+// --- NETH SPECIFIC IMAGE SERVING ---
+app.MapGet("/neth-images/{id:int}", async (int id, AppDbContext db) =>
+{
+    var img = await db.NETH_StoredImages.FindAsync(id);
+    
+    if (img == null || img.Data == null) 
+    {
+        return Results.NotFound();
+    }
+    
+    return Results.File(img.Data, img.ContentType);
+});
+
+// --- LEGACY/GENERAL IMAGE SERVING ---
 app.MapGet("/db-images/{id}", async (int id, AppDbContext db) =>
 {
     var img = await db.StoredImages.FindAsync(id);
