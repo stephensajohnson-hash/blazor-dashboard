@@ -649,9 +649,13 @@ public class NETH_Client
     public string LastName { get; set; } = "";
     public string Email { get; set; } = "";
     public int PhoneId { get; set; }
-    public NETH_Phone Phone { get; set; } = null!;
+    public virtual NETH_Phone Phone { get; set; } = null!;
+    public int? UserId { get; set; }
 
-    public int? UserId { get; set; } 
+    // New Avatar Link
+    public int? AvatarId { get; set; }
+    [ForeignKey("AvatarId")]
+    public virtual NETH_StoredImage? Avatar { get; set; }
 }
 
 public class NETH_ClientNote

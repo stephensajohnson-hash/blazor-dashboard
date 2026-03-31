@@ -1,5 +1,6 @@
 @page "/admin/neth-clients"
 @using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.JSInterop
 @using Dashboard
@@ -9,25 +10,70 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
+@* Fail-safe FontAwesome Loader *@
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+<style>
+    .client-avatar-circle {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 900;
+        font-size: 14px;
+        text-transform: uppercase;
+        border: 2px solid rgba(255,255,255,0.1);
+        overflow: hidden;
+        background: #1a1b1e;
+        color: #D2B48C;
+    }
+    .client-avatar-circle img { width: 100%; height: 100%; object-fit: cover; }
+
+    .modal-avatar-preview {
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        border: 4px solid #374151;
+        background: #1a1b1e;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        position: relative;
+    }
+</style>
+
 @if (isAuthorized)
 {
     <div class="min-h-screen bg-[#1a1b1e] text-gray-300 flex font-sans">
-        
         <NETHAdminSidebar />
 
         <div class="flex-1 p-8">
             <div class="max-w-6xl mx-auto">
                 <div class="flex justify-between items-end mb-8">
                     <div>
-                        <h2 class="text-2xl font-black text-white uppercase tracking-tight">Client Database</h2>
-                        <p class="text-xs text-gray-500 font-mono">Registry: @allClients.Count total customers</p>
+                        <h2 class="text-3xl font-black text-white uppercase tracking-tight italic">Client Registry</h2>
+                        <p class="text-[10px] text-gray-500 font-mono uppercase tracking-widest">Active Accounts: @allClients.Count</p>
                     </div>
-                    <button @onclick="OpenCreateModal" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase px-6 py-3 rounded shadow-xl transition">＋ Register New Client</button>
+                    <div class="flex gap-3">
+                        <button @onclick="RepairDatabase" class="bg-orange-600/10 hover:bg-orange-600 text-orange-500 hover:text-white text-[9px] font-black uppercase px-4 py-3 rounded-lg border border-orange-500/20 transition">Fix DB Schema</button>
+                        <button @onclick="OpenCreateModal" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase px-8 py-3 rounded-lg shadow-xl transition tracking-widest">＋ Register New Client</button>
+                    </div>
                 </div>
+
+                @if (!string.IsNullOrEmpty(statusMessage))
+                {
+                    <div class="mb-6 p-4 rounded font-mono text-[10px] uppercase flex justify-between items-center @(statusMessage.Contains("ERR") ? "bg-red-900/20 text-red-400 border border-red-500/30" : "bg-blue-900/20 text-blue-400 border border-blue-500/30")">
+                        <span>@statusMessage</span>
+                        <button @onclick='() => statusMessage = ""' class="opacity-50 hover:opacity-100">&times;</button>
+                    </div>
+                }
 
                 @if (isLoading)
                 {
-                    <div class="text-center py-20 animate-pulse font-black text-gray-600 uppercase tracking-widest">Accessing_Client_Registry...</div>
+                    <div class="text-center py-20 animate-pulse font-black text-gray-600 uppercase tracking-widest">Accessing_Encrypted_Ledger...</div>
                 }
                 else
                 {
@@ -35,6 +81,7 @@
                         <table class="w-full text-left">
                             <thead>
                                 <tr class="text-[10px] font-black uppercase text-gray-500 bg-black/20">
+                                    <th class="p-4 w-12"></th>
                                     <th class="p-4">Name</th>
                                     <th class="p-4">Contact Information</th>
                                     <th class="p-4">Linked User</th>
@@ -47,7 +94,19 @@
                                     var phone = allPhones.FirstOrDefault(p => p.Id == c.PhoneId)?.Number ?? "NO_PHONE";
                                     var userName = allUsers.FirstOrDefault(u => u.Id == c.UserId)?.Username ?? "GUEST";
 
-                                    <tr class="border-b border-gray-800 hover:bg-white/5 transition">
+                                    <tr class="border-b border-gray-800 hover:bg-white/5 transition group">
+                                        <td class="p-4">
+                                            <div class="client-avatar-circle">
+                                                @if (c.AvatarId.HasValue)
+                                                {
+                                                    <img src="/neth-images/@c.AvatarId" alt="Avatar" />
+                                                }
+                                                else
+                                                {
+                                                    <span>@GetInitials(c.FirstName, c.LastName)</span>
+                                                }
+                                            </div>
+                                        </td>
                                         <td class="p-4 font-black text-white uppercase">@c.FirstName @c.LastName</td>
                                         <td class="p-4">
                                             <div class="text-xs text-gray-400">@c.Email</div>
@@ -59,8 +118,8 @@
                                             </span>
                                         </td>
                                         <td class="p-4 text-right">
-                                            <button @onclick="() => OpenEditModal(c)" class="text-blue-400 hover:underline text-xs font-black uppercase mr-4">Edit</button>
-                                            <button @onclick="() => DeleteClient(c.Id)" class="text-red-500/50 hover:text-red-500 transition text-xs font-black uppercase">Delete</button>
+                                            <button @onclick="() => OpenEditModal(c)" class="text-blue-400 hover:text-blue-300 text-xs font-black uppercase mr-4 transition">Edit</button>
+                                            <button @onclick="() => DeleteClient(c.Id, c.AvatarId)" class="text-red-500/30 hover:text-red-500 transition text-xs font-black uppercase">Delete</button>
                                         </td>
                                     </tr>
                                 }
@@ -73,41 +132,54 @@
     </div>
 }
 
-@* CLIENT MODAL *@
 @if (showModal && editingClient != null)
 {
-    <div class="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4 text-gray-300">
-        <div class="bg-[#25262b] w-full max-w-lg rounded-xl border border-gray-700 shadow-2xl overflow-hidden font-black">
-            <div class="p-4 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center uppercase text-[11px] tracking-widest text-[#D2B48C]">
-                <span>@(editingClient.Id == 0 ? "Register New Client" : "Edit Client Profile")</span>
-                <button @onclick="CloseModal" class="text-gray-500 hover:text-white text-xl">&times;</button>
+    <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-4 text-gray-300">
+        <div class="bg-[#25262b] w-full max-w-lg rounded-2xl border border-gray-700 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div class="p-4 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center uppercase text-[11px] font-black tracking-widest text-[#D2B48C]">
+                <span>@(editingClient.Id == 0 ? "Establish New Client" : "Modify Client Profile")</span>
+                <button @onclick="CloseModal" class="text-gray-500 hover:text-white text-2xl">&times;</button>
             </div>
             
-            <div class="p-6 space-y-4">
+            <div class="p-8 space-y-6">
+                @* Avatar Upload Section *@
+                <div class="flex justify-center">
+                    <div class="modal-avatar-preview group">
+                        @if (avatarBuffer != null) { <img src="data:@avatarContentType;base64,@Convert.ToBase64String(avatarBuffer)" class="w-full h-full object-cover" /> }
+                        else if (editingClient.AvatarId.HasValue) { <img src="/neth-images/@editingClient.AvatarId" class="w-full h-full object-cover" /> }
+                        else { <span class="text-2xl font-black opacity-30">@GetInitials(editingClient.FirstName, editingClient.LastName)</span> }
+                        
+                        <label class="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                            <i class="fa-solid fa-camera text-white text-xl"></i>
+                            <InputFile OnChange="HandleFileSelected" class="absolute inset-0 opacity-0 cursor-pointer" />
+                        </label>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-2 gap-4">
                     <div>
-                        <label class="text-[9px] uppercase text-gray-500 mb-1 block">First Name</label>
-                        <input @bind="editingClient.FirstName" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none focus:border-blue-500" />
+                        <label class="text-[9px] font-black uppercase text-gray-500 mb-1 block">First Name</label>
+                        <input @bind="editingClient.FirstName" class="w-full bg-black/40 border border-gray-700 rounded-xl p-3 text-white outline-none focus:border-blue-500" />
                     </div>
                     <div>
-                        <label class="text-[9px] uppercase text-gray-500 mb-1 block">Last Name</label>
-                        <input @bind="editingClient.LastName" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none focus:border-blue-500" />
+                        <label class="text-[9px] font-black uppercase text-gray-500 mb-1 block">Last Name</label>
+                        <input @bind="editingClient.LastName" class="w-full bg-black/40 border border-gray-700 rounded-xl p-3 text-white outline-none focus:border-blue-500" />
                     </div>
                 </div>
 
                 <div>
-                    <label class="text-[9px] uppercase text-gray-500 mb-1 block">Email Address</label>
-                    <input @bind="editingClient.Email" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none focus:border-blue-500" />
+                    <label class="text-[9px] font-black uppercase text-gray-500 mb-1 block">Email Address</label>
+                    <input @bind="editingClient.Email" class="w-full bg-black/40 border border-gray-700 rounded-xl p-3 text-white outline-none focus:border-blue-500" />
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">
                     <div>
-                        <label class="text-[9px] uppercase text-gray-500 mb-1 block">Phone Number</label>
-                        <input @bind="uiPhoneNumber" placeholder="9035551212" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none focus:border-[#D2B48C] font-mono" />
+                        <label class="text-[9px] font-black uppercase text-gray-500 mb-1 block">Phone Number</label>
+                        <input @bind="uiPhoneNumber" placeholder="9035551212" class="w-full bg-black/40 border border-gray-700 rounded-xl p-3 text-white outline-none focus:border-[#D2B48C] font-mono" />
                     </div>
                     <div>
-                        <label class="text-[9px] uppercase text-gray-500 mb-1 block">Link Account</label>
-                        <select @bind="editingClient.UserId" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-2 text-white outline-none">
+                        <label class="text-[9px] font-black uppercase text-gray-500 mb-1 block">Link Account</label>
+                        <select @bind="editingClient.UserId" class="w-full bg-black/40 border border-gray-700 rounded-xl p-3 text-white outline-none">
                             <option value="">-- Guest --</option>
                             @foreach(var u in allUsers.Where(x => x.Role == "Client")) {
                                 <option value="@u.Id">@u.Username</option>
@@ -117,24 +189,27 @@
                 </div>
             </div>
 
-            <div class="p-4 bg-black/20 border-t border-gray-700 flex justify-end gap-3">
-                <button @onclick="CloseModal" class="text-[10px] text-gray-500 uppercase px-4 py-2 font-black">Cancel</button>
-                <button @onclick="SaveClient" class="bg-green-600 hover:bg-green-500 text-white text-[10px] uppercase px-8 py-2 rounded font-black shadow-xl">Commit_Registry</button>
+            <div class="p-5 bg-black/20 border-t border-gray-800 flex justify-end gap-3">
+                <button @onclick="CloseModal" class="text-[10px] text-gray-500 uppercase px-6 py-2 font-black hover:text-white transition">Cancel</button>
+                <button @onclick="SaveClient" class="bg-green-600 hover:bg-green-500 text-white text-[10px] uppercase px-10 py-3 rounded-xl font-black shadow-xl">
+                    @(isSaving ? "Uploading..." : "Commit_Registry")
+                </button>
             </div>
         </div>
     </div>
 }
 
 @code {
-    private bool isAuthorized = false;
-    private bool isLoading = true;
-    private bool showModal = false;
-    private string uiPhoneNumber = "";
+    private bool isAuthorized = false, isLoading = true, isSaving = false, showModal = false;
+    private string uiPhoneNumber = "", statusMessage = "";
     
     private List<NETH_Client> allClients = new();
     private List<NETH_Phone> allPhones = new();
     private List<NETHUsers.NETH_User> allUsers = new();
     private NETH_Client? editingClient;
+
+    private byte[]? avatarBuffer;
+    private string avatarContentType = "", avatarFileName = "";
 
     protected override async Task OnAfterRenderAsync(bool firstRender) {
         if (firstRender) {
@@ -149,57 +224,105 @@
             allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync();
             allPhones = await Db.NETH_Phones.AsNoTracking().ToListAsync();
             allUsers = await Db.Database.SqlQueryRaw<NETHUsers.NETH_User>(@"SELECT * FROM ""NETH_Users""").ToListAsync();
+            StateHasChanged();
         } catch { }
+    }
+
+    private async Task RepairDatabase() {
+        try {
+            await Db.Database.ExecuteSqlRawAsync(@"
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='NETH_Clients' AND column_name='AvatarId') THEN
+                        ALTER TABLE ""NETH_Clients"" ADD COLUMN ""AvatarId"" INTEGER;
+                    END IF;
+                END $$;");
+            statusMessage = "CLIENT_DB: Avatar column established.";
+        } catch (Exception ex) { statusMessage = "ERR: " + ex.Message; }
+    }
+
+    private string GetInitials(string first, string last) {
+        if (string.IsNullOrWhiteSpace(first) && string.IsNullOrWhiteSpace(last)) return "??";
+        var f = !string.IsNullOrEmpty(first) ? first[0].ToString() : "";
+        var l = !string.IsNullOrEmpty(last) ? last[0].ToString() : "";
+        return f + l;
     }
 
     private void OpenCreateModal() { 
         editingClient = new NETH_Client { FirstName = "", LastName = "", Email = "", PhoneId = 0 }; 
-        uiPhoneNumber = "";
-        showModal = true; 
+        uiPhoneNumber = ""; avatarBuffer = null; showModal = true; 
     }
 
     private void OpenEditModal(NETH_Client c) { 
-        editingClient = new NETH_Client { Id = c.Id, FirstName = c.FirstName, LastName = c.LastName, Email = c.Email, PhoneId = c.PhoneId, UserId = c.UserId };
+        editingClient = new NETH_Client { Id = c.Id, FirstName = c.FirstName, LastName = c.LastName, Email = c.Email, PhoneId = c.PhoneId, UserId = c.UserId, AvatarId = c.AvatarId };
         uiPhoneNumber = allPhones.FirstOrDefault(p => p.Id == c.PhoneId)?.Number ?? "";
-        showModal = true; 
+        avatarBuffer = null; showModal = true; 
     }
 
-    private void CloseModal() { showModal = false; editingClient = null; }
+    private void CloseModal() { showModal = false; editingClient = null; avatarBuffer = null; }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e) {
+        try {
+            var file = e.File;
+            if (file == null) return;
+            using var ms = new MemoryStream();
+            await file.OpenReadStream(3 * 1024 * 1024).CopyToAsync(ms);
+            avatarBuffer = ms.ToArray();
+            avatarContentType = file.ContentType;
+            avatarFileName = file.Name;
+            StateHasChanged();
+        } catch { statusMessage = "ERR: File too large."; }
+    }
 
     private async Task SaveClient() {
-        if (editingClient == null) return;
+        if (editingClient == null || isSaving) return;
+        isSaving = true;
 
         try {
-            // 1. Handle Phone Logic
+            // 1. Handle Image
+            int? finalAvatarId = editingClient.AvatarId;
+            if (avatarBuffer != null) {
+                if (editingClient.AvatarId.HasValue) {
+                    await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_StoredImages"" WHERE ""Id"" = {0}", editingClient.AvatarId.Value);
+                }
+                var newImg = new NETH_StoredImage {
+                    Data = avatarBuffer, ContentType = avatarContentType,
+                    FileName = avatarFileName, Category = "ClientAvatar", UploadedAt = DateTime.UtcNow
+                };
+                Db.NETH_StoredImages.Add(newImg);
+                await Db.SaveChangesAsync();
+                finalAvatarId = newImg.Id;
+            }
+
+            // 2. Handle Phone
             var existingPhone = allPhones.FirstOrDefault(p => p.Number == uiPhoneNumber);
             int finalPhoneId = 0;
-
-            if (existingPhone != null) {
-                finalPhoneId = existingPhone.Id;
-            } else {
+            if (existingPhone != null) finalPhoneId = existingPhone.Id;
+            else {
                 await Db.Database.ExecuteSqlRawAsync(@"INSERT INTO ""NETH_Phones"" (""Number"", ""Type"") VALUES ({0}, 'Mobile')", uiPhoneNumber);
                 var newP = await Db.NETH_Phones.OrderByDescending(x => x.Id).FirstOrDefaultAsync();
                 finalPhoneId = newP?.Id ?? 1;
             }
 
-            // 2. Save Client
+            // 3. Save Client
             if (editingClient.Id == 0) {
                 await Db.Database.ExecuteSqlRawAsync(
-                    @"INSERT INTO ""NETH_Clients"" (""FirstName"", ""LastName"", ""Email"", ""PhoneId"", ""UserId"") VALUES ({0}, {1}, {2}, {3}, {4})",
-                    editingClient.FirstName, editingClient.LastName, editingClient.Email, finalPhoneId, editingClient.UserId
+                    @"INSERT INTO ""NETH_Clients"" (""FirstName"", ""LastName"", ""Email"", ""PhoneId"", ""UserId"", ""AvatarId"") VALUES ({0}, {1}, {2}, {3}, {4}, {5})",
+                    editingClient.FirstName, editingClient.LastName, editingClient.Email, finalPhoneId, editingClient.UserId, finalAvatarId
                 );
             } else {
                 await Db.Database.ExecuteSqlRawAsync(
-                    @"UPDATE ""NETH_Clients"" SET ""FirstName"" = {0}, ""LastName"" = {1}, ""Email"" = {2}, ""PhoneId"" = {3}, ""UserId"" = {4} WHERE ""Id"" = {5}",
-                    editingClient.FirstName, editingClient.LastName, editingClient.Email, finalPhoneId, editingClient.UserId, editingClient.Id
+                    @"UPDATE ""NETH_Clients"" SET ""FirstName"" = {0}, ""LastName"" = {1}, ""Email"" = {2}, ""PhoneId"" = {3}, ""UserId"" = {4}, ""AvatarId"" = {5} WHERE ""Id"" = {6}",
+                    editingClient.FirstName, editingClient.LastName, editingClient.Email, finalPhoneId, editingClient.UserId, finalAvatarId, editingClient.Id
                 );
             }
             await LoadAllData(); CloseModal();
-        } catch { }
+        } catch (Exception ex) { statusMessage = "SAVE_ERR: " + ex.Message; }
+        finally { isSaving = false; }
     }
 
-    private async Task DeleteClient(int id) {
+    private async Task DeleteClient(int id, int? avatarId) {
         if (await JS.InvokeAsync<bool>("confirm", "Permanently remove client?")) {
+            if (avatarId.HasValue) await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_StoredImages"" WHERE ""Id"" = {0}", avatarId.Value);
             await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_Clients"" WHERE ""Id"" = {0}", id);
             await LoadAllData();
         }
