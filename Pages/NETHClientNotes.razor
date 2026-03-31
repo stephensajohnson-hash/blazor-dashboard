@@ -164,10 +164,16 @@
                     </div>
                 }
 
-                @if (!displayNotes.Any() && selectedClientId > 0)
+                @if (!displayNotes.Any() && selectedClientId > 0 && selectedStylistId > 0)
                 {
                     <div class="text-center py-20 border-2 border-dashed border-gray-800 rounded-xl">
-                        <p class="text-gray-600 text-xs uppercase font-black tracking-widest">No entries found for this client.</p>
+                        <p class="text-gray-600 text-xs uppercase font-black tracking-widest">No entries found for this specific pair.</p>
+                    </div>
+                }
+                else if (selectedClientId == 0 || selectedStylistId == 0)
+                {
+                    <div class="text-center py-20 border-2 border-dashed border-gray-800/30 rounded-xl">
+                        <p class="text-gray-700 text-xs uppercase font-black tracking-widest">Select both Stylist and Client to view history.</p>
                     </div>
                 }
             </div>
@@ -259,7 +265,7 @@
                 currentClient = allClients.FirstOrDefault(x => x.Id == selectedClientId);
             }
 
-            if (selectedClientId > 0) await LoadNotes();
+            if (selectedClientId > 0 && selectedStylistId > 0) await LoadNotes();
             StateHasChanged();
         }
     }
@@ -273,28 +279,31 @@
 
     private async Task OnStylistChanged(ChangeEventArgs e)
     {
+        displayNotes.Clear(); // Immediate clear
         selectedStylistId = int.Parse(e.Value?.ToString() ?? "0");
         currentStylist = allStylists.FirstOrDefault(x => x.Id == selectedStylistId);
-        StateHasChanged();
+        
+        if (selectedStylistId > 0 && selectedClientId > 0) await LoadNotes();
+        else StateHasChanged();
     }
 
     private async Task OnClientChanged(ChangeEventArgs e)
     {
+        displayNotes.Clear(); // Immediate clear
         selectedClientId = int.Parse(e.Value?.ToString() ?? "0");
         currentClient = allClients.FirstOrDefault(x => x.Id == selectedClientId);
-        await LoadNotes();
+        
+        if (selectedStylistId > 0 && selectedClientId > 0) await LoadNotes();
+        else StateHasChanged();
     }
 
-private async Task LoadNotes()
+    private async Task LoadNotes()
     {
-        // Ensure both are selected before querying if you want strict separation
         if (selectedClientId == 0 || selectedStylistId == 0) {
             displayNotes.Clear();
             return;
         }
-        
         try {
-            // Added StylistId filter to ensure records are tied to the specific stylist
             var rawData = await Db.Database.SqlQueryRaw<NoteSqlResult>(
                 @"SELECT ""Id"", ""NoteText"", ""ShortDescription"", ""ManualDate"" 
                   FROM ""NETH_ClientNotes"" 
