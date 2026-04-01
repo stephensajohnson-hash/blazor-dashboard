@@ -132,9 +132,17 @@
 
                                 <div class="flex-1">
                                     <h3 class="text-lg font-black text-white uppercase tracking-tight">@stylist.Name</h3>
-                                    <p class="text-[9px] text-gray-500 font-mono uppercase tracking-widest">
-                                        @stylist.Shop?.BusinessName // @(stylist.IsIndependent ? "Contractor" : "Staff")
-                                    </p>
+                                    <div class="flex items-center gap-3">
+                                        <p class="text-[9px] text-gray-500 font-mono uppercase tracking-widest">
+                                            @stylist.Shop?.BusinessName // @(stylist.IsIndependent ? "Contractor" : "Staff")
+                                        </p>
+                                        @if (stylist.UserId.HasValue)
+                                        {
+                                            <span class="text-[8px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-black uppercase">
+                                                <i class="fa-solid fa-link mr-1"></i> Linked: @(allUsers.FirstOrDefault(u => u.Id == stylist.UserId)?.Username ?? "User")
+                                            </span>
+                                        }
+                                    </div>
                                 </div>
 
                                 <div class="flex gap-2 mr-12">
@@ -149,7 +157,6 @@
                                 </div>
 
                                 <div class="stylist-hover-actions">
-                                    @* Impersonation Trigger *@
                                     <button @onclick="() => StartImpersonation(stylist)" 
                                             class="action-btn-sm bg-orange-600/20 hover:bg-orange-600 border border-orange-500/30" 
                                             title="View as Stylist">
@@ -206,7 +213,14 @@
                             @foreach(var shop in allShops) { <option value="@shop.Id">@shop.BusinessName</option> }
                         </select>
                     </div>
-                    <div class="flex items-center pt-5">
+                    <div>
+                        <label class="text-[9px] font-black uppercase text-gray-500 mb-1.5 block ml-1">Link User Account</label>
+                        <select @bind="selectedUserStringId" class="w-full bg-black/40 border border-gray-700 rounded-xl p-3 text-white outline-none focus:border-blue-500">
+                            <option value="">-- No User Link --</option>
+                            @foreach(var u in allUsers) { <option value="@u.Id">@u.Username</option> }
+                        </select>
+                    </div>
+                    <div class="flex items-center">
                         <label class="flex items-center gap-3 cursor-pointer">
                             <input type="checkbox" @bind="editingStylist.IsIndependent" class="w-4 h-4 rounded bg-black border-gray-700 text-blue-600 focus:ring-0" />
                             <span class="text-[10px] font-black uppercase text-gray-400">Independent</span>
@@ -234,8 +248,10 @@
     private bool isAuthorized = false, isLoading = true, isSaving = false, showModal = false;
     private List<NETH_Stylist> allStylists = new();
     private List<NETH_Shop> allShops = new();
+    private List<NETH_User_Lite> allUsers = new();
     private NETH_Stylist? editingStylist;
     private string statusMessage = "";
+    private string selectedUserStringId = "";
 
     private byte[]? avatarBuffer;
     private string avatarContentType = "";
@@ -253,19 +269,20 @@
         try { 
             allStylists = await Db.NETH_Stylists.Include(s => s.Shop).AsNoTracking().ToListAsync(); 
             allShops = await Db.NETH_Shops.AsNoTracking().ToListAsync();
+            allUsers = await Db.Database.SqlQueryRaw<NETH_User_Lite>(@"SELECT ""Id"", ""Username"" FROM ""NETH_Users""").ToListAsync();
             StateHasChanged(); 
         } catch { } 
     }
 
     private void StartImpersonation(NETH_Stylist s)
     {
-        // Use the method we just defined in the service
         State.Impersonate(s.Id, s.Name);
         Nav.NavigateTo("/nethaircut");
     }
 
     private void OpenCreateModal() { 
         editingStylist = new NETH_Stylist { ShopId = allShops.FirstOrDefault()?.Id ?? 0, PhoneId = 1 }; 
+        selectedUserStringId = "";
         avatarBuffer = null; showModal = true; 
     }
     
@@ -273,8 +290,10 @@
         editingStylist = new NETH_Stylist { 
             Id = stylist.Id, Name = stylist.Name, Bio = stylist.Bio, 
             ShopId = stylist.ShopId, IsIndependent = stylist.IsIndependent, 
-            PhoneId = stylist.PhoneId, AvatarId = stylist.AvatarId 
+            PhoneId = stylist.PhoneId, AvatarId = stylist.AvatarId,
+            UserId = stylist.UserId
         }; 
+        selectedUserStringId = stylist.UserId?.ToString() ?? "";
         avatarBuffer = null; showModal = true; 
     }
 
@@ -297,6 +316,7 @@
         isSaving = true;
         try {
             int? finalAvatarId = editingStylist.AvatarId;
+            int? finalUserId = string.IsNullOrEmpty(selectedUserStringId) ? null : int.Parse(selectedUserStringId);
 
             if (avatarBuffer != null) {
                 if (editingStylist.AvatarId.HasValue) {
@@ -313,15 +333,15 @@
 
             if (editingStylist.Id == 0) {
                 await Db.Database.ExecuteSqlRawAsync(
-                    @"INSERT INTO ""NETH_Stylists"" (""Name"", ""Bio"", ""ShopId"", ""IsIndependent"", ""PhoneId"", ""StripeAccountId"", ""AvatarId"") 
-                      VALUES ({0}, {1}, {2}, {3}, {4}, '', {5})", 
-                    editingStylist.Name, editingStylist.Bio, editingStylist.ShopId, editingStylist.IsIndependent, editingStylist.PhoneId, finalAvatarId
+                    @"INSERT INTO ""NETH_Stylists"" (""Name"", ""Bio"", ""ShopId"", ""IsIndependent"", ""PhoneId"", ""StripeAccountId"", ""AvatarId"", ""UserId"") 
+                      VALUES ({0}, {1}, {2}, {3}, {4}, '', {5}, {6})", 
+                    editingStylist.Name, editingStylist.Bio, editingStylist.ShopId, editingStylist.IsIndependent, editingStylist.PhoneId, finalAvatarId, finalUserId
                 );
             } else {
                 await Db.Database.ExecuteSqlRawAsync(
-                    @"UPDATE ""NETH_Stylists"" SET ""Name"" = {0}, ""Bio"" = {1}, ""ShopId"" = {2}, ""IsIndependent"" = {3}, ""AvatarId"" = {4} 
-                      WHERE ""Id"" = {5}", 
-                    editingStylist.Name, editingStylist.Bio, editingStylist.ShopId, editingStylist.IsIndependent, finalAvatarId, editingStylist.Id
+                    @"UPDATE ""NETH_Stylists"" SET ""Name"" = {0}, ""Bio"" = {1}, ""ShopId"" = {2}, ""IsIndependent"" = {3}, ""AvatarId"" = {4}, ""UserId"" = {5} 
+                      WHERE ""Id"" = {6}", 
+                    editingStylist.Name, editingStylist.Bio, editingStylist.ShopId, editingStylist.IsIndependent, finalAvatarId, finalUserId, editingStylist.Id
                 );
             }
             
@@ -338,4 +358,6 @@
             await LoadData(); 
         } 
     }
+
+    public class NETH_User_Lite { public int Id { get; set; } public string Username { get; set; } = ""; }
 }
