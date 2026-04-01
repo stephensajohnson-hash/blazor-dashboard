@@ -4,11 +4,13 @@
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.JSInterop
 @using Dashboard
+@using Dashboard.Services
 @using System.Text.Json
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject AppDbContext Db
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject NETHStateService State
 
 @* Fail-safe FontAwesome Loader *@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
@@ -32,7 +34,6 @@
         box-shadow: 0 10px 20px -5px rgba(0, 0, 0, 0.5);
     }
 
-    /* Hover Action Container (Edit/Delete) */
     .stylist-hover-actions {
         position: absolute;
         top: 0.75rem;
@@ -56,7 +57,6 @@
         color: white !important;
     }
 
-    /* Avatar Styling */
     .avatar-frame {
         width: 64px;
         height: 64px;
@@ -68,7 +68,6 @@
     }
     .avatar-frame img { width: 100%; height: 100%; object-fit: cover; }
 
-    /* Operational Buttons (Always Visible) */
     .op-btn {
         font-size: 9px;
         font-weight: 900;
@@ -118,7 +117,6 @@
                         @foreach (var stylist in allStylists)
                         {
                             <div class="neth-stylist-card group">
-                                @* AVATAR *@
                                 <div class="avatar-frame mr-5">
                                     @if (stylist.AvatarId.HasValue)
                                     {
@@ -132,7 +130,6 @@
                                     }
                                 </div>
 
-                                @* INFO *@
                                 <div class="flex-1">
                                     <h3 class="text-lg font-black text-white uppercase tracking-tight">@stylist.Name</h3>
                                     <p class="text-[9px] text-gray-500 font-mono uppercase tracking-widest">
@@ -140,7 +137,6 @@
                                     </p>
                                 </div>
 
-                                @* OPERATIONAL BUTTONS (Always Visible) *@
                                 <div class="flex gap-2 mr-12">
                                     <button @onclick='() => Nav.NavigateTo($"/admin/neth-stylist-schedule/{stylist.Id}")' 
                                             class="op-btn bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700">
@@ -152,8 +148,13 @@
                                     </button>
                                 </div>
 
-                                @* HOVER ACTIONS (Edit/Delete) *@
                                 <div class="stylist-hover-actions">
+                                    @* Impersonation Trigger *@
+                                    <button @onclick="() => StartImpersonation(stylist)" 
+                                            class="action-btn-sm bg-orange-600/20 hover:bg-orange-600 border border-orange-500/30" 
+                                            title="View as Stylist">
+                                        <i class="fa-solid fa-user-secret text-xs"></i>
+                                    </button>
                                     <button @onclick="() => OpenEditModal(stylist)" class="action-btn-sm bg-blue-600/20 hover:bg-blue-600 border border-blue-500/30">
                                         <i class="fa-solid fa-pen-to-square text-xs"></i>
                                     </button>
@@ -170,7 +171,6 @@
     </div>
 }
 
-@* (Modal code remains identical to previous version, including HandleFileSelected fixes) *@
 @if (showModal && editingStylist != null)
 {
     <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-4">
@@ -181,7 +181,6 @@
             </div>
             
             <div class="p-8 space-y-6">
-                @* Avatar Upload Circle *@
                 <div class="flex justify-center mb-4">
                     <div class="relative group">
                         <div class="w-28 h-28 rounded-full overflow-hidden border-4 border-gray-800 bg-black flex items-center justify-center shadow-2xl">
@@ -256,6 +255,12 @@
             allShops = await Db.NETH_Shops.AsNoTracking().ToListAsync();
             StateHasChanged(); 
         } catch { } 
+    }
+
+    private void StartImpersonation(NETH_Stylist s)
+    {
+        State.Impersonate(s.Id, s.Name);
+        Nav.NavigateTo("/nethaircut");
     }
 
     private void OpenCreateModal() { 

@@ -63,6 +63,9 @@ builder.Services.AddScoped<BulletSearchService>();
 builder.Services.AddScoped<BulletPrintService>();
 builder.Services.AddScoped<HsaExportService>();
 
+// NETH Services
+builder.Services.AddScoped<NETHStateService>();
+
 // --- DATABASE REGISTRATION ---
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 

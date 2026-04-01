@@ -4,11 +4,13 @@
 @using Microsoft.JSInterop
 @using Dashboard
 @using Dashboard.Components
+@using Dashboard.Services
 @using System.Text.Json
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject AppDbContext Db
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject NETHStateService State
 
 @* Ensure FontAwesome is available for the sidebar icons even on this root page *@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
@@ -60,10 +62,6 @@
 
 <div class="min-h-screen bg-[#1a1b1e] text-gray-300 flex font-sans">
     
-    @* FIX: We show the sidebar if authenticated. 
-       If it looks different, it's usually because the CSS from the sidebar 
-       isn't loading or the 'flex' container properties are missing.
-    *@
     @if (isAuthenticated)
     {
         <NETHAdminSidebar />
@@ -99,6 +97,25 @@
             }
             else
             {
+                @* IMPERSONATION WARNING BANNER *@
+                @if (State.IsImpersonating)
+                {
+                    <div class="bg-orange-600 text-white p-4 mb-8 rounded-2xl flex justify-between items-center shadow-xl animate-in slide-in-from-top-4 duration-300">
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 bg-black/20 rounded-full flex items-center justify-center">
+                                <i class="fa-solid fa-user-secret text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-[10px] font-black uppercase tracking-widest opacity-80 leading-none mb-1">Impersonation Mode Active</p>
+                                <p class="text-sm font-black uppercase italic">Viewing System as: @State.ImpersonatedName</p>
+                            </div>
+                        </div>
+                        <button @onclick="ExitImpersonation" class="bg-white text-orange-600 px-6 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-orange-50 transition shadow-lg">
+                            Restore Admin Access
+                        </button>
+                    </div>
+                }
+
                 @* DASHBOARD CONTENT *@
                 <div class="bg-[#25262b] rounded-xl border border-gray-700 p-6 shadow-2xl flex justify-between items-center mb-8">
                     <div>
@@ -112,43 +129,48 @@
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-shops")'>
-                        <div class="stats-value">@stats.Shops</div>
-                        <div class="stats-label">Registered Shops</div>
-                    </div>
+                    @* Only show Shop management if not impersonating a specific stylist *@
+                    @if (!State.IsImpersonating)
+                    {
+                        <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-shops")'>
+                            <div class="stats-value">@stats.Shops</div>
+                            <div class="stats-label">Registered Shops</div>
+                        </div>
 
-                    <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-stylists")'>
-                        <div class="stats-value">@stats.Stylists</div>
-                        <div class="stats-label">Active Stylists</div>
-                    </div>
+                        <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-stylists")'>
+                            <div class="stats-value">@stats.Stylists</div>
+                            <div class="stats-label">Active Stylists</div>
+                        </div>
 
-                    <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-users")'>
-                        <div class="stats-value">@stats.Users</div>
-                        <div class="stats-label">Admin Accounts</div>
-                    </div>
+                        <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-users")'>
+                            <div class="stats-value">@stats.Users</div>
+                            <div class="stats-label">Admin Accounts</div>
+                        </div>
+                    }
 
                     <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-clients")'>
                         <div class="stats-value">@stats.Clients</div>
-                        <div class="stats-label">Total Clients</div>
+                        <div class="stats-label">@(State.IsImpersonating ? "My Clients" : "Total Clients")</div>
                     </div>
 
                     <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-appointments")'>
                         <div class="stats-value">@stats.Appointments</div>
-                        <div class="stats-label">Live Bookings</div>
+                        <div class="stats-label">@(State.IsImpersonating ? "My Bookings" : "Live Bookings")</div>
                     </div>
 
                     <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-client-notes")'>
                         <div class="stats-value">@stats.Notes</div>
-                        <div class="stats-label">Formulas & Notes</div>
+                        <div class="stats-label">@(State.IsImpersonating ? "My Formulas" : "Formulas & Notes")</div>
                     </div>
                 </div>
 
+                @* SYSTEM MONITOR / RECENT ACTIVITY *@
                 <div class="mt-10 bg-[#25262b] rounded-2xl border border-gray-800 overflow-hidden shadow-2xl">
                     <div class="p-4 border-b border-gray-800 bg-black/20 flex justify-between items-center">
                         <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">System Monitor</h3>
-                        <span class="text-[9px] font-mono text-blue-500 uppercase">Live_Feed</span>
+                        <span class="text-[9px] font-mono text-blue-500 uppercase">@(State.IsImpersonating ? "Scoped_Feed" : "Live_Feed")</span>
                     </div>
-                    <div class="p-4 max-h-[250px] overflow-y-auto custom-scrollbar">
+                    <div class="p-4 max-h-[350px] overflow-y-auto custom-scrollbar">
                         @if (recentAppointments.Any())
                         {
                             @foreach (var app in recentAppointments)
@@ -210,21 +232,48 @@
     private async Task LoadStats()
     {
         try {
-            var userRes = await Db.Database.SqlQueryRaw<int>(@"SELECT COUNT(*)::int as ""Value"" FROM ""NETH_Users""").ToListAsync();
-            stats.Users = userRes.FirstOrDefault();
+            int? filterId = State.ImpersonatedStylistId;
 
-            stats.Shops = await Db.NETH_Shops.CountAsync();
-            stats.Stylists = await Db.NETH_Stylists.CountAsync();
-            stats.Clients = await Db.NETH_Clients.CountAsync();
-            stats.Appointments = await Db.NETH_Appointments.CountAsync();
-            
-            var noteRes = await Db.Database.SqlQueryRaw<int>(@"SELECT COUNT(*)::int as ""Value"" FROM ""NETH_ClientNotes""").ToListAsync();
-            stats.Notes = noteRes.FirstOrDefault();
+            if (!filterId.HasValue)
+            {
+                // FULL ADMIN STATS
+                var userRes = await Db.Database.SqlQueryRaw<int>(@"SELECT COUNT(*)::int as ""Value"" FROM ""NETH_Users""").ToListAsync();
+                stats.Users = userRes.FirstOrDefault();
+                stats.Shops = await Db.NETH_Shops.CountAsync();
+                stats.Stylists = await Db.NETH_Stylists.CountAsync();
+                stats.Clients = await Db.NETH_Clients.CountAsync();
+                stats.Appointments = await Db.NETH_Appointments.CountAsync();
+                var noteRes = await Db.Database.SqlQueryRaw<int>(@"SELECT COUNT(*)::int as ""Value"" FROM ""NETH_ClientNotes""").ToListAsync();
+                stats.Notes = noteRes.FirstOrDefault();
 
-            recentAppointments = await Db.NETH_Appointments
-                .OrderByDescending(x => x.Id)
-                .Take(6)
-                .ToListAsync();
+                recentAppointments = await Db.NETH_Appointments
+                    .OrderByDescending(x => x.Id)
+                    .Take(8)
+                    .ToListAsync();
+            }
+            else
+            {
+                // SCOPED STYLIST STATS
+                stats.Appointments = await Db.NETH_Appointments.CountAsync(x => x.StylistId == filterId);
+                
+                // For Clients, we show clients who have had appointments with this stylist
+                stats.Clients = await Db.NETH_Appointments
+                    .Where(x => x.StylistId == filterId)
+                    .Select(x => x.ClientId)
+                    .Distinct()
+                    .CountAsync();
+
+                var noteRes = await Db.Database.SqlQueryRaw<int>(
+                    @"SELECT COUNT(*)::int as ""Value"" FROM ""NETH_ClientNotes"" WHERE ""StylistId"" = {0}", 
+                    filterId.Value).ToListAsync();
+                stats.Notes = noteRes.FirstOrDefault();
+
+                recentAppointments = await Db.NETH_Appointments
+                    .Where(x => x.StylistId == filterId)
+                    .OrderByDescending(x => x.Id)
+                    .Take(8)
+                    .ToListAsync();
+            }
         } catch { }
     }
 
@@ -249,6 +298,13 @@
         } catch { 
             errorMessage = "ERR: SYSTEM_TIMEOUT"; 
         }
+    }
+
+    private async Task ExitImpersonation()
+    {
+        State.Clear();
+        await LoadStats();
+        StateHasChanged();
     }
 
     public class DashboardStats { 
