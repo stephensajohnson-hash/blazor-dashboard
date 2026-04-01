@@ -48,7 +48,21 @@
         transition: transform 0.1s, border-color 0.2s;
         display: flex;
         flex-direction: column;
+        overflow: hidden;
     }
+
+    /* OFF HOURS STRIPE PATTERN */
+    .neth-appointment-group.off-hours {
+        background-image: repeating-linear-gradient(
+            45deg,
+            rgba(0, 0, 0, 0.1),
+            rgba(0, 0, 0, 0.1) 10px,
+            rgba(0, 0, 0, 0.2) 10px,
+            rgba(0, 0, 0, 0.2) 20px
+        );
+        border: 1px dashed rgba(255,255,255,0.5);
+    }
+
     .neth-appointment-group:hover { border-color: white; z-index: 200; }
     
     .neth-service-segment { 
@@ -102,12 +116,7 @@
         background: #25262b;
     }
 
-    .busy-score {
-        font-family: ui-monospace, SFMono-Regular, monospace;
-        font-weight: 900;
-        text-transform: uppercase;
-    }
-
+    .busy-score { font-family: ui-monospace, SFMono-Regular, monospace; font-weight: 900; text-transform: uppercase; }
     .custom-scrollbar::-webkit-scrollbar { width: 6px; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
 </style>
@@ -120,7 +129,6 @@
 
         <div class="flex-1 p-8">
             <div class="max-w-7xl mx-auto">
-                @* HEADER SECTION *@
                 <div class="flex justify-between items-center mb-8 bg-[#25262b] p-6 rounded-2xl border border-gray-800 shadow-xl">
                     <div class="flex items-center gap-6">
                         @if (currentStylist?.AvatarId > 0)
@@ -156,13 +164,6 @@
                                 @foreach(var s in allStylists) { <option value="@s.Id">@s.Name</option> }
                             </select>
                         }
-                        else
-                        {
-                            <div class="bg-orange-600/10 border border-orange-500/30 px-4 py-3 rounded-xl flex items-center gap-2">
-                                <i class="fa-solid fa-user-secret text-orange-500 text-xs"></i>
-                                <span class="text-orange-500 text-[10px] font-black uppercase tracking-widest">Locked: @State.ImpersonatedName</span>
-                            </div>
-                        }
                         <div class="flex bg-[#1a1b1e] rounded-xl border border-gray-700 overflow-hidden shadow-lg">
                             <button @onclick="() => ChangeWeek(-1)" class="px-5 py-3 hover:bg-white/5 border-r border-gray-800 transition">&lt;</button>
                             <button @onclick="() => ChangeWeek(1)" class="px-5 py-3 hover:bg-white/5 transition">&gt;</button>
@@ -173,9 +174,8 @@
                 @if (selectedStylistId > 0)
                 {
                     <div class="grid grid-cols-1 xl:grid-cols-4 gap-8">
-                        @* LEFT COLUMN: SERVICES *@
                         <div class="xl:col-span-1 space-y-4">
-                            <div class="bg-[#25262b] p-5 rounded-2xl border border-gray-800 @(isShaking ? "shake-it" : "") shadow-2xl transition-colors">
+                            <div class="bg-[#25262b] p-5 rounded-2xl border border-gray-800 shadow-2xl transition-colors">
                                 <h3 class="text-[10px] font-black uppercase text-[#D2B48C] mb-4 tracking-widest">1. Services (@totalDuration min)</h3>
                                 <div class="max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
                                     @foreach (var svc in filteredServices)
@@ -205,9 +205,8 @@
                             }
                         </div>
 
-                        @* RIGHT COLUMN: CALENDAR *@
                         <div class="xl:col-span-3 bg-[#25262b] rounded-2xl border border-gray-800 overflow-hidden flex flex-col shadow-2xl">
-                            <div class="grid grid-cols-8 bg-black/40 border-b border-gray-800 font-black uppercase text-[9px] text-gray-500">
+                            <div class="grid grid-cols-8 bg-black/40 border-b border-gray-700 font-black uppercase text-[9px] text-gray-500">
                                 <div class="p-4 border-r border-gray-800 flex items-center justify-center">TIME</div>
                                 @for (int i = 0; i < 7; i++) {
                                     <div class="p-3 text-center border-r border-gray-800">
@@ -237,14 +236,26 @@
                                             @foreach (var shift in dayShifts)
                                             {
                                                 <div class="neth-shift-zone" style="top: @(GetPx(shift.StartTime))px; height: @(GetH(shift.StartTime, shift.EndTime))px;"></div>
-                                                @for (DateTime t = shift.StartTime; t < shift.EndTime; t = t.AddMinutes(15))
-                                                {
-                                                    var start = t; var end = t.AddMinutes(totalDuration);
-                                                    bool collision = dayApps.Any(a => start.TimeOfDay < a.EndTime.TimeOfDay && end.TimeOfDay > a.StartTime.TimeOfDay);
-                                                    bool overShift = end.TimeOfDay > shift.EndTime.TimeOfDay;
+                                            }
 
-                                                    <div @onclick="() => HandleSlotClick(dayDate, start, collision || overShift)" class="neth-click-slot" style="top: @(GetPx(start))px; height: 25px;">
-                                                        @if (!(collision || overShift)) {
+                                            @* INTERACTIVE GRID OVERLAY *@
+                                            @for (int h = 8; h < 20; h++)
+                                            {
+                                                @for (int m = 0; m < 60; m += 15)
+                                                {
+                                                    var slotTime = dayDate.Date.AddHours(h).AddMinutes(m);
+                                                    var slotEnd = slotTime.AddMinutes(totalDuration);
+                                                    
+                                                    // 1. Check if in past
+                                                    bool isPast = slotTime < DateTime.Now;
+                                                    
+                                                    // 2. Check collision with existing appointments
+                                                    bool collision = dayApps.Any(a => slotTime < a.EndTime && slotEnd > a.StartTime);
+
+                                                    <div @onclick="() => HandleSlotClick(dayDate, slotTime, collision || isPast)" 
+                                                         class="neth-click-slot" 
+                                                         style="top: @(GetPx(slotTime))px; height: 25px;">
+                                                        @if (!collision && !isPast) {
                                                             <div class="neth-ghost-preview" style="height: @(totalDuration * 1.666)px;"></div>
                                                         }
                                                     </div>
@@ -255,8 +266,10 @@
                                             {
                                                 var client = allClients.FirstOrDefault(x => x.Id == app.ClientId);
                                                 var appServices = allAppointmentServices.Where(x => x.AppointmentId == app.Id).ToList();
-                                                
-                                                <div @onclick="() => DeleteApp(app)" @onclick:stopPropagation="true" class="neth-appointment-group group" 
+                                                bool isOffHours = IsOffHours(app);
+
+                                                <div @onclick="() => DeleteApp(app)" @onclick:stopPropagation="true" 
+                                                     class="neth-appointment-group group @(isOffHours ? "off-hours" : "")" 
                                                      style="top: @(GetPx(app.StartTime))px; height: @(GetH(app.StartTime, app.EndTime))px;">
                                                     
                                                     <div class="absolute top-1 right-1 hidden group-hover:flex gap-1 z-[300]">
@@ -275,18 +288,11 @@
                                                             <div class="neth-service-segment" style="height: @(aps.DurationAtBooking * 1.666)px; background: @(svc?.Color ?? "#3b82f6")">
                                                                 <div class="flex items-center overflow-visible">
                                                                     @if (j == 0) {
-                                                                        @if (client?.AvatarId > 0) {
-                                                                            <img src="/neth-images/@client.AvatarId" class="mini-client-avatar shadow-sm" />
-                                                                        } else {
-                                                                            <div class="mini-client-avatar shadow-sm">
-                                                                                @client?.FirstName?[0]@client?.LastName?[0]
-                                                                            </div>
-                                                                        }
-                                                                        <p class="text-[8px] font-bold text-white/90 truncate">@(client?.FirstName)</p>
+                                                                        @if (client?.AvatarId > 0) { <img src="/neth-images/@client.AvatarId" class="mini-client-avatar shadow-sm" /> }
+                                                                        else { <div class="mini-client-avatar shadow-sm">@client?.FirstName?[0]@client?.LastName?[0]</div> }
+                                                                        <p class="text-[8px] font-bold text-white/90 truncate">@(client?.FirstName) @(isOffHours ? "⚡" : "")</p>
                                                                     }
-                                                                    else {
-                                                                        <p class="text-[8px] font-black text-white uppercase truncate leading-none">@(svc?.Name ?? "Service")</p>
-                                                                    }
+                                                                    else { <p class="text-[8px] font-black text-white uppercase truncate leading-none">@(svc?.Name ?? "Service")</p> }
                                                                 </div>
                                                             </div>
                                                         }
@@ -303,7 +309,6 @@
                                 </div>
                             </div>
                             
-                            @* DAY BUSY SCORES & INCOME (Bottom Row) *@
                             <div class="grid grid-cols-8 bg-black/40 border-t border-gray-700">
                                 <div class="p-4 border-r border-gray-800 text-[8px] font-black uppercase text-gray-600 leading-tight">Projected<br/>Metrics</div>
                                 @for (int i = 0; i < 7; i++)
@@ -329,7 +334,6 @@
     [Parameter] public int PreSelectedStylistId { get; set; }
     private bool isTimeSelected, isShaking;
     private int selectedStylistId, selectedClientId, viewWeekOffset;
-    private string statusMessage = "";
     private DateTime bookingStart;
     private NETH_Stylist? currentStylist;
 
@@ -351,16 +355,17 @@
             allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync(); 
             allServices = await Db.NETH_Services.AsNoTracking().ToListAsync();
 
-            if (State.IsImpersonating) {
-                selectedStylistId = State.ImpersonatedStylistId.Value;
-                await LoadStylistData();
-            }
-            else if (PreSelectedStylistId > 0) { 
-                selectedStylistId = PreSelectedStylistId; 
-                await LoadStylistData(); 
-            }
+            if (State.IsImpersonating) { selectedStylistId = State.ImpersonatedStylistId.Value; await LoadStylistData(); }
+            else if (PreSelectedStylistId > 0) { selectedStylistId = PreSelectedStylistId; await LoadStylistData(); }
             StateHasChanged(); 
         }
+    }
+
+    private bool IsOffHours(NETH_Appointment app) {
+        var dayShifts = stylistSchedules.Where(x => x.DayOfWeek == (int)app.StartTime.DayOfWeek).ToList();
+        if (!dayShifts.Any()) return true;
+        // Check if the appointment start time is within any defined shift for that day
+        return !dayShifts.Any(s => app.StartTime.TimeOfDay >= s.StartTime.TimeOfDay && app.StartTime.TimeOfDay < s.EndTime.TimeOfDay);
     }
 
     private int CalculateDailyBusy(DateTime date) {
@@ -372,64 +377,39 @@
         return (int)Math.Min(100, Math.Round((totalBookedMinutes / totalShiftMinutes) * 100));
     }
 
-    private decimal CalculateDailyIncome(DateTime date) {
-        return existingAppointments.Where(a => a.StartTime.Date == date.Date).Sum(a => a.TotalPrice);
-    }
+    private decimal CalculateDailyIncome(DateTime date) => existingAppointments.Where(a => a.StartTime.Date == date.Date).Sum(a => a.TotalPrice);
+    private decimal CalculateWeeklyIncome() => existingAppointments.Sum(a => a.TotalPrice);
 
     private int CalculateWeeklyBusy() {
-        double totalShiftMinutes = 0;
-        double totalBookedMinutes = 0;
+        double totalShiftMinutes = 0, totalBookedMinutes = 0;
         for (int i = 0; i < 7; i++) {
             var date = startOfWeek.AddDays(i);
             var shifts = stylistSchedules.Where(x => x.DayOfWeek == (int)date.DayOfWeek).ToList();
             totalShiftMinutes += shifts.Sum(s => (s.EndTime - s.StartTime).TotalMinutes);
             totalBookedMinutes += existingAppointments.Where(a => a.StartTime.Date == date.Date).Sum(a => (a.EndTime - a.StartTime).TotalMinutes);
         }
-        if (totalShiftMinutes == 0) return 0;
-        return (int)Math.Min(100, Math.Round((totalBookedMinutes / totalShiftMinutes) * 100));
+        return totalShiftMinutes == 0 ? 0 : (int)Math.Min(100, Math.Round((totalBookedMinutes / totalShiftMinutes) * 100));
     }
 
-    private decimal CalculateWeeklyIncome() {
-        return existingAppointments.Sum(a => a.TotalPrice);
-    }
+    private string GetScoreColor(int score) => score switch { > 85 => "text-orange-500", > 50 => "text-green-500", > 0 => "text-blue-500", _ => "text-gray-700" };
 
-    private string GetScoreColor(int score) => score switch {
-        > 85 => "text-orange-500",
-        > 50 => "text-green-500",
-        > 0  => "text-blue-500",
-        _    => "text-gray-700"
-    };
-
-    private async Task OnStylistChanged(ChangeEventArgs e) { 
-        selectedStylistId = int.Parse(e.Value?.ToString() ?? "0"); 
-        await LoadStylistData(); 
-    }
+    private async Task OnStylistChanged(ChangeEventArgs e) { selectedStylistId = int.Parse(e.Value?.ToString() ?? "0"); await LoadStylistData(); }
 
     private async Task LoadStylistData() {
         if (selectedStylistId == 0) return;
         currentStylist = await Db.NETH_Stylists.FirstOrDefaultAsync(x => x.Id == selectedStylistId);
         filteredServices = await Db.NETH_Services.Where(x => x.StylistId == selectedStylistId).ToListAsync();
         stylistSchedules = await Db.NETH_Schedules.Where(x => x.StylistId == selectedStylistId).ToListAsync();
-        existingAppointments = await Db.NETH_Appointments.Where(x => x.StylistId == selectedStylistId 
-            && x.StartTime >= startOfWeek && x.StartTime < startOfWeek.AddDays(7)).ToListAsync();
+        existingAppointments = await Db.NETH_Appointments.Where(x => x.StylistId == selectedStylistId && x.StartTime >= startOfWeek && x.StartTime < startOfWeek.AddDays(7)).ToListAsync();
         var appIds = existingAppointments.Select(x => x.Id).ToArray();
         if (appIds.Any()) allAppointmentServices = await Db.Database.SqlQueryRaw<NETH_AppointmentService>("SELECT * FROM \"NETH_AppointmentServices\" WHERE \"AppointmentId\" = ANY({0})", appIds).ToListAsync();
         StateHasChanged();
     }
 
-    private void ToggleService(NETH_Service svc) {
-        if (selectedServices.Any(x => x.Id == svc.Id)) selectedServices.RemoveAll(x => x.Id == svc.Id);
-        else selectedServices.Add(svc);
-        StateHasChanged();
-    }
+    private void ToggleService(NETH_Service svc) { if (selectedServices.Any(x => x.Id == svc.Id)) selectedServices.RemoveAll(x => x.Id == svc.Id); else selectedServices.Add(svc); StateHasChanged(); }
 
     private async Task HandleSlotClick(DateTime date, DateTime time, bool isInvalid) {
-        if (isInvalid) {
-            isShaking = true; StateHasChanged();
-            await Task.Delay(400);
-            isShaking = false; StateHasChanged();
-            return;
-        }
+        if (isInvalid) { isShaking = true; StateHasChanged(); await Task.Delay(400); isShaking = false; StateHasChanged(); return; }
         bookingStart = date.Date.Add(time.TimeOfDay);
         isTimeSelected = true;
     }
@@ -446,9 +426,7 @@
     private double GetH(DateTime s, DateTime e) => (e - s).TotalMinutes * 1.666;
     private async Task ChangeWeek(int delta) { viewWeekOffset += delta; isTimeSelected = false; await LoadStylistData(); }
 
-    private void GoToNotes(int clientId) {
-        Nav.NavigateTo($"/admin/neth-client-notes?StylistId={selectedStylistId}&ClientId={clientId}");
-    }
+    private void GoToNotes(int clientId) { Nav.NavigateTo($"/admin/neth-client-notes?StylistId={selectedStylistId}&ClientId={clientId}"); }
 
     private async Task CreateAppointment() {
         if (selectedClientId == 0 || !selectedServices.Any() || currentStylist == null) return;
