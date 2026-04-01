@@ -60,10 +60,10 @@
     }
 
     .client-note-avatar {
-        width: 40px;
-        height: 40px;
+        width: 44px;
+        height: 44px;
         border-radius: 50%;
-        border: 1px solid rgba(255,255,255,0.1);
+        border: 2px solid rgba(255,255,255,0.05);
         background: #1a1b1e;
         display: flex;
         align-items: center;
@@ -71,10 +71,21 @@
         flex-shrink: 0;
         overflow: hidden;
         font-weight: 900;
-        font-size: 12px;
+        font-size: 13px;
         color: #D2B48C;
     }
     .client-note-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+    .date-badge {
+        background: #1a1b1e;
+        color: #60a5fa;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-family: ui-monospace, SFMono-Regular, monospace;
+        font-size: 11px;
+        font-weight: 800;
+        border: 1px solid #1e293b;
+    }
 
     .custom-scrollbar::-webkit-scrollbar { width: 6px; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
@@ -95,7 +106,7 @@
                         <h2 class="text-2xl font-black text-white uppercase tracking-tight">
                             @(currentStylist?.Name != null ? $"{currentStylist.Name}'s Notes" : "Client History")
                         </h2>
-                        <p class="text-[10px] text-[#D2B48C] font-mono uppercase tracking-widest">Formula Ledger</p>
+                        <p class="text-[10px] text-[#D2B48C] font-mono uppercase tracking-widest">Formula Ledger // Page @(currentPage + 1)</p>
                     </div>
                 </div>
                 <button @onclick="() => OpenModal()" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded font-black uppercase text-[10px] transition shadow-lg">
@@ -131,7 +142,8 @@
                 <div class="space-y-1">
                     <label class="text-[9px] font-black uppercase text-gray-500 ml-1">Target Client</label>
                     <select @onchange="OnClientChanged" value="@selectedClientId" class="w-full bg-[#25262b] border border-gray-700 rounded p-3 text-white text-xs outline-none focus:border-blue-500 transition-colors">
-                        <option value="0">-- Select Client --</option>
+                        @* ADDED ALL CLIENTS OPTION *@
+                        <option value="-1">-- All Clients --</option>
                         @foreach(var c in allClients) { <option value="@c.Id">@c.FirstName @c.LastName</option> }
                     </select>
                 </div>
@@ -142,13 +154,13 @@
                 {
                     <div class="note-card group">
                         <div class="client-note-avatar">
-                            @if (currentClient?.AvatarId > 0)
+                            @if (note.ClientAvatarId > 0)
                             {
-                                <img src="/neth-images/@currentClient.AvatarId" alt="Client" />
+                                <img src="/neth-images/@note.ClientAvatarId" alt="Client" />
                             }
                             else
                             {
-                                <span>@GetInitials(currentClient?.FirstName, currentClient?.LastName)</span>
+                                <span>@GetInitials(note.ClientFirstName, note.ClientLastName)</span>
                             }
                         </div>
 
@@ -162,11 +174,13 @@
                                 </button>
                             </div>
 
-                            <div class="flex items-center gap-3 mb-2">
-                                <span class="text-[10px] font-black font-mono text-blue-500 uppercase">@note.DateDisplay</span>
+                            <div class="flex items-center flex-wrap gap-3 mb-3">
+                                <span class="date-badge">@note.DateDisplay</span>
+                                @* SHOW CLIENT NAME IN ALL VIEW *@
+                                <span class="text-[11px] font-black text-white uppercase tracking-tight">@note.ClientFirstName @note.ClientLastName</span>
                                 @if (!string.IsNullOrEmpty(note.ShortDesc))
                                 {
-                                    <span class="text-[10px] font-black text-white uppercase tracking-widest border-l border-gray-700 pl-3">@note.ShortDesc</span>
+                                    <span class="text-[9px] font-black text-gray-500 uppercase tracking-[0.2em] border-l border-gray-700 pl-3">@note.ShortDesc</span>
                                 }
                             </div>
                             <p class="text-gray-400 text-sm leading-relaxed whitespace-pre-wrap pr-16">@note.Text</p>
@@ -174,16 +188,20 @@
                     </div>
                 }
 
-                @if (!displayNotes.Any() && selectedClientId > 0 && selectedStylistId > 0)
+                @* PAGINATION CONTROLS *@
+                @if (displayNotes.Any() && (displayNotes.Count == 50 || currentPage > 0))
                 {
-                    <div class="text-center py-20 border-2 border-dashed border-gray-800 rounded-xl">
-                        <p class="text-gray-600 text-xs uppercase font-black tracking-widest">No entries found for this specific pair.</p>
+                    <div class="flex justify-center items-center gap-6 pt-10">
+                        <button @onclick="PrevPage" disabled="@(currentPage == 0)" class="bg-gray-800 hover:bg-gray-700 disabled:opacity-20 text-white px-6 py-2 rounded-xl font-black uppercase text-[10px] transition">Previous</button>
+                        <span class="font-mono text-[10px] uppercase text-gray-500">Node_Page: @(currentPage + 1)</span>
+                        <button @onclick="NextPage" disabled="@(displayNotes.Count < 50)" class="bg-gray-800 hover:bg-gray-700 disabled:opacity-20 text-white px-6 py-2 rounded-xl font-black uppercase text-[10px] transition">Next</button>
                     </div>
                 }
-                else if (selectedClientId == 0 || selectedStylistId == 0)
+
+                @if (!displayNotes.Any() && selectedStylistId > 0)
                 {
-                    <div class="text-center py-20 border-2 border-dashed border-gray-800/30 rounded-xl">
-                        <p class="text-gray-700 text-xs uppercase font-black tracking-widest">Select both Stylist and Client to view history.</p>
+                    <div class="text-center py-20 border-2 border-dashed border-gray-800 rounded-xl">
+                        <p class="text-gray-600 text-xs uppercase font-black tracking-widest">No entries found for this selection.</p>
                     </div>
                 }
             </div>
@@ -203,6 +221,13 @@
                 <button @onclick="() => showModal = false" class="text-gray-500 hover:text-white text-2xl">&times;</button>
             </div>
             <div class="p-8 space-y-5">
+                @if (selectedClientId <= 0)
+                {
+                   <div class="p-4 bg-orange-900/20 border border-orange-500/30 rounded-xl mb-4">
+                       <p class="text-[10px] font-black text-orange-400 uppercase tracking-widest">Warning: Please select a specific client before creating a note.</p>
+                   </div>
+                }
+                
                 <div class="grid grid-cols-2 gap-4">
                     <div class="space-y-1">
                         <label class="text-[9px] font-black uppercase text-gray-500">Date</label>
@@ -222,7 +247,7 @@
                 </div>
                 
                 <div class="flex gap-3 pt-2">
-                    <button @onclick="SaveEntry" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-black uppercase text-[10px] py-4 rounded-xl transition shadow-xl tracking-widest">
+                    <button @onclick="SaveEntry" disabled="@(selectedClientId <= 0)" class="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-30 text-white font-black uppercase text-[10px] py-4 rounded-xl transition shadow-xl tracking-widest">
                         <i class="fa-solid fa-check mr-2"></i> @(editingNoteId == 0 ? "Save to History" : "Update Entry")
                     </button>
                 </div>
@@ -235,7 +260,9 @@
     private bool showModal = false;
     private int editingNoteId = 0;
     private int selectedStylistId = 0;
-    private int selectedClientId = 0;
+    private int selectedClientId = -1; // DEFAULT TO ALL (-1)
+    private int currentPage = 0;
+    private const int PageSize = 50;
     
     private DateTime modalDate = DateTime.Today;
     private string modalShortDesc = "";
@@ -246,14 +273,19 @@
     private List<NETH_Client> allClients = new();
     private List<NoteDisplay> displayNotes = new();
     private NETH_Stylist? currentStylist;
-    private NETH_Client? currentClient;
 
     public class NoteDisplay {
         public int Id { get; set; }
         public string Text { get; set; } = "";
         public string ShortDesc { get; set; } = "";
         public DateTime EntryDate { get; set; }
-        public string DateDisplay => EntryDate.ToString("MMM dd, yyyy");
+        public string DateDisplay => EntryDate.ToString("ddd, MMM dd, yyyy");
+        
+        // Joined Data
+        public int ClientId { get; set; }
+        public string ClientFirstName { get; set; } = "";
+        public string ClientLastName { get; set; } = "";
+        public int? ClientAvatarId { get; set; }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -266,7 +298,6 @@
             var uri = Nav.ToAbsoluteUri(Nav.Uri);
             var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
             
-            // Handle Impersonation vs URL parameters
             if (State.IsImpersonating) {
                 selectedStylistId = State.ImpersonatedStylistId.Value;
             } else if (query.TryGetValue("StylistId", out var sId) && !string.IsNullOrEmpty(sId)) {
@@ -275,12 +306,13 @@
 
             if (query.TryGetValue("ClientId", out var cId) && !string.IsNullOrEmpty(cId)) {
                 selectedClientId = int.Parse(cId.ToString());
+            } else {
+                selectedClientId = -1; // Default to All
             }
 
             currentStylist = allStylists.FirstOrDefault(x => x.Id == selectedStylistId);
-            currentClient = allClients.FirstOrDefault(x => x.Id == selectedClientId);
 
-            if (selectedClientId > 0 && selectedStylistId > 0) await LoadNotes();
+            if (selectedStylistId > 0) await LoadNotes();
             StateHasChanged();
         }
     }
@@ -295,51 +327,64 @@
     private async Task OnStylistChanged(ChangeEventArgs e)
     {
         displayNotes.Clear();
+        currentPage = 0;
         selectedStylistId = int.Parse(e.Value?.ToString() ?? "0");
         currentStylist = allStylists.FirstOrDefault(x => x.Id == selectedStylistId);
-        
-        if (selectedStylistId > 0 && selectedClientId > 0) await LoadNotes();
-        else StateHasChanged();
+        await LoadNotes();
     }
 
     private async Task OnClientChanged(ChangeEventArgs e)
     {
         displayNotes.Clear();
+        currentPage = 0;
         selectedClientId = int.Parse(e.Value?.ToString() ?? "0");
-        currentClient = allClients.FirstOrDefault(x => x.Id == selectedClientId);
-        
-        if (selectedStylistId > 0 && selectedClientId > 0) await LoadNotes();
-        else StateHasChanged();
+        await LoadNotes();
     }
+
+    private async Task NextPage() { currentPage++; await LoadNotes(); }
+    private async Task PrevPage() { if (currentPage > 0) { currentPage--; await LoadNotes(); } }
 
     private async Task LoadNotes()
     {
-        if (selectedClientId == 0 || selectedStylistId == 0) {
+        if (selectedStylistId == 0) {
             displayNotes.Clear();
             return;
         }
+        
         try {
-            var rawData = await Db.Database.SqlQueryRaw<NoteSqlResult>(
-                @"SELECT ""Id"", ""NoteText"", ""ShortDescription"", ""ManualDate"" 
-                  FROM ""NETH_ClientNotes"" 
-                  WHERE ""ClientId"" = {0} AND ""StylistId"" = {1}
-                  ORDER BY ""ManualDate"" DESC", 
-                selectedClientId, selectedStylistId
-            ).ToListAsync();
+            string query = "";
+            object[] parms;
 
-            displayNotes = rawData.Select(x => new NoteDisplay {
-                Id = x.Id,
-                Text = x.NoteText,
-                ShortDesc = x.ShortDescription ?? "",
-                EntryDate = x.ManualDate
-            }).ToList();
+            if (selectedClientId == -1) {
+                // ALL CLIENTS VIEW
+                query = @"SELECT n.""Id"", n.""NoteText"", n.""ShortDescription"" as ""ShortDesc"", n.""ManualDate"" as ""EntryDate"", 
+                                 c.""Id"" as ""ClientId"", c.""FirstName"" as ""ClientFirstName"", c.""LastName"" as ""ClientLastName"", c.""AvatarId"" as ""ClientAvatarId""
+                          FROM ""NETH_ClientNotes"" n
+                          JOIN ""NETH_Clients"" c ON n.""ClientId"" = c.""Id""
+                          WHERE n.""StylistId"" = {0}
+                          ORDER BY n.""ManualDate"" DESC
+                          LIMIT {1} OFFSET {2}";
+                parms = new object[] { selectedStylistId, PageSize, currentPage * PageSize };
+            } else {
+                // SPECIFIC CLIENT VIEW
+                query = @"SELECT n.""Id"", n.""NoteText"", n.""ShortDescription"" as ""ShortDesc"", n.""ManualDate"" as ""EntryDate"", 
+                                 c.""Id"" as ""ClientId"", c.""FirstName"" as ""ClientFirstName"", c.""LastName"" as ""ClientLastName"", c.""AvatarId"" as ""ClientAvatarId""
+                          FROM ""NETH_ClientNotes"" n
+                          JOIN ""NETH_Clients"" c ON n.""ClientId"" = c.""Id""
+                          WHERE n.""StylistId"" = {0} AND n.""ClientId"" = {1}
+                          ORDER BY n.""ManualDate"" DESC
+                          LIMIT {2} OFFSET {3}";
+                parms = new object[] { selectedStylistId, selectedClientId, PageSize, currentPage * PageSize };
+            }
+
+            displayNotes = await Db.Database.SqlQueryRaw<NoteDisplay>(query, parms).ToListAsync();
         } catch (Exception ex) { localError = "LOAD_ERR: " + ex.Message; }
         StateHasChanged();
     }
 
     private void OpenModal(NoteDisplay? existing = null) {
-        if (selectedClientId == 0 || selectedStylistId == 0) {
-            localError = "SELECT STYLIST AND CLIENT FIRST";
+        if (selectedStylistId == 0) {
+            localError = "SELECT STYLIST FIRST";
             return;
         }
         
@@ -348,6 +393,8 @@
             modalDate = existing.EntryDate;
             modalShortDesc = existing.ShortDesc;
             modalFullNote = existing.Text;
+            // Ensure we update for the client tied to the note even if viewing "All"
+            selectedClientId = existing.ClientId; 
         } else {
             editingNoteId = 0;
             modalDate = DateTime.Today;
@@ -361,7 +408,7 @@
 
     private async Task SaveEntry()
     {
-        if (string.IsNullOrWhiteSpace(modalFullNote)) return;
+        if (string.IsNullOrWhiteSpace(modalFullNote) || selectedClientId <= 0) return;
         try {
             if (editingNoteId == 0) {
                 await Db.Database.ExecuteSqlRawAsync(
@@ -390,12 +437,5 @@
             await Db.Database.ExecuteSqlRawAsync(@"DELETE FROM ""NETH_ClientNotes"" WHERE ""Id"" = {0}", id);
             await LoadNotes();
         } catch (Exception ex) { localError = "DEL_ERR: " + ex.Message; }
-    }
-
-    private class NoteSqlResult {
-        public int Id { get; set; }
-        public string NoteText { get; set; } = "";
-        public string? ShortDescription { get; set; }
-        public DateTime ManualDate { get; set; }
     }
 }
