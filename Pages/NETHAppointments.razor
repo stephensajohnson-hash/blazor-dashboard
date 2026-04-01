@@ -26,6 +26,24 @@
     }
 
     .neth-shift-zone { position: absolute; left: 0; right: 0; background: rgba(34, 197, 94, 0.05); border-left: 2px solid #22c55e; z-index: 1; pointer-events: none; }
+    
+    /* PAST / EXPIRED ZONE STYLING */
+    .neth-past-zone { 
+        position: absolute; 
+        left: 0; 
+        right: 0; 
+        background-image: repeating-linear-gradient(
+            -45deg,
+            rgba(0, 0, 0, 0.2),
+            rgba(0, 0, 0, 0.2) 5px,
+            rgba(255, 255, 255, 0.02) 5px,
+            rgba(255, 255, 255, 0.02) 10px
+        );
+        z-index: 2; 
+        pointer-events: none; 
+        border-right: 1px solid rgba(255,255,255,0.03);
+    }
+
     .neth-click-slot { position: absolute; left: 0; right: 0; z-index: 10; cursor: pointer; }
     
     .neth-ghost-preview { 
@@ -51,7 +69,6 @@
         overflow: hidden;
     }
 
-    /* OFF HOURS STRIPE PATTERN */
     .neth-appointment-group.off-hours {
         background-image: repeating-linear-gradient(
             45deg,
@@ -119,6 +136,8 @@
     .busy-score { font-family: ui-monospace, SFMono-Regular, monospace; font-weight: 900; text-transform: uppercase; }
     .custom-scrollbar::-webkit-scrollbar { width: 6px; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
+    .shake-it { animation: shake 0.4s; }
+    @@keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
 </style>
 
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
@@ -129,6 +148,7 @@
 
         <div class="flex-1 p-8">
             <div class="max-w-7xl mx-auto">
+                @* HEADER *@
                 <div class="flex justify-between items-center mb-8 bg-[#25262b] p-6 rounded-2xl border border-gray-800 shadow-xl">
                     <div class="flex items-center gap-6">
                         @if (currentStylist?.AvatarId > 0)
@@ -139,10 +159,10 @@
                             <h2 class="text-3xl font-black text-white uppercase tracking-tighter italic">
                                 @(currentStylist?.Name ?? "Appointment Desk")
                             </h2>
-                            <div class="flex items-center gap-4 mt-1">
-                                <p class="text-xs text-gray-500 font-mono uppercase tracking-[0.2em]">@startOfWeek.ToString("MMMM yyyy")</p>
-                                @if (selectedStylistId > 0)
-                                {
+                            @if (selectedStylistId > 0)
+                            {
+                                <div class="flex items-center gap-4 mt-1">
+                                    <p class="text-xs text-gray-500 font-mono uppercase tracking-[0.2em]">@startOfWeek.ToString("MMMM yyyy")</p>
                                     <div class="flex items-center gap-4 border-l border-gray-700 pl-4">
                                         <span class="text-lg busy-score @GetScoreColor(CalculateWeeklyBusy())">
                                             @CalculateWeeklyBusy()% BUSY THIS WEEK
@@ -151,8 +171,8 @@
                                             $@CalculateWeeklyIncome().ToString("N0") <span class="text-[10px] opacity-50 uppercase ml-1">Est_Income</span>
                                         </span>
                                     </div>
-                                }
-                            </div>
+                                </div>
+                            }
                         </div>
                     </div>
                     
@@ -174,8 +194,9 @@
                 @if (selectedStylistId > 0)
                 {
                     <div class="grid grid-cols-1 xl:grid-cols-4 gap-8">
+                        @* SERVICES *@
                         <div class="xl:col-span-1 space-y-4">
-                            <div class="bg-[#25262b] p-5 rounded-2xl border border-gray-800 shadow-2xl transition-colors">
+                            <div class="bg-[#25262b] p-5 rounded-2xl border border-gray-800 @(isShaking ? "shake-it" : "") shadow-2xl transition-colors">
                                 <h3 class="text-[10px] font-black uppercase text-[#D2B48C] mb-4 tracking-widest">1. Services (@totalDuration min)</h3>
                                 <div class="max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
                                     @foreach (var svc in filteredServices)
@@ -205,6 +226,7 @@
                             }
                         </div>
 
+                        @* CALENDAR GRID *@
                         <div class="xl:col-span-3 bg-[#25262b] rounded-2xl border border-gray-800 overflow-hidden flex flex-col shadow-2xl">
                             <div class="grid grid-cols-8 bg-black/40 border-b border-gray-700 font-black uppercase text-[9px] text-gray-500">
                                 <div class="p-4 border-r border-gray-800 flex items-center justify-center">TIME</div>
@@ -231,11 +253,27 @@
                                         var dayDate = startOfWeek.AddDays(i);
                                         var dayShifts = stylistSchedules.Where(x => x.DayOfWeek == (int)dayDate.DayOfWeek).ToList();
                                         var dayApps = existingAppointments.Where(x => x.StartTime.Date == dayDate.Date).ToList();
+                                        var nowTx = GetTexasTime();
 
                                         <div class="col-span-1 border-r border-gray-800 relative">
                                             @foreach (var shift in dayShifts)
                                             {
                                                 <div class="neth-shift-zone" style="top: @(GetPx(shift.StartTime))px; height: @(GetH(shift.StartTime, shift.EndTime))px;"></div>
+                                            }
+
+                                            @* ZEBRA STRIPE EXPIRED ZONE *@
+                                            @if (dayDate.Date < nowTx.Date)
+                                            {
+                                                @* FULL DAY EXPIRED (for yesterday/earlier) *@
+                                                <div class="neth-past-zone" style="top: 0; bottom: 0;"></div>
+                                            }
+                                            else if (dayDate.Date == nowTx.Date && nowTx.Hour < 20)
+                                            {
+                                                @* PARTIAL EXPIRED (for today) *@
+                                                var endPx = GetPx(nowTx);
+                                                if (endPx > 0) {
+                                                    <div class="neth-past-zone" style="top: 0; height: @(Math.Min(1200, endPx))px;"></div>
+                                                }
                                             }
 
                                             @* INTERACTIVE GRID OVERLAY *@
@@ -245,14 +283,10 @@
                                                 {
                                                     var slotTime = dayDate.Date.AddHours(h).AddMinutes(m);
                                                     var slotEnd = slotTime.AddMinutes(totalDuration);
-                                                    
-                                                    // 1. Check if in past
-                                                    bool isPast = slotTime < DateTime.Now;
-                                                    
-                                                    // 2. Check collision with existing appointments
                                                     bool collision = dayApps.Any(a => slotTime < a.EndTime && slotEnd > a.StartTime);
+                                                    bool isPast = slotTime < nowTx;
 
-                                                    <div @onclick="() => HandleSlotClick(dayDate, slotTime, collision || isPast)" 
+                                                    <div @onclick="() => HandleSlotClick(dayDate, slotTime, collision)" 
                                                          class="neth-click-slot" 
                                                          style="top: @(GetPx(slotTime))px; height: 25px;">
                                                         @if (!collision && !isPast) {
@@ -272,13 +306,6 @@
                                                      class="neth-appointment-group group @(isOffHours ? "off-hours" : "")" 
                                                      style="top: @(GetPx(app.StartTime))px; height: @(GetH(app.StartTime, app.EndTime))px;">
                                                     
-                                                    <div class="absolute top-1 right-1 hidden group-hover:flex gap-1 z-[300]">
-                                                        <button @onclick="() => GoToNotes(app.ClientId)" @onclick:stopPropagation="true"
-                                                                class="bg-black/90 hover:bg-green-600 text-white w-7 h-7 flex items-center justify-center rounded border border-white/20 transition-all shadow-xl">
-                                                            <i class="fa-solid fa-file-lines text-xs text-white"></i>
-                                                        </button>
-                                                    </div>
-
                                                     @if (appServices.Any())
                                                     {
                                                         @for (int j = 0; j < appServices.Count; j++)
@@ -354,17 +381,20 @@
             allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync(); 
             allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync(); 
             allServices = await Db.NETH_Services.AsNoTracking().ToListAsync();
-
             if (State.IsImpersonating) { selectedStylistId = State.ImpersonatedStylistId.Value; await LoadStylistData(); }
             else if (PreSelectedStylistId > 0) { selectedStylistId = PreSelectedStylistId; await LoadStylistData(); }
             StateHasChanged(); 
         }
     }
 
+    private DateTime GetTexasTime() {
+        var txTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Central Standard Time");
+        return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, txTimeZone);
+    }
+
     private bool IsOffHours(NETH_Appointment app) {
         var dayShifts = stylistSchedules.Where(x => x.DayOfWeek == (int)app.StartTime.DayOfWeek).ToList();
         if (!dayShifts.Any()) return true;
-        // Check if the appointment start time is within any defined shift for that day
         return !dayShifts.Any(s => app.StartTime.TimeOfDay >= s.StartTime.TimeOfDay && app.StartTime.TimeOfDay < s.EndTime.TimeOfDay);
     }
 
@@ -373,8 +403,7 @@
         if (!shifts.Any()) return 0;
         double totalShiftMinutes = shifts.Sum(s => (s.EndTime - s.StartTime).TotalMinutes);
         double totalBookedMinutes = existingAppointments.Where(a => a.StartTime.Date == date.Date).Sum(a => (a.EndTime - a.StartTime).TotalMinutes);
-        if (totalShiftMinutes == 0) return 0;
-        return (int)Math.Min(100, Math.Round((totalBookedMinutes / totalShiftMinutes) * 100));
+        return totalShiftMinutes == 0 ? 0 : (int)Math.Min(100, Math.Round((totalBookedMinutes / totalShiftMinutes) * 100));
     }
 
     private decimal CalculateDailyIncome(DateTime date) => existingAppointments.Where(a => a.StartTime.Date == date.Date).Sum(a => a.TotalPrice);
@@ -408,9 +437,11 @@
 
     private void ToggleService(NETH_Service svc) { if (selectedServices.Any(x => x.Id == svc.Id)) selectedServices.RemoveAll(x => x.Id == svc.Id); else selectedServices.Add(svc); StateHasChanged(); }
 
-    private async Task HandleSlotClick(DateTime date, DateTime time, bool isInvalid) {
-        if (isInvalid) { isShaking = true; StateHasChanged(); await Task.Delay(400); isShaking = false; StateHasChanged(); return; }
-        bookingStart = date.Date.Add(time.TimeOfDay);
+    private async Task HandleSlotClick(DateTime date, DateTime time, bool isCollision) {
+        var nowTx = GetTexasTime();
+        var selectedSlotFull = date.Date.Add(time.TimeOfDay);
+        if (selectedSlotFull < nowTx || isCollision) { isShaking = true; StateHasChanged(); await Task.Delay(400); isShaking = false; StateHasChanged(); return; }
+        bookingStart = selectedSlotFull;
         isTimeSelected = true;
     }
 
@@ -425,9 +456,6 @@
     private double GetPx(DateTime t) => ((t.Hour - 8) + (t.Minute / 60.0)) * 100;
     private double GetH(DateTime s, DateTime e) => (e - s).TotalMinutes * 1.666;
     private async Task ChangeWeek(int delta) { viewWeekOffset += delta; isTimeSelected = false; await LoadStylistData(); }
-
-    private void GoToNotes(int clientId) { Nav.NavigateTo($"/admin/neth-client-notes?StylistId={selectedStylistId}&ClientId={clientId}"); }
-
     private async Task CreateAppointment() {
         if (selectedClientId == 0 || !selectedServices.Any() || currentStylist == null) return;
         try {
