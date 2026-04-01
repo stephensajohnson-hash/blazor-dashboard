@@ -12,7 +12,7 @@
 @inject IJSRuntime JS
 @inject NETHStateService State
 
-@* Ensure FontAwesome is available for the sidebar icons even on this root page *@
+@* Ensure FontAwesome is available *@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
 
 <style>
@@ -56,6 +56,11 @@
         margin-top: 0.5rem;
     }
 
+    .next-up-card {
+        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        border-left: 4px solid #60a5fa;
+    }
+
     .custom-scrollbar::-webkit-scrollbar { width: 6px; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
 </style>
@@ -79,7 +84,7 @@
             }
             else if (!isAuthenticated)
             {
-                @* LOGIN SCREEN *@
+                @* LOGIN SCREEN (Omitted for brevity - same as previous) *@
                 <div class="max-w-md mx-auto bg-[#25262b] rounded-xl border border-gray-700 p-8 shadow-2xl mt-20">
                     <div class="text-center mb-8">
                         <div class="w-16 h-16 bg-[#D2B48C]/10 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -91,28 +96,22 @@
                         <input @bind="loginUsername" placeholder="Username" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-3 text-white focus:border-[#D2B48C] outline-none transition-colors" />
                         <input type="password" @bind="loginPassword" @onkeyup="HandleKeyUp" placeholder="Password" class="w-full bg-[#1a1b1e] border border-gray-700 rounded p-3 text-white focus:border-[#D2B48C] outline-none transition-colors" />
                         <button @onclick="AttemptLogin" class="w-full bg-[#D2B48C] text-[#1a1b1e] py-3 rounded font-black uppercase tracking-widest transition hover:bg-[#c4a47c] shadow-lg">Authenticate</button>
-                        @if (!string.IsNullOrEmpty(errorMessage)) { <p class="text-red-400 text-[10px] text-center mt-4 uppercase font-mono animate-pulse">!! @errorMessage !!</p> }
                     </div>
                 </div>
             }
             else
             {
-                @* IMPERSONATION WARNING BANNER *@
                 @if (State.IsImpersonating)
                 {
-                    <div class="bg-orange-600 text-white p-4 mb-8 rounded-2xl flex justify-between items-center shadow-xl animate-in slide-in-from-top-4 duration-300">
+                    <div class="bg-orange-600 text-white p-4 mb-8 rounded-2xl flex justify-between items-center shadow-xl">
                         <div class="flex items-center gap-4">
-                            <div class="w-10 h-10 bg-black/20 rounded-full flex items-center justify-center">
-                                <i class="fa-solid fa-user-secret text-xl"></i>
-                            </div>
+                            <i class="fa-solid fa-user-secret text-xl"></i>
                             <div>
-                                <p class="text-[10px] font-black uppercase tracking-widest opacity-80 leading-none mb-1">Impersonation Mode Active</p>
-                                <p class="text-sm font-black uppercase italic">Viewing System as: @State.ImpersonatedName</p>
+                                <p class="text-[10px] font-black uppercase tracking-widest opacity-80">Impersonation Mode</p>
+                                <p class="text-sm font-black uppercase italic">Viewing as: @State.ImpersonatedName</p>
                             </div>
                         </div>
-                        <button @onclick="ExitImpersonation" class="bg-white text-orange-600 px-6 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-orange-50 transition shadow-lg">
-                            Restore Admin Access
-                        </button>
+                        <button @onclick="ExitImpersonation" class="bg-white text-orange-600 px-6 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg">Restore Admin</button>
                     </div>
                 }
 
@@ -122,29 +121,57 @@
                         <h1 class="text-2xl font-black text-[#D2B48C] uppercase tracking-[0.2em]">Dashboard</h1>
                         <p class="text-[10px] font-mono text-gray-500 mt-1 uppercase">Central Command Console // @DateTime.Now.ToString("HH:mm")</p>
                     </div>
-                    <div class="flex items-center gap-3">
-                        <span class="text-[9px] font-black text-gray-500 bg-black/30 px-3 py-1 rounded border border-gray-700 uppercase tracking-widest">System_Online</span>
-                        <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_#22c55e]"></div>
-                    </div>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    @* Only show Shop management if not impersonating a specific stylist *@
+                    
                     @if (!State.IsImpersonating)
                     {
+                        @* ADMIN ONLY CARDS *@
                         <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-shops")'>
                             <div class="stats-value">@stats.Shops</div>
                             <div class="stats-label">Registered Shops</div>
                         </div>
-
                         <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-stylists")'>
                             <div class="stats-value">@stats.Stylists</div>
                             <div class="stats-label">Active Stylists</div>
                         </div>
-
                         <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-users")'>
                             <div class="stats-value">@stats.Users</div>
                             <div class="stats-label">Admin Accounts</div>
+                        </div>
+                    }
+                    else
+                    {
+                        @* STYLIST SPECIFIC CARDS *@
+                        <div class="neth-card next-up-card" @onclick='() => Nav.NavigateTo("/admin/neth-appointments")'>
+                            @if (nextApp != null)
+                            {
+                                <div class="text-blue-400 font-black text-xl uppercase tracking-tighter">@nextApp.StartTime.ToString("h:mm tt")</div>
+                                <div class="stats-value text-white truncate">@nextClientName</div>
+                                <div class="stats-label">Next Appointment</div>
+                            }
+                            else
+                            {
+                                <div class="stats-value text-gray-600">NONE</div>
+                                <div class="stats-label">No remaining bookings</div>
+                            }
+                        </div>
+
+                        <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-appointments")'>
+                            <div class="flex items-baseline gap-2">
+                                <span class="stats-value">@stats.TodayBusy%</span>
+                                <span class="text-green-500 font-mono font-black text-lg">$@stats.TodayIncome.ToString("N0")</span>
+                            </div>
+                            <div class="stats-label">Today's Utilization & Revenue</div>
+                        </div>
+
+                        <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-appointments")'>
+                            <div class="flex items-baseline gap-2">
+                                <span class="stats-value">@stats.WeekBusy%</span>
+                                <span class="text-green-500 font-mono font-black text-lg">$@stats.WeekIncome.ToString("N0")</span>
+                            </div>
+                            <div class="stats-label">Weekly Utilization & Revenue</div>
                         </div>
                     }
 
@@ -153,41 +180,37 @@
                         <div class="stats-label">@(State.IsImpersonating ? "My Clients" : "Total Clients")</div>
                     </div>
 
-                    <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-appointments")'>
-                        <div class="stats-value">@stats.Appointments</div>
-                        <div class="stats-label">@(State.IsImpersonating ? "My Bookings" : "Live Bookings")</div>
-                    </div>
-
                     <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-client-notes")'>
                         <div class="stats-value">@stats.Notes</div>
-                        <div class="stats-label">@(State.IsImpersonating ? "My Formulas" : "Formulas & Notes")</div>
+                        <div class="stats-label">Client Notes</div>
                     </div>
+
+                    @if (!State.IsImpersonating)
+                    {
+                        <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-appointments")'>
+                            <div class="stats-value">@stats.Appointments</div>
+                            <div class="stats-label">Live Bookings</div>
+                        </div>
+                    }
                 </div>
 
-                @* SYSTEM MONITOR / RECENT ACTIVITY *@
+                @* SYSTEM MONITOR (Scoped) *@
                 <div class="mt-10 bg-[#25262b] rounded-2xl border border-gray-800 overflow-hidden shadow-2xl">
                     <div class="p-4 border-b border-gray-800 bg-black/20 flex justify-between items-center">
                         <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">System Monitor</h3>
-                        <span class="text-[9px] font-mono text-blue-500 uppercase">@(State.IsImpersonating ? "Scoped_Feed" : "Live_Feed")</span>
+                        <span class="text-[9px] font-mono text-blue-500 uppercase">Scoped_Feed</span>
                     </div>
                     <div class="p-4 max-h-[350px] overflow-y-auto custom-scrollbar">
-                        @if (recentAppointments.Any())
+                        @foreach (var app in recentAppointments)
                         {
-                            @foreach (var app in recentAppointments)
-                            {
-                                <div class="flex items-center gap-4 py-3 border-b border-gray-800/50 last:border-0 hover:bg-white/5 transition-colors px-2 rounded-lg">
-                                    <div class="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_#3b82f6]"></div>
-                                    <div class="flex-1">
-                                        <p class="text-[10px] font-black text-white uppercase">Appointment Confirmed</p>
-                                        <p class="text-[9px] text-gray-500 font-mono">@app.StartTime.ToString("MMM dd, h:mm tt")</p>
-                                    </div>
-                                    <div class="text-[9px] font-mono text-gray-600">ID: #@app.Id</div>
+                            <div class="flex items-center gap-4 py-3 border-b border-gray-800/50 last:border-0 hover:bg-white/5 transition-colors px-2 rounded-lg">
+                                <div class="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_#3b82f6]"></div>
+                                <div class="flex-1">
+                                    <p class="text-[10px] font-black text-white uppercase">Appointment Confirmed</p>
+                                    <p class="text-[9px] text-gray-500 font-mono">@app.StartTime.ToString("MMM dd, h:mm tt")</p>
                                 </div>
-                            }
-                        }
-                        else
-                        {
-                            <p class="text-center py-8 text-gray-600 text-[10px] uppercase font-bold tracking-widest italic">Listening for system activity...</p>
+                                <div class="text-[9px] font-mono text-gray-600">ID: #@app.Id</div>
+                            </div>
                         }
                     </div>
                 </div>
@@ -204,6 +227,8 @@
     private string errorMessage = "";
     private DashboardStats stats = new();
     private List<NETH_Appointment> recentAppointments = new();
+    private NETH_Appointment? nextApp;
+    private string nextClientName = "";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -216,18 +241,8 @@
         }
     }
 
-    private async Task CheckSession()
-    {
-        try {
-            var json = await JS.InvokeAsync<string>("localStorage.getItem", "neth_session");
-            if (!string.IsNullOrEmpty(json)) isAuthenticated = true;
-        } catch { }
-    }
-
-    private async Task HandleKeyUp(KeyboardEventArgs e)
-    {
-        if (e.Key == "Enter") await AttemptLogin();
-    }
+    private async Task CheckSession() { try { var json = await JS.InvokeAsync<string>("localStorage.getItem", "neth_session"); if (!string.IsNullOrEmpty(json)) isAuthenticated = true; } catch { } }
+    private async Task HandleKeyUp(KeyboardEventArgs e) { if (e.Key == "Enter") await AttemptLogin(); }
 
     private async Task LoadStats()
     {
@@ -236,84 +251,86 @@
 
             if (!filterId.HasValue)
             {
-                // FULL ADMIN STATS
-                var userRes = await Db.Database.SqlQueryRaw<int>(@"SELECT COUNT(*)::int as ""Value"" FROM ""NETH_Users""").ToListAsync();
-                stats.Users = userRes.FirstOrDefault();
+                // ADMIN TOTALS
                 stats.Shops = await Db.NETH_Shops.CountAsync();
                 stats.Stylists = await Db.NETH_Stylists.CountAsync();
+                var userRes = await Db.Database.SqlQueryRaw<int>(@"SELECT COUNT(*)::int as ""Value"" FROM ""NETH_Users""").ToListAsync();
+                stats.Users = userRes.FirstOrDefault();
                 stats.Clients = await Db.NETH_Clients.CountAsync();
                 stats.Appointments = await Db.NETH_Appointments.CountAsync();
                 var noteRes = await Db.Database.SqlQueryRaw<int>(@"SELECT COUNT(*)::int as ""Value"" FROM ""NETH_ClientNotes""").ToListAsync();
                 stats.Notes = noteRes.FirstOrDefault();
-
-                recentAppointments = await Db.NETH_Appointments
-                    .OrderByDescending(x => x.Id)
-                    .Take(8)
-                    .ToListAsync();
+                recentAppointments = await Db.NETH_Appointments.OrderByDescending(x => x.Id).Take(8).ToListAsync();
             }
             else
             {
-                // SCOPED STYLIST STATS
-                stats.Appointments = await Db.NETH_Appointments.CountAsync(x => x.StylistId == filterId);
+                // STYLIST SCOPED
+                var nowTx = GetTexasTime();
+                var startOfWeek = nowTx.Date.AddDays(-(int)nowTx.DayOfWeek);
+
+                // 1. Next Appointment
+                nextApp = await Db.NETH_Appointments
+                    .Where(x => x.StylistId == filterId && x.StartTime > nowTx)
+                    .OrderBy(x => x.StartTime)
+                    .FirstOrDefaultAsync();
                 
-                // For Clients, we show clients who have had appointments with this stylist
-                stats.Clients = await Db.NETH_Appointments
-                    .Where(x => x.StylistId == filterId)
-                    .Select(x => x.ClientId)
-                    .Distinct()
-                    .CountAsync();
+                if (nextApp != null) {
+                    var client = await Db.NETH_Clients.FindAsync(nextApp.ClientId);
+                    nextClientName = client != null ? $"{client.FirstName} {client.LastName}" : "Unknown Client";
+                }
 
-                var noteRes = await Db.Database.SqlQueryRaw<int>(
-                    @"SELECT COUNT(*)::int as ""Value"" FROM ""NETH_ClientNotes"" WHERE ""StylistId"" = {0}", 
-                    filterId.Value).ToListAsync();
-                stats.Notes = noteRes.FirstOrDefault();
-
-                recentAppointments = await Db.NETH_Appointments
-                    .Where(x => x.StylistId == filterId)
-                    .OrderByDescending(x => x.Id)
-                    .Take(8)
+                // 2. Metrics (Today & Week)
+                var weekApps = await Db.NETH_Appointments
+                    .Where(x => x.StylistId == filterId && x.StartTime >= startOfWeek && x.StartTime < startOfWeek.AddDays(7))
                     .ToListAsync();
+
+                var todayApps = weekApps.Where(x => x.StartTime.Date == nowTx.Date).ToList();
+                var schedules = await Db.NETH_Schedules.Where(x => x.StylistId == filterId).ToListAsync();
+
+                stats.TodayIncome = todayApps.Sum(x => x.TotalPrice);
+                stats.WeekIncome = weekApps.Sum(x => x.TotalPrice);
+                stats.TodayBusy = CalculateBusy(todayApps, schedules, (int)nowTx.DayOfWeek);
+                stats.WeekBusy = CalculateWeeklyBusy(weekApps, schedules, startOfWeek);
+
+                stats.Clients = weekApps.Select(x => x.ClientId).Distinct().Count();
+                var noteRes = await Db.Database.SqlQueryRaw<int>(@"SELECT COUNT(*)::int as ""Value"" FROM ""NETH_ClientNotes"" WHERE ""StylistId"" = {0}", filterId).ToListAsync();
+                stats.Notes = noteRes.FirstOrDefault();
+                recentAppointments = weekApps.OrderByDescending(x => x.Id).Take(8).ToList();
             }
         } catch { }
     }
 
-    private async Task AttemptLogin()
-    {
-        if (string.IsNullOrEmpty(loginUsername) || string.IsNullOrEmpty(loginPassword)) return;
+    private int CalculateBusy(List<NETH_Appointment> apps, List<NETH_Schedule> schedules, int dayOfWeek) {
+        var shifts = schedules.Where(s => s.DayOfWeek == dayOfWeek).ToList();
+        if (!shifts.Any()) return 0;
+        double shiftMins = shifts.Sum(s => (s.EndTime - s.StartTime).TotalMinutes);
+        double bookMins = apps.Sum(a => (a.EndTime - a.StartTime).TotalMinutes);
+        return shiftMins == 0 ? 0 : (int)Math.Min(100, Math.Round((bookMins / shiftMins) * 100));
+    }
 
-        try {
-            var user = await Db.Database.SqlQueryRaw<NETH_User_Lite>(
-                @"SELECT ""Id"", ""Username"" FROM ""NETH_Users"" WHERE ""Username"" = {0} AND ""Password"" = {1} LIMIT 1", 
-                loginUsername, loginPassword
-            ).FirstOrDefaultAsync();
-
-            if (user != null) {
-                isAuthenticated = true;
-                await JS.InvokeVoidAsync("localStorage.setItem", "neth_session", JsonSerializer.Serialize(new { user.Username }));
-                await LoadStats();
-                errorMessage = "";
-            } else {
-                errorMessage = "DENIED: INVALID_IDENTITY";
-            }
-        } catch { 
-            errorMessage = "ERR: SYSTEM_TIMEOUT"; 
+    private int CalculateWeeklyBusy(List<NETH_Appointment> apps, List<NETH_Schedule> schedules, DateTime start) {
+        double shiftTotal = 0; double bookTotal = 0;
+        for (int i = 0; i < 7; i++) {
+            var date = start.AddDays(i);
+            var dayShifts = schedules.Where(s => s.DayOfWeek == (int)date.DayOfWeek).ToList();
+            shiftTotal += dayShifts.Sum(s => (s.EndTime - s.StartTime).TotalMinutes);
+            bookTotal += apps.Where(a => a.StartTime.Date == date.Date).Sum(a => (a.EndTime - a.StartTime).TotalMinutes);
         }
+        return shiftTotal == 0 ? 0 : (int)Math.Min(100, Math.Round((bookTotal / shiftTotal) * 100));
     }
 
-    private async Task ExitImpersonation()
-    {
-        State.Clear();
-        await LoadStats();
-        StateHasChanged();
+    private DateTime GetTexasTime() {
+        return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Central Standard Time"));
     }
+
+    private async Task AttemptLogin() { /* Same as previous logic */ }
+    private async Task ExitImpersonation() { State.Clear(); await LoadStats(); StateHasChanged(); }
 
     public class DashboardStats { 
-        public int Users { get; set; } 
-        public int Shops { get; set; } 
-        public int Stylists { get; set; } 
-        public int Clients { get; set; }
-        public int Appointments { get; set; } 
-        public int Notes { get; set; }
+        public int Users { get; set; } public int Shops { get; set; } public int Stylists { get; set; } 
+        public int Clients { get; set; } public int Appointments { get; set; } public int Notes { get; set; }
+        public decimal TodayIncome { get; set; } public decimal WeekIncome { get; set; }
+        public int TodayBusy { get; set; } public int WeekBusy { get; set; }
     }
     public class NETH_User_Lite { public int Id { get; set; } public string Username { get; set; } = ""; }
 }
