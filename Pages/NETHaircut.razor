@@ -59,6 +59,7 @@
     .next-up-card {
         background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
         border-left: 4px solid #60a5fa;
+        min-height: 180px;
     }
 
     .custom-scrollbar::-webkit-scrollbar { width: 6px; }
@@ -84,7 +85,6 @@
             }
             else if (!isAuthenticated)
             {
-                @* LOGIN SCREEN (Omitted for brevity - same as previous) *@
                 <div class="max-w-md mx-auto bg-[#25262b] rounded-xl border border-gray-700 p-8 shadow-2xl mt-20">
                     <div class="text-center mb-8">
                         <div class="w-16 h-16 bg-[#D2B48C]/10 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -115,7 +115,6 @@
                     </div>
                 }
 
-                @* DASHBOARD CONTENT *@
                 <div class="bg-[#25262b] rounded-xl border border-gray-700 p-6 shadow-2xl flex justify-between items-center mb-8">
                     <div>
                         <h1 class="text-2xl font-black text-[#D2B48C] uppercase tracking-[0.2em]">Dashboard</h1>
@@ -127,7 +126,6 @@
                     
                     @if (!State.IsImpersonating)
                     {
-                        @* ADMIN ONLY CARDS *@
                         <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-shops")'>
                             <div class="stats-value">@stats.Shops</div>
                             <div class="stats-label">Registered Shops</div>
@@ -143,13 +141,26 @@
                     }
                     else
                     {
-                        @* STYLIST SPECIFIC CARDS *@
+                        @* NEXT APPOINTMENT CARD *@
                         <div class="neth-card next-up-card" @onclick='() => Nav.NavigateTo("/admin/neth-appointments")'>
                             @if (nextApp != null)
                             {
-                                <div class="text-blue-400 font-black text-xl uppercase tracking-tighter">@nextApp.StartTime.ToString("h:mm tt")</div>
-                                <div class="stats-value text-white truncate">@nextClientName</div>
-                                <div class="stats-label">Next Appointment</div>
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <div class="text-blue-400 font-black text-xl uppercase tracking-tighter">@nextApp.StartTime.ToString("h:mm tt")</div>
+                                        <div class="stats-value text-white truncate max-w-[200px]">@nextClientName</div>
+                                        <div class="stats-label">Next Appointment</div>
+                                    </div>
+                                    
+                                    @* CONDITIONAL NOTES LINK *@
+                                    @if (hasNextAppNotes)
+                                    {
+                                        <button @onclick="GoToNextAppNotes" @onclick:stopPropagation="true" 
+                                                class="mt-1 bg-blue-500/20 hover:bg-blue-500 border border-blue-500/40 text-blue-100 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition shadow-lg">
+                                            <i class="fa-solid fa-clipboard-list mr-1"></i> View History
+                                        </button>
+                                    }
+                                </div>
                             }
                             else
                             {
@@ -194,7 +205,6 @@
                     }
                 </div>
 
-                @* SYSTEM MONITOR (Scoped) *@
                 <div class="mt-10 bg-[#25262b] rounded-2xl border border-gray-800 overflow-hidden shadow-2xl">
                     <div class="p-4 border-b border-gray-800 bg-black/20 flex justify-between items-center">
                         <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">System Monitor</h3>
@@ -227,8 +237,10 @@
     private string errorMessage = "";
     private DashboardStats stats = new();
     private List<NETH_Appointment> recentAppointments = new();
+    
     private NETH_Appointment? nextApp;
     private string nextClientName = "";
+    private bool hasNextAppNotes = false;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -251,7 +263,7 @@
 
             if (!filterId.HasValue)
             {
-                // ADMIN TOTALS
+                // ADMIN MODE
                 stats.Shops = await Db.NETH_Shops.CountAsync();
                 stats.Stylists = await Db.NETH_Stylists.CountAsync();
                 var userRes = await Db.Database.SqlQueryRaw<int>(@"SELECT COUNT(*)::int as ""Value"" FROM ""NETH_Users""").ToListAsync();
@@ -264,11 +276,11 @@
             }
             else
             {
-                // STYLIST SCOPED
+                // STYLIST MODE
                 var nowTx = GetTexasTime();
                 var startOfWeek = nowTx.Date.AddDays(-(int)nowTx.DayOfWeek);
 
-                // 1. Next Appointment
+                // 1. Next Appointment + Notes Check
                 nextApp = await Db.NETH_Appointments
                     .Where(x => x.StylistId == filterId && x.StartTime > nowTx)
                     .OrderBy(x => x.StartTime)
@@ -277,9 +289,16 @@
                 if (nextApp != null) {
                     var client = await Db.NETH_Clients.FindAsync(nextApp.ClientId);
                     nextClientName = client != null ? $"{client.FirstName} {client.LastName}" : "Unknown Client";
+                    
+                    // Check if notes exist for this combo
+                    var noteCount = await Db.Database.SqlQueryRaw<int>(
+                        @"SELECT COUNT(*)::int as ""Value"" FROM ""NETH_ClientNotes"" WHERE ""StylistId"" = {0} AND ""ClientId"" = {1}", 
+                        filterId, nextApp.ClientId
+                    ).ToListAsync();
+                    hasNextAppNotes = noteCount.FirstOrDefault() > 0;
                 }
 
-                // 2. Metrics (Today & Week)
+                // 2. Performance Metrics
                 var weekApps = await Db.NETH_Appointments
                     .Where(x => x.StylistId == filterId && x.StartTime >= startOfWeek && x.StartTime < startOfWeek.AddDays(7))
                     .ToListAsync();
@@ -293,12 +312,23 @@
                 stats.WeekBusy = CalculateWeeklyBusy(weekApps, schedules, startOfWeek);
 
                 stats.Clients = weekApps.Select(x => x.ClientId).Distinct().Count();
-                var noteRes = await Db.Database.SqlQueryRaw<int>(@"SELECT COUNT(*)::int as ""Value"" FROM ""NETH_ClientNotes"" WHERE ""StylistId"" = {0}", filterId).ToListAsync();
-                stats.Notes = noteRes.FirstOrDefault();
+                
+                var noteResTotal = await Db.Database.SqlQueryRaw<int>(@"SELECT COUNT(*)::int as ""Value"" FROM ""NETH_ClientNotes"" WHERE ""StylistId"" = {0}", filterId).ToListAsync();
+                stats.Notes = noteResTotal.FirstOrDefault();
                 recentAppointments = weekApps.OrderByDescending(x => x.Id).Take(8).ToList();
             }
         } catch { }
     }
+
+    private void GoToNextAppNotes()
+    {
+        if (nextApp != null && State.ImpersonatedStylistId.HasValue)
+        {
+            Nav.NavigateTo($"/admin/neth-client-notes?StylistId={State.ImpersonatedStylistId}&ClientId={nextApp.ClientId}");
+        }
+    }
+
+    private DateTime GetTexasTime() => TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Central Standard Time"));
 
     private int CalculateBusy(List<NETH_Appointment> apps, List<NETH_Schedule> schedules, int dayOfWeek) {
         var shifts = schedules.Where(s => s.DayOfWeek == dayOfWeek).ToList();
@@ -319,11 +349,7 @@
         return shiftTotal == 0 ? 0 : (int)Math.Min(100, Math.Round((bookTotal / shiftTotal) * 100));
     }
 
-    private DateTime GetTexasTime() {
-        return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Central Standard Time"));
-    }
-
-    private async Task AttemptLogin() { /* Same as previous logic */ }
+    private async Task AttemptLogin() { /* Logic implementation same as before */ }
     private async Task ExitImpersonation() { State.Clear(); await LoadStats(); StateHasChanged(); }
 
     public class DashboardStats { 
