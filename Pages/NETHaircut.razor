@@ -135,7 +135,8 @@
 
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     
-                    @if (!State.IsImpersonating)
+                    @* IF NOT A STYLIST AND NOT IMPERSONATING: SHOW ADMIN CARDS *@
+                    @if (!State.ActiveStylistId.HasValue)
                     {
                         <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-shops")'>
                             <div class="stats-value">@stats.Shops</div>
@@ -152,6 +153,7 @@
                     }
                     else
                     {
+                        @* STYLIST MODE (Locked or Impersonated) *@
                         <div class="neth-card next-up-card" @onclick='() => Nav.NavigateTo("/admin/neth-appointments")'>
                             @if (nextApp != null)
                             {
@@ -189,7 +191,7 @@
 
                     <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-clients")'>
                         <div class="stats-value">@stats.Clients</div>
-                        <div class="stats-label">@(State.IsImpersonating ? "My Clients" : "Total Clients")</div>
+                        <div class="stats-label">@(State.ActiveStylistId.HasValue ? "My Clients" : "Total Clients")</div>
                     </div>
 
                     <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-client-notes")'>
@@ -197,7 +199,7 @@
                         <div class="stats-label">Client Notes</div>
                     </div>
 
-                    @if (!State.IsImpersonating)
+                    @if (!State.ActiveStylistId.HasValue)
                     {
                         <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-appointments")'>
                             <div class="stats-value">@stats.Appointments</div>
@@ -260,10 +262,12 @@
     private async Task LoadStats()
     {
         try {
-            int? filterId = State.ImpersonatedStylistId;
+            // Use the service's unified helper to get the ID regardless of login type
+            int? filterId = State.ActiveStylistId;
 
             if (!filterId.HasValue)
             {
+                // ADMIN TOTALS
                 stats.Shops = await Db.NETH_Shops.CountAsync();
                 stats.Stylists = await Db.NETH_Stylists.CountAsync();
                 var userRes = await Db.Database.SqlQueryRaw<int>(@"SELECT COUNT(*)::int as ""Value"" FROM ""NETH_Users""").ToListAsync();
@@ -276,6 +280,7 @@
             }
             else
             {
+                // STYLIST SCOPED DATA
                 var nowTx = GetTexasTime();
                 var startOfWeek = nowTx.Date.AddDays(-(int)nowTx.DayOfWeek);
 
@@ -318,9 +323,9 @@
 
     private void GoToNextAppNotes()
     {
-        if (nextApp != null && State.ImpersonatedStylistId.HasValue)
+        if (nextApp != null && State.ActiveStylistId.HasValue)
         {
-            Nav.NavigateTo($"/admin/neth-client-notes?StylistId={State.ImpersonatedStylistId}&ClientId={nextApp.ClientId}");
+            Nav.NavigateTo($"/admin/neth-client-notes?StylistId={State.ActiveStylistId}&ClientId={nextApp.ClientId}");
         }
     }
 
@@ -345,36 +350,33 @@
         return shiftTotal == 0 ? 0 : (int)Math.Min(100, Math.Round((bookTotal / shiftTotal) * 100));
     }
 
-private async Task AttemptLogin()
-{
-    if (string.IsNullOrEmpty(loginUsername) || string.IsNullOrEmpty(loginPassword)) return;
-    
-    try {
-        // 1. Authenticate the User
-        var user = await Db.Database.SqlQueryRaw<NETH_User_Lite>(
-            @"SELECT ""Id"", ""Username"" FROM ""NETH_Users"" WHERE ""Username"" = {0} AND ""Password"" = {1} LIMIT 1", 
-            loginUsername, loginPassword
-        ).FirstOrDefaultAsync();
+    private async Task AttemptLogin()
+    {
+        if (string.IsNullOrEmpty(loginUsername) || string.IsNullOrEmpty(loginPassword)) return;
+        
+        try {
+            var user = await Db.Database.SqlQueryRaw<NETH_User_Lite>(
+                @"SELECT ""Id"", ""Username"" FROM ""NETH_Users"" WHERE ""Username"" = {0} AND ""Password"" = {1} LIMIT 1", 
+                loginUsername, loginPassword
+            ).FirstOrDefaultAsync();
 
-        if (user != null) {
-            // 2. Check if this User is a Stylist
-            var stylist = await Db.NETH_Stylists
-                .FirstOrDefaultAsync(x => x.UserId == user.Id);
+            if (user != null) {
+                var stylist = await Db.NETH_Stylists
+                    .FirstOrDefaultAsync(x => x.UserId == user.Id);
 
-            if (stylist != null) {
-                // STYLIST LOGIN: Lock the state to this stylist
-                State.AuthenticatedStylistId = stylist.Id;
-                State.AuthenticatedName = stylist.Name;
-            }
+                if (stylist != null) {
+                    State.AuthenticatedStylistId = stylist.Id;
+                    State.AuthenticatedName = stylist.Name;
+                }
 
-            isAuthenticated = true;
-            await JS.InvokeVoidAsync("localStorage.setItem", "neth_session", JsonSerializer.Serialize(new { user.Username }));
-            await LoadStats();
-            errorMessage = "";
-        } 
-        else errorMessage = "DENIED: INVALID_IDENTITY";
-    } catch { errorMessage = "ERR: SYSTEM_TIMEOUT"; }
-}
+                isAuthenticated = true;
+                await JS.InvokeVoidAsync("localStorage.setItem", "neth_session", JsonSerializer.Serialize(new { user.Username }));
+                await LoadStats();
+                errorMessage = "";
+            } 
+            else errorMessage = "DENIED: INVALID_IDENTITY";
+        } catch { errorMessage = "ERR: SYSTEM_TIMEOUT"; }
+    }
 
     private async Task ExitImpersonation() { State.Clear(); await LoadStats(); StateHasChanged(); }
 
