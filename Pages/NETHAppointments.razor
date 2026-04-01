@@ -13,7 +13,7 @@
 @inject NETHStateService State
 
 <style>
-    /* 5AM to 12AM = 1900px total height */
+    /* 5AM to 12AM = 19 hours. 19 * 100px = 1900px total height */
     .neth-grid-container { height: 1900px; position: relative; background: #1a1b1e; }
     .neth-hour-row { height: 100px; border-bottom: 1px solid rgba(255,255,255,0.08); position: relative; }
     
@@ -30,8 +30,8 @@
     .neth-sticky-header {
         position: sticky;
         top: 0;
-        z-index: 500; /* Must be higher than appointments */
-        background: #25262b; /* Match card color */
+        z-index: 500;
+        background: #25262b;
         border-bottom: 1px solid #374151;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
     }
@@ -97,13 +97,20 @@
                 </div>
                 
                 <div class="flex gap-4 items-center">
-                    @if (!State.IsImpersonating)
+                    @if (!State.IsStylistLocked && !State.IsImpersonating)
                     {
                         <select @onchange="OnStylistChanged" value="@selectedStylistId" class="bg-[#1a1b1e] border border-gray-700 rounded-xl px-4 py-3 text-white text-[10px] font-black uppercase outline-none focus:border-blue-500">
                             <option value="0">-- Select Stylist --</option>
                             @foreach(var s in allStylists) { <option value="@s.Id">@s.Name</option> }
                         </select>
                     }
+                    else if (State.IsStylistLocked)
+                    {
+                        <div class="px-4 py-3 text-white text-[10px] font-black uppercase border border-gray-700 rounded-xl bg-[#25262b]">
+                            Account: @currentStylist?.Name
+                        </div>
+                    }
+
                     <div class="flex bg-[#1a1b1e] rounded-xl border border-gray-700 overflow-hidden shadow-lg">
                         <button @onclick="() => ChangeWeek(-1)" class="px-5 py-3 hover:bg-white/5 border-r border-gray-800 transition">&lt;</button>
                         <button @onclick="() => ChangeWeek(1)" class="px-5 py-3 hover:bg-white/5 transition">&gt;</button>
@@ -114,6 +121,7 @@
             @if (selectedStylistId > 0)
             {
                 <div class="grid grid-cols-1 xl:grid-cols-4 gap-8 items-start">
+                    @* SERVICES (STAYS TOP-ALIGNED VIA STICKY) *@
                     <div class="xl:col-span-1 space-y-4 sticky top-8">
                         <div class="bg-[#25262b] p-5 rounded-2xl border border-gray-800 @(isShaking ? "shake-it" : "") shadow-2xl transition-colors">
                             <h3 class="text-[10px] font-black uppercase text-[#D2B48C] mb-4 tracking-widest">1. Services (@totalDuration min)</h3>
@@ -145,6 +153,7 @@
                         }
                     </div>
 
+                    @* MAIN CALENDAR GRID *@
                     <div class="xl:col-span-3 bg-[#25262b] rounded-2xl border border-gray-800 flex flex-col shadow-2xl">
                         @* THE STICKY HEADER *@
                         <div class="grid grid-cols-8 neth-sticky-header font-black uppercase text-[9px] text-gray-500 rounded-t-2xl">
@@ -288,7 +297,12 @@
             allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync(); 
             allServices = await Db.NETH_Services.AsNoTracking().ToListAsync();
             
-            if (State.IsImpersonating) { 
+            // SECURITY CHECK: Prioritize authenticated login over impersonation
+            if (State.AuthenticatedStylistId.HasValue) {
+                selectedStylistId = State.AuthenticatedStylistId.Value;
+                await LoadStylistData();
+            }
+            else if (State.IsImpersonating) { 
                 selectedStylistId = State.ImpersonatedStylistId.Value; 
                 await LoadStylistData(); 
             }
@@ -297,12 +311,13 @@
                 await LoadStylistData(); 
             }
 
+            // DYNAMIC AUTO-SCROLL LOGIC
             int scrollTargetHour = 8;
             if (stylistSchedules.Any()) {
                 scrollTargetHour = stylistSchedules.Min(s => s.StartTime.Hour);
             }
 
-            await Task.Delay(400);
+            await Task.Delay(500); // 500ms delay for more stability
             await JS.InvokeVoidAsync("eval", @"
                 var targetId = 'hour-" + scrollTargetHour + @"';
                 var el = document.getElementById(targetId);

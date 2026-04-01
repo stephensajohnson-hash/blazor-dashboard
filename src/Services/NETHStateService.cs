@@ -1,21 +1,33 @@
-namespace Dashboard.Services;
-
-public class NETHStateService
+namespace Dashboard.Services
 {
-    public int? ImpersonatedStylistId { get; set; }
-    public string? ImpersonatedName { get; set; }
-
-    public bool IsImpersonating => ImpersonatedStylistId.HasValue;
-
-    public void Impersonate(int id, string name)
+    public class NETHStateService
     {
-        ImpersonatedStylistId = id;
-        ImpersonatedName = name;
-    }
+        // Set when a stylist logs in directly
+        public int? AuthenticatedStylistId { get; set; }
+        public string? AuthenticatedName { get; set; }
+        
+        // Set when an admin chooses to view as a stylist
+        public int? ImpersonatedStylistId { get; set; }
+        public string? ImpersonatedName { get; set; }
 
-    public void Clear()
-    {
-        ImpersonatedStylistId = null;
-        ImpersonatedName = null;
+        // The active ID used by all pages for filtering
+        public int? ActiveStylistId => AuthenticatedStylistId ?? ImpersonatedStylistId;
+        public string? ActiveName => AuthenticatedName ?? ImpersonatedName;
+
+        public bool IsImpersonating => ImpersonatedStylistId.HasValue;
+        public bool IsStylistLocked => AuthenticatedStylistId.HasValue;
+
+        public void Clear()
+        {
+            ImpersonatedStylistId = null;
+            ImpersonatedName = null;
+        }
+
+        public void Logout()
+        {
+            AuthenticatedStylistId = null;
+            AuthenticatedName = null;
+            Clear();
+        }
     }
 }
