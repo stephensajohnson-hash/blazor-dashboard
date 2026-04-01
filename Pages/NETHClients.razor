@@ -5,10 +5,12 @@
 @using Microsoft.JSInterop
 @using Dashboard
 @using Dashboard.Components
+@using Dashboard.Services
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject AppDbContext Db
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject NETHStateService State
 
 @* Fail-safe FontAwesome Loader *@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
@@ -75,11 +77,16 @@
                 <div class="flex justify-between items-end mb-8">
                     <div>
                         <h2 class="text-3xl font-black text-white uppercase tracking-tight italic">Client Registry</h2>
-                        <p class="text-[10px] text-gray-500 font-mono uppercase tracking-widest">Database_Total: @allClients.Count</p>
+                        <p class="text-[10px] text-gray-500 font-mono uppercase tracking-widest">
+                            @(State.ActiveStylistId.HasValue ? "Scoped_Total" : "Database_Total"): @allClients.Count
+                        </p>
                     </div>
-                    <button @onclick="OpenCreateModal" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase px-8 py-3 rounded-xl shadow-xl transition tracking-widest">
-                        ＋ New Client
-                    </button>
+                    @if (!State.ActiveStylistId.HasValue)
+                    {
+                        <button @onclick="OpenCreateModal" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase px-8 py-3 rounded-xl shadow-xl transition tracking-widest">
+                            ＋ New Client
+                        </button>
+                    }
                 </div>
 
                 @if (!string.IsNullOrEmpty(statusMessage))
@@ -132,7 +139,6 @@
                                         </td>
                                         <td class="p-4 align-middle">
                                             <div class="text-xs text-gray-400">@c.Email</div>
-                                            @* Formatted Phone Number Display *@
                                             <div class="text-[10px] font-mono text-[#D2B48C]">@FormatPhoneNumber(phoneRaw)</div>
                                         </td>
                                         <td class="p-4 align-middle">
@@ -145,15 +151,24 @@
                                                 <button @onclick="() => OpenEditModal(c)" class="action-btn-sm bg-blue-600/20 hover:bg-blue-600 border border-blue-500/30">
                                                     <i class="fa-solid fa-pen-to-square text-xs"></i>
                                                 </button>
-                                                <button @onclick="() => DeleteClient(c.Id, c.AvatarId)" class="action-btn-sm bg-red-600/20 hover:bg-red-600 border border-red-500/30">
-                                                    <i class="fa-solid fa-trash-can text-xs"></i>
-                                                </button>
+                                                @if (!State.ActiveStylistId.HasValue)
+                                                {
+                                                    <button @onclick="() => DeleteClient(c.Id, c.AvatarId)" class="action-btn-sm bg-red-600/20 hover:bg-red-600 border border-red-500/30">
+                                                        <i class="fa-solid fa-trash-can text-xs"></i>
+                                                    </button>
+                                                }
                                             </div>
                                         </td>
                                     </tr>
                                 }
                             </tbody>
                         </table>
+                        @if (!allClients.Any())
+                        {
+                            <div class="p-20 text-center text-gray-600 font-black uppercase tracking-widest text-xs">
+                                No linked history found for this terminal.
+                            </div>
+                        }
                     </div>
                 }
             </div>
@@ -203,18 +218,20 @@
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="text-[9px] font-black uppercase text-gray-500 mb-1 block ml-1">Phone Number</label>
-                        @* Phone Formatting occurs in the binder or helper if needed *@
                         <input @bind="uiPhoneNumber" placeholder="9035551212" class="w-full bg-black/40 border border-gray-700 rounded-xl p-3 text-white outline-none focus:border-[#D2B48C] font-mono transition-colors" />
                     </div>
-                    <div>
-                        <label class="text-[9px] font-black uppercase text-gray-500 mb-1 block ml-1">Linked Account</label>
-                        <select @bind="editingClient.UserId" class="w-full bg-black/40 border border-gray-700 rounded-xl p-3 text-white outline-none transition-colors">
-                            <option value="">-- Guest --</option>
-                            @foreach(var u in allUsers.Where(x => x.Role == "Client")) {
-                                <option value="@u.Id">@u.Username</option>
-                            }
-                        </select>
-                    </div>
+                    @if (!State.ActiveStylistId.HasValue)
+                    {
+                        <div>
+                            <label class="text-[9px] font-black uppercase text-gray-500 mb-1 block ml-1">Linked Account</label>
+                            <select @bind="editingClient.UserId" class="w-full bg-black/40 border border-gray-700 rounded-xl p-3 text-white outline-none transition-colors">
+                                <option value="">-- Guest --</option>
+                                @foreach(var u in allUsers.Where(x => x.Role == "Client")) {
+                                    <option value="@u.Id">@u.Username</option>
+                                }
+                            </select>
+                        </div>
+                    }
                 </div>
             </div>
 
@@ -250,24 +267,34 @@
 
     private async Task LoadAllData() {
         try {
-            allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync();
+            int? filterId = State.ActiveStylistId;
+
+            if (filterId.HasValue) {
+                // STYLIST SCOPE: Only clients with appointment history with this stylist
+                allClients = await Db.NETH_Clients
+                    .Where(c => Db.NETH_Appointments.Any(a => a.ClientId == c.Id && a.StylistId == filterId))
+                    .OrderBy(c => c.LastName)
+                    .ToListAsync();
+            } else {
+                // ADMIN SCOPE: All clients
+                allClients = await Db.NETH_Clients.OrderBy(c => c.LastName).ToListAsync();
+            }
+
             allPhones = await Db.NETH_Phones.AsNoTracking().ToListAsync();
             allUsers = await Db.Database.SqlQueryRaw<NETHUsers.NETH_User>(@"SELECT * FROM ""NETH_Users""").ToListAsync();
             StateHasChanged();
         } catch { }
     }
 
-    // Helper to format: (555) 555-5555
     private string FormatPhoneNumber(string phone)
     {
         if (string.IsNullOrWhiteSpace(phone)) return "NO_PHONE";
-        // Strip everything but numbers
         var nums = new string(phone.Where(char.IsDigit).ToArray());
         if (nums.Length == 10)
             return $"({nums.Substring(0, 3)}) {nums.Substring(3, 3)}-{nums.Substring(6, 4)}";
         if (nums.Length == 11 && nums.StartsWith("1"))
             return $"({nums.Substring(1, 3)}) {nums.Substring(4, 3)}-{nums.Substring(7, 4)}";
-        return phone; // Fallback
+        return phone;
     }
 
     private string GetInitials(string first, string last) {
