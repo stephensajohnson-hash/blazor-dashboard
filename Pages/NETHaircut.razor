@@ -21,7 +21,7 @@
         backdrop-filter: blur(10px);
         border: 1px solid rgba(255, 255, 255, 0.05);
         border-radius: 1.25rem;
-        padding: 2rem;
+        padding: 1.75rem;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         cursor: pointer;
         display: flex;
@@ -40,10 +40,10 @@
     }
 
     .stats-value {
-        font-size: 2.5rem;
+        font-size: 2.2rem;
         font-weight: 900;
         color: white;
-        line-height: 1;
+        line-height: 1.1;
         letter-spacing: -0.02em;
     }
 
@@ -56,10 +56,21 @@
         margin-top: 0.5rem;
     }
 
+    /* Next Up Card Specifics */
     .next-up-card {
         background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
         border-left: 4px solid #60a5fa;
-        min-height: 180px;
+        min-height: 160px; /* Allow height to grow */
+        justify-content: flex-start;
+    }
+    
+    .client-name-display {
+        font-size: 1.8rem; /* Slightly smaller than stats-value for fitting */
+        font-weight: 900;
+        color: white;
+        line-height: 1.1;
+        margin-top: 0.25rem;
+        word-wrap: break-word;
     }
 
     .custom-scrollbar::-webkit-scrollbar { width: 6px; }
@@ -141,26 +152,21 @@
                     }
                     else
                     {
-                        @* NEXT APPOINTMENT CARD *@
+                        @* NEXT APPOINTMENT CARD - RESPONSIVE TO LONG NAMES *@
                         <div class="neth-card next-up-card" @onclick='() => Nav.NavigateTo("/admin/neth-appointments")'>
                             @if (nextApp != null)
                             {
-                                <div class="flex justify-between items-start">
-                                    <div>
-                                        <div class="text-blue-400 font-black text-xl uppercase tracking-tighter">@nextApp.StartTime.ToString("h:mm tt")</div>
-                                        <div class="stats-value text-white truncate max-w-[200px]">@nextClientName</div>
-                                        <div class="stats-label">Next Appointment</div>
-                                    </div>
-                                    
-                                    @* CONDITIONAL NOTES LINK *@
+                                <div class="flex justify-between items-start w-full mb-2">
+                                    <div class="text-blue-400 font-black text-lg uppercase tracking-widest">Next Up: @nextApp.StartTime.ToString("h:mm tt")</div>
                                     @if (hasNextAppNotes)
                                     {
                                         <button @onclick="GoToNextAppNotes" @onclick:stopPropagation="true" 
-                                                class="mt-1 bg-blue-500/20 hover:bg-blue-500 border border-blue-500/40 text-blue-100 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition shadow-lg">
-                                            <i class="fa-solid fa-clipboard-list mr-1"></i> View History
+                                                class="bg-blue-500/20 hover:bg-blue-500 border border-blue-500/40 text-blue-100 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition">
+                                            <i class="fa-solid fa-clipboard-list mr-1"></i> History
                                         </button>
                                     }
                                 </div>
+                                <div class="client-name-display">@nextClientName</div>
                             }
                             else
                             {
@@ -170,19 +176,15 @@
                         </div>
 
                         <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-appointments")'>
-                            <div class="flex items-baseline gap-2">
-                                <span class="stats-value">@stats.TodayBusy%</span>
-                                <span class="text-green-500 font-mono font-black text-lg">$@stats.TodayIncome.ToString("N0")</span>
-                            </div>
-                            <div class="stats-label">Today's Utilization & Revenue</div>
+                            <div class="stats-value">@stats.TodayBusy% Busy</div>
+                            <div class="text-green-500 font-mono font-black text-lg mt-1">$@stats.TodayIncome.ToString("N0") Expected Income</div>
+                            <div class="stats-label">Today</div>
                         </div>
 
                         <div class="neth-card" @onclick='() => Nav.NavigateTo("/admin/neth-appointments")'>
-                            <div class="flex items-baseline gap-2">
-                                <span class="stats-value">@stats.WeekBusy%</span>
-                                <span class="text-green-500 font-mono font-black text-lg">$@stats.WeekIncome.ToString("N0")</span>
-                            </div>
-                            <div class="stats-label">Weekly Utilization & Revenue</div>
+                            <div class="stats-value">@stats.WeekBusy% Busy</div>
+                            <div class="text-green-500 font-mono font-black text-lg mt-1">$@stats.WeekIncome.ToString("N0") Expected Income</div>
+                            <div class="stats-label">This Week</div>
                         </div>
                     }
 
@@ -263,7 +265,6 @@
 
             if (!filterId.HasValue)
             {
-                // ADMIN MODE
                 stats.Shops = await Db.NETH_Shops.CountAsync();
                 stats.Stylists = await Db.NETH_Stylists.CountAsync();
                 var userRes = await Db.Database.SqlQueryRaw<int>(@"SELECT COUNT(*)::int as ""Value"" FROM ""NETH_Users""").ToListAsync();
@@ -276,11 +277,9 @@
             }
             else
             {
-                // STYLIST MODE
                 var nowTx = GetTexasTime();
                 var startOfWeek = nowTx.Date.AddDays(-(int)nowTx.DayOfWeek);
 
-                // 1. Next Appointment + Notes Check
                 nextApp = await Db.NETH_Appointments
                     .Where(x => x.StylistId == filterId && x.StartTime > nowTx)
                     .OrderBy(x => x.StartTime)
@@ -290,7 +289,6 @@
                     var client = await Db.NETH_Clients.FindAsync(nextApp.ClientId);
                     nextClientName = client != null ? $"{client.FirstName} {client.LastName}" : "Unknown Client";
                     
-                    // Check if notes exist for this combo
                     var noteCount = await Db.Database.SqlQueryRaw<int>(
                         @"SELECT COUNT(*)::int as ""Value"" FROM ""NETH_ClientNotes"" WHERE ""StylistId"" = {0} AND ""ClientId"" = {1}", 
                         filterId, nextApp.ClientId
@@ -298,7 +296,6 @@
                     hasNextAppNotes = noteCount.FirstOrDefault() > 0;
                 }
 
-                // 2. Performance Metrics
                 var weekApps = await Db.NETH_Appointments
                     .Where(x => x.StylistId == filterId && x.StartTime >= startOfWeek && x.StartTime < startOfWeek.AddDays(7))
                     .ToListAsync();
@@ -349,7 +346,24 @@
         return shiftTotal == 0 ? 0 : (int)Math.Min(100, Math.Round((bookTotal / shiftTotal) * 100));
     }
 
-    private async Task AttemptLogin() { /* Logic implementation same as before */ }
+    private async Task AttemptLogin()
+    {
+        if (string.IsNullOrEmpty(loginUsername) || string.IsNullOrEmpty(loginPassword)) return;
+        try {
+            var user = await Db.Database.SqlQueryRaw<NETH_User_Lite>(
+                @"SELECT ""Id"", ""Username"" FROM ""NETH_Users"" WHERE ""Username"" = {0} AND ""Password"" = {1} LIMIT 1", 
+                loginUsername, loginPassword
+            ).FirstOrDefaultAsync();
+
+            if (user != null) {
+                isAuthenticated = true;
+                await JS.InvokeVoidAsync("localStorage.setItem", "neth_session", JsonSerializer.Serialize(new { user.Username }));
+                await LoadStats();
+                errorMessage = "";
+            } else errorMessage = "DENIED: INVALID_IDENTITY";
+        } catch { errorMessage = "ERR: SYSTEM_TIMEOUT"; }
+    }
+
     private async Task ExitImpersonation() { State.Clear(); await LoadStats(); StateHasChanged(); }
 
     public class DashboardStats { 
