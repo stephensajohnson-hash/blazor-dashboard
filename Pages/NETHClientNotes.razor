@@ -4,10 +4,12 @@
 @using Microsoft.JSInterop
 @using Dashboard
 @using Dashboard.Components
+@using Dashboard.Services
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject AppDbContext Db
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject NETHStateService State
 
 @* FAIL-SAFE FontAwesome Loader *@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
@@ -48,7 +50,6 @@
         color: white !important;
     }
 
-    /* Avatar Styles */
     .stylist-header-avatar {
         width: 48px;
         height: 48px;
@@ -112,14 +113,24 @@
             <div class="grid grid-cols-2 gap-4 mb-8">
                 <div class="space-y-1">
                     <label class="text-[9px] font-black uppercase text-gray-500 ml-1">Stylist Filter</label>
-                    <select @onchange="OnStylistChanged" value="@selectedStylistId" class="w-full bg-[#25262b] border border-gray-700 rounded p-3 text-white text-xs outline-none focus:border-blue-500">
-                        <option value="0">-- Select Stylist --</option>
-                        @foreach(var s in allStylists) { <option value="@s.Id">@s.Name</option> }
-                    </select>
+                    @if (!State.IsImpersonating)
+                    {
+                        <select @onchange="OnStylistChanged" value="@selectedStylistId" class="w-full bg-[#25262b] border border-gray-700 rounded p-3 text-white text-xs outline-none focus:border-blue-500 transition-colors">
+                            <option value="0">-- Select Stylist --</option>
+                            @foreach(var s in allStylists) { <option value="@s.Id">@s.Name</option> }
+                        </select>
+                    }
+                    else
+                    {
+                        <div class="w-full bg-orange-600/10 border border-orange-500/30 rounded p-3 flex items-center gap-3">
+                            <i class="fa-solid fa-user-secret text-orange-500 text-xs"></i>
+                            <span class="text-orange-500 text-[10px] font-black uppercase tracking-widest">Locked: @State.ImpersonatedName</span>
+                        </div>
+                    }
                 </div>
                 <div class="space-y-1">
                     <label class="text-[9px] font-black uppercase text-gray-500 ml-1">Target Client</label>
-                    <select @onchange="OnClientChanged" value="@selectedClientId" class="w-full bg-[#25262b] border border-gray-700 rounded p-3 text-white text-xs outline-none focus:border-blue-500">
+                    <select @onchange="OnClientChanged" value="@selectedClientId" class="w-full bg-[#25262b] border border-gray-700 rounded p-3 text-white text-xs outline-none focus:border-blue-500 transition-colors">
                         <option value="0">-- Select Client --</option>
                         @foreach(var c in allClients) { <option value="@c.Id">@c.FirstName @c.LastName</option> }
                     </select>
@@ -130,7 +141,6 @@
                 @foreach (var note in displayNotes)
                 {
                     <div class="note-card group">
-                        @* Note Avatar *@
                         <div class="client-note-avatar">
                             @if (currentClient?.AvatarId > 0)
                             {
@@ -256,14 +266,19 @@
             var uri = Nav.ToAbsoluteUri(Nav.Uri);
             var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
             
-            if (query.TryGetValue("StylistId", out var sId) && !string.IsNullOrEmpty(sId)) {
+            // Handle Impersonation vs URL parameters
+            if (State.IsImpersonating) {
+                selectedStylistId = State.ImpersonatedStylistId.Value;
+            } else if (query.TryGetValue("StylistId", out var sId) && !string.IsNullOrEmpty(sId)) {
                 selectedStylistId = int.Parse(sId.ToString());
-                currentStylist = allStylists.FirstOrDefault(x => x.Id == selectedStylistId);
             }
+
             if (query.TryGetValue("ClientId", out var cId) && !string.IsNullOrEmpty(cId)) {
                 selectedClientId = int.Parse(cId.ToString());
-                currentClient = allClients.FirstOrDefault(x => x.Id == selectedClientId);
             }
+
+            currentStylist = allStylists.FirstOrDefault(x => x.Id == selectedStylistId);
+            currentClient = allClients.FirstOrDefault(x => x.Id == selectedClientId);
 
             if (selectedClientId > 0 && selectedStylistId > 0) await LoadNotes();
             StateHasChanged();
@@ -279,7 +294,7 @@
 
     private async Task OnStylistChanged(ChangeEventArgs e)
     {
-        displayNotes.Clear(); // Immediate clear
+        displayNotes.Clear();
         selectedStylistId = int.Parse(e.Value?.ToString() ?? "0");
         currentStylist = allStylists.FirstOrDefault(x => x.Id == selectedStylistId);
         
@@ -289,7 +304,7 @@
 
     private async Task OnClientChanged(ChangeEventArgs e)
     {
-        displayNotes.Clear(); // Immediate clear
+        displayNotes.Clear();
         selectedClientId = int.Parse(e.Value?.ToString() ?? "0");
         currentClient = allClients.FirstOrDefault(x => x.Id == selectedClientId);
         
