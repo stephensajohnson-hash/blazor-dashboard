@@ -102,6 +102,13 @@
         background: #25262b;
     }
 
+    /* Busy Score Styling */
+    .busy-score {
+        font-family: ui-monospace, SFMono-Regular, monospace;
+        font-weight: 900;
+        text-transform: uppercase;
+    }
+
     .custom-scrollbar::-webkit-scrollbar { width: 6px; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
     .debug-panel { background: #000; border-top: 4px solid #444; color: #0f0; font-family: monospace; font-size: 11px; padding: 20px; z-index: 999; width: 100%; margin-top: 50px; }
@@ -125,7 +132,15 @@
                             <h2 class="text-2xl font-black text-white uppercase tracking-tight">
                                 @(currentStylist?.Name ?? "Appointment Desk")
                             </h2>
-                            <p class="text-xs text-[#D2B48C] font-mono uppercase tracking-widest">@startOfWeek.ToString("MMMM yyyy")</p>
+                            <div class="flex items-center gap-3">
+                                <p class="text-xs text-[#D2B48C] font-mono uppercase tracking-widest">@startOfWeek.ToString("MMMM yyyy")</p>
+                                @if (selectedStylistId > 0)
+                                {
+                                    <span class="text-[10px] busy-score @GetScoreColor(CalculateWeeklyBusy())">
+                                        WEEK_LOAD: @CalculateWeeklyBusy()%
+                                    </span>
+                                }
+                            </div>
                         </div>
                     </div>
                     
@@ -144,8 +159,10 @@
                                 <span class="text-orange-500 text-[10px] font-black uppercase tracking-widest">Locked: @State.ImpersonatedName</span>
                             </div>
                         }
-                        <button @onclick="() => ChangeWeek(-1)" class="bg-[#25262b] px-4 py-2 rounded border border-gray-700 hover:text-white transition">&lt;</button>
-                        <button @onclick="() => ChangeWeek(1)" class="bg-[#25262b] px-4 py-2 rounded border border-gray-700 hover:text-white transition">&gt;</button>
+                        <div class="flex bg-[#25262b] rounded-lg border border-gray-700 overflow-hidden">
+                            <button @onclick="() => ChangeWeek(-1)" class="px-4 py-2 hover:bg-white/5 border-r border-gray-800 transition">&lt;</button>
+                            <button @onclick="() => ChangeWeek(1)" class="px-4 py-2 hover:bg-white/5 transition">&gt;</button>
+                        </div>
                     </div>
                 </div>
 
@@ -276,19 +293,24 @@
                                     }
                                 </div>
                             </div>
+                            
+                            @* DAY BUSY SCORES (Bottom Row) *@
+                            <div class="grid grid-cols-8 bg-black/40 border-t border-gray-700">
+                                <div class="p-4 border-r border-gray-800 text-[8px] font-black uppercase text-gray-600">Busy_Score</div>
+                                @for (int i = 0; i < 7; i++)
+                                {
+                                    var dayDate = startOfWeek.AddDays(i);
+                                    var score = CalculateDailyBusy(dayDate);
+                                    <div class="p-3 text-center border-r border-gray-800">
+                                        <span class="text-[10px] busy-score @GetScoreColor(score)">@score%</span>
+                                    </div>
+                                }
+                            </div>
                         </div>
                     </div>
                 }
             </div>
         </div>
-    </div>
-
-    <div class="debug-panel">
-        <div class="flex justify-between border-b border-green-900 mb-2 pb-1">
-            <span class="font-bold text-white uppercase tracking-widest">Monitor</span>
-            <button @onclick="ClearStylistAppointments" class="text-red-500 text-[10px] hover:underline uppercase">Wipe Grid</button>
-        </div>
-        <div>Apps Tracking: @existingAppointments.Count | Stylist: @selectedStylistId</div>
     </div>
 </div>
 
@@ -331,6 +353,47 @@
             StateHasChanged(); 
         }
     }
+
+    private int CalculateDailyBusy(DateTime date)
+    {
+        var shifts = stylistSchedules.Where(x => x.DayOfWeek == (int)date.DayOfWeek).ToList();
+        if (!shifts.Any()) return 0;
+
+        double totalShiftMinutes = shifts.Sum(s => (s.EndTime - s.StartTime).TotalMinutes);
+        double totalBookedMinutes = existingAppointments
+            .Where(a => a.StartTime.Date == date.Date)
+            .Sum(a => (a.EndTime - a.StartTime).TotalMinutes);
+
+        if (totalShiftMinutes == 0) return 0;
+        return (int)Math.Min(100, Math.Round((totalBookedMinutes / totalShiftMinutes) * 100));
+    }
+
+    private int CalculateWeeklyBusy()
+    {
+        double totalShiftMinutes = 0;
+        double totalBookedMinutes = 0;
+
+        for (int i = 0; i < 7; i++)
+        {
+            var date = startOfWeek.AddDays(i);
+            var shifts = stylistSchedules.Where(x => x.DayOfWeek == (int)date.DayOfWeek).ToList();
+            totalShiftMinutes += shifts.Sum(s => (s.EndTime - s.StartTime).TotalMinutes);
+            totalBookedMinutes += existingAppointments
+                .Where(a => a.StartTime.Date == date.Date)
+                .Sum(a => (a.EndTime - a.StartTime).TotalMinutes);
+        }
+
+        if (totalShiftMinutes == 0) return 0;
+        return (int)Math.Min(100, Math.Round((totalBookedMinutes / totalShiftMinutes) * 100));
+    }
+
+    private string GetScoreColor(int score) => score switch
+    {
+        > 85 => "text-orange-500",
+        > 50 => "text-green-500",
+        > 0  => "text-blue-500",
+        _    => "text-gray-700"
+    };
 
     private async Task OnStylistChanged(ChangeEventArgs e) { 
         selectedStylistId = int.Parse(e.Value?.ToString() ?? "0"); 
