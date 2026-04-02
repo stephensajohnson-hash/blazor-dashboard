@@ -129,4 +129,12 @@ public class PtoService
             await _db.SaveChangesAsync();
         }
     }
+
+    // Add this to PtoService.cs
+    public async Task InitializeDatabaseAsync()
+    {
+        // This tells EF Core to create the tables if they are missing
+        // based on the DbSets defined in your AppDbContext.
+        await _db.Database.EnsureCreatedAsync();
+    }
 }
