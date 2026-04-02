@@ -8,11 +8,13 @@ namespace Dashboard.Services
         public int? ImpersonatedStylistId { get; set; }
         public string? ImpersonatedName { get; set; }
 
+        // Unified helpers for all pages
         public int? ActiveStylistId => AuthenticatedStylistId ?? ImpersonatedStylistId;
+        public string? ActiveName => AuthenticatedName ?? ImpersonatedName;
+
         public bool IsImpersonating => ImpersonatedStylistId.HasValue;
         public bool IsStylistLocked => AuthenticatedStylistId.HasValue;
 
-        // Add this method to fix the compiler error
         public void Impersonate(int id, string name)
         {
             ImpersonatedStylistId = id;
