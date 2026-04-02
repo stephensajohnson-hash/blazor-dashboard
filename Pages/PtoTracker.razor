@@ -3,7 +3,6 @@
 @using Dashboard.Services
 @using Dashboard.Components.Bullet
 @using Microsoft.AspNetCore.Components.Web
-@using Microsoft.AspNetCore.Components.Web.Virtualization
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.JSInterop
 @inject PtoService PtoService
@@ -93,42 +92,51 @@
             <div class="max-h-[60vh] overflow-y-auto scrollbar-hide">
                 @{
                     decimal runningBal = policy.CarryOverHours;
-                    <Virtualize Items="@policy.Entries.OrderBy(e => e.Date).ToList()" Context="entry">
-                        @{
-                            runningBal += entry.Amount;
-                            var rowBalance = runningBal;
-                            
-                            // Determine row styling based on entry type
-                            string textClass = "text-white";
-                            if (entry.EntryType == PtoEntryType.Holiday) textClass = "text-blue-400";
-                            else if (entry.EntryType == PtoEntryType.Accrual) textClass = "text-emerald-400";
-                            
-                            <div class="grid grid-cols-[200px_1fr_100px_100px_120px] gap-4 p-4 border-b border-gray-800/50 hover:bg-white/5 transition items-center text-sm font-medium">
-                                <div class="font-mono text-xs text-gray-500">@GetFormattedDate(entry.Date)</div>
-                                <div class="flex flex-col">
-                                    <span class="font-black uppercase tracking-tight @textClass">@entry.Description</span>
-                                    @if(!string.IsNullOrEmpty(entry.Notes)){<span class="text-[10px] text-gray-500">@entry.Notes</span>}
-                                </div>
-                                <div class="text-right font-mono font-black @(entry.Amount > 0 ? "text-emerald-500" : entry.Amount < 0 ? "text-orange-500" : "text-blue-500")">
-                                    @(entry.Amount > 0 ? "+" : "")@entry.Amount.ToString("N1")
-                                </div>
-                                <div class="text-right font-mono font-black text-gray-400">@rowBalance.ToString("N1")</div>
-                                <div class="flex justify-center gap-2 items-center">
-                                    @if (entry.EntryType == PtoEntryType.TimeOff)
-                                    {
-                                        <span class="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter @GetStatusClass(entry)">
-                                            @entry.Status
-                                        </span>
-                                    }
-                                    @if (entry.EntryType != PtoEntryType.Accrual)
-                                    {
-                                        <button @onclick="() => OpenEntryModal(entry)" class="text-gray-500 hover:text-blue-400 transition">✎</button>
-                                        <button @onclick="() => DeleteEntry(entry)" class="text-gray-500 hover:text-red-400 transition">✕</button>
-                                    }
-                                </div>
+                    foreach (var entry in policy.Entries.OrderBy(e => e.Date).ToList())
+                    {
+                        runningBal += entry.Amount;
+                        var rowBalance = runningBal;
+                        
+                        // Determine row styling based on entry type
+                        string textClass = "text-white";
+                        if (entry.EntryType == PtoEntryType.Holiday) textClass = "text-blue-400";
+                        else if (entry.EntryType == PtoEntryType.Accrual) textClass = "text-emerald-400";
+                        
+                        <div class="grid grid-cols-[200px_1fr_100px_100px_120px] gap-4 p-4 border-b border-gray-800/50 hover:bg-white/5 transition items-center text-sm font-medium group">
+                            <div class="font-mono text-xs text-gray-500">@GetFormattedDate(entry.Date)</div>
+                            <div class="flex flex-col">
+                                <span class="font-black uppercase tracking-tight @textClass">@entry.Description</span>
+                                @if(!string.IsNullOrEmpty(entry.Notes)){<span class="text-[10px] text-gray-500">@entry.Notes</span>}
                             </div>
-                        }
-                    </Virtualize>
+                            <div class="text-right font-mono font-black @(entry.Amount > 0 ? "text-emerald-500" : entry.Amount < 0 ? "text-orange-500" : "text-blue-500")">
+                                @if (entry.EntryType == PtoEntryType.Holiday)
+                                {
+                                    <span></span>
+                                }
+                                else
+                                {
+                                    @(entry.Amount > 0 ? "+" : "")@entry.Amount.ToString("N1")
+                                }
+                            </div>
+                            <div class="text-right font-mono font-black text-gray-400">@rowBalance.ToString("N1")</div>
+                            <div class="flex justify-center gap-3 items-center relative">
+                                @if (entry.EntryType == PtoEntryType.TimeOff)
+                                {
+                                    <span class="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter @GetStatusClass(entry) transition-opacity duration-200 group-hover:opacity-0">
+                                        @entry.Status
+                                    </span>
+                                }
+                                
+                                @if (entry.EntryType != PtoEntryType.Accrual)
+                                {
+                                    <div class="absolute inset-0 flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                        <button @onclick="() => OpenEntryModal(entry)" class="text-gray-400 hover:text-blue-400 transition" title="Edit">✎</button>
+                                        <button @onclick="() => DeleteEntry(entry)" class="text-gray-400 hover:text-red-400 transition" title="Delete">✕</button>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
                 }
             </div>
         </div>
@@ -219,18 +227,31 @@
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="block text-[10px] text-gray-500 uppercase mb-2">Start Date</label>
-                            <input type="date" @bind="editEntry.Date" class="w-full bg-black border border-gray-800 rounded-lg p-3 text-sm text-white outline-none focus:border-blue-500" />
+                            <input type="date" @bind="editEntry.Date" @bind:after="SyncEndDate" class="w-full bg-black border border-gray-800 rounded-lg p-3 text-sm text-white outline-none focus:border-blue-500" />
                         </div>
                         <div>
                             <label class="block text-[10px] text-gray-500 uppercase mb-2">End Date (Inclusive)</label>
-                            <input type="date" @bind="uiEndDate" class="w-full bg-black border border-gray-800 rounded-lg p-3 text-sm text-white outline-none focus:border-blue-500" />
+                            <input type="date" @bind="uiEndDate" class="w-full bg-black border border-gray-800 rounded-lg p-3 text-sm text-white outline-none focus:border-blue-500 mb-2" />
+                            @if (editEntry.Id == 0)
+                            {
+                                <div class="flex gap-1">
+                                    <button type="button" @onclick="() => SetBreakDuration(2)" class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-400 rounded py-1.5 text-[9px] font-black transition" title="2 Day Break">+2d</button>
+                                    <button type="button" @onclick="() => SetBreakDuration(3)" class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-400 rounded py-1.5 text-[9px] font-black transition" title="3 Day Break">+3d</button>
+                                    <button type="button" @onclick="() => SetBreakDuration(4)" class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-400 rounded py-1.5 text-[9px] font-black transition" title="4 Day Break">+4d</button>
+                                    <button type="button" @onclick="() => SetBreakDuration(5)" class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-400 rounded py-1.5 text-[9px] font-black transition" title="5 Day Break">+5d</button>
+                                    <button type="button" @onclick="() => SetBreakDuration(7)" class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-400 rounded py-1.5 text-[9px] font-black transition" title="1 Week Break">+1w</button>
+                                </div>
+                            }
                         </div>
                     </div>
-                    <div>
-                        <label class="block text-[10px] text-gray-500 uppercase mb-2">Hours Per Day Deducted</label>
-                        <input type="number" @bind="uiEntryAmount" step="0.5" class="w-full bg-black border border-gray-800 rounded-lg p-3 text-sm font-mono text-orange-400 outline-none focus:border-orange-500" placeholder="e.g. 8" />
-                        <div class="text-[8px] text-gray-600 mt-1 text-right">Applied to each selected day</div>
-                    </div>
+                    @if (editEntry.EntryType != PtoEntryType.Holiday)
+                    {
+                        <div>
+                            <label class="block text-[10px] text-gray-500 uppercase mb-2">Hours Per Day Deducted</label>
+                            <input type="number" @bind="uiEntryAmount" step="0.5" class="w-full bg-black border border-gray-800 rounded-lg p-3 text-sm font-mono text-orange-400 outline-none focus:border-orange-500" placeholder="e.g. 8" />
+                            <div class="text-[8px] text-gray-600 mt-1 text-right">Applied to each selected day</div>
+                        </div>
+                    }
                 </div>
                 <div class="bg-gray-900 px-6 py-4 flex justify-end gap-3 border-t border-gray-800">
                     <button @onclick="() => showEntryModal = false" class="px-5 py-2 text-xs text-gray-500 hover:text-white uppercase tracking-widest transition">Cancel</button>
@@ -327,6 +348,22 @@
         else suffix = "th";
 
         return date.ToString("dddd, MMMM d") + suffix;
+    }
+
+    private void SyncEndDate()
+    {
+        if (editEntry != null && editEntry.Id == 0)
+        {
+            uiEndDate = editEntry.Date;
+        }
+    }
+
+    private void SetBreakDuration(int totalDays)
+    {
+        if (editEntry != null)
+        {
+            uiEndDate = editEntry.Date.AddDays(totalDays - 1);
+        }
     }
 
     // --- MODAL ACTIONS ---
