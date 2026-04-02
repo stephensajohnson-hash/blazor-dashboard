@@ -292,12 +292,9 @@
             var uri = Nav.ToAbsoluteUri(Nav.Uri);
             var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
             
-            // PRIORITY 1: Authenticated/Impersonated Stylist
             if (State.ActiveStylistId.HasValue) {
                 selectedStylistId = State.ActiveStylistId.Value;
-            } 
-            // PRIORITY 2: Query String (Admin viewing others)
-            else if (query.TryGetValue("StylistId", out var sId) && !string.IsNullOrEmpty(sId)) {
+            } else if (query.TryGetValue("StylistId", out var sId) && !string.IsNullOrEmpty(sId)) {
                 selectedStylistId = int.Parse(sId.ToString());
             }
 
@@ -319,7 +316,6 @@
 
     private async Task LoadStylistClients()
     {
-        // SCOPED CLIENT LIST: Only clients who have had appointments with this stylist
         allClients = await Db.NETH_Clients
             .Where(c => Db.NETH_Appointments.Any(a => a.ClientId == c.Id && a.StylistId == selectedStylistId))
             .OrderBy(c => c.LastName)
@@ -355,51 +351,48 @@
     private async Task PrevPage() { if (currentPage > 0) { currentPage--; await LoadNotes(); } }
 
     private async Task LoadNotes()
-{
-    if (selectedStylistId == 0) {
-        displayNotes.Clear();
-        return;
-    }
-    
-    try {
-        string sqlQuery = "";
-        List<object> parms = new List<object>();
-
-        // BASE SELECT: Common columns and the StylistId filter
-        string baseSelect = @"SELECT n.""Id"", 
-                                     n.""NoteText"" as ""Text"", 
-                                     n.""ShortDescription"" as ""ShortDesc"", 
-                                     n.""ManualDate"" as ""EntryDate"", 
-                                     c.""Id"" as ""ClientId"", 
-                                     c.""FirstName"" as ""ClientFirstName"", 
-                                     c.""LastName"" as ""ClientLastName"", 
-                                     c.""AvatarId"" as ""ClientAvatarId""
-                              FROM ""NETH_ClientNotes"" n
-                              JOIN ""NETH_Clients"" c ON n.""ClientId"" = c.""Id""
-                              WHERE n.""StylistId"" = {0}";
-        
-        parms.Add(selectedStylistId);
-
-        if (selectedClientId == -1) {
-            // VIEW ALL FOR THIS STYLIST
-            sqlQuery = baseSelect + @" ORDER BY n.""ManualDate"" DESC
-                                      LIMIT {1} OFFSET {2}";
-            parms.Add(PageSize);
-            parms.Add(currentPage * PageSize);
-        } else {
-            // VIEW SPECIFIC CLIENT FOR THIS STYLIST
-            sqlQuery = baseSelect + @" AND n.""ClientId"" = {1}
-                                      ORDER BY n.""ManualDate"" DESC
-                                      LIMIT {2} OFFSET {3}";
-            parms.Add(selectedClientId);
-            parms.Add(PageSize);
-            parms.Add(currentPage * PageSize);
+    {
+        if (selectedStylistId == 0) {
+            displayNotes.Clear();
+            return;
         }
+        
+        try {
+            string sqlQuery = "";
+            List<object> parms = new List<object>();
 
-        displayNotes = await Db.Database.SqlQueryRaw<NoteDisplay>(sqlQuery, parms.ToArray()).ToListAsync();
-    } catch (Exception ex) { localError = "LOAD_ERR: " + ex.Message; }
-    StateHasChanged();
-}
+            string baseSelect = @"SELECT n.""Id"", 
+                                         n.""NoteText"" as ""Text"", 
+                                         n.""ShortDescription"" as ""ShortDesc"", 
+                                         n.""ManualDate"" as ""EntryDate"", 
+                                         c.""Id"" as ""ClientId"", 
+                                         c.""FirstName"" as ""ClientFirstName"", 
+                                         c.""LastName"" as ""ClientLastName"", 
+                                         c.""AvatarId"" as ""ClientAvatarId""
+                                  FROM ""NETH_ClientNotes"" n
+                                  JOIN ""NETH_Clients"" c ON n.""ClientId"" = c.""Id""
+                                  WHERE n.""StylistId"" = {0}";
+            
+            parms.Add(selectedStylistId);
+
+            if (selectedClientId == -1) {
+                sqlQuery = baseSelect + @" ORDER BY n.""ManualDate"" DESC
+                                          LIMIT {1} OFFSET {2}";
+                parms.Add(PageSize);
+                parms.Add(currentPage * PageSize);
+            } else {
+                sqlQuery = baseSelect + @" AND n.""ClientId"" = {1}
+                                          ORDER BY n.""ManualDate"" DESC
+                                          LIMIT {2} OFFSET {3}";
+                parms.Add(selectedClientId);
+                parms.Add(PageSize);
+                parms.Add(currentPage * PageSize);
+            }
+
+            displayNotes = await Db.Database.SqlQueryRaw<NoteDisplay>(sqlQuery, parms.ToArray()).ToListAsync();
+        } catch (Exception ex) { localError = "LOAD_ERR: " + ex.Message; }
+        StateHasChanged();
+    }
 
     private void OpenModal(NoteDisplay? existing = null) {
         if (selectedStylistId == 0) {
