@@ -89,17 +89,6 @@
 
     .custom-scrollbar::-webkit-scrollbar { width: 6px; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
-    
-    .debug-terminal {
-        background: #000;
-        border: 1px solid #333;
-        color: #0f0;
-        font-family: 'Courier New', Courier, monospace;
-        font-size: 10px;
-        padding: 20px;
-        margin-top: 40px;
-        border-radius: 8px;
-    }
 </style>
 
 <div class="min-h-screen bg-[#1a1b1e] text-gray-300 flex font-sans">
@@ -120,14 +109,9 @@
                         <p class="text-[10px] text-[#D2B48C] font-mono uppercase tracking-widest">Formula Ledger // Page @(currentPage + 1)</p>
                     </div>
                 </div>
-                <div class="flex gap-2">
-                    <button @onclick="() => showDebug = !showDebug" class="bg-gray-800 text-gray-400 px-4 py-2 rounded font-black uppercase text-[10px] transition">
-                        <i class="fa-solid fa-bug mr-2"></i> @(showDebug ? "Hide Debug" : "Show Debug")
-                    </button>
-                    <button @onclick="() => OpenModal()" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded font-black uppercase text-[10px] transition shadow-lg">
-                        <i class="fa-solid fa-plus mr-2"></i> Create Entry
-                    </button>
-                </div>
+                <button @onclick="() => OpenModal()" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded font-black uppercase text-[10px] transition shadow-lg">
+                    <i class="fa-solid fa-plus mr-2"></i> Create Entry
+                </button>
             </div>
 
             @if (!string.IsNullOrEmpty(localError))
@@ -151,7 +135,7 @@
                     {
                         <div class="w-full bg-blue-600/10 border border-blue-500/30 rounded p-3 flex items-center gap-3">
                             <i class="fa-solid fa-@(State.IsStylistLocked ? "lock" : "user-secret") text-blue-500 text-xs"></i>
-                            <span class="text-blue-400 text-[10px] font-black uppercase tracking-widest">Account: @(State.ActiveName) (ID: @State.ActiveStylistId)</span>
+                            <span class="text-blue-400 text-[10px] font-black uppercase tracking-widest">Account: @(State.ActiveName)</span>
                         </div>
                     }
                 </div>
@@ -202,30 +186,19 @@
                     </div>
                 }
 
-                @if (showDebug)
-                {
-                    <div class="debug-terminal">
-                        <h4 class="border-b border-green-900 pb-2 mb-4 text-white">DEBUG_TERMINAL // Scoped_Notes_Review</h4>
-                        <p class="mb-2">FILTER_STYLIST_ID: @selectedStylistId</p>
-                        <p class="mb-4">FILTER_CLIENT_ID: @selectedClientId</p>
-                        <div class="space-y-1">
-                            @foreach(var note in displayNotes)
-                            {
-                                <div class="opacity-80">
-                                    [NOTE: @note.Id] -> [STYLIST_ID: @note.StylistId] -> [CLIENT: @note.ClientId / @note.ClientFirstName @note.ClientLastName] 
-                                </div>
-                            }
-                        </div>
-                        @if(!displayNotes.Any()){ <p class="text-red-500">NO_DATA_IN_COLLECTION</p> }
-                    </div>
-                }
-
                 @if (displayNotes.Any() && (displayNotes.Count == 50 || currentPage > 0))
                 {
                     <div class="flex justify-center items-center gap-6 pt-10">
                         <button @onclick="PrevPage" disabled="@(currentPage == 0)" class="bg-gray-800 hover:bg-gray-700 disabled:opacity-20 text-white px-6 py-2 rounded-xl font-black uppercase text-[10px] transition">Previous</button>
                         <span class="font-mono text-[10px] uppercase text-gray-500">Node_Page: @(currentPage + 1)</span>
                         <button @onclick="NextPage" disabled="@(displayNotes.Count < 50)" class="bg-gray-800 hover:bg-gray-700 disabled:opacity-20 text-white px-6 py-2 rounded-xl font-black uppercase text-[10px] transition">Next</button>
+                    </div>
+                }
+
+                @if (!displayNotes.Any() && selectedStylistId > 0)
+                {
+                    <div class="text-center py-20 border-2 border-dashed border-gray-800 rounded-xl">
+                        <p class="text-gray-600 text-xs uppercase font-black tracking-widest">No entries found for this selection.</p>
                     </div>
                 }
             </div>
@@ -281,7 +254,7 @@
 }
 
 @code {
-    private bool showModal = false, showDebug = false;
+    private bool showModal = false;
     private int editingNoteId = 0;
     private int selectedStylistId = 0;
     private int selectedClientId = -1;
@@ -300,7 +273,7 @@
 
     public class NoteDisplay {
         public int Id { get; set; }
-        public int StylistId { get; set; } // ADDED FOR DEBUGGING
+        public int StylistId { get; set; }
         public string Text { get; set; } = "";
         public string ShortDesc { get; set; } = "";
         public DateTime EntryDate { get; set; }
@@ -389,7 +362,6 @@
             string sqlQuery = "";
             List<object> parms = new List<object>();
 
-            // UPDATED SELECT TO INCLUDE n."StylistId"
             string baseSelect = @"SELECT n.""Id"", 
                                          n.""StylistId"",
                                          n.""NoteText"" as ""Text"", 
@@ -419,7 +391,6 @@
                 parms.Add(currentPage * PageSize);
             }
 
-            Console.WriteLine($"[NETH_DEBUG] QUERY: Stylist={selectedStylistId}");
             displayNotes = await Db.Database.SqlQueryRaw<NoteDisplay>(sqlQuery, parms.ToArray()).ToListAsync();
         } catch (Exception ex) { localError = "LOAD_ERR: " + ex.Message; }
         StateHasChanged();
