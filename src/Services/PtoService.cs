@@ -69,6 +69,7 @@ public class PtoService
 
     public async Task<PtoPolicy> CreatePolicyAsync(PtoPolicy policy)
     {
+        _db.ChangeTracker.Clear();
         _db.PtoPolicies.Add(policy);
         await _db.SaveChangesAsync();
         return policy;
@@ -76,6 +77,7 @@ public class PtoService
 
     public async Task<PtoPolicy> UpdatePolicyAsync(PtoPolicy policy)
     {
+        _db.ChangeTracker.Clear();
         _db.PtoPolicies.Update(policy);
         await _db.SaveChangesAsync();
         return policy;
@@ -83,6 +85,9 @@ public class PtoService
 
     public async Task<PtoEntry> SaveEntryAsync(PtoEntry entry)
     {
+        // THE FIX: Clear the memory tracker so we never collide with previously edited rows
+        _db.ChangeTracker.Clear();
+
         if (entry.Id == 0)
         {
             _db.PtoEntries.Add(entry);
@@ -97,6 +102,7 @@ public class PtoService
 
     public async Task DeleteEntryAsync(int id)
     {
+        _db.ChangeTracker.Clear();
         var entry = await _db.PtoEntries.FindAsync(id);
         if (entry != null)
         {
@@ -110,6 +116,8 @@ public class PtoService
     /// </summary>
     public async Task GenerateAccrualScheduleAsync(int policyId)
     {
+        _db.ChangeTracker.Clear();
+        
         var policy = await _db.PtoPolicies.FindAsync(policyId);
         if (policy == null) return;
 
