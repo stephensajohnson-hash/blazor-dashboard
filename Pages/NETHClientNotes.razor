@@ -355,43 +355,51 @@
     private async Task PrevPage() { if (currentPage > 0) { currentPage--; await LoadNotes(); } }
 
     private async Task LoadNotes()
-    {
-        if (selectedStylistId == 0) {
-            displayNotes.Clear();
-            return;
-        }
-        
-        try {
-            string sqlQuery = "";
-            object[] parms;
-
-            string baseSelect = @"SELECT n.""Id"", 
-                                         n.""NoteText"" as ""Text"", 
-                                         n.""ShortDescription"" as ""ShortDesc"", 
-                                         n.""ManualDate"" as ""EntryDate"", 
-                                         c.""Id"" as ""ClientId"", 
-                                         c.""FirstName"" as ""ClientFirstName"", 
-                                         c.""LastName"" as ""ClientLastName"", 
-                                         c.""AvatarId"" as ""ClientAvatarId""
-                                  FROM ""NETH_ClientNotes"" n
-                                  JOIN ""NETH_Clients"" c ON n.""ClientId"" = c.""Id"" ";
-
-            if (selectedClientId == -1) {
-                sqlQuery = baseSelect + @" WHERE n.""StylistId"" = {0}
-                                          ORDER BY n.""ManualDate"" DESC
-                                          LIMIT {1} OFFSET {2}";
-                parms = new object[] { selectedStylistId, PageSize, currentPage * PageSize };
-            } else {
-                sqlQuery = baseSelect + @" WHERE n.""StylistId"" = {0} AND n.""ClientId"" = {1}
-                                          ORDER BY n.""ManualDate"" DESC
-                                          LIMIT {2} OFFSET {3}";
-                parms = new object[] { selectedStylistId, selectedClientId, PageSize, currentPage * PageSize };
-            }
-
-            displayNotes = await Db.Database.SqlQueryRaw<NoteDisplay>(sqlQuery, parms).ToListAsync();
-        } catch (Exception ex) { localError = "LOAD_ERR: " + ex.Message; }
-        StateHasChanged();
+{
+    if (selectedStylistId == 0) {
+        displayNotes.Clear();
+        return;
     }
+    
+    try {
+        string sqlQuery = "";
+        List<object> parms = new List<object>();
+
+        // BASE SELECT: Common columns and the StylistId filter
+        string baseSelect = @"SELECT n.""Id"", 
+                                     n.""NoteText"" as ""Text"", 
+                                     n.""ShortDescription"" as ""ShortDesc"", 
+                                     n.""ManualDate"" as ""EntryDate"", 
+                                     c.""Id"" as ""ClientId"", 
+                                     c.""FirstName"" as ""ClientFirstName"", 
+                                     c.""LastName"" as ""ClientLastName"", 
+                                     c.""AvatarId"" as ""ClientAvatarId""
+                              FROM ""NETH_ClientNotes"" n
+                              JOIN ""NETH_Clients"" c ON n.""ClientId"" = c.""Id""
+                              WHERE n.""StylistId"" = {0}";
+        
+        parms.Add(selectedStylistId);
+
+        if (selectedClientId == -1) {
+            // VIEW ALL FOR THIS STYLIST
+            sqlQuery = baseSelect + @" ORDER BY n.""ManualDate"" DESC
+                                      LIMIT {1} OFFSET {2}";
+            parms.Add(PageSize);
+            parms.Add(currentPage * PageSize);
+        } else {
+            // VIEW SPECIFIC CLIENT FOR THIS STYLIST
+            sqlQuery = baseSelect + @" AND n.""ClientId"" = {1}
+                                      ORDER BY n.""ManualDate"" DESC
+                                      LIMIT {2} OFFSET {3}";
+            parms.Add(selectedClientId);
+            parms.Add(PageSize);
+            parms.Add(currentPage * PageSize);
+        }
+
+        displayNotes = await Db.Database.SqlQueryRaw<NoteDisplay>(sqlQuery, parms.ToArray()).ToListAsync();
+    } catch (Exception ex) { localError = "LOAD_ERR: " + ex.Message; }
+    StateHasChanged();
+}
 
     private void OpenModal(NoteDisplay? existing = null) {
         if (selectedStylistId == 0) {
