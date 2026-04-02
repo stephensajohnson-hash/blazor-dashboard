@@ -109,9 +109,12 @@
                                 </div>
                                 <div class="text-right font-mono font-black text-gray-400">@rowBalance.ToString("N1")</div>
                                 <div class="flex justify-center gap-2 items-center">
-                                    <span class="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter @GetStatusClass(entry)">
-                                        @entry.Status
-                                    </span>
+                                    @if (entry.EntryType == PtoEntryType.TimeOff)
+                                    {
+                                        <span class="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter @GetStatusClass(entry)">
+                                            @entry.Status
+                                        </span>
+                                    }
                                     @if (entry.EntryType != PtoEntryType.Accrual)
                                     {
                                         <button @onclick="() => OpenEntryModal(entry)" class="text-gray-500 hover:text-blue-400 transition">✎</button>
@@ -126,7 +129,6 @@
         </div>
     }
 
-    @* POLICY SETTINGS MODAL *@
     @if (showPolicyModal && editPolicy != null)
     {
         <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
@@ -174,7 +176,6 @@
         </div>
     }
 
-    @* TIME OFF ENTRY MODAL *@
     @if (showEntryModal && editEntry != null)
     {
         <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
@@ -193,15 +194,18 @@
                                 <option value="@PtoEntryType.Adjustment">Adjustment (Bonus/Correction)</option>
                             </select>
                         </div>
-                        <div>
-                            <label class="block text-[10px] text-gray-500 uppercase mb-2">Status</label>
-                            <select @bind="editEntry.Status" class="w-full bg-black border border-gray-800 rounded-lg p-3 text-sm text-white outline-none focus:border-blue-500">
-                                @foreach (var status in Enum.GetValues<PtoEntryStatus>())
-                                {
-                                    <option value="@status">@status.ToString()</option>
-                                }
-                            </select>
-                        </div>
+                        @if (editEntry.EntryType == PtoEntryType.TimeOff)
+                        {
+                            <div>
+                                <label class="block text-[10px] text-gray-500 uppercase mb-2">Status</label>
+                                <select @bind="editEntry.Status" class="w-full bg-black border border-gray-800 rounded-lg p-3 text-sm text-white outline-none focus:border-blue-500">
+                                    @foreach (var status in Enum.GetValues<PtoEntryStatus>())
+                                    {
+                                        <option value="@status">@status.ToString()</option>
+                                    }
+                                </select>
+                            </div>
+                        }
                     </div>
                     <div>
                         <label class="block text-[10px] text-gray-500 uppercase mb-2">Description</label>
@@ -209,14 +213,18 @@
                     </div>
                     <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-[10px] text-gray-500 uppercase mb-2">Date</label>
+                            <label class="block text-[10px] text-gray-500 uppercase mb-2">Start Date</label>
                             <input type="date" @bind="editEntry.Date" class="w-full bg-black border border-gray-800 rounded-lg p-3 text-sm text-white outline-none focus:border-blue-500" />
                         </div>
                         <div>
-                            <label class="block text-[10px] text-gray-500 uppercase mb-2">Impact Amount (Hrs)</label>
-                            <input type="number" @bind="uiEntryAmount" step="0.5" class="w-full bg-black border border-gray-800 rounded-lg p-3 text-sm font-mono text-orange-400 outline-none focus:border-orange-500" placeholder="e.g. 8" />
-                            <div class="text-[8px] text-gray-600 mt-1 text-right">Positive number (e.g. 8)</div>
+                            <label class="block text-[10px] text-gray-500 uppercase mb-2">End Date (Inclusive)</label>
+                            <input type="date" @bind="uiEndDate" class="w-full bg-black border border-gray-800 rounded-lg p-3 text-sm text-white outline-none focus:border-blue-500" />
                         </div>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] text-gray-500 uppercase mb-2">Hours Per Day Deducted</label>
+                        <input type="number" @bind="uiEntryAmount" step="0.5" class="w-full bg-black border border-gray-800 rounded-lg p-3 text-sm font-mono text-orange-400 outline-none focus:border-orange-500" placeholder="e.g. 8" />
+                        <div class="text-[8px] text-gray-600 mt-1 text-right">Applied to each selected day</div>
                     </div>
                 </div>
                 <div class="bg-gray-900 px-6 py-4 flex justify-end gap-3 border-t border-gray-800">
@@ -240,6 +248,7 @@
     
     private bool showEntryModal = false;
     private PtoEntry? editEntry;
+    private DateTime uiEndDate; // Used to collect the end date for a block of days
     private decimal uiEntryAmount = 8m; // Used to collect the positive absolute value from user
 
     // Cached Totals
@@ -306,7 +315,6 @@
 
     private async Task OpenSetupModal()
     {
-        // Creates the DB tables if this is the very first time
         await PtoService.InitializeDatabaseAsync();
 
         editPolicy = new PtoPolicy
@@ -371,7 +379,8 @@
                 Status = PtoEntryStatus.Planned,
                 Amount = 0
             };
-            uiEntryAmount = policy.HoursPerWorkDay; // Default to 1 full day
+            uiEndDate = DateTime.Today; // Default to single day
+            uiEntryAmount = policy.HoursPerWorkDay; 
         }
         else
         {
@@ -386,6 +395,7 @@
                 Notes = entry.Notes,
                 Amount = entry.Amount
             };
+            uiEndDate = entry.Date; // Single day edit
             uiEntryAmount = Math.Abs(entry.Amount);
         }
         showEntryModal = true;
@@ -395,21 +405,55 @@
     {
         if (editEntry == null) return;
 
+        // Force Approved status if not TimeOff (Holidays/Adjustments)
+        if (editEntry.EntryType != PtoEntryType.TimeOff)
+        {
+            editEntry.Status = PtoEntryStatus.Approved;
+        }
+
         // Correct the signage based on the type
+        decimal finalAmount = uiEntryAmount;
         if (editEntry.EntryType == PtoEntryType.TimeOff)
         {
-            editEntry.Amount = -Math.Abs(uiEntryAmount); // Always negative deduction
+            finalAmount = -Math.Abs(uiEntryAmount); 
         }
         else if (editEntry.EntryType == PtoEntryType.Holiday)
         {
-            editEntry.Amount = 0; // Holidays don't burn PTO
+            finalAmount = 0; 
+        }
+
+        // Loop to create an entry for each day in the range
+        // Ensures we only generate new instances if it's a new entry (Id == 0)
+        if (editEntry.Id == 0 && uiEndDate >= editEntry.Date)
+        {
+            for (var current = editEntry.Date; current <= uiEndDate; current = current.AddDays(1))
+            {
+                // Skip weekends automatically for multi-day blocks
+                if (current.DayOfWeek == DayOfWeek.Saturday || current.DayOfWeek == DayOfWeek.Sunday)
+                {
+                    continue; 
+                }
+
+                var newEntry = new PtoEntry
+                {
+                    PtoPolicyId = editEntry.PtoPolicyId,
+                    Date = current,
+                    Description = editEntry.Description,
+                    EntryType = editEntry.EntryType,
+                    Status = editEntry.Status,
+                    Notes = editEntry.Notes,
+                    Amount = finalAmount
+                };
+                await PtoService.SaveEntryAsync(newEntry);
+            }
         }
         else
         {
-            editEntry.Amount = uiEntryAmount; // Adjustments/Bonus are positive
+            // Just update the single existing entry
+            editEntry.Amount = finalAmount;
+            await PtoService.SaveEntryAsync(editEntry);
         }
 
-        await PtoService.SaveEntryAsync(editEntry);
         showEntryModal = false;
         await RefreshData();
     }
