@@ -15,12 +15,27 @@ public class PtoService
         _db = db;
     }
 
+    public async Task InitializeDatabaseAsync()
+    {
+        await _db.Database.EnsureCreatedAsync();
+    }
+
     public async Task<PtoPolicy?> GetPolicyAsync(int userId, int year)
     {
-        return await _db.PtoPolicies
-            .AsNoTracking()
-            .Include(p => p.Entries)
-            .FirstOrDefaultAsync(p => p.UserId == userId && p.Year == year);
+        try
+        {
+            return await _db.PtoPolicies
+                .AsNoTracking()
+                .Include(p => p.Entries)
+                .FirstOrDefaultAsync(p => p.UserId == userId && p.Year == year);
+        }
+        catch (Exception ex)
+        {
+            // If the table doesn't exist yet, we catch the PostgresException here
+            // and return null so the UI can gracefully show the "Setup Policy" button.
+            Console.WriteLine($"PTO GetPolicy Error (Likely missing table): {ex.Message}");
+            return null;
+        }
     }
 
     public async Task<PtoPolicy> CreatePolicyAsync(PtoPolicy policy)
@@ -128,13 +143,5 @@ public class PtoService
             }
             await _db.SaveChangesAsync();
         }
-    }
-
-    // Add this to PtoService.cs
-    public async Task InitializeDatabaseAsync()
-    {
-        // This tells EF Core to create the tables if they are missing
-        // based on the DbSets defined in your AppDbContext.
-        await _db.Database.EnsureCreatedAsync();
     }
 }
