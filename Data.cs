@@ -66,6 +66,10 @@ public class AppDbContext : DbContext
     public DbSet<HsaReceipt> HsaReceipts { get; set; }
     public DbSet<HsaDisbursement> HsaDisbursements { get; set; }
 
+    // PTO Tracker
+    public DbSet<PtoPolicy> PtoPolicies { get; set; }
+    public DbSet<PtoEntry> PtoEntries { get; set; }
+
     //NET Haircut
     public DbSet<NETH_Phone> NETH_Phones { get; set; }
     public DbSet<NETH_Shop> NETH_Shops { get; set; }
@@ -573,6 +577,86 @@ public static class BulletViewConfig
     public const string ImgWidthDay = "25%"; 
     public const string ImgWidthWeek = "20%"; 
     public const string ImgWidthMonth = "15%"; 
+}
+
+// --------------------------------------------------------
+// PTO Tracker Models
+// --------------------------------------------------------
+
+public class PtoPolicy
+{
+    [Key]
+    public int Id { get; set; }
+    
+    public int UserId { get; set; }
+    
+    public int Year { get; set; } // e.g., 2026
+    
+    // The total amount of new PTO granted this year
+    public decimal TotalAllowanceHours { get; set; } 
+    
+    // The amount rolled over from the previous year
+    public decimal CarryOverHours { get; set; } 
+    
+    // Used to convert hours back into "Days" for the UI (e.g., 8.0)
+    public decimal HoursPerWorkDay { get; set; } = 8.0m;
+
+    // How often does the PTO hit the ledger?
+    public PtoAccrualInterval Interval { get; set; }
+    
+    // The date the first accrual hits
+    public DateTime AccrualStartDate { get; set; }
+
+    // Navigation property to the ledger entries for this specific year/policy
+    public virtual List<PtoEntry> Entries { get; set; } = new();
+}
+
+public class PtoEntry
+{
+    [Key]
+    public int Id { get; set; }
+    
+    public int PtoPolicyId { get; set; }
+    [ForeignKey("PtoPolicyId")]
+    public virtual PtoPolicy Policy { get; set; } = null!;
+
+    public DateTime Date { get; set; }
+    
+    public string Description { get; set; } = "";
+    
+    // Positive for Accruals/Carryover, Negative for Time Off, Zero for Holidays
+    public decimal Amount { get; set; }
+    
+    public PtoEntryType EntryType { get; set; }
+    
+    public PtoEntryStatus Status { get; set; }
+    
+    public string Notes { get; set; } = "";
+}
+
+public enum PtoAccrualInterval
+{
+    Annually,
+    Monthly,
+    SemiMonthly,
+    BiWeekly,
+    Weekly
+}
+
+public enum PtoEntryType
+{
+    Accrual,
+    TimeOff,
+    Holiday,
+    Adjustment
+}
+
+public enum PtoEntryStatus
+{
+    Planned,
+    Requested,
+    Approved,
+    Taken
 }
 
 public class NETH_Phone
