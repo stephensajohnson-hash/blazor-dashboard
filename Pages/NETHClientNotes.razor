@@ -124,7 +124,7 @@
             <div class="grid grid-cols-2 gap-4 mb-8">
                 <div class="space-y-1">
                     <label class="text-[9px] font-black uppercase text-gray-500 ml-1">Stylist Filter</label>
-                    @if (!State.IsImpersonating)
+                    @if (!State.ActiveStylistId.HasValue)
                     {
                         <select @onchange="OnStylistChanged" value="@selectedStylistId" class="w-full bg-[#25262b] border border-gray-700 rounded p-3 text-white text-xs outline-none focus:border-blue-500 transition-colors">
                             <option value="0">-- Select Stylist --</option>
@@ -133,17 +133,16 @@
                     }
                     else
                     {
-                        <div class="w-full bg-orange-600/10 border border-orange-500/30 rounded p-3 flex items-center gap-3">
-                            <i class="fa-solid fa-user-secret text-orange-500 text-xs"></i>
-                            <span class="text-orange-500 text-[10px] font-black uppercase tracking-widest">Locked: @State.ImpersonatedName</span>
+                        <div class="w-full bg-blue-600/10 border border-blue-500/30 rounded p-3 flex items-center gap-3">
+                            <i class="fa-solid fa-@(State.IsStylistLocked ? "lock" : "user-secret") text-blue-500 text-xs"></i>
+                            <span class="text-blue-400 text-[10px] font-black uppercase tracking-widest">Account: @(State.ActiveName)</span>
                         </div>
                     }
                 </div>
                 <div class="space-y-1">
                     <label class="text-[9px] font-black uppercase text-gray-500 ml-1">Target Client</label>
                     <select @onchange="OnClientChanged" value="@selectedClientId" class="w-full bg-[#25262b] border border-gray-700 rounded p-3 text-white text-xs outline-none focus:border-blue-500 transition-colors">
-                        @* ADDED ALL CLIENTS OPTION *@
-                        <option value="-1">-- All Clients --</option>
+                        <option value="-1">-- All My Clients --</option>
                         @foreach(var c in allClients) { <option value="@c.Id">@c.FirstName @c.LastName</option> }
                     </select>
                 </div>
@@ -176,7 +175,6 @@
 
                             <div class="flex items-center flex-wrap gap-3 mb-3">
                                 <span class="date-badge">@note.DateDisplay</span>
-                                @* SHOW CLIENT NAME IN ALL VIEW *@
                                 <span class="text-[11px] font-black text-white uppercase tracking-tight">@note.ClientFirstName @note.ClientLastName</span>
                                 @if (!string.IsNullOrEmpty(note.ShortDesc))
                                 {
@@ -188,7 +186,6 @@
                     </div>
                 }
 
-                @* PAGINATION CONTROLS *@
                 @if (displayNotes.Any() && (displayNotes.Count == 50 || currentPage > 0))
                 {
                     <div class="flex justify-center items-center gap-6 pt-10">
@@ -224,7 +221,7 @@
                 @if (selectedClientId <= 0)
                 {
                    <div class="p-4 bg-orange-900/20 border border-orange-500/30 rounded-xl mb-4">
-                       <p class="text-[10px] font-black text-orange-400 uppercase tracking-widest">Warning: Please select a specific client before creating a note.</p>
+                        <p class="text-[10px] font-black text-orange-400 uppercase tracking-widest">Warning: Please select a specific client before creating a note.</p>
                    </div>
                 }
                 
@@ -260,7 +257,7 @@
     private bool showModal = false;
     private int editingNoteId = 0;
     private int selectedStylistId = 0;
-    private int selectedClientId = -1; // DEFAULT TO ALL (-1)
+    private int selectedClientId = -1;
     private int currentPage = 0;
     private const int PageSize = 50;
     
@@ -280,8 +277,6 @@
         public string ShortDesc { get; set; } = "";
         public DateTime EntryDate { get; set; }
         public string DateDisplay => EntryDate.ToString("ddd, MMM dd, yyyy");
-        
-        // Joined Data
         public int ClientId { get; set; }
         public string ClientFirstName { get; set; } = "";
         public string ClientLastName { get; set; } = "";
@@ -293,28 +288,42 @@
         if (firstRender)
         {
             allStylists = await Db.NETH_Stylists.AsNoTracking().ToListAsync();
-            allClients = await Db.NETH_Clients.AsNoTracking().ToListAsync();
 
             var uri = Nav.ToAbsoluteUri(Nav.Uri);
             var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
             
-            if (State.IsImpersonating) {
-                selectedStylistId = State.ImpersonatedStylistId.Value;
-            } else if (query.TryGetValue("StylistId", out var sId) && !string.IsNullOrEmpty(sId)) {
+            // PRIORITY 1: Authenticated/Impersonated Stylist
+            if (State.ActiveStylistId.HasValue) {
+                selectedStylistId = State.ActiveStylistId.Value;
+            } 
+            // PRIORITY 2: Query String (Admin viewing others)
+            else if (query.TryGetValue("StylistId", out var sId) && !string.IsNullOrEmpty(sId)) {
                 selectedStylistId = int.Parse(sId.ToString());
             }
 
             if (query.TryGetValue("ClientId", out var cId) && !string.IsNullOrEmpty(cId)) {
                 selectedClientId = int.Parse(cId.ToString());
             } else {
-                selectedClientId = -1; // Default to All
+                selectedClientId = -1; 
             }
 
             currentStylist = allStylists.FirstOrDefault(x => x.Id == selectedStylistId);
 
-            if (selectedStylistId > 0) await LoadNotes();
+            if (selectedStylistId > 0) {
+                await LoadStylistClients();
+                await LoadNotes();
+            }
             StateHasChanged();
         }
+    }
+
+    private async Task LoadStylistClients()
+    {
+        // SCOPED CLIENT LIST: Only clients who have had appointments with this stylist
+        allClients = await Db.NETH_Clients
+            .Where(c => Db.NETH_Appointments.Any(a => a.ClientId == c.Id && a.StylistId == selectedStylistId))
+            .OrderBy(c => c.LastName)
+            .ToListAsync();
     }
 
     private string GetInitials(string? first, string? last) {
@@ -330,6 +339,7 @@
         currentPage = 0;
         selectedStylistId = int.Parse(e.Value?.ToString() ?? "0");
         currentStylist = allStylists.FirstOrDefault(x => x.Id == selectedStylistId);
+        await LoadStylistClients();
         await LoadNotes();
     }
 
@@ -344,7 +354,7 @@
     private async Task NextPage() { currentPage++; await LoadNotes(); }
     private async Task PrevPage() { if (currentPage > 0) { currentPage--; await LoadNotes(); } }
 
-   private async Task LoadNotes()
+    private async Task LoadNotes()
     {
         if (selectedStylistId == 0) {
             displayNotes.Clear();
@@ -352,44 +362,33 @@
         }
         
         try {
-            string query = "";
+            string sqlQuery = "";
             object[] parms;
 
-            // FIX: Aliased columns "NoteText" as "Text", "ShortDescription" as "ShortDesc", etc.
-            // to match the property names in the NoteDisplay class.
+            string baseSelect = @"SELECT n.""Id"", 
+                                         n.""NoteText"" as ""Text"", 
+                                         n.""ShortDescription"" as ""ShortDesc"", 
+                                         n.""ManualDate"" as ""EntryDate"", 
+                                         c.""Id"" as ""ClientId"", 
+                                         c.""FirstName"" as ""ClientFirstName"", 
+                                         c.""LastName"" as ""ClientLastName"", 
+                                         c.""AvatarId"" as ""ClientAvatarId""
+                                  FROM ""NETH_ClientNotes"" n
+                                  JOIN ""NETH_Clients"" c ON n.""ClientId"" = c.""Id"" ";
+
             if (selectedClientId == -1) {
-                query = @"SELECT n.""Id"", 
-                                 n.""NoteText"" as ""Text"", 
-                                 n.""ShortDescription"" as ""ShortDesc"", 
-                                 n.""ManualDate"" as ""EntryDate"", 
-                                 c.""Id"" as ""ClientId"", 
-                                 c.""FirstName"" as ""ClientFirstName"", 
-                                 c.""LastName"" as ""ClientLastName"", 
-                                 c.""AvatarId"" as ""ClientAvatarId""
-                          FROM ""NETH_ClientNotes"" n
-                          JOIN ""NETH_Clients"" c ON n.""ClientId"" = c.""Id""
-                          WHERE n.""StylistId"" = {0}
-                          ORDER BY n.""ManualDate"" DESC
-                          LIMIT {1} OFFSET {2}";
+                sqlQuery = baseSelect + @" WHERE n.""StylistId"" = {0}
+                                          ORDER BY n.""ManualDate"" DESC
+                                          LIMIT {1} OFFSET {2}";
                 parms = new object[] { selectedStylistId, PageSize, currentPage * PageSize };
             } else {
-                query = @"SELECT n.""Id"", 
-                                 n.""NoteText"" as ""Text"", 
-                                 n.""ShortDescription"" as ""ShortDesc"", 
-                                 n.""ManualDate"" as ""EntryDate"", 
-                                 c.""Id"" as ""ClientId"", 
-                                 c.""FirstName"" as ""ClientFirstName"", 
-                                 c.""LastName"" as ""ClientLastName"", 
-                                 c.""AvatarId"" as ""ClientAvatarId""
-                          FROM ""NETH_ClientNotes"" n
-                          JOIN ""NETH_Clients"" c ON n.""ClientId"" = c.""Id""
-                          WHERE n.""StylistId"" = {0} AND n.""ClientId"" = {1}
-                          ORDER BY n.""ManualDate"" DESC
-                          LIMIT {2} OFFSET {3}";
+                sqlQuery = baseSelect + @" WHERE n.""StylistId"" = {0} AND n.""ClientId"" = {1}
+                                          ORDER BY n.""ManualDate"" DESC
+                                          LIMIT {2} OFFSET {3}";
                 parms = new object[] { selectedStylistId, selectedClientId, PageSize, currentPage * PageSize };
             }
 
-            displayNotes = await Db.Database.SqlQueryRaw<NoteDisplay>(query, parms).ToListAsync();
+            displayNotes = await Db.Database.SqlQueryRaw<NoteDisplay>(sqlQuery, parms).ToListAsync();
         } catch (Exception ex) { localError = "LOAD_ERR: " + ex.Message; }
         StateHasChanged();
     }
@@ -405,7 +404,6 @@
             modalDate = existing.EntryDate;
             modalShortDesc = existing.ShortDesc;
             modalFullNote = existing.Text;
-            // Ensure we update for the client tied to the note even if viewing "All"
             selectedClientId = existing.ClientId; 
         } else {
             editingNoteId = 0;
