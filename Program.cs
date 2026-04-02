@@ -63,6 +63,9 @@ builder.Services.AddScoped<BulletSearchService>();
 builder.Services.AddScoped<BulletPrintService>();
 builder.Services.AddScoped<HsaExportService>();
 
+// PTO Tracker
+builder.Services.AddScoped<PtoService>();
+
 // NETH Services
 builder.Services.AddScoped<NETHStateService>();
 
