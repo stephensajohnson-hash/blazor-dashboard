@@ -831,7 +831,7 @@ public class PPP_User
     public string LastName { get; set; } = "";
     public string Email { get; set; } = "";
     public string Phone { get; set; } = "";
-    public string Role { get; set; } = "Customer"; // Customer, Owner, Staff
+    public string Role { get; set; } = "Customer"; 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public int RewardPoints { get; set; } = 0;
     public string? PreferredPlan { get; set; }
