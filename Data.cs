@@ -84,6 +84,9 @@ public class AppDbContext : DbContext
     public DbSet<NETH_AppointmentService> NETH_AppointmentsService { get; set; }
     public DbSet<NETH_Schedule> NETH_Schedules { get; set; }
     public DbSet<NETH_StoredImage> NETH_StoredImages { get; set; } // New NETH Specific Image Store
+
+    // PickPrepPlate
+    public DbSet<PPP_User> PPP_Users { get; set; }
 }
 
 public class BulletItem 
@@ -818,4 +821,18 @@ public class NETH_StoredImage
     public string Category { get; set; } = "General"; // e.g. "Portfolio", "ShopLogo", "UserUpload"
     public string? AltText { get; set; }
     public DateTime UploadedAt { get; set; } = DateTime.UtcNow;
+}
+
+// PPP Stuff
+public class PPP_User
+{
+    public int Id { get; set; }
+    public string FirstName { get; set; } = "";
+    public string LastName { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string Phone { get; set; } = "";
+    public string Role { get; set; } = "Customer"; // Customer, Owner, Staff
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public int RewardPoints { get; set; } = 0;
+    public string? PreferredPlan { get; set; }
 }
