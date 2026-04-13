@@ -70,7 +70,7 @@
                         <tr class="hover:bg-white/5 transition group">
                             <td class="p-5">
                                 <div class="flex items-center gap-3">
-                                    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 border border-gray-700 flex items-center justify-center text-xs">
+                                    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 border border-gray-700 flex items-center justify-center text-xs text-gray-400">
                                         @(string.IsNullOrEmpty(user.FirstName) ? "?" : user.FirstName[0])@(string.IsNullOrEmpty(user.LastName) ? "?" : user.LastName[0])
                                     </div>
                                     <div>
@@ -185,7 +185,7 @@
         try {
             users = await Db.PPP_Users.AsNoTracking().OrderBy(u => u.LastName).ToListAsync();
         } catch (Exception ex) {
-            await ShowToast("Load Error: " + ex.Message, true);
+            _ = ShowToast("Load Error: " + ex.Message, true);
         } finally {
             isLoading = false;
         }
@@ -221,57 +221,52 @@
     {
         if (string.IsNullOrWhiteSpace(editingUser.FirstName) || string.IsNullOrWhiteSpace(editingUser.Email))
         {
-            await ShowToast("Name and Email required", true);
+            _ = ShowToast("Name and Email required", true);
             return;
         }
 
         var sw = Stopwatch.StartNew();
-        Console.WriteLine($"[TIMING] SaveUser started at {DateTime.Now:T}");
-
         try {
             Db.ChangeTracker.Clear();
-            Console.WriteLine($"[TIMING] Tracker cleared: {sw.ElapsedMilliseconds}ms");
 
             if (editingUser.Id == 0) {
                 Db.PPP_Users.Add(editingUser);
                 await Db.SaveChangesAsync();
-                Console.WriteLine($"[TIMING] Insert complete: {sw.ElapsedMilliseconds}ms");
-                
                 users.Add(editingUser);
             } else {
-                // Attach and mark as modified for a more direct update
                 Db.Entry(editingUser).State = EntityState.Modified;
                 await Db.SaveChangesAsync();
-                Console.WriteLine($"[TIMING] Update complete: {sw.ElapsedMilliseconds}ms");
                 
                 var index = users.FindIndex(u => u.Id == editingUser.Id);
                 if (index != -1) users[index] = editingUser;
             }
 
             users = users.OrderBy(u => u.LastName).ToList();
-            await ShowToast("User saved successfully");
-            CloseModal();
+            
+            // FIRE AND FORGET TOAST
+            _ = ShowToast("User saved successfully");
+            
+            CloseModal(); 
         } catch (Exception ex) {
-            Console.WriteLine($"[TIMING] FATAL ERROR after {sw.ElapsedMilliseconds}ms: {ex}");
-            await ShowToast("Save Error: " + ex.Message, true);
+            _ = ShowToast("Save Error: " + ex.Message, true);
+            Console.WriteLine($"[TIMING] Error: {ex}");
         } finally {
             sw.Stop();
-            Console.WriteLine($"[TIMING] Total SaveUser duration: {sw.ElapsedMilliseconds}ms");
+            Console.WriteLine($"[TIMING] Save Logic (sans delay): {sw.ElapsedMilliseconds}ms");
         }
     }
 
     private async Task ToggleRole(PPP_User user)
     {
-        var sw = Stopwatch.StartNew();
         try {
             Db.ChangeTracker.Clear();
             user.Role = user.Role == "Owner" ? "Customer" : "Owner";
             Db.Entry(user).State = EntityState.Modified;
             await Db.SaveChangesAsync();
-            Console.WriteLine($"[TIMING] Role Toggle complete: {sw.ElapsedMilliseconds}ms");
-            await ShowToast($"{user.FirstName} is now an {user.Role}");
+            _ = ShowToast($"{user.FirstName} is now an {user.Role}");
+            StateHasChanged();
         } catch (Exception ex) {
-            await ShowToast("Toggle Error: " + ex.Message, true);
+            _ = ShowToast("Toggle Error: " + ex.Message, true);
         }
     }
 
@@ -284,9 +279,9 @@
                 Db.PPP_Users.Remove(user);
                 await Db.SaveChangesAsync();
                 users.RemoveAll(u => u.Id == user.Id);
-                await ShowToast("User deleted");
+                _ = ShowToast("User deleted");
             } catch (Exception ex) {
-                await ShowToast("Delete Error: " + ex.Message, true);
+                _ = ShowToast("Delete Error: " + ex.Message, true);
             }
         }
     }
@@ -295,10 +290,10 @@
     {
         var toast = new ToastItem { Message = msg, IsError = isError };
         toasts.Add(toast);
-        StateHasChanged();
+        await InvokeAsync(StateHasChanged);
         await Task.Delay(4000);
         toasts.Remove(toast);
-        StateHasChanged();
+        await InvokeAsync(StateHasChanged);
     }
 
     private class ToastItem { public string Message { get; set; } = ""; public bool IsError { get; set; } }
