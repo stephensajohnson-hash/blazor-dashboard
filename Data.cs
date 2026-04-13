@@ -87,6 +87,7 @@ public class AppDbContext : DbContext
 
     // PickPrepPlate
     public DbSet<PPP_User> PPP_Users { get; set; }
+    public DbSet<PPP_StoredImage> PPP_StoredImages { get; set; }
 }
 
 public class BulletItem 
@@ -824,6 +825,7 @@ public class NETH_StoredImage
 }
 
 // PPP Stuff
+
 public class PPP_User
 {
     public int Id { get; set; }
@@ -831,8 +833,22 @@ public class PPP_User
     public string LastName { get; set; } = "";
     public string Email { get; set; } = "";
     public string Phone { get; set; } = "";
-    public string Role { get; set; } = "Customer"; 
+    public string Role { get; set; } = "Customer"; // Admin, Owner, Customer, Staff
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public int RewardPoints { get; set; } = 0;
     public string? PreferredPlan { get; set; }
+    
+    // New Avatar Link
+    public int? AvatarId { get; set; }
+    [ForeignKey("AvatarId")]
+    public virtual PPP_StoredImage? Avatar { get; set; }
+}
+
+public class PPP_StoredImage
+{
+    public int Id { get; set; }
+    public byte[] Data { get; set; } = Array.Empty<byte>();
+    public string ContentType { get; set; } = "image/jpeg";
+    public string FileName { get; set; } = "";
+    public DateTime UploadedAt { get; set; } = DateTime.UtcNow;
 }
