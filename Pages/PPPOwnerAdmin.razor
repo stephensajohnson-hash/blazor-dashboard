@@ -1,5 +1,6 @@
 @page "/ppp-owner-admin"
 @using Dashboard
+@using Dashboard.Services
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.AspNetCore.Components.Forms
@@ -149,7 +150,10 @@
                 </div>
                 <div>
                     <label class="text-[9px] uppercase text-gray-500 tracking-widest mb-2 block">Phone</label>
-                    <input @bind="editingOwner.Phone" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm focus:border-emerald-500 outline-none transition font-mono" />
+                    <input value="@editingOwner.Phone" 
+                           @onchange="@(e => editingOwner.Phone = PPPUtils.FormatPhoneNumber(e.Value?.ToString()))"
+                           placeholder="903-555-1212"
+                           class="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm focus:border-emerald-500 outline-none transition font-mono" />
                 </div>
                 <div class="col-span-2">
                     <label class="text-[9px] uppercase text-gray-500 tracking-widest mb-2 block">Email Address</label>
@@ -299,16 +303,20 @@
 
     private async Task SaveOwner()
     {
-        if (string.IsNullOrWhiteSpace(editingOwner.BusinessName))
+        // Enforce Formatting
+        editingOwner.Phone = PPPUtils.FormatPhoneNumber(editingOwner.Phone);
+
+        if (string.IsNullOrWhiteSpace(editingOwner.BusinessName) || 
+            editingOwner.Phone.Length != 12) // Format is ###-###-####
         {
-            _ = ShowToast("Business Name required", true);
+            _ = ShowToast("Business Name and 10-digit Phone required", true);
             return;
         }
 
         try {
             Db.ChangeTracker.Clear();
 
-            // SaveWithAddress Logic
+            // Save Address Logic
             if (editingOwner.Address != null)
             {
                 if (!string.IsNullOrWhiteSpace(editingOwner.Address.Street))
@@ -336,7 +344,7 @@
             }
 
             await LoadOwners();
-            _ = ShowToast("Business profile updated");
+            _ = ShowToast("Business record updated");
             CloseModal(); 
         } catch (Exception ex) {
             _ = ShowToast("Save Error: " + ex.Message, true);
