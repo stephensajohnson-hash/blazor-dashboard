@@ -70,7 +70,7 @@
                             <td class="p-5">
                                 <div class="flex items-center gap-3">
                                     <div class="w-10 h-10 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 border border-gray-700 flex items-center justify-center text-xs">
-                                        @user.FirstName[0]@user.LastName[0]
+                                        @(string.IsNullOrEmpty(user.FirstName) ? "?" : user.FirstName[0])@(string.IsNullOrEmpty(user.LastName) ? "?" : user.LastName[0])
                                     </div>
                                     <div>
                                         <div class="text-sm font-black uppercase tracking-tight">@user.FirstName @user.LastName</div>
@@ -150,7 +150,7 @@
                     <label class="text-[9px] uppercase text-gray-500 tracking-widest mb-2 block">Reward Points</label>
                     <input @bind="editingUser.RewardPoints" type="number" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm focus:border-emerald-500 outline-none transition font-mono text-emerald-400" />
                 </div>
-                <div>
+                <div class="col-span-2">
                     <label class="text-[9px] uppercase text-gray-500 tracking-widest mb-2 block">Meal Plan</label>
                     <input @bind="editingUser.PreferredPlan" placeholder="e.g. Clean Eating 10" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm focus:border-blue-500 outline-none transition" />
                 </div>
@@ -182,7 +182,8 @@
     {
         isLoading = true;
         try {
-            users = await Db.PPP_Users.OrderBy(u => u.LastName).ToListAsync();
+            // Using AsNoTracking to prevent collisions during updates
+            users = await Db.PPP_Users.AsNoTracking().OrderBy(u => u.LastName).ToListAsync();
         } catch (Exception ex) {
             await ShowToast("Load Error: " + ex.Message, true);
         } finally {
@@ -194,7 +195,7 @@
     {
         if (user == null)
         {
-            editingUser = new PPP_User { CreatedAt = DateTime.UtcNow };
+            editingUser = new PPP_User { CreatedAt = DateTime.UtcNow, Role = "Customer" };
         }
         else
         {
@@ -225,6 +226,9 @@
         }
 
         try {
+            // THE FIX: Clear tracker to prevent collisions
+            Db.ChangeTracker.Clear();
+
             if (editingUser.Id == 0) {
                 Db.PPP_Users.Add(editingUser);
                 await Db.SaveChangesAsync();
@@ -238,15 +242,22 @@
             CloseModal();
         } catch (Exception ex) {
             await ShowToast("Save Error: " + ex.Message, true);
+            Console.WriteLine($"Save Error: {ex}");
         }
     }
 
     private async Task ToggleRole(PPP_User user)
     {
-        user.Role = user.Role == "Owner" ? "Customer" : "Owner";
-        Db.PPP_Users.Update(user);
-        await Db.SaveChangesAsync();
-        await ShowToast($"{user.FirstName} is now an {user.Role}");
+        try {
+            Db.ChangeTracker.Clear();
+            user.Role = user.Role == "Owner" ? "Customer" : "Owner";
+            Db.PPP_Users.Update(user);
+            await Db.SaveChangesAsync();
+            await ShowToast($"{user.FirstName} role changed to {user.Role}");
+            await LoadUsers();
+        } catch (Exception ex) {
+            await ShowToast("Toggle Error: " + ex.Message, true);
+        }
     }
 
     private async Task ConfirmDelete(PPP_User user)
@@ -254,6 +265,7 @@
         if (await JS.InvokeAsync<bool>("confirm", $"Permanently remove {user.FirstName} {user.LastName}?"))
         {
             try {
+                Db.ChangeTracker.Clear();
                 Db.PPP_Users.Remove(user);
                 await Db.SaveChangesAsync();
                 await ShowToast("User deleted");
