@@ -232,6 +232,7 @@
                 .Include(u => u.Address)
                 .AsNoTracking()
                 .OrderBy(u => u.LastName)
+                .ThenBy(u => u.FirstName)
                 .ToListAsync();
         } catch (Exception ex) {
             _ = ShowToast("Load Error: " + ex.Message, true);
@@ -320,22 +321,19 @@
 
     private async Task SaveUser()
     {
-        // Enforce Formatting
         editingUser.Phone = PPPUtils.FormatPhoneNumber(editingUser.Phone);
 
         if (string.IsNullOrWhiteSpace(editingUser.FirstName) || 
             string.IsNullOrWhiteSpace(editingUser.Email) || 
-            editingUser.Phone.Length != 12) // Format is ###-###-####
+            editingUser.Phone.Length != 12)
         {
             _ = ShowToast("Name, Email, and 10-digit Phone are required", true);
             return;
         }
 
-        var sw = Stopwatch.StartNew();
         try {
             Db.ChangeTracker.Clear();
 
-            // Save Address logic
             if (editingUser.Address != null)
             {
                 if (!string.IsNullOrWhiteSpace(editingUser.Address.Street))
@@ -354,24 +352,18 @@
                 }
             }
 
-            // Save User
             if (editingUser.Id == 0) {
                 Db.PPP_Users.Add(editingUser);
-                await Db.SaveChangesAsync();
             } else {
                 Db.Entry(editingUser).State = EntityState.Modified;
-                await Db.SaveChangesAsync();
             }
-
-            await LoadUsers();
+            
+            await Db.SaveChangesAsync();
+            await LoadUsers(); // Re-fetch alphabetized list
             _ = ShowToast("User record updated");
             CloseModal(); 
         } catch (Exception ex) {
             _ = ShowToast("Save Error: " + ex.Message, true);
-            Console.WriteLine($"Save Error: {ex}");
-        } finally {
-            sw.Stop();
-            Console.WriteLine($"[TIMING] SaveUser Total: {sw.ElapsedMilliseconds}ms");
         }
     }
 
