@@ -235,14 +235,21 @@
 
     private void CloseModal() => showModal = false;
 
-    private async Task HandleImageUpload(InputFileChangeEventArgs e)
+  private async Task HandleImageUpload(InputFileChangeEventArgs e)
     {
         try {
             var file = e.File;
             if (file == null) return;
 
+            // Optional: Validate file type
+            if (!file.ContentType.StartsWith("image/")) {
+                _ = ShowToast("Please upload an image file", true);
+                return;
+            }
+
             using var ms = new System.IO.MemoryStream();
-            await file.OpenReadStream(maxAllowedSize: 1024 * 1024 * 2).CopyToAsync(ms); // 2MB Max
+            // 2MB limit
+            await file.OpenReadStream(maxAllowedSize: 1024 * 1024 * 2).CopyToAsync(ms); 
 
             var newImage = new PPP_StoredImage
             {
@@ -269,11 +276,17 @@
             Db.PPP_StoredImages.Add(newImage);
             await Db.SaveChangesAsync();
             
+            // Link the new ID to the user being edited
             editingUser.AvatarId = newImage.Id;
-            _ = ShowToast("Image uploaded");
+            
+            _ = ShowToast("Image uploaded and linked");
+            
+            // Force the UI to refresh the image src
+            await InvokeAsync(StateHasChanged);
         }
         catch (Exception ex) {
             _ = ShowToast("Upload failed: " + ex.Message, true);
+            Console.WriteLine($"Upload Error: {ex}");
         }
     }
 
