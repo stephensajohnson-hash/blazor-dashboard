@@ -2,17 +2,22 @@
 @using Dashboard
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject AppDbContext Db
 @inject IJSRuntime JS
 
 <div class="min-h-screen bg-[#0a0a0a] text-white p-6 font-black relative overflow-hidden">
     
+    @* TOAST NOTIFICATION STACK *@
     <div class="fixed top-24 right-6 z-[100] flex flex-col gap-3">
         @foreach (var toast in toasts)
         {
-            <div class="p-4 rounded-2xl border shadow-2xl @(toast.IsError ? "bg-red-950 border-red-500" : "bg-emerald-950 border-emerald-500")">
-                <span class="text-xs uppercase tracking-widest">@toast.Message</span>
+            <div class="p-4 rounded-2xl border shadow-2xl animate-in slide-in-from-right duration-300 @(toast.IsError ? "bg-red-950/90 border-red-500 text-red-200" : "bg-emerald-950/90 border-emerald-500 text-emerald-200")">
+                <div class="flex items-center gap-3">
+                    <span>@(toast.IsError ? "❌" : "✅")</span>
+                    <span class="text-xs uppercase tracking-widest">@toast.Message</span>
+                </div>
             </div>
         }
     </div>
@@ -69,7 +74,7 @@
                             }
                             else
                             {
-                                <span class="px-2 py-0.5 rounded text-[8px] bg-gray-800 text-gray-400 border border-gray-700 uppercase">Owner #@ing.OwnerId</span>
+                                <span class="px-2 py-0.5 rounded text-[8px] bg-gray-800 text-gray-400 border border-gray-700 uppercase">Owner: @ing.Owner?.BusinessName</span>
                             }
                         </td>
                         <td class="p-5 text-right">
@@ -88,11 +93,13 @@
 @* MODAL *@
 @if (showModal)
 {
-    <div class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-4">
-        <div class="bg-[#111] w-full max-w-xl rounded-3xl border border-gray-800 shadow-2xl overflow-hidden">
+    <div class="fixed inset-0 bg-black/90 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+        <div class="bg-[#111] w-full max-w-xl rounded-3xl border border-gray-800 shadow-2xl overflow-hidden animate-in zoom-in duration-200">
             <div class="p-6 bg-gray-900/50 border-b border-gray-800 flex justify-between items-center">
-                <h3 class="text-lg uppercase tracking-widest font-black text-orange-400">Edit Ingredient</h3>
-                <button @onclick="CloseModal" class="text-gray-500 text-2xl">&times;</button>
+                <h3 class="text-lg uppercase tracking-widest font-black text-orange-400">
+                    @(editingIng.Id == 0 ? "Create Ingredient" : "Update Ingredient")
+                </h3>
+                <button @onclick="CloseModal" class="text-gray-500 text-2xl hover:text-white">&times;</button>
             </div>
             
             <div class="p-8 grid grid-cols-2 gap-4">
@@ -105,8 +112,8 @@
                     <input @bind="editingIng.Unit" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm focus:border-orange-500 outline-none" />
                 </div>
                 <div>
-                    <label class="text-[9px] uppercase text-gray-500 mb-2 block">Ownership</label>
-                    <select @bind="selectedOwnerId" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm">
+                    <label class="text-[9px] uppercase text-gray-500 mb-2 block">Ownership Scope</label>
+                    <select @bind="selectedOwnerId" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm text-white">
                         <option value="0">UNIVERSAL (ADMIN)</option>
                         @foreach(var owner in owners) {
                             <option value="@owner.Id">@owner.BusinessName</option>
@@ -141,7 +148,7 @@
             <div class="p-6 bg-gray-900/50 border-t border-gray-800 flex justify-end gap-4">
                 <button @onclick="CloseModal" class="text-[10px] text-gray-500 uppercase tracking-widest font-black px-6">Cancel</button>
                 <button @onclick="SaveIngredient" class="bg-orange-600 hover:bg-orange-500 text-white text-[10px] uppercase tracking-widest font-black px-8 py-3 rounded-xl shadow-lg transition">
-                    Save Ingredient
+                    Commit Changes
                 </button>
             </div>
         </div>
@@ -163,7 +170,10 @@
 
     private async Task LoadData()
     {
-        ingredients = await Db.PPP_Ingredients.OrderBy(i => i.Name).ToListAsync();
+        ingredients = await Db.PPP_Ingredients
+            .Include(i => i.Owner)
+            .OrderBy(i => i.Name)
+            .ToListAsync();
         owners = await Db.PPP_Owners.OrderBy(o => o.BusinessName).ToListAsync();
     }
 
@@ -173,7 +183,17 @@
             editingIng = new PPP_Ingredient();
             selectedOwnerId = 0;
         } else {
-            editingIng = ing;
+            editingIng = new PPP_Ingredient {
+                Id = ing.Id,
+                Name = ing.Name,
+                Unit = ing.Unit,
+                Calories = ing.Calories,
+                Protein = ing.Protein,
+                Fat = ing.Fat,
+                Carbs = ing.Carbs,
+                Fiber = ing.Fiber,
+                OwnerId = ing.OwnerId
+            };
             selectedOwnerId = ing.OwnerId ?? 0;
         }
         showModal = true;
@@ -183,26 +203,45 @@
 
     private async Task SaveIngredient()
     {
-        if (string.IsNullOrWhiteSpace(editingIng.Name)) return;
+        if (string.IsNullOrWhiteSpace(editingIng.Name)) 
+        {
+            _ = ShowToast("Name is required", true);
+            return;
+        }
 
-        editingIng.OwnerId = selectedOwnerId == 0 ? null : selectedOwnerId;
+        try 
+        {
+            Db.ChangeTracker.Clear();
+            editingIng.OwnerId = selectedOwnerId == 0 ? null : selectedOwnerId;
 
-        if (editingIng.Id == 0) Db.PPP_Ingredients.Add(editingIng);
-        else Db.Entry(editingIng).State = EntityState.Modified;
+            if (editingIng.Id == 0) {
+                Db.PPP_Ingredients.Add(editingIng);
+            } else {
+                Db.Entry(editingIng).State = EntityState.Modified;
+            }
 
-        await Db.SaveChangesAsync();
-        await LoadData();
-        _ = ShowToast("Ingredient Saved");
-        CloseModal();
+            await Db.SaveChangesAsync();
+            await LoadData();
+            _ = ShowToast("Ingredient Saved");
+            CloseModal();
+        }
+        catch (Exception ex)
+        {
+            _ = ShowToast("Save Error: " + ex.Message, true);
+        }
     }
 
     private async Task ConfirmDelete(PPP_Ingredient ing)
     {
         if (await JS.InvokeAsync<bool>("confirm", $"Delete {ing.Name}?")) {
-            Db.PPP_Ingredients.Remove(ing);
-            await Db.SaveChangesAsync();
-            await LoadData();
-            _ = ShowToast("Ingredient Deleted", true);
+            try {
+                Db.PPP_Ingredients.Remove(ing);
+                await Db.SaveChangesAsync();
+                await LoadData();
+                _ = ShowToast("Ingredient Deleted");
+            } catch (Exception ex) {
+                _ = ShowToast("Delete Error: " + ex.Message, true);
+            }
         }
     }
 
