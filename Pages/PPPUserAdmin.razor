@@ -182,7 +182,6 @@
     {
         isLoading = true;
         try {
-            // Using AsNoTracking to prevent collisions during updates
             users = await Db.PPP_Users.AsNoTracking().OrderBy(u => u.LastName).ToListAsync();
         } catch (Exception ex) {
             await ShowToast("Load Error: " + ex.Message, true);
@@ -226,23 +225,30 @@
         }
 
         try {
-            // THE FIX: Clear tracker to prevent collisions
             Db.ChangeTracker.Clear();
 
             if (editingUser.Id == 0) {
                 Db.PPP_Users.Add(editingUser);
                 await Db.SaveChangesAsync();
+                // Add to local list so we don't have to re-fetch
+                users.Add(editingUser);
+                users = users.OrderBy(u => u.LastName).ToList();
                 await ShowToast("User created successfully");
             } else {
                 Db.PPP_Users.Update(editingUser);
                 await Db.SaveChangesAsync();
+                
+                // Update local list item immediately
+                var index = users.FindIndex(u => u.Id == editingUser.Id);
+                if (index != -1) {
+                    users[index] = editingUser;
+                    users = users.OrderBy(u => u.LastName).ToList();
+                }
                 await ShowToast("User profile updated");
             }
-            await LoadUsers();
             CloseModal();
         } catch (Exception ex) {
             await ShowToast("Save Error: " + ex.Message, true);
-            Console.WriteLine($"Save Error: {ex}");
         }
     }
 
@@ -254,7 +260,8 @@
             Db.PPP_Users.Update(user);
             await Db.SaveChangesAsync();
             await ShowToast($"{user.FirstName} role changed to {user.Role}");
-            await LoadUsers();
+            // Local state is already updated by reference, but we re-sort just in case
+            StateHasChanged();
         } catch (Exception ex) {
             await ShowToast("Toggle Error: " + ex.Message, true);
         }
@@ -268,8 +275,8 @@
                 Db.ChangeTracker.Clear();
                 Db.PPP_Users.Remove(user);
                 await Db.SaveChangesAsync();
+                users.RemoveAll(u => u.Id == user.Id);
                 await ShowToast("User deleted");
-                await LoadUsers();
             } catch (Exception ex) {
                 await ShowToast("Delete Error: " + ex.Message, true);
             }
