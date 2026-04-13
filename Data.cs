@@ -88,6 +88,8 @@ public class AppDbContext : DbContext
     // PickPrepPlate
     public DbSet<PPP_User> PPP_Users { get; set; }
     public DbSet<PPP_StoredImage> PPP_StoredImages { get; set; }
+    public DbSet<PPP_Owner> PPP_Owners { get; set; }
+    public DbSet<PPP_Address> PPP_Addresses { get; set; }
 }
 
 public class BulletItem 
@@ -826,24 +828,6 @@ public class NETH_StoredImage
 
 // PPP Stuff
 
-public class PPP_User
-{
-    public int Id { get; set; }
-    public string FirstName { get; set; } = "";
-    public string LastName { get; set; } = "";
-    public string Email { get; set; } = "";
-    public string Phone { get; set; } = "";
-    public string Role { get; set; } = "Customer"; // Admin, Owner, Customer, Staff
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public int RewardPoints { get; set; } = 0;
-    public string? PreferredPlan { get; set; }
-    
-    // New Avatar Link
-    public int? AvatarId { get; set; }
-    [ForeignKey("AvatarId")]
-    public virtual PPP_StoredImage? Avatar { get; set; }
-}
-
 public class PPP_StoredImage
 {
     public int Id { get; set; }
@@ -851,4 +835,55 @@ public class PPP_StoredImage
     public string ContentType { get; set; } = "image/jpeg";
     public string FileName { get; set; } = "";
     public DateTime UploadedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class PPP_Address
+{
+    public int Id { get; set; }
+    public string Street { get; set; } = "";
+    public string City { get; set; } = "";
+    public string State { get; set; } = "";
+    public string ZipCode { get; set; } = "";
+    public string? Apartment { get; set; }
+    public string? DeliveryInstructions { get; set; }
+}
+
+public class PPP_User
+{
+    public int Id { get; set; }
+    public string FirstName { get; set; } = "";
+    public string LastName { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string Phone { get; set; } = "";
+    public string Role { get; set; } = "Customer";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public int RewardPoints { get; set; } = 0;
+    public string? PreferredPlan { get; set; }
+    public int? AvatarId { get; set; }
+    [ForeignKey("AvatarId")]
+    public virtual PPP_StoredImage? Avatar { get; set; }
+
+    // New Address Link
+    public int? AddressId { get; set; }
+    [ForeignKey("AddressId")]
+    public virtual PPP_Address? Address { get; set; }
+}
+
+public class PPP_Owner
+{
+    public int Id { get; set; }
+    public string BusinessName { get; set; } = "";
+    public string OwnerName { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string Phone { get; set; } = "";
+    public string Bio { get; set; } = "";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public int? LogoId { get; set; }
+    [ForeignKey("LogoId")]
+    public virtual PPP_StoredImage? Logo { get; set; }
+
+    // Changed from string to AddressId
+    public int? AddressId { get; set; }
+    [ForeignKey("AddressId")]
+    public virtual PPP_Address? Address { get; set; }
 }
