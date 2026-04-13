@@ -197,4 +197,11 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
+app.MapGet("/db-images-ppp/{id:int}", async (int id, Dashboard.AppDbContext db) =>
+{
+    var image = await db.PPP_StoredImages.FindAsync(id);
+    if (image == null) return Results.NotFound();
+    return Results.File(image.Data, image.ContentType);
+});
+
 app.Run();
