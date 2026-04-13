@@ -3,6 +3,7 @@
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.JSInterop
+@using System.Diagnostics
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject AppDbContext Db
 @inject NavigationManager Nav
@@ -224,44 +225,51 @@
             return;
         }
 
+        var sw = Stopwatch.StartNew();
+        Console.WriteLine($"[TIMING] SaveUser started at {DateTime.Now:T}");
+
         try {
             Db.ChangeTracker.Clear();
+            Console.WriteLine($"[TIMING] Tracker cleared: {sw.ElapsedMilliseconds}ms");
 
             if (editingUser.Id == 0) {
                 Db.PPP_Users.Add(editingUser);
                 await Db.SaveChangesAsync();
-                // Add to local list so we don't have to re-fetch
-                users.Add(editingUser);
-                users = users.OrderBy(u => u.LastName).ToList();
-                await ShowToast("User created successfully");
-            } else {
-                Db.PPP_Users.Update(editingUser);
-                await Db.SaveChangesAsync();
+                Console.WriteLine($"[TIMING] Insert complete: {sw.ElapsedMilliseconds}ms");
                 
-                // Update local list item immediately
+                users.Add(editingUser);
+            } else {
+                // Attach and mark as modified for a more direct update
+                Db.Entry(editingUser).State = EntityState.Modified;
+                await Db.SaveChangesAsync();
+                Console.WriteLine($"[TIMING] Update complete: {sw.ElapsedMilliseconds}ms");
+                
                 var index = users.FindIndex(u => u.Id == editingUser.Id);
-                if (index != -1) {
-                    users[index] = editingUser;
-                    users = users.OrderBy(u => u.LastName).ToList();
-                }
-                await ShowToast("User profile updated");
+                if (index != -1) users[index] = editingUser;
             }
+
+            users = users.OrderBy(u => u.LastName).ToList();
+            await ShowToast("User saved successfully");
             CloseModal();
         } catch (Exception ex) {
+            Console.WriteLine($"[TIMING] FATAL ERROR after {sw.ElapsedMilliseconds}ms: {ex}");
             await ShowToast("Save Error: " + ex.Message, true);
+        } finally {
+            sw.Stop();
+            Console.WriteLine($"[TIMING] Total SaveUser duration: {sw.ElapsedMilliseconds}ms");
         }
     }
 
     private async Task ToggleRole(PPP_User user)
     {
+        var sw = Stopwatch.StartNew();
         try {
             Db.ChangeTracker.Clear();
             user.Role = user.Role == "Owner" ? "Customer" : "Owner";
-            Db.PPP_Users.Update(user);
+            Db.Entry(user).State = EntityState.Modified;
             await Db.SaveChangesAsync();
-            await ShowToast($"{user.FirstName} role changed to {user.Role}");
-            // Local state is already updated by reference, but we re-sort just in case
-            StateHasChanged();
+            Console.WriteLine($"[TIMING] Role Toggle complete: {sw.ElapsedMilliseconds}ms");
+            await ShowToast($"{user.FirstName} is now an {user.Role}");
         } catch (Exception ex) {
             await ShowToast("Toggle Error: " + ex.Message, true);
         }
