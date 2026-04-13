@@ -90,6 +90,12 @@ public class AppDbContext : DbContext
     public DbSet<PPP_StoredImage> PPP_StoredImages { get; set; }
     public DbSet<PPP_Owner> PPP_Owners { get; set; }
     public DbSet<PPP_Address> PPP_Addresses { get; set; }
+    public DbSet<PPP_Ingredient> PPP_Ingredients { get; set; }
+    public DbSet<PPP_Recipe> PPP_Recipes { get; set; }
+    public DbSet<PPP_RecipeIngredientGroup> PPP_RecipeIngredientGroups { get; set; }
+    public DbSet<PPP_RecipeIngredientMapping> PPP_RecipeIngredientMappings { get; set; }
+    public DbSet<PPP_RecipeInstructionGroup> PPP_RecipeInstructionGroups { get; set; }
+    public DbSet<PPP_RecipeInstruction> PPP_RecipeInstructions { get; set; }
 }
 
 public class BulletItem 
@@ -886,4 +892,84 @@ public class PPP_Owner
     public int? AddressId { get; set; }
     [ForeignKey("AddressId")]
     public virtual PPP_Address? Address { get; set; }
+}
+
+public class PPP_Ingredient
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    public string? Unit { get; set; } // default unit (e.g., grams, oz, each)
+    public double Calories { get; set; }
+    public double Protein { get; set; }
+    public double Fat { get; set; }
+    public double Carbs { get; set; }
+    public double Fiber { get; set; }
+    
+    // Calculated property - not stored in DB
+    [NotMapped]
+    public double NetCarbs => Math.Max(0, Carbs - Fiber);
+
+    // Security/Tenancy
+    public int? OwnerId { get; set; } // Null = Universal/Admin
+    [ForeignKey("OwnerId")]
+    public virtual PPP_Owner? Owner { get; set; }
+    
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class PPP_Recipe
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    public string Description { get; set; } = "";
+    public int? OwnerId { get; set; }
+    [ForeignKey("OwnerId")]
+    public virtual PPP_Owner? Owner { get; set; }
+    
+    // Navigation for the groups
+    public virtual List<PPP_RecipeIngredientGroup> IngredientGroups { get; set; } = new();
+    public virtual List<PPP_RecipeInstructionGroup> InstructionGroups { get; set; } = new();
+}
+
+public class PPP_RecipeIngredientGroup
+{
+    public int Id { get; set; }
+    public int RecipeId { get; set; }
+    public string GroupName { get; set; } = "Ingredients";
+    public int DisplayOrder { get; set; }
+    
+    public virtual List<PPP_RecipeIngredientMapping> Ingredients { get; set; } = new();
+}
+
+public class PPP_RecipeIngredientMapping
+{
+    public int Id { get; set; }
+    public int IngredientGroupId { get; set; }
+    
+    public int IngredientId { get; set; }
+    [ForeignKey("IngredientId")]
+    public virtual PPP_Ingredient MasterIngredient { get; set; } = null!;
+
+    public double Quantity { get; set; }
+    public string Unit { get; set; } = ""; // Recipe-specific unit (cups, tbsp, etc)
+    public string Notes { get; set; } = ""; // "diced", "chopped", etc.
+    public int DisplayOrder { get; set; }
+}
+
+public class PPP_RecipeInstructionGroup
+{
+    public int Id { get; set; }
+    public int RecipeId { get; set; }
+    public string GroupName { get; set; } = "Instructions";
+    public int DisplayOrder { get; set; }
+
+    public virtual List<PPP_RecipeInstruction> Instructions { get; set; } = new();
+}
+
+public class PPP_RecipeInstruction
+{
+    public int Id { get; set; }
+    public int InstructionGroupId { get; set; }
+    public string StepDescription { get; set; } = "";
+    public int DisplayOrder { get; set; }
 }
