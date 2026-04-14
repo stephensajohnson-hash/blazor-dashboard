@@ -921,9 +921,12 @@ public class PPP_Recipe
     public int Id { get; set; }
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
+    public int Servings { get; set; } = 1;
     
-    // ADD THIS LINE
-    public int Servings { get; set; } = 1; 
+    // NEW COLUMN
+    public int? ImageId { get; set; }
+    [ForeignKey("ImageId")]
+    public virtual PPP_StoredImage? Image { get; set; }
 
     public int OwnerId { get; set; }
     [ForeignKey("OwnerId")]
@@ -932,7 +935,6 @@ public class PPP_Recipe
     public virtual List<PPP_RecipeIngredientGroup> IngredientGroups { get; set; } = new();
     public virtual List<PPP_RecipeInstructionGroup> InstructionGroups { get; set; } = new();
 }
-
 
 
 public class PPP_RecipeIngredientMapping
