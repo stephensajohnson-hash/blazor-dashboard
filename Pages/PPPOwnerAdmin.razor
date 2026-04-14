@@ -69,7 +69,7 @@
                                     }
                                     else
                                     {
-                                        <div class="w-10 h-10 rounded-lg bg-gray-800 border border-gray-700 flex items-center justify-center text-[10px] text-gray-500 italic">No Logo</div>
+                                        <div class="w-10 h-10 rounded-lg bg-gray-800 border border-gray-700 flex items-center justify-center text-[10px] text-gray-500 italic text-center">No Logo</div>
                                     }
                                     <div class="text-sm font-black uppercase tracking-tight text-emerald-400">@owner.BusinessName</div>
                                 </div>
@@ -90,8 +90,15 @@
                             </td>
                             <td class="p-5 text-right">
                                 <div class="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button @onclick="() => OpenModal(owner)" class="p-2 text-blue-400 hover:bg-blue-500/10 rounded-lg transition">✎</button>
-                                    <button @onclick="() => ConfirmDelete(owner)" class="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition">✕</button>
+                                    @* MANAGE RECIPES BUTTON *@
+                                    <button @onclick='() => Nav.NavigateTo($"/ppp-recipe-manager/{owner.Id}")' 
+                                            class="p-2 text-orange-400 hover:bg-orange-500/10 rounded-lg transition" 
+                                            title="Manage Recipes">
+                                        🍲
+                                    </button>
+                                    
+                                    <button @onclick="() => OpenModal(owner)" class="p-2 text-blue-400 hover:bg-blue-500/10 rounded-lg transition" title="Edit Profile">✎</button>
+                                    <button @onclick="() => ConfirmDelete(owner)" class="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition" title="Delete Business">✕</button>
                                 </div>
                             </td>
                         </tr>
@@ -184,8 +191,8 @@
             </div>
 
             <div class="p-6 bg-gray-900/50 border-t border-gray-800 flex justify-end gap-4">
-                <button @onclick="CloseModal" class="text-[10px] text-gray-500 uppercase tracking-widest font-black px-6">Cancel</button>
-                <button @onclick="SaveOwner" class="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] uppercase tracking-widest font-black px-8 py-3 rounded-xl shadow-lg transition">
+                <button @onclick="CloseModal" class="text-[10px] text-gray-500 uppercase font-black px-6">Cancel</button>
+                <button @onclick="SaveOwner" class="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] uppercase font-black px-8 py-3 rounded-xl shadow-lg transition">
                     Save Business
                 </button>
             </div>
@@ -268,25 +275,12 @@
                 UploadedAt = DateTime.UtcNow
             };
 
-            if (editingOwner.LogoId.HasValue)
-            {
-                var oldId = editingOwner.LogoId.Value;
-                bool isShared = await Db.PPP_Owners.AnyAsync(o => o.Id != editingOwner.Id && o.LogoId == oldId)
-                             || await Db.PPP_Users.AnyAsync(u => u.AvatarId == oldId);
-                
-                if (!isShared)
-                {
-                    var oldImg = await Db.PPP_StoredImages.FindAsync(oldId);
-                    if (oldImg != null) Db.PPP_StoredImages.Remove(oldImg);
-                }
-            }
-
             Db.PPP_StoredImages.Add(newImage);
             await Db.SaveChangesAsync();
             
             editingOwner.LogoId = newImage.Id;
             _ = ShowToast("Logo uploaded");
-            await InvokeAsync(StateHasChanged);
+            StateHasChanged();
         }
         catch (Exception ex) {
             _ = ShowToast("Upload failed: " + ex.Message, true);
@@ -297,42 +291,26 @@
     {
         editingOwner.Phone = PPPUtils.FormatPhoneNumber(editingOwner.Phone);
 
-        if (string.IsNullOrWhiteSpace(editingOwner.BusinessName) || editingOwner.Phone.Length != 12)
+        if (string.IsNullOrWhiteSpace(editingOwner.BusinessName))
         {
-            _ = ShowToast("Business Name and 10-digit Phone required", true);
+            _ = ShowToast("Business Name required", true);
             return;
         }
 
         try {
-            Db.ChangeTracker.Clear();
-
-            if (editingOwner.Address != null)
+            if (editingOwner.Address != null && editingOwner.Address.Id == 0 && !string.IsNullOrWhiteSpace(editingOwner.Address.Street))
             {
-                if (!string.IsNullOrWhiteSpace(editingOwner.Address.Street))
-                {
-                    if (editingOwner.Address.Id == 0)
-                        Db.PPP_Addresses.Add(editingOwner.Address);
-                    else
-                        Db.PPP_Addresses.Update(editingOwner.Address);
-
-                    await Db.SaveChangesAsync();
-                    editingOwner.AddressId = editingOwner.Address.Id;
-                }
-                else if (editingOwner.Address.Id != 0)
-                {
-                    editingOwner.AddressId = null;
-                }
+                Db.PPP_Addresses.Add(editingOwner.Address);
+                await Db.SaveChangesAsync();
+                editingOwner.AddressId = editingOwner.Address.Id;
             }
 
-            if (editingOwner.Id == 0) {
-                Db.PPP_Owners.Add(editingOwner);
-            } else {
-                Db.Entry(editingOwner).State = EntityState.Modified;
-            }
+            if (editingOwner.Id == 0) Db.PPP_Owners.Add(editingOwner);
+            else Db.Update(editingOwner);
 
             await Db.SaveChangesAsync();
-            await LoadOwners(); // Re-fetch alphabetized list
-            _ = ShowToast("Business record updated");
+            await LoadOwners();
+            _ = ShowToast("Business saved");
             CloseModal(); 
         } catch (Exception ex) {
             _ = ShowToast("Save Error: " + ex.Message, true);
@@ -341,23 +319,9 @@
 
     private async Task ConfirmDelete(PPP_Owner owner)
     {
-        if (await JS.InvokeAsync<bool>("confirm", $"Permanently remove {owner.BusinessName}?"))
+        if (await JS.InvokeAsync<bool>("confirm", $"Delete {owner.BusinessName}?"))
         {
             try {
-                Db.ChangeTracker.Clear();
-                
-                if (owner.LogoId.HasValue)
-                {
-                    var imgId = owner.LogoId.Value;
-                    bool isShared = await Db.PPP_Owners.AnyAsync(o => o.Id != owner.Id && o.LogoId == imgId)
-                                 || await Db.PPP_Users.AnyAsync(u => u.AvatarId == imgId);
-                    if (!isShared)
-                    {
-                        var img = await Db.PPP_StoredImages.FindAsync(imgId);
-                        if (img != null) Db.PPP_StoredImages.Remove(img);
-                    }
-                }
-
                 Db.PPP_Owners.Remove(owner);
                 await Db.SaveChangesAsync();
                 await LoadOwners();
@@ -372,10 +336,10 @@
     {
         var toast = new ToastItem { Message = msg, IsError = isError };
         toasts.Add(toast);
-        await InvokeAsync(StateHasChanged);
+        StateHasChanged();
         await Task.Delay(4000);
         toasts.Remove(toast);
-        await InvokeAsync(StateHasChanged);
+        StateHasChanged();
     }
 
     private class ToastItem { public string Message { get; set; } = ""; public bool IsError { get; set; } }
