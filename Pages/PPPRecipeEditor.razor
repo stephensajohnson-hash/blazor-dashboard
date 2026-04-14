@@ -227,24 +227,35 @@
     private void UpdateUnit(ChangeEventArgs e, IngredientUIModel m) 
     {
         string newUnit = e.Value?.ToString() ?? "";
-        if (m.BaseIngredient != null && !string.Equals(m.Unit, newUnit, StringComparison.OrdinalIgnoreCase)) 
+        string oldUnit = m.Unit; // Capture the current state before we mess with it
+
+        // If we have a master ingredient and the unit actually changed family-wise
+        if (m.BaseIngredient != null && !string.Equals(oldUnit, newUnit, StringComparison.OrdinalIgnoreCase)) 
         {
-            if (InternalConverter.TryConvert(m.Quantity, m.Unit, newUnit, out double convertedQty)) 
+            // Try the conversion using the OLD unit as the source and NEW as target
+            if (PPPUnitConverter.TryConvert(m.Quantity, oldUnit, newUnit, out double convertedQty)) 
             {
                 m.Quantity = Math.Round(convertedQty, 2);
-                m.Unit = newUnit;
+                m.Unit = newUnit; // Officially update the unit now that math passed
                 m.Scale();
-                _ = ShowToast($"Scaled {m.IngredientName} to {newUnit}");
+                _ = ShowToast($"Scaled {m.IngredientName} from {oldUnit} to {newUnit}");
             } 
             else 
             {
+                // Conversion failed (e.g., Weight to Volume)
+                // DON'T change the quantity, but switch to Manual Mode
                 m.IngredientId = 0; 
                 m.Unit = newUnit;
-                var sug = string.Join(", ", InternalConverter.GetCompatibleUnits(m.BaseIngredient.Unit ?? ""));
-                _ = ShowToast($"Incompatible Units! Manual mode enabled. Compatible: {sug}", true);
+                
+                var suggested = string.Join(", ", PPPUnitConverter.GetCompatibleUnits(oldUnit));
+                _ = ShowToast($"Incompatible! Cannot scale {oldUnit} to {newUnit}. Manual mode enabled. Compatible with {oldUnit}: {suggested}", true);
             }
         } 
-        else { m.Unit = newUnit; }
+        else 
+        {
+            // Simple update for manual entries
+            m.Unit = newUnit;
+        }
     }
 
     private async Task SaveRecipe() {
