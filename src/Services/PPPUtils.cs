@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace Dashboard.Services
@@ -69,6 +71,8 @@ namespace Dashboard.Services
         public static bool TryConvert(double qty, string fromUnit, string toUnit, out double newQty)
         {
             newQty = qty;
+            if (string.IsNullOrWhiteSpace(fromUnit) || string.IsNullOrWhiteSpace(toUnit)) return false;
+            
             if (!Units.ContainsKey(fromUnit) || !Units.ContainsKey(toUnit)) return false;
 
             var from = Units[fromUnit];
@@ -82,7 +86,7 @@ namespace Dashboard.Services
 
         public static List<string> GetCompatibleUnits(string unit)
         {
-            if (!Units.ContainsKey(unit)) return new List<string>();
+            if (string.IsNullOrWhiteSpace(unit) || !Units.ContainsKey(unit)) return new List<string>();
             var family = Units[unit].Family;
             return Units.Where(u => u.Value.Family == family).Select(u => u.Key).ToList();
         }
