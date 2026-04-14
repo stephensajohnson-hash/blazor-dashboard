@@ -921,11 +921,14 @@ public class PPP_Recipe
     public int Id { get; set; }
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
-    public int? OwnerId { get; set; }
-    [ForeignKey("OwnerId")]
-    public virtual PPP_Owner? Owner { get; set; }
     
-    // Navigation for the groups
+    // ADD THIS LINE
+    public int Servings { get; set; } = 1; 
+
+    public int OwnerId { get; set; }
+    [ForeignKey("OwnerId")]
+    public virtual PPP_Owner Owner { get; set; } = null!;
+    
     public virtual List<PPP_RecipeIngredientGroup> IngredientGroups { get; set; } = new();
     public virtual List<PPP_RecipeInstructionGroup> InstructionGroups { get; set; } = new();
 }
