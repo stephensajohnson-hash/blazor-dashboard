@@ -898,19 +898,18 @@ public class PPP_Ingredient
 {
     public int Id { get; set; }
     public string Name { get; set; } = "";
-    public string? Unit { get; set; } // default unit (e.g., grams, oz, each)
+    public string? Unit { get; set; }
     public double Calories { get; set; }
     public double Protein { get; set; }
     public double Fat { get; set; }
     public double Carbs { get; set; }
     public double Fiber { get; set; }
     
-    // Calculated property - not stored in DB
+    // Updated to round to 2 decimal places to prevent floating point tails
     [NotMapped]
-    public double NetCarbs => Math.Max(0, Carbs - Fiber);
+    public double NetCarbs => Math.Round(Math.Max(0, Carbs - Fiber), 2);
 
-    // Security/Tenancy
-    public int? OwnerId { get; set; } // Null = Universal/Admin
+    public int? OwnerId { get; set; }
     [ForeignKey("OwnerId")]
     public virtual PPP_Owner? Owner { get; set; }
     

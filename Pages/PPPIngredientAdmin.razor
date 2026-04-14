@@ -80,10 +80,10 @@
                             <div class="text-sm font-black uppercase tracking-tight @(ing.OwnerId != null ? "text-blue-400" : "text-white")">@ing.Name</div>
                             <div class="text-[9px] text-gray-500 font-mono">Per @(ing.Unit ?? "unit")</div>
                         </td>
-                        <td class="p-5 text-center font-mono text-xs text-orange-400">@ing.Calories</td>
-                        <td class="p-5 text-center font-mono text-xs text-blue-400">@ing.Protein g</td>
-                        <td class="p-5 text-center font-mono text-xs text-yellow-500">@ing.Fat g</td>
-                        <td class="p-5 text-center font-mono text-xs text-emerald-400">@ing.NetCarbs g</td>
+                        <td class="p-5 text-center font-mono text-xs text-orange-400">@ing.Calories.ToString("N2")</td>
+                        <td class="p-5 text-center font-mono text-xs text-blue-400">@ing.Protein.ToString("N2")g</td>
+                        <td class="p-5 text-center font-mono text-xs text-yellow-500">@ing.Fat.ToString("N2")g</td>
+                        <td class="p-5 text-center font-mono text-xs text-emerald-400">@ing.NetCarbs.ToString("N2")g</td>
                         <td class="p-5">
                             @if (ing.OwnerId == null)
                             {
@@ -98,10 +98,10 @@
                             <div class="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
                                 @if (ing.OwnerId != null)
                                 {
-                                    <button @onclick="() => CopyToUniversal(ing)" class="p-2 text-purple-400 hover:bg-purple-500/10 rounded-lg transition" title="Promote to Universal">⬆</button>
+                                    <button @onclick="() => PromoteToUniversal(ing)" class="p-2 text-purple-400 hover:bg-purple-500/10 rounded-lg transition" title="Promote to Universal">🌍</button>
                                 }
-                                <button @onclick="() => OpenModal(ing)" class="p-2 text-blue-400 hover:bg-blue-500/10 rounded-lg transition">✎</button>
-                                <button @onclick="() => ConfirmDelete(ing)" class="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition">✕</button>
+                                <button @onclick="() => OpenModal(ing)" class="p-2 text-blue-400 hover:bg-blue-500/10 rounded-lg transition" title="Edit">✎</button>
+                                <button @onclick="() => ConfirmDelete(ing)" class="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition" title="Delete">✕</button>
                             </div>
                         </td>
                     </tr>
@@ -118,7 +118,7 @@
         <div class="bg-[#111] w-full max-w-xl rounded-3xl border border-gray-800 shadow-2xl overflow-hidden animate-in zoom-in duration-200">
             <div class="p-6 bg-gray-900/50 border-b border-gray-800 flex justify-between items-center">
                 <h3 class="text-lg uppercase tracking-widest font-black text-orange-400">
-                    @(editingIng.Id == 0 ? "Create Ingredient" : "Update Ingredient")
+                    @(isPromoting ? "Review Universal Promotion" : (editingIng.Id == 0 ? "Create Ingredient" : "Update Ingredient"))
                 </h3>
                 <button @onclick="CloseModal" class="text-gray-500 text-2xl hover:text-white">&times;</button>
             </div>
@@ -129,12 +129,12 @@
                     <input @bind="editingIng.Name" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm focus:border-orange-500 outline-none uppercase font-black" />
                 </div>
                 <div>
-                    <label class="text-[9px] uppercase text-gray-500 mb-2 block">Base Unit (e.g. 100g, 1oz, lbs, each)</label>
+                    <label class="text-[9px] uppercase text-gray-500 mb-2 block">Base Unit (e.g. lbs, oz, each)</label>
                     <input @bind="editingIng.Unit" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm focus:border-orange-500 outline-none" />
                 </div>
                 <div>
                     <label class="text-[9px] uppercase text-gray-500 mb-2 block">Ownership Scope</label>
-                    <select @bind="selectedOwnerId" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm text-white">
+                    <select @bind="selectedOwnerId" disabled="@isPromoting" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm text-white disabled:opacity-50">
                         <option value="0">UNIVERSAL (ADMIN)</option>
                         @foreach(var owner in owners) {
                             <option value="@owner.Id">@owner.BusinessName</option>
@@ -145,31 +145,40 @@
                 <div class="col-span-2 grid grid-cols-5 gap-2 mt-4 bg-black/40 p-4 rounded-2xl border border-gray-800">
                     <div>
                         <label class="text-[8px] uppercase text-gray-500 mb-1 block">Cals</label>
-                        <input type="number" step="0.1" @bind="editingIng.Calories" class="w-full bg-black border border-gray-800 p-2 text-xs font-mono text-orange-400" />
+                        <input type="number" step="0.01" @bind="editingIng.Calories" class="w-full bg-black border border-gray-800 p-2 text-xs font-mono text-orange-400" />
                     </div>
                     <div>
                         <label class="text-[8px] uppercase text-gray-500 mb-1 block">Prot</label>
-                        <input type="number" step="0.1" @bind="editingIng.Protein" class="w-full bg-black border border-gray-800 p-2 text-xs font-mono text-blue-400" />
+                        <input type="number" step="0.01" @bind="editingIng.Protein" class="w-full bg-black border border-gray-800 p-2 text-xs font-mono text-blue-400" />
                     </div>
                     <div>
                         <label class="text-[8px] uppercase text-gray-500 mb-1 block">Fat</label>
-                        <input type="number" step="0.1" @bind="editingIng.Fat" class="w-full bg-black border border-gray-800 p-2 text-xs font-mono text-yellow-500" />
+                        <input type="number" step="0.01" @bind="editingIng.Fat" class="w-full bg-black border border-gray-800 p-2 text-xs font-mono text-yellow-500" />
                     </div>
                     <div>
                         <label class="text-[8px] uppercase text-gray-500 mb-1 block">Carb</label>
-                        <input type="number" step="0.1" @bind="editingIng.Carbs" class="w-full bg-black border border-gray-800 p-2 text-xs font-mono text-red-400" />
+                        <input type="number" step="0.01" @bind="editingIng.Carbs" class="w-full bg-black border border-gray-800 p-2 text-xs font-mono text-red-400" />
                     </div>
                     <div>
                         <label class="text-[8px] uppercase text-gray-500 mb-1 block">Fiber</label>
-                        <input type="number" step="0.1" @bind="editingIng.Fiber" class="w-full bg-black border border-gray-800 p-2 text-xs font-mono text-emerald-400" />
+                        <input type="number" step="0.01" @bind="editingIng.Fiber" class="w-full bg-black border border-gray-800 p-2 text-xs font-mono text-emerald-400" />
                     </div>
                 </div>
+
+                @if (isPromoting)
+                {
+                    <div class="col-span-2 bg-purple-950/30 border border-purple-500/30 p-3 rounded-xl mt-2">
+                        <p class="text-[10px] text-purple-300 uppercase leading-relaxed">
+                            💡 You are creating a <b>Global Copy</b> of this item. The owner's original version will not be changed or removed.
+                        </p>
+                    </div>
+                }
             </div>
 
             <div class="p-6 bg-gray-900/50 border-t border-gray-800 flex justify-end gap-4">
                 <button @onclick="CloseModal" class="text-[10px] text-gray-500 uppercase tracking-widest font-black px-6">Cancel</button>
                 <button @onclick="SaveIngredient" class="bg-orange-600 hover:bg-orange-500 text-white text-[10px] uppercase tracking-widest font-black px-8 py-3 rounded-xl shadow-lg transition">
-                    Commit Changes
+                    @(isPromoting ? "Confirm Universal Copy" : "Save Changes")
                 </button>
             </div>
         </div>
@@ -180,6 +189,7 @@
     private List<PPP_Ingredient> ingredients = new();
     private List<PPP_Owner> owners = new();
     private bool showModal = false;
+    private bool isPromoting = false;
     private PPP_Ingredient editingIng = new();
     private int selectedOwnerId = 0;
     private List<ToastItem> toasts = new();
@@ -200,49 +210,42 @@
 
     private void OpenModal(PPP_Ingredient? ing = null)
     {
+        isPromoting = false;
         if (ing == null) {
             editingIng = new PPP_Ingredient { CreatedAt = DateTime.UtcNow };
             selectedOwnerId = 0;
         } else {
-            editingIng = new PPP_Ingredient {
-                Id = ing.Id,
-                Name = ing.Name,
-                Unit = ing.Unit,
-                Calories = ing.Calories,
-                Protein = ing.Protein,
-                Fat = ing.Fat,
-                Carbs = ing.Carbs,
-                Fiber = ing.Fiber,
-                OwnerId = ing.OwnerId,
-                CreatedAt = ing.CreatedAt
-            };
+            editingIng = CloneIngredient(ing);
             selectedOwnerId = ing.OwnerId ?? 0;
         }
         showModal = true;
     }
 
-    private async Task CopyToUniversal(PPP_Ingredient ing)
+    private void PromoteToUniversal(PPP_Ingredient ing)
     {
-        if (await JS.InvokeAsync<bool>("confirm", $"Create a Universal copy of '{ing.Name}'? Original owner version will remain."))
-        {
-            var universalCopy = new PPP_Ingredient
-            {
-                Name = ing.Name + " (Global Copy)",
-                Unit = ing.Unit,
-                Calories = ing.Calories,
-                Protein = ing.Protein,
-                Fat = ing.Fat,
-                Carbs = ing.Carbs,
-                Fiber = ing.Fiber,
-                OwnerId = null,
-                CreatedAt = DateTime.UtcNow
-            };
+        editingIng = CloneIngredient(ing);
+        editingIng.Id = 0; // Ensure it's a new record
+        editingIng.OwnerId = null; // Strip owner
+        editingIng.Name = ing.Name + " (Universal)"; // Visual indicator
+        selectedOwnerId = 0; // Modal selection matches
+        isPromoting = true;
+        showModal = true;
+    }
 
-            Db.PPP_Ingredients.Add(universalCopy);
-            await Db.SaveChangesAsync();
-            await LoadData();
-            _ = ShowToast("Ingredient promoted to Universal");
-        }
+    private PPP_Ingredient CloneIngredient(PPP_Ingredient source)
+    {
+        return new PPP_Ingredient {
+            Id = source.Id,
+            Name = source.Name,
+            Unit = source.Unit,
+            Calories = source.Calories,
+            Protein = source.Protein,
+            Fat = source.Fat,
+            Carbs = source.Carbs,
+            Fiber = source.Fiber,
+            OwnerId = source.OwnerId,
+            CreatedAt = source.CreatedAt
+        };
     }
 
     private void CloseModal() => showModal = false;
@@ -268,7 +271,7 @@
 
             await Db.SaveChangesAsync();
             await LoadData();
-            _ = ShowToast("Ingredient Saved");
+            _ = ShowToast(isPromoting ? "Universal Copy Created" : "Ingredient Saved");
             CloseModal();
         }
         catch (Exception ex)
