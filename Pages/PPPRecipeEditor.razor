@@ -1,7 +1,9 @@
 @page "/ppp-recipe-editor/{RecipeId:int?}"
 @using Dashboard
+@using Dashboard.Components
 @using Dashboard.Services
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Web
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject AppDbContext Db
 @inject NavigationManager Nav
@@ -18,6 +20,16 @@
         </p>
     </div>
 
+    @* Notification Stack *@
+    <div class="fixed top-24 right-6 z-[100] flex flex-col gap-3">
+        @foreach (var toast in toasts)
+        {
+            <div class="p-4 rounded-2xl border shadow-2xl animate-in slide-in-from-right duration-300 @(toast.IsError ? "bg-red-950 border-red-500 text-red-200" : "bg-emerald-950 border-emerald-500 text-emerald-200")">
+                <span class="text-xs uppercase tracking-widest">@toast.Message</span>
+            </div>
+        }
+    </div>
+
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div class="lg:col-span-2 space-y-6">
             
@@ -29,9 +41,12 @@
                 </div>
                 <div>
                     <label class="text-[9px] text-gray-500 uppercase mb-2 block">Owner/Kitchen Context</label>
-                    <select @bind="recipe.OwnerId" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm focus:border-orange-500 outline-none">
-                        <option value="">Global Library</option>
-                        @foreach(var o in owners) { <option value="@o.Id">@o.BusinessName</option> }
+                    <select @onchange="OnOwnerChanged" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm focus:border-orange-500 outline-none">
+                        <option value="0">Global Library</option>
+                        @foreach(var o in owners) 
+                        { 
+                            <option value="@o.Id" selected="@(recipe.OwnerId == o.Id)">@o.BusinessName</option> 
+                        }
                     </select>
                 </div>
             </div>
@@ -45,7 +60,7 @@
                     </div>
 
                     <div class="space-y-4">
-                        @foreach (var mapping in group.Ingredients.OrderBy(m => m.DisplayOrder))
+                        @foreach (IngredientUIModel mapping in group.Ingredients)
                         {
                             <div class="bg-black/40 p-4 rounded-xl border border-gray-800 relative">
                                 <div class="grid grid-cols-12 gap-3 items-end">
@@ -79,7 +94,7 @@
                                     <span class="text-blue-400">PRO: @mapping.ScaledProt.ToString("N1")</span>
                                     <span class="text-yellow-500">FAT: @mapping.ScaledFat.ToString("N1")</span>
                                     <span class="text-red-400">CARB: @mapping.ScaledCarb.ToString("N1")</span>
-                                    @if(mapping.IngredientId == null) { <span class="text-red-600 ml-auto uppercase font-black">Manual Entry / Unmapped</span> }
+                                    @if(mapping.IngredientId == 0) { <span class="text-red-600 ml-auto uppercase font-black">Manual Entry / Unmapped</span> }
                                 </div>
                             </div>
                         }
@@ -113,6 +128,7 @@
     private List<PPP_Ingredient> masterIngs = new();
     private List<PPP_Ingredient> searchResults = new();
     private IngredientUIModel? activeMapping;
+    private List<ToastItem> toasts = new();
 
     protected override async Task OnInitializedAsync() {
         owners = await Db.PPP_Owners.AsNoTracking().OrderBy(o => o.BusinessName).ToListAsync();
@@ -120,8 +136,15 @@
         if(!RecipeId.HasValue) AddGroup();
     }
 
+    private void OnOwnerChanged(ChangeEventArgs e) {
+        if (int.TryParse(e.Value?.ToString(), out var id)) recipe.OwnerId = id == 0 ? null : id;
+    }
+
     private void AddGroup() => recipe.IngredientGroups.Add(new PPP_RecipeIngredientGroup { GroupName = "New Component", DisplayOrder = recipe.IngredientGroups.Count });
-    private void AddIngredient(PPP_RecipeIngredientGroup g) => g.Ingredients.Add(new IngredientUIModel { DisplayOrder = g.Ingredients.Count, Unit = "oz" });
+    
+    private void AddIngredient(PPP_RecipeIngredientGroup g) {
+        g.Ingredients.Add(new IngredientUIModel { DisplayOrder = g.Ingredients.Count, Unit = "oz" });
+    }
 
     private void SearchIng(ChangeEventArgs e, IngredientUIModel m) {
         activeMapping = m;
@@ -147,22 +170,35 @@
 
     private void UpdateUnit(ChangeEventArgs e, IngredientUIModel m) {
         m.Unit = e.Value?.ToString() ?? "";
-        if (m.BaseIngredient != null && m.Unit != m.BaseIngredient.Unit) m.IngredientId = null;
+        if (m.BaseIngredient != null && m.Unit != m.BaseIngredient.Unit) m.IngredientId = 0;
         else if (m.BaseIngredient != null && m.Unit == m.BaseIngredient.Unit) { m.IngredientId = m.BaseIngredient.Id; m.Scale(); }
     }
 
-    private double TotalCals => recipe.IngredientGroups.SelectMany(g => g.Ingredients.Cast<IngredientUIModel>()).Sum(i => i.ScaledCals);
-    private double TotalProt => recipe.IngredientGroups.SelectMany(g => g.Ingredients.Cast<IngredientUIModel>()).Sum(i => i.ScaledProt);
-    private double TotalFat => recipe.IngredientGroups.SelectMany(g => g.Ingredients.Cast<IngredientUIModel>()).Sum(i => i.ScaledFat);
-    private double TotalNet => recipe.IngredientGroups.SelectMany(g => g.Ingredients.Cast<IngredientUIModel>()).Sum(i => i.ScaledCarb - i.ScaledFiber);
+    private double TotalCals => recipe.IngredientGroups.SelectMany(g => g.Ingredients).OfType<IngredientUIModel>().Sum(i => i.ScaledCals);
+    private double TotalProt => recipe.IngredientGroups.SelectMany(g => g.Ingredients).OfType<IngredientUIModel>().Sum(i => i.ScaledProt);
+    private double TotalFat => recipe.IngredientGroups.SelectMany(g => g.Ingredients).OfType<IngredientUIModel>().Sum(i => i.ScaledFat);
+    private double TotalNet => recipe.IngredientGroups.SelectMany(g => g.Ingredients).OfType<IngredientUIModel>().Sum(i => i.ScaledCarb - i.ScaledFiber);
 
     private async Task SaveRecipe() {
         try {
             if (recipe.Id == 0) Db.PPP_Recipes.Add(recipe);
             else Db.Update(recipe);
             await Db.SaveChangesAsync();
+            _ = ShowToast("Recipe Saved Successfully");
             Nav.NavigateTo("/ppp-dashboard");
-        } catch (Exception) { /* Toast here */ }
+        } catch (Exception ex) {
+            _ = ShowToast("Error: " + ex.Message, true);
+        }
+    }
+
+    private async Task ShowToast(string msg, bool isError = false)
+    {
+        var toast = new ToastItem { Message = msg, IsError = isError };
+        toasts.Add(toast);
+        await InvokeAsync(StateHasChanged);
+        await Task.Delay(4000);
+        toasts.Remove(toast);
+        await InvokeAsync(StateHasChanged);
     }
 
     public class IngredientUIModel : PPP_RecipeIngredientMapping {
@@ -174,7 +210,7 @@
         public double ScaledCarb { get; set; }
         public double ScaledFiber { get; set; }
         public void Scale() {
-            if (BaseIngredient == null || IngredientId == null) return;
+            if (BaseIngredient == null || IngredientId == 0) return;
             ScaledCals = Math.Round(BaseIngredient.Calories * Quantity, 2);
             ScaledProt = Math.Round(BaseIngredient.Protein * Quantity, 2);
             ScaledFat = Math.Round(BaseIngredient.Fat * Quantity, 2);
@@ -182,4 +218,6 @@
             ScaledFiber = Math.Round(BaseIngredient.Fiber * Quantity, 2);
         }
     }
+    
+    private class ToastItem { public string Message { get; set; } = ""; public bool IsError { get; set; } }
 }
