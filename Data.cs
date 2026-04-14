@@ -938,18 +938,22 @@ public class PPP_Recipe
 public class PPP_RecipeIngredientMapping
 {
     public int Id { get; set; }
+
+    // EXPLICIT ID PROPERTY TO MATCH SQL
     public int IngredientGroupId { get; set; }
     
-    public int IngredientId { get; set; }
+    [ForeignKey("IngredientGroupId")]
+    public virtual PPP_RecipeIngredientGroup? IngredientGroup { get; set; }
+
+    public int? IngredientId { get; set; }
     [ForeignKey("IngredientId")]
-    public virtual PPP_Ingredient MasterIngredient { get; set; } = null!;
+    public virtual PPP_Ingredient? Ingredient { get; set; }
 
     public double Quantity { get; set; }
-    public string Unit { get; set; } = ""; // Recipe-specific unit (cups, tbsp, etc)
-    public string Notes { get; set; } = ""; // "diced", "chopped", etc.
+    public string Unit { get; set; } = "";
+    public string Notes { get; set; } = "";
     public int DisplayOrder { get; set; }
 }
-
 public class PPP_RecipeIngredientGroup
 {
     public int Id { get; set; }
@@ -983,7 +987,13 @@ public class PPP_RecipeInstructionGroup
 public class PPP_RecipeInstruction
 {
     public int Id { get; set; }
+
+    // EXPLICIT ID PROPERTY TO MATCH SQL
     public int InstructionGroupId { get; set; }
+
+    [ForeignKey("InstructionGroupId")]
+    public virtual PPP_RecipeInstructionGroup? InstructionGroup { get; set; }
+
     public string StepDescription { get; set; } = "";
     public int DisplayOrder { get; set; }
 }
