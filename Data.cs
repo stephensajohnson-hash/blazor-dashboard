@@ -923,7 +923,9 @@ public class PPP_Recipe
     public string Description { get; set; } = "";
     public int Servings { get; set; } = 1;
     
-    // NEW COLUMN
+    // NEW PROPERTY
+    public string ServingSize { get; set; } = ""; 
+
     public int? ImageId { get; set; }
     [ForeignKey("ImageId")]
     public virtual PPP_StoredImage? Image { get; set; }
