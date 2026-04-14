@@ -933,15 +933,7 @@ public class PPP_Recipe
     public virtual List<PPP_RecipeInstructionGroup> InstructionGroups { get; set; } = new();
 }
 
-public class PPP_RecipeIngredientGroup
-{
-    public int Id { get; set; }
-    public int RecipeId { get; set; }
-    public string GroupName { get; set; } = "Ingredients";
-    public int DisplayOrder { get; set; }
-    
-    public virtual List<PPP_RecipeIngredientMapping> Ingredients { get; set; } = new();
-}
+
 
 public class PPP_RecipeIngredientMapping
 {
@@ -958,13 +950,33 @@ public class PPP_RecipeIngredientMapping
     public int DisplayOrder { get; set; }
 }
 
+public class PPP_RecipeIngredientGroup
+{
+    public int Id { get; set; }
+    
+    // Explicitly tell EF to use "RecipeId" column, not "PPP_RecipeId"
+    public int RecipeId { get; set; }
+    
+    [ForeignKey("RecipeId")]
+    public virtual PPP_Recipe? Recipe { get; set; }
+
+    public string GroupName { get; set; } = "";
+    public int DisplayOrder { get; set; }
+    public virtual List<PPP_RecipeIngredientMapping> Ingredients { get; set; } = new();
+}
+
 public class PPP_RecipeInstructionGroup
 {
     public int Id { get; set; }
-    public int RecipeId { get; set; }
-    public string GroupName { get; set; } = "Instructions";
-    public int DisplayOrder { get; set; }
 
+    // Explicitly tell EF to use "RecipeId" column
+    public int RecipeId { get; set; }
+
+    [ForeignKey("RecipeId")]
+    public virtual PPP_Recipe? Recipe { get; set; }
+
+    public string GroupName { get; set; } = "";
+    public int DisplayOrder { get; set; }
     public virtual List<PPP_RecipeInstruction> Instructions { get; set; } = new();
 }
 
