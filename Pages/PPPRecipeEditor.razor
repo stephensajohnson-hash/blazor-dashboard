@@ -186,70 +186,69 @@
         else { m.Unit = newUnit; }
     }
 
-  private async Task SaveRecipe() {
-    if (recipe.OwnerId == 0) { 
-        await ShowToast("Select an Owner", true); 
-        return; 
-    }
-
+private async Task SaveRecipe() {
+    if (recipe.OwnerId == 0) { await ShowToast("Select a Business Owner", true); return; }
+    
     try {
-        // --- PHASE 1: COMMITTING NEW INGREDIENTS ---
-        foreach (var group in recipe.IngredientGroups) {
-            foreach (var m in group.Ingredients.OfType<IngredientUIModel>()) {
-                // If it's a new ingredient (ID 0)
+        // PHASE 1: Create New Ingredients as standalone entities
+        foreach(var group in recipe.IngredientGroups) {
+            foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
                 if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
+                    double qty = Math.Max(0.001, m.Quantity);
                     var newIng = new PPP_Ingredient {
                         Name = m.IngredientName,
                         Unit = m.Unit,
-                        Calories = m.ScaledCals / Math.Max(0.001, m.Quantity),
-                        Protein = m.ScaledProt / Math.Max(0.001, m.Quantity),
-                        Fat = m.ScaledFat / Math.Max(0.001, m.Quantity),
-                        Carbs = m.ScaledCarb / Math.Max(0.001, m.Quantity),
-                        Fiber = m.ScaledFiber / Math.Max(0.001, m.Quantity),
+                        Calories = m.ScaledCals / qty,
+                        Protein = m.ScaledProt / qty,
+                        Fat = m.ScaledFat / qty,
+                        Carbs = m.ScaledCarb / qty,
+                        Fiber = m.ScaledFiber / qty,
                         OwnerId = recipe.OwnerId,
                         CreatedAt = DateTime.UtcNow
                     };
-
+                    
                     Db.PPP_Ingredients.Add(newIng);
-                    // Commit IMMEDIATELY to ensure ID generation
+                    // Force the save so the ID is generated and the row exists in Postgres
                     await Db.SaveChangesAsync();
                     
-                    // Link the mapping to the new ID and clear the object reference
+                    // Assign the permanent ID to the mapping
                     m.IngredientId = newIng.Id;
-                    m.BaseIngredient = null;
                     
-                    // Force EF to stop tracking the new ingredient object
+                    // Detach the ingredient so it doesn't try to save as part of the recipe collection
                     Db.Entry(newIng).State = EntityState.Detached;
                 }
             }
         }
 
-        // --- PHASE 2: PERSISTING THE RECIPE ---
-        // After Step 1, all 'IngredientId' values are now valid integers in the DB.
+        // PHASE 2: Reset Tracking Logic
+        // We set BaseIngredient to null for EVERY mapping.
+        // This ensures EF only sends the IngredientId (int) to the DB.
+        foreach(var group in recipe.IngredientGroups) {
+            foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
+                m.BaseIngredient = null;
+            }
+        }
+
+        // Nuclear option: Clear the tracker so EF doesn't try to "help" with relationships
+        Db.ChangeTracker.Clear();
+
+        // PHASE 3: Re-attach and Save the Recipe
         if (recipe.Id == 0) {
             Db.PPP_Recipes.Add(recipe);
         } else {
-            // Detach any existing version of this recipe to avoid tracking conflicts
-            var local = Db.PPP_Recipes.Local.FirstOrDefault(r => r.Id == recipe.Id);
-            if (local != null) Db.Entry(local).State = EntityState.Detached;
-            
             Db.Update(recipe);
         }
 
-        // Final commit for Recipe and Mappings
         await Db.SaveChangesAsync();
-
-        _ = ShowToast("Saved successfully!");
-        await Task.Delay(1000);
-        Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}");
-
-    } catch (Exception ex) {
-        // If it's a DB error, get the inner Postgres message
-        var dbError = ex.InnerException as Npgsql.PostgresException;
-        var errorMsg = dbError != null ? $"DB Error: {dbError.MessageText}" : ex.Message;
         
-        await ShowToast(errorMsg, true);
-        Console.WriteLine($"Full Save Exception: {ex}");
+        _ = ShowToast("Recipe & New Ingredients Saved Successfully");
+        await Task.Delay(800);
+        Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}");
+        
+    } catch (Exception ex) { 
+        var msg = ex.InnerException?.Message ?? ex.Message;
+        await ShowToast("Save Error: " + msg, true);
+        Console.WriteLine($"FULL DB EXCEPTION: {ex}");
     }
 }
 
