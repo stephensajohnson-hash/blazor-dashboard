@@ -190,7 +190,9 @@ private async Task SaveRecipe() {
     if (recipe.OwnerId == 0) { await ShowToast("Select a Business Owner", true); return; }
     
     try {
-        // STEP 1: Save New Ingredients Standalone
+        // --- PHASE 1: HARD-COMMIT NEW INGREDIENTS ---
+        // We do this as a completely separate loop to ensure they are 
+        // committed before we even think about the recipe mappings.
         foreach(var group in recipe.IngredientGroups) {
             foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
                 if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
@@ -208,49 +210,52 @@ private async Task SaveRecipe() {
                     Db.PPP_Ingredients.Add(newIng);
                     await Db.SaveChangesAsync(); 
                     
+                    // Assign the new ID to the mapping
                     m.IngredientId = newIng.Id;
+                    // Break the object link immediately
                     m.BaseIngredient = null;
-                    Db.Entry(newIng).State = EntityState.Detached;
                 }
             }
         }
 
-        // STEP 2: Save the Recipe Root
-        if (recipe.Id == 0) Db.PPP_Recipes.Add(recipe);
-        else Db.Entry(recipe).State = EntityState.Modified;
-        await Db.SaveChangesAsync();
+        // --- PHASE 2: TRACKER AMNESIA ---
+        // This is the critical part. We tell EF to forget EVERY relationship 
+        // it currently has in memory. This stops the 'Sync Error' because 
+        // EF won't try to compare the 'old' state to the 'new' state.
+        Db.ChangeTracker.Clear();
 
-        // STEP 3: Save Groups and Mappings Manually (Avoids the Sync Error)
-        foreach (var group in recipe.IngredientGroups) {
-            group.RecipeId = recipe.Id;
-            if (group.Id == 0) Db.PPP_RecipeIngredientGroups.Add(group);
-            else Db.Entry(group).State = EntityState.Modified;
-            await Db.SaveChangesAsync();
-
-            foreach (var mapping in group.Ingredients) {
-                mapping.IngredientGroupId = group.Id;
-                if (mapping is IngredientUIModel ui) ui.BaseIngredient = null;
-
-                if (mapping.Id == 0) Db.PPP_RecipeIngredientMappings.Add(mapping);
-                else Db.Entry(mapping).State = EntityState.Modified;
-            }
-            // Save mappings for this group
-            await Db.SaveChangesAsync();
+        // --- PHASE 3: MANUAL RE-ATTACH & SAVE ---
+        // Now we re-attach the recipe as a clean object
+        if (recipe.Id == 0) {
+            Db.PPP_Recipes.Add(recipe);
+        } else {
+            Db.PPP_Recipes.Update(recipe);
         }
 
+        // Before the final save, ensure every mapping has its BaseIngredient nullified
+        // so EF only looks at the IngredientId integer.
+        foreach (var group in recipe.IngredientGroups) {
+            foreach (var mapping in group.Ingredients) {
+                if (mapping is IngredientUIModel ui) ui.BaseIngredient = null;
+            }
+        }
+
+        await Db.SaveChangesAsync();
+        
         _ = ShowToast("Recipe Saved Successfully");
         await Task.Delay(800);
         Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}");
         
     } catch (Exception ex) { 
-        // Logic to allow one immediate retry if it hits a tracking glitch
-        Db.ChangeTracker.Clear();
+        // Log the full error to Render logs
         var msg = ex.InnerException?.Message ?? ex.Message;
-        Console.WriteLine($"[SAVE ERROR] {msg}");
-        await ShowToast("Finalizing sync... please click save one more time.", true); 
+        Console.WriteLine($"[FINAL DEBUG] Save Failed: {msg}");
+        
+        // If it fails, clear tracker again so the next click starts fresh
+        Db.ChangeTracker.Clear();
+        await ShowToast("Database Syncing... please click Save one more time.", true); 
     }
 }
-
     private async Task HandleImageUpload(InputFileChangeEventArgs e) {
         try {
             var file = e.File;
