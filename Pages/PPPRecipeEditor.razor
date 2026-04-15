@@ -217,50 +217,45 @@ private async Task SaveRecipe() {
             }
         }
 
-        // --- PHASE 2: MANUAL GRAPH MANAGEMENT ---
-        // Instead of Db.Update(recipe), we handle pieces individually.
-        if (recipe.Id == 0) {
-            Db.PPP_Recipes.Add(recipe);
-        } else {
-            var existingRecipe = await Db.PPP_Recipes.FindAsync(recipe.Id);
-            if (existingRecipe != null) {
-                Db.Entry(existingRecipe).CurrentValues.SetValues(recipe);
-            }
-        }
+        // --- PHASE 2: TRACKER RESET ---
+        // This clears the "tracked" versions that are causing your conflict error.
+        Db.ChangeTracker.Clear();
+
+        // --- PHASE 3: MANUAL GRAPH UPDATE ---
+        // Root Recipe
+        if (recipe.Id == 0) Db.PPP_Recipes.Add(recipe);
+        else Db.Entry(recipe).State = EntityState.Modified;
         await Db.SaveChangesAsync();
 
+        // Groups
         foreach (var group in recipe.IngredientGroups) {
             group.RecipeId = recipe.Id;
             if (group.Id == 0) Db.PPP_RecipeIngredientGroups.Add(group);
-            else {
-                var existingGroup = await Db.PPP_RecipeIngredientGroups.FindAsync(group.Id);
-                if (existingGroup != null) Db.Entry(existingGroup).CurrentValues.SetValues(group);
-            }
+            else Db.Entry(group).State = EntityState.Modified;
+            
             await Db.SaveChangesAsync();
 
+            // Mappings
             foreach (var mapping in group.Ingredients) {
                 mapping.IngredientGroupId = group.Id;
                 if (mapping is IngredientUIModel ui) ui.BaseIngredient = null;
 
                 if (mapping.Id == 0) Db.PPP_RecipeIngredientMappings.Add(mapping);
-                else {
-                    var existingMap = await Db.PPP_RecipeIngredientMappings.FindAsync(mapping.Id);
-                    if (existingMap != null) Db.Entry(existingMap).CurrentValues.SetValues(mapping);
-                }
+                else Db.Entry(mapping).State = EntityState.Modified;
             }
             await Db.SaveChangesAsync();
         }
 
-        _ = ShowToast("Recipe & Ingredients Saved Successfully");
+        _ = ShowToast("Recipe Saved Successfully");
         await Task.Delay(800);
         Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}");
         
     } catch (Exception ex) { 
         var msg = ex.InnerException?.Message ?? ex.Message;
-        Console.WriteLine($"[FINAL SAVE FAIL] {msg}");
-        // Wipe tracker to allow a retry if it actually failed mid-stream
+        Console.WriteLine($"[MANUAL SAVE FAIL] {msg}");
+        // Always clear tracker on fail to allow a clean retry click
         Db.ChangeTracker.Clear();
-        await ShowToast("Save Error: " + msg, true); 
+        await ShowToast("Save Failed: " + msg, true); 
     }
 }
 
