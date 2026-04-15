@@ -190,7 +190,9 @@ private async Task SaveRecipe() {
     if (recipe.OwnerId == 0) { await ShowToast("Select a Business Owner", true); return; }
     
     try {
-        // PHASE 1: Create New Ingredients as standalone entities
+        // PASS 1: CREATE NEW INGREDIENTS
+        // We iterate through and save every new ingredient as a standalone record.
+        bool hasNewIngs = false;
         foreach(var group in recipe.IngredientGroups) {
             foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
                 if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
@@ -206,49 +208,54 @@ private async Task SaveRecipe() {
                         OwnerId = recipe.OwnerId,
                         CreatedAt = DateTime.UtcNow
                     };
-                    
                     Db.PPP_Ingredients.Add(newIng);
-                    // Force the save so the ID is generated and the row exists in Postgres
-                    await Db.SaveChangesAsync();
-                    
-                    // Assign the permanent ID to the mapping
-                    m.IngredientId = newIng.Id;
-                    
-                    // Detach the ingredient so it doesn't try to save as part of the recipe collection
-                    Db.Entry(newIng).State = EntityState.Detached;
+                    hasNewIngs = true;
                 }
             }
         }
 
-        // PHASE 2: Reset Tracking Logic
-        // We set BaseIngredient to null for EVERY mapping.
-        // This ensures EF only sends the IngredientId (int) to the DB.
-        foreach(var group in recipe.IngredientGroups) {
-            foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
-                m.BaseIngredient = null;
+        // Hard commit the ingredients to the DB first.
+        if (hasNewIngs) {
+            await Db.SaveChangesAsync();
+            
+            // Re-sync the IDs back to our UI model so the recipe knows what to link to.
+            foreach(var group in recipe.IngredientGroups) {
+                foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
+                    if (m.IngredientId == 0) {
+                        // Find the ingredient we just saved by name
+                        var saved = Db.PPP_Ingredients.Local.FirstOrDefault(i => i.Name == m.IngredientName);
+                        if (saved != null) {
+                            m.IngredientId = saved.Id;
+                            m.BaseIngredient = null; // Kill the object reference
+                        }
+                    }
+                }
             }
+            
+            // IMPORTANT: Clear the tracker to break any internal EF object links.
+            Db.ChangeTracker.Clear();
         }
 
-        // Nuclear option: Clear the tracker so EF doesn't try to "help" with relationships
-        Db.ChangeTracker.Clear();
-
-        // PHASE 3: Re-attach and Save the Recipe
+        // PASS 2: SAVE THE RECIPE
+        // Now that the Ingredient IDs are real numbers in the DB, we can save the recipe mappings.
         if (recipe.Id == 0) {
             Db.PPP_Recipes.Add(recipe);
         } else {
+            // Re-attach the recipe since we cleared the tracker.
             Db.Update(recipe);
         }
 
         await Db.SaveChangesAsync();
         
-        _ = ShowToast("Recipe & New Ingredients Saved Successfully");
+        _ = ShowToast("Recipe Saved Successfully");
         await Task.Delay(800);
         Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}");
         
     } catch (Exception ex) { 
         var msg = ex.InnerException?.Message ?? ex.Message;
+        // If it's still an FK error, it might be a mapping pointing to a deleted ID.
         await ShowToast("Save Error: " + msg, true);
-        Console.WriteLine($"FULL DB EXCEPTION: {ex}");
+        Console.WriteLine($"FK Violation Debug: {ex}");
     }
 }
 
