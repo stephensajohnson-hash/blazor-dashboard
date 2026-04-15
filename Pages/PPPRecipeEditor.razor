@@ -190,76 +190,91 @@ private async Task SaveRecipe() {
     if (recipe.OwnerId == 0) { await ShowToast("Select a Business Owner", true); return; }
     
     try {
-        // --- TRICK 1: THE DISPOSABLE CONTEXT ---
-        // We save ingredients using a completely different tracking state
-        using (var tempContext = DbFactory.CreateDbContext()) 
-        {
+        // --- PHASE 1: HARD-COMMIT NEW INGREDIENTS ---
+        bool hasNewIngs = false;
+        foreach(var group in recipe.IngredientGroups) {
+            foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
+                if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
+                    double qty = Math.Max(0.001, m.Quantity);
+                    var newIng = new PPP_Ingredient {
+                        Name = m.IngredientName,
+                        Unit = m.Unit,
+                        Calories = m.ScaledCals / qty,
+                        Protein = m.ScaledProt / qty,
+                        Fat = m.ScaledFat / qty,
+                        Carbs = m.ScaledCarb / qty,
+                        Fiber = m.ScaledFiber / qty,
+                        OwnerId = recipe.OwnerId,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    Db.PPP_Ingredients.Add(newIng);
+                    hasNewIngs = true;
+                }
+            }
+        }
+
+        if (hasNewIngs) {
+            await Db.SaveChangesAsync(); // Hard commit to Postgres
+            
+            // Sync the new IDs back to our UI model
             foreach(var group in recipe.IngredientGroups) {
                 foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
-                    if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
-                        double qty = Math.Max(0.001, m.Quantity);
-                        var newIng = new PPP_Ingredient {
-                            Name = m.IngredientName,
-                            Unit = m.Unit,
-                            Calories = m.ScaledCals / qty,
-                            Protein = m.ScaledProt / qty,
-                            Fat = m.ScaledFat / qty,
-                            Carbs = m.ScaledCarb / qty,
-                            Fiber = m.ScaledFiber / qty,
-                            OwnerId = recipe.OwnerId,
-                            CreatedAt = DateTime.UtcNow
-                        };
-                        
-                        tempContext.PPP_Ingredients.Add(newIng);
-                        await tempContext.SaveChangesAsync(); // Hard commit
-                        
-                        // Update our UI model with the real ID
-                        m.IngredientId = newIng.Id;
-                        m.BaseIngredient = null; 
+                    if (m.IngredientId == 0) {
+                        var saved = Db.PPP_Ingredients.Local.FirstOrDefault(i => i.Name == m.IngredientName);
+                        if (saved != null) m.IngredientId = saved.Id;
                     }
                 }
             }
-        } // tempContext is disposed here. IDs are 100% in the DB.
+        }
 
-        // --- TRICK 2: THE TRACKER WIPE ---
-        // Ensure the main 'Db' context is a blank slate
+        // --- PHASE 2: THE RESET ---
+        // Clear all tracking to stop the "another instance is being tracked" error
         Db.ChangeTracker.Clear();
 
-        // --- TRICK 3: MANUAL DEPTH-FIRST SAVE ---
-        // Save the Recipe Root
-        if (recipe.Id == 0) Db.PPP_Recipes.Add(recipe);
-        else Db.Entry(recipe).State = EntityState.Modified;
+        // --- PHASE 3: MANUAL GRAPH SYNC ---
+        // Instead of Db.Update(recipe), we manually handle the hierarchy
+        if (recipe.Id == 0) {
+            Db.PPP_Recipes.Add(recipe);
+        } else {
+            // Re-fetch the recipe to make sure we are editing the FRESH DB version
+            var dbRecipe = await Db.PPP_Recipes.FindAsync(recipe.Id);
+            if (dbRecipe != null) {
+                Db.Entry(dbRecipe).CurrentValues.SetValues(recipe);
+            }
+        }
         await Db.SaveChangesAsync();
 
-        // Save Groups and Mappings individually
         foreach (var group in recipe.IngredientGroups) {
             group.RecipeId = recipe.Id;
-            
             if (group.Id == 0) Db.PPP_RecipeIngredientGroups.Add(group);
-            else Db.Entry(group).State = EntityState.Modified;
+            else {
+                var dbGroup = await Db.PPP_RecipeIngredientGroups.FindAsync(group.Id);
+                if (dbGroup != null) Db.Entry(dbGroup).CurrentValues.SetValues(group);
+            }
             await Db.SaveChangesAsync();
 
             foreach (var mapping in group.Ingredients) {
                 mapping.IngredientGroupId = group.Id;
-                
-                // Scrub UI-specific logic
                 if (mapping is IngredientUIModel ui) ui.BaseIngredient = null;
 
                 if (mapping.Id == 0) Db.PPP_RecipeIngredientMappings.Add(mapping);
-                else Db.Entry(mapping).State = EntityState.Modified;
+                else {
+                    var dbMap = await Db.PPP_RecipeIngredientMappings.FindAsync(mapping.Id);
+                    if (dbMap != null) Db.Entry(dbMap).CurrentValues.SetValues(mapping);
+                }
             }
             await Db.SaveChangesAsync();
         }
 
-        _ = ShowToast("Recipe Saved Successfully!");
+        _ = ShowToast("Recipe & Ingredients Saved Successfully");
         await Task.Delay(800);
         Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}");
         
     } catch (Exception ex) { 
         var msg = ex.InnerException?.Message ?? ex.Message;
-        Console.WriteLine($"[CRITICAL SAVE FAIL] {msg}");
+        Console.WriteLine($"[FINAL ATTEMPT FAIL] {msg}");
         Db.ChangeTracker.Clear();
-        await ShowToast("Save Error: " + msg, true); 
+        await ShowToast("Database Sync Error. Please click save once more.", true); 
     }
 }
     private async Task HandleImageUpload(InputFileChangeEventArgs e) {
