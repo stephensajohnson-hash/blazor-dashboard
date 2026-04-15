@@ -187,10 +187,10 @@
     }
 
 private async Task SaveRecipe() {
-    if (recipe.OwnerId == 0) { await ShowToast("Select a Business Owner", true); return; }
+    if (recipe.OwnerId == 0) { await ShowToast("Select an Owner", true); return; }
     
     try {
-        // --- PHASE 1: ISOLATED INGREDIENT COMMITS ---
+        // PHASE 1: STANDALONE INGREDIENT COMMITS
         foreach(var group in recipe.IngredientGroups) {
             foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
                 if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
@@ -208,7 +208,7 @@ private async Task SaveRecipe() {
                     };
                     
                     Db.PPP_Ingredients.Add(newIng);
-                    await Db.SaveChangesAsync();
+                    await Db.SaveChangesAsync(); 
                     
                     m.IngredientId = newIng.Id;
                     m.BaseIngredient = null;
@@ -217,40 +217,48 @@ private async Task SaveRecipe() {
             }
         }
 
-        // --- PHASE 2: TRACKER RESET ---
-        // We clear EVERYTHING the context is currently tracking. 
-        // This stops it from remembering the "old" mappings from when the page loaded.
-        Db.ChangeTracker.Clear();
-
-        // --- PHASE 3: ATOMIC RECIPE SAVE ---
-        // Scrub mappings of object references one more time before the save
-        foreach (var group in recipe.IngredientGroups) {
-            foreach (var mapping in group.Ingredients) {
-                if (mapping is IngredientUIModel ui) ui.BaseIngredient = null;
-            }
-        }
-
+        // PHASE 2: SAVE THE RECIPE ROOT ONLY
+        // We ensure the recipe exists before we try to link groups/mappings
         if (recipe.Id == 0) {
             Db.PPP_Recipes.Add(recipe);
         } else {
-            // Because we cleared the tracker, Update will look at the current 
-            // object state and sync it perfectly with the database.
-            Db.Update(recipe);
+            // Only update the recipe itself, not the whole graph yet
+            var entry = Db.Entry(recipe);
+            entry.State = EntityState.Modified;
+        }
+        await Db.SaveChangesAsync();
+
+        // PHASE 3: MANUALLY COMMIT GROUPS AND MAPPINGS
+        // By saving groups and then mappings one by one, we prevent the "Sync Error"
+        foreach (var group in recipe.IngredientGroups) {
+            group.RecipeId = recipe.Id;
+            if (group.Id == 0) Db.PPP_RecipeIngredientGroups.Add(group);
+            else Db.Entry(group).State = EntityState.Modified;
+            
+            await Db.SaveChangesAsync();
+
+            foreach (var mapping in group.Ingredients) {
+                mapping.IngredientGroupId = group.Id;
+                
+                // Scrub object references
+                if (mapping is IngredientUIModel ui) ui.BaseIngredient = null;
+
+                if (mapping.Id == 0) Db.PPP_RecipeIngredientMappings.Add(mapping);
+                else Db.Entry(mapping).State = EntityState.Modified;
+            }
+            await Db.SaveChangesAsync();
         }
 
-        await Db.SaveChangesAsync();
-        
-        _ = ShowToast("Recipe & New Ingredients Saved Successfully");
+        _ = ShowToast("Recipe Saved Successfully");
         await Task.Delay(800);
         Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}");
         
     } catch (Exception ex) { 
         var msg = ex.InnerException?.Message ?? ex.Message;
-        Console.WriteLine($"[SAVE CRASH] {msg}");
-        
-        // Final fallback: If Postgres still hits an FK error, it's likely a 
-        // deleted item in the collection that wasn't caught.
-        await ShowToast("Database Sync Error. Please click save one more time.", true); 
+        Console.WriteLine($"[MANUAL SAVE FAIL] {msg}");
+        // If it fails here, we reset the context for the next click
+        Db.ChangeTracker.Clear();
+        await ShowToast("Save Failed: " + msg, true); 
     }
 }
 
