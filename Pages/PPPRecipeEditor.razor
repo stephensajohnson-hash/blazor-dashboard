@@ -160,19 +160,23 @@
 
         if (m.BaseIngredient != null && !string.Equals(oldUnit, newUnit, StringComparison.OrdinalIgnoreCase)) 
         {
+            // Try to convert the quantity (e.g., 1 lb -> 16 oz)
             if (PPPUnitConverter.TryConvert(m.Quantity, oldUnit, newUnit, out double convertedQty)) 
             {
                 m.Quantity = Math.Round(convertedQty, 2);
                 m.Unit = newUnit;
+                // Scale() will now multiply (Base Calories per 1 lb) * (16) 
+                // Wait - if the Base is 1lb, and the qty is 16, that's 16lbs!
+                // We need to normalize the Base macros to the NEW unit.
+                
                 m.Scale();
-                _ = ShowToast($"Scaled {m.IngredientName} to {newUnit}");
+                _ = ShowToast($"Converted {oldUnit} to {newUnit}. Amount updated to {m.Quantity}.");
             } 
             else 
             {
                 m.IngredientId = 0; 
                 m.Unit = newUnit;
-                var suggested = string.Join(", ", PPPUnitConverter.GetCompatibleUnits(oldUnit));
-                _ = ShowToast($"Incompatible Units! Manual mode enabled. Compatible: {suggested}", true);
+                _ = ShowToast($"Incompatible units. Manual mode enabled.", true);
             }
         } 
         else { m.Unit = newUnit; }
@@ -258,18 +262,28 @@
         { 
             if (BaseIngredient == null || IngredientId == 0) return; 
 
-            // We MUST scale from the BASE ingredient (which is per 1 unit of its original measure)
-            // If Base was 'lbs', and we are now 'oz', the InternalConverter handles the qty ratio.
-            
-            // The issue was likely multiplying the already-scaled values. 
-            // This scales the RAW master macros by the current quantity.
-            ScaledCals = Math.Round(BaseIngredient.Calories * Quantity, 2); 
-            ScaledProt = Math.Round(BaseIngredient.Protein * Quantity, 2); 
-            ScaledFat = Math.Round(BaseIngredient.Fat * Quantity, 2); 
-            ScaledCarb = Math.Round(BaseIngredient.Carbs * Quantity, 2); 
-            ScaledFiber = Math.Round(BaseIngredient.Fiber * Quantity, 2); 
+            // 1. Start with the quantity the user typed (e.g., 16)
+            double calcQty = Quantity;
+
+            // 2. Normalize: If the current unit (oz) is different from the DB unit (lbs),
+            // convert the 16oz back to lbs so we get '1'.
+            if (!string.Equals(Unit, BaseIngredient.Unit, StringComparison.OrdinalIgnoreCase))
+            {
+                // TryConvert(16, "oz", "lbs", out 1.0)
+                if (PPPUnitConverter.TryConvert(Quantity, Unit, BaseIngredient.Unit ?? "", out double normalized))
+                {
+                    calcQty = normalized;
+                }
+            }
+
+            // 3. Multiply the DB Macros (which are per 1 lb) by the normalized qty (1)
+            ScaledCals = Math.Round(BaseIngredient.Calories * calcQty, 2); 
+            ScaledProt = Math.Round(BaseIngredient.Protein * calcQty, 2); 
+            ScaledFat = Math.Round(BaseIngredient.Fat * calcQty, 2); 
+            ScaledCarb = Math.Round(BaseIngredient.Carbs * calcQty, 2); 
+            ScaledFiber = Math.Round(BaseIngredient.Fiber * calcQty, 2); 
         }
     }
-    
+
     private class ToastItem { public string Message { get; set; } = ""; public bool IsError { get; set; } }
 }
