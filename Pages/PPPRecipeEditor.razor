@@ -186,73 +186,72 @@
         else { m.Unit = newUnit; }
     }
 
-    private async Task SaveRecipe() {
-        if (recipe.OwnerId == 0) { 
-            await ShowToast("Select a Business Owner", true); 
-            return; 
-        }
-        
-        try {
-            // --- PHASE 1: INDEPENDENT INGREDIENT COMMITS ---
-            // We handle new ingredients as totally separate database transactions
-            foreach(var group in recipe.IngredientGroups) {
-                foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
-                    if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
-                        double qty = Math.Max(0.001, m.Quantity);
-                        var newIng = new PPP_Ingredient {
-                            Name = m.IngredientName,
-                            Unit = m.Unit,
-                            Calories = m.ScaledCals / qty,
-                            Protein = m.ScaledProt / qty,
-                            Fat = m.ScaledFat / qty,
-                            Carbs = m.ScaledCarb / qty,
-                            Fiber = m.ScaledFiber / qty,
-                            OwnerId = recipe.OwnerId,
-                            CreatedAt = DateTime.UtcNow
-                        };
-                        
-                        // Add and Save immediately to ensure it exists in Postgres
-                        Db.PPP_Ingredients.Add(newIng);
-                        await Db.SaveChangesAsync();
-                        
-                        // Capture the real database ID
-                        m.IngredientId = newIng.Id;
-                        
-                        // CRITICAL: Detach the new ingredient so EF doesn't try to 
-                        // 're-insert' it when we save the recipe mapping later.
-                        Db.Entry(newIng).State = EntityState.Detached;
-                        m.BaseIngredient = null; 
-                    }
-                }
-            }
-
-            // --- PHASE 2: RECIPE PERSISTENCE ---
-            // Now that every IngredientId is a valid, existing ID in the DB,
-            // we can safely save the mappings without triggering an FK violation.
-            if (recipe.Id == 0) {
-                Db.PPP_Recipes.Add(recipe);
-            } else {
-                // Check if context is already tracking a version of this recipe
-                var existing = Db.PPP_Recipes.Local.FirstOrDefault(r => r.Id == recipe.Id);
-                if (existing != null && existing != recipe) {
-                    Db.Entry(existing).State = EntityState.Detached;
-                }
-                Db.Update(recipe);
-            }
-
-            await Db.SaveChangesAsync();
-            
-            _ = ShowToast("Recipe & New Ingredients Saved Successfully");
-            await Task.Delay(800);
-            Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}");
-            
-        } catch (Exception ex) { 
-            // Log the full detail to the console for Render logs
-            var inner = ex.InnerException?.Message ?? "No Inner Exception";
-            Console.WriteLine($"SAVE FAILED. Message: {ex.Message} | Inner: {inner}");
-            await ShowToast("Save Error: Check if Name is unique or data is valid.", true); 
-        }
+  private async Task SaveRecipe() {
+    if (recipe.OwnerId == 0) { 
+        await ShowToast("Select an Owner", true); 
+        return; 
     }
+
+    try {
+        // --- PHASE 1: COMMITTING NEW INGREDIENTS ---
+        foreach (var group in recipe.IngredientGroups) {
+            foreach (var m in group.Ingredients.OfType<IngredientUIModel>()) {
+                // If it's a new ingredient (ID 0)
+                if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
+                    var newIng = new PPP_Ingredient {
+                        Name = m.IngredientName,
+                        Unit = m.Unit,
+                        Calories = m.ScaledCals / Math.Max(0.001, m.Quantity),
+                        Protein = m.ScaledProt / Math.Max(0.001, m.Quantity),
+                        Fat = m.ScaledFat / Math.Max(0.001, m.Quantity),
+                        Carbs = m.ScaledCarb / Math.Max(0.001, m.Quantity),
+                        Fiber = m.ScaledFiber / Math.Max(0.001, m.Quantity),
+                        OwnerId = recipe.OwnerId,
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    Db.PPP_Ingredients.Add(newIng);
+                    // Commit IMMEDIATELY to ensure ID generation
+                    await Db.SaveChangesAsync();
+                    
+                    // Link the mapping to the new ID and clear the object reference
+                    m.IngredientId = newIng.Id;
+                    m.BaseIngredient = null;
+                    
+                    // Force EF to stop tracking the new ingredient object
+                    Db.Entry(newIng).State = EntityState.Detached;
+                }
+            }
+        }
+
+        // --- PHASE 2: PERSISTING THE RECIPE ---
+        // After Step 1, all 'IngredientId' values are now valid integers in the DB.
+        if (recipe.Id == 0) {
+            Db.PPP_Recipes.Add(recipe);
+        } else {
+            // Detach any existing version of this recipe to avoid tracking conflicts
+            var local = Db.PPP_Recipes.Local.FirstOrDefault(r => r.Id == recipe.Id);
+            if (local != null) Db.Entry(local).State = EntityState.Detached;
+            
+            Db.Update(recipe);
+        }
+
+        // Final commit for Recipe and Mappings
+        await Db.SaveChangesAsync();
+
+        _ = ShowToast("Saved successfully!");
+        await Task.Delay(1000);
+        Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}");
+
+    } catch (Exception ex) {
+        // If it's a DB error, get the inner Postgres message
+        var dbError = ex.InnerException as Npgsql.PostgresException;
+        var errorMsg = dbError != null ? $"DB Error: {dbError.MessageText}" : ex.Message;
+        
+        await ShowToast(errorMsg, true);
+        Console.WriteLine($"Full Save Exception: {ex}");
+    }
+}
 
     private async Task HandleImageUpload(InputFileChangeEventArgs e) {
         try {
