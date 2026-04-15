@@ -79,7 +79,11 @@
                                 <div class="grid grid-cols-12 gap-3 items-end">
                                     <div class="col-span-5 relative">
                                         <label class="text-[9px] text-gray-600 mb-1 block">Ingredient Search</label>
-                                        <input @bind="mapping.IngredientName" @oninput="(e) => SearchIng(e, mapping)" class="w-full bg-black border border-gray-800 rounded p-2 text-xs outline-none focus:border-blue-500" />
+                                        <input @bind="mapping.IngredientName" 
+                                            @oninput="(e) => SearchIng(e, mapping)" 
+                                            @onblur="() => HandleBlur(mapping)"
+                                            class="w-full bg-black border border-gray-800 rounded p-2 text-xs outline-none focus:border-blue-500" 
+                                            placeholder="Type to search..." />
                                         @if (activeMapping == mapping && searchResults.Any()) {
                                             <div class="absolute z-50 w-full mt-1 bg-gray-900 border border-gray-700 rounded shadow-2xl max-h-40 overflow-y-auto">
                                                 @foreach (var r in searchResults) {
@@ -240,7 +244,64 @@
 
     private void AddGroup() => recipe.IngredientGroups.Add(new PPP_RecipeIngredientGroup { GroupName = "New Component", DisplayOrder = recipe.IngredientGroups.Count });
     private void AddIngredient(PPP_RecipeIngredientGroup g) => g.Ingredients.Add(new IngredientUIModel { DisplayOrder = g.Ingredients.Count, Unit = "oz" });
-    private void SearchIng(ChangeEventArgs e, IngredientUIModel m) { activeMapping = m; var q = e.Value?.ToString()?.ToLower() ?? ""; if (q.Length < 2) { searchResults.Clear(); return; } searchResults = masterIngs.Where(i => i.Name.ToLower().Contains(q)).Take(5).ToList(); }
+    
+    private void SearchIng(ChangeEventArgs e, IngredientUIModel m) 
+    {
+        activeMapping = m;
+        var q = e.Value?.ToString()?.Trim() ?? "";
+        m.IngredientName = q; // Keep the model in sync while typing
+
+        if (q.Length < 2) 
+        { 
+            searchResults.Clear(); 
+            return; 
+        }
+
+        // Just show suggestions, don't trigger Manual Mode yet
+        searchResults = masterIngs
+            .Where(i => i.Name.ToLower().Contains(q.ToLower()))
+            .Take(5)
+            .ToList();
+    }
+
+    private async Task HandleBlur(IngredientUIModel m)
+    {
+        // Give the UI a tiny moment to process a click on a search result instead of a blur
+        await Task.Delay(200); 
+
+        var q = m.IngredientName?.Trim() ?? "";
+        if (string.IsNullOrEmpty(q)) return;
+
+        // Check for an exact match in the library
+        var match = masterIngs.FirstOrDefault(i => i.Name.Equals(q, StringComparison.OrdinalIgnoreCase));
+
+        if (match != null)
+        {
+            // Typo fixed or found exact match! Re-lock to library
+            if (m.IngredientId != match.Id)
+            {
+                m.IngredientId = match.Id;
+                m.BaseIngredient = match;
+                m.Unit = match.Unit ?? "";
+                m.Scale();
+                _ = ShowToast($"Matched to library: {match.Name}");
+            }
+        }
+        else
+        {
+            // No match found - This is a Custom Ingredient
+            if (m.IngredientId != 0)
+            {
+                m.IngredientId = 0;
+                m.BaseIngredient = null;
+                _ = ShowToast("Custom New Ingredient - please enter macro values.", false);
+            }
+        }
+        
+        searchResults.Clear();
+        activeMapping = null;
+    }
+
     private void SelectIng(PPP_Ingredient master, IngredientUIModel mapping) { mapping.IngredientId = master.Id; mapping.IngredientName = master.Name; mapping.Unit = master.Unit ?? ""; mapping.BaseIngredient = master; mapping.Quantity = 1; mapping.Scale(); searchResults.Clear(); activeMapping = null; }
     private void UpdateQty(ChangeEventArgs e, IngredientUIModel m) { if (double.TryParse(e.Value?.ToString(), out var v)) { m.Quantity = v; m.Scale(); } }
     private double TotalCals => recipe.IngredientGroups.SelectMany(g => g.Ingredients).OfType<IngredientUIModel>().Sum(i => i.ScaledCals);
