@@ -187,11 +187,14 @@
     }
 
     private async Task SaveRecipe() {
-        if (recipe.OwnerId == 0) { await ShowToast("Select a Business Owner", true); return; }
+        if (recipe.OwnerId == 0) { 
+            await ShowToast("Select a Business Owner", true); 
+            return; 
+        }
         
         try {
-            // STEP 1: ISOLATED INGREDIENT COMMIT
-            // We find all manual entries and save them to the DB as permanent library items first.
+            // --- PHASE 1: INDEPENDENT INGREDIENT COMMITS ---
+            // We handle new ingredients as totally separate database transactions
             foreach(var group in recipe.IngredientGroups) {
                 foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
                     if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
@@ -208,43 +211,46 @@
                             CreatedAt = DateTime.UtcNow
                         };
                         
+                        // Add and Save immediately to ensure it exists in Postgres
                         Db.PPP_Ingredients.Add(newIng);
-                        // Force a hard database write for this specific item right now
                         await Db.SaveChangesAsync();
                         
-                        // Assign the new ID to the mapping so the recipe knows how to link to it
+                        // Capture the real database ID
                         m.IngredientId = newIng.Id;
-                        // Wipe the object reference so EF only sees the ID (the foreign key)
-                        m.BaseIngredient = null;
+                        
+                        // CRITICAL: Detach the new ingredient so EF doesn't try to 
+                        // 're-insert' it when we save the recipe mapping later.
+                        Db.Entry(newIng).State = EntityState.Detached;
+                        m.BaseIngredient = null; 
                     }
                 }
             }
 
-            // STEP 2: CLEAR TRACKING
-            // This is the "Nuclear" fix. It forces EF to forget every object relationship currently in memory.
-            // When we save the recipe next, it will look at the IngredientId as a simple number, 
-            // and Postgres will see that number already exists in the Ingredients table.
-            Db.ChangeTracker.Clear();
-
-            // STEP 3: FINAL RECIPE COMMIT
+            // --- PHASE 2: RECIPE PERSISTENCE ---
+            // Now that every IngredientId is a valid, existing ID in the DB,
+            // we can safely save the mappings without triggering an FK violation.
             if (recipe.Id == 0) {
                 Db.PPP_Recipes.Add(recipe);
             } else {
-                // Since we cleared the tracker, we use Update to re-attach the recipe to the context
+                // Check if context is already tracking a version of this recipe
+                var existing = Db.PPP_Recipes.Local.FirstOrDefault(r => r.Id == recipe.Id);
+                if (existing != null && existing != recipe) {
+                    Db.Entry(existing).State = EntityState.Detached;
+                }
                 Db.Update(recipe);
             }
 
             await Db.SaveChangesAsync();
             
-            _ = ShowToast("Recipe & Ingredients Saved Successfully");
-            await Task.Delay(1000);
+            _ = ShowToast("Recipe & New Ingredients Saved Successfully");
+            await Task.Delay(800);
             Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}");
             
         } catch (Exception ex) { 
-            // If it still fails, the InnerException contains the raw SQL error
-            var msg = ex.InnerException?.Message ?? ex.Message;
-            await ShowToast("Critical Save Error: " + msg, true);
-            Console.WriteLine($"Detailed FK Error: {ex}");
+            // Log the full detail to the console for Render logs
+            var inner = ex.InnerException?.Message ?? "No Inner Exception";
+            Console.WriteLine($"SAVE FAILED. Message: {ex.Message} | Inner: {inner}");
+            await ShowToast("Save Error: Check if Name is unique or data is valid.", true); 
         }
     }
 
