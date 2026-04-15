@@ -187,10 +187,10 @@
     }
 
 private async Task SaveRecipe() {
-    if (recipe.OwnerId == 0) { await ShowToast("Select an Owner", true); return; }
+    if (recipe.OwnerId == 0) { await ShowToast("Select a Business Owner", true); return; }
     
     try {
-        // --- PHASE 1: Standalone Ingredient Creation ---
+        // PHASE 1: Standalone Ingredient Creation
         foreach(var group in recipe.IngredientGroups) {
             foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
                 if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
@@ -208,47 +208,48 @@ private async Task SaveRecipe() {
                     };
                     
                     Db.PPP_Ingredients.Add(newIng);
-                    await Db.SaveChangesAsync(); // Commit immediately to get the ID
+                    await Db.SaveChangesAsync(); 
                     
                     m.IngredientId = newIng.Id;
-                    m.BaseIngredient = null; // Break object link
+                    m.BaseIngredient = null; 
                     Db.Entry(newIng).State = EntityState.Detached;
                 }
             }
         }
 
-        // --- PHASE 2: Force IDs into the mappings and wipe object references ---
+        // PHASE 2: Scrub Mappings and Clear State
         foreach (var group in recipe.IngredientGroups) {
             foreach (var mapping in group.Ingredients) {
-                // Ensure the mapping ONLY has the ID, no tracking object
-                mapping.IngredientGroupId = group.Id;
                 if (mapping is IngredientUIModel ui) ui.BaseIngredient = null;
             }
         }
 
-        // --- PHASE 3: Atomic Recipe Save ---
-        // We use a separate logic for Update vs Add to ensure collections aren't mangled
+        // PHASE 3: Detach and Re-attach for a clean Merge
+        // This stops the 'Sync Error' by clearing EF's memory of this specific recipe
+        var trackedRecipe = Db.PPP_Recipes.Local.FirstOrDefault(r => r.Id == recipe.Id);
+        if (trackedRecipe != null) {
+            Db.Entry(trackedRecipe).State = EntityState.Detached;
+        }
+
         if (recipe.Id == 0) {
             Db.PPP_Recipes.Add(recipe);
         } else {
-            // Re-fetch existing to merge or just update the root
             Db.Update(recipe);
         }
 
         await Db.SaveChangesAsync();
         
-        _ = ShowToast("Success! Recipe Saved.");
+        _ = ShowToast("Recipe & New Ingredients Saved Successfully");
         await Task.Delay(800);
         Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}");
         
     } catch (Exception ex) { 
         var msg = ex.InnerException?.Message ?? ex.Message;
-        Console.WriteLine($"[SAVE CRASH] Message: {ex.Message} | Inner: {msg}");
+        Console.WriteLine($"[SAVE ERROR] {msg}");
         
-        // Final fallback: If Postgres still hates the link, it might be a 
-        // deleted ID in the cache. Clear the tracker and try one more generic alert.
+        // Final fallback to clear tracking if a conflict occurred
         Db.ChangeTracker.Clear();
-        await ShowToast("Database Sync Error. Please try saving once more.", true); 
+        await ShowToast("Syncing data... please click save one more time.", true); 
     }
 }
 
