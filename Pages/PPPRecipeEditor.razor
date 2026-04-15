@@ -187,12 +187,11 @@
     }
 
 private async Task SaveRecipe() {
-    if (recipe.OwnerId == 0) { await ShowToast("Select a Business Owner", true); return; }
+    if (recipe.OwnerId == 0) { await ShowToast("Select an Owner", true); return; }
     
     try {
-        // PASS 1: CREATE NEW INGREDIENTS
-        // We iterate through and save every new ingredient as a standalone record.
-        bool hasNewIngs = false;
+        // --- PASS 1: INDEPENDENT INGREDIENT COMMITS ---
+        // We find all new ingredients and force them into the DB as standalone items.
         foreach(var group in recipe.IngredientGroups) {
             foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
                 if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
@@ -208,54 +207,43 @@ private async Task SaveRecipe() {
                         OwnerId = recipe.OwnerId,
                         CreatedAt = DateTime.UtcNow
                     };
+                    
                     Db.PPP_Ingredients.Add(newIng);
-                    hasNewIngs = true;
+                    // Commit THIS ingredient immediately.
+                    await Db.SaveChangesAsync();
+                    
+                    // Assign the new integer ID and detach the object.
+                    m.IngredientId = newIng.Id;
+                    Db.Entry(newIng).State = EntityState.Detached;
+                    m.BaseIngredient = null; 
                 }
             }
         }
 
-        // Hard commit the ingredients to the DB first.
-        if (hasNewIngs) {
-            await Db.SaveChangesAsync();
-            
-            // Re-sync the IDs back to our UI model so the recipe knows what to link to.
-            foreach(var group in recipe.IngredientGroups) {
-                foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
-                    if (m.IngredientId == 0) {
-                        // Find the ingredient we just saved by name
-                        var saved = Db.PPP_Ingredients.Local.FirstOrDefault(i => i.Name == m.IngredientName);
-                        if (saved != null) {
-                            m.IngredientId = saved.Id;
-                            m.BaseIngredient = null; // Kill the object reference
-                        }
-                    }
-                }
-            }
-            
-            // IMPORTANT: Clear the tracker to break any internal EF object links.
-            Db.ChangeTracker.Clear();
-        }
+        // --- PASS 2: CLEAN THE CHANGE TRACKER ---
+        // This stops EF from trying to 'batch' the previous inserts with the recipe update.
+        Db.ChangeTracker.Clear();
 
-        // PASS 2: SAVE THE RECIPE
-        // Now that the Ingredient IDs are real numbers in the DB, we can save the recipe mappings.
+        // --- PASS 3: SAVE THE RECIPE ---
+        // Since we cleared the tracker, we must re-attach the recipe.
         if (recipe.Id == 0) {
             Db.PPP_Recipes.Add(recipe);
         } else {
-            // Re-attach the recipe since we cleared the tracker.
+            // Re-attach existing recipe
             Db.Update(recipe);
         }
 
         await Db.SaveChangesAsync();
         
-        _ = ShowToast("Recipe Saved Successfully");
+        _ = ShowToast("Success! Recipe Saved.");
         await Task.Delay(800);
         Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}");
         
     } catch (Exception ex) { 
         var msg = ex.InnerException?.Message ?? ex.Message;
-        // If it's still an FK error, it might be a mapping pointing to a deleted ID.
-        await ShowToast("Save Error: " + msg, true);
-        Console.WriteLine($"FK Violation Debug: {ex}");
+        // Check for specific Postgres error details in logs
+        Console.WriteLine($"[SAVE CRASH] Message: {ex.Message} | Inner: {msg}");
+        await ShowToast("Save Error: Database rejected the link. Try again.", true); 
     }
 }
 
