@@ -190,75 +190,76 @@ private async Task SaveRecipe() {
     if (recipe.OwnerId == 0) { await ShowToast("Select a Business Owner", true); return; }
     
     try {
-        // STEP 1: Save New Ingredients Standalone
-        foreach(var group in recipe.IngredientGroups) {
-            foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
-                if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
-                    var newIng = new PPP_Ingredient {
-                        Name = m.IngredientName,
-                        Unit = m.Unit,
-                        Calories = m.ScaledCals / Math.Max(0.001, m.Quantity),
-                        Protein = m.ScaledProt / Math.Max(0.001, m.Quantity),
-                        Fat = m.ScaledFat / Math.Max(0.001, m.Quantity),
-                        Carbs = m.ScaledCarb / Math.Max(0.001, m.Quantity),
-                        Fiber = m.ScaledFiber / Math.Max(0.001, m.Quantity),
-                        OwnerId = recipe.OwnerId,
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    Db.PPP_Ingredients.Add(newIng);
-                    await Db.SaveChangesAsync(); 
-                    
-                    m.IngredientId = newIng.Id;
-                    m.BaseIngredient = null;
-                    Db.Entry(newIng).State = EntityState.Detached;
+        // --- TRICK 1: THE DISPOSABLE CONTEXT ---
+        // We save ingredients using a completely different tracking state
+        using (var tempContext = DbFactory.CreateDbContext()) 
+        {
+            foreach(var group in recipe.IngredientGroups) {
+                foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
+                    if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
+                        double qty = Math.Max(0.001, m.Quantity);
+                        var newIng = new PPP_Ingredient {
+                            Name = m.IngredientName,
+                            Unit = m.Unit,
+                            Calories = m.ScaledCals / qty,
+                            Protein = m.ScaledProt / qty,
+                            Fat = m.ScaledFat / qty,
+                            Carbs = m.ScaledCarb / qty,
+                            Fiber = m.ScaledFiber / qty,
+                            OwnerId = recipe.OwnerId,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        
+                        tempContext.PPP_Ingredients.Add(newIng);
+                        await tempContext.SaveChangesAsync(); // Hard commit
+                        
+                        // Update our UI model with the real ID
+                        m.IngredientId = newIng.Id;
+                        m.BaseIngredient = null; 
+                    }
                 }
             }
-        }
+        } // tempContext is disposed here. IDs are 100% in the DB.
 
-        // STEP 2: Save Recipe Root ONLY (Don't update the whole tree)
+        // --- TRICK 2: THE TRACKER WIPE ---
+        // Ensure the main 'Db' context is a blank slate
+        Db.ChangeTracker.Clear();
+
+        // --- TRICK 3: MANUAL DEPTH-FIRST SAVE ---
+        // Save the Recipe Root
         if (recipe.Id == 0) Db.PPP_Recipes.Add(recipe);
-        else {
-            var tracked = Db.PPP_Recipes.Local.FirstOrDefault(r => r.Id == recipe.Id);
-            if (tracked != null) Db.Entry(tracked).CurrentValues.SetValues(recipe);
-            else Db.Entry(recipe).State = EntityState.Modified;
-        }
+        else Db.Entry(recipe).State = EntityState.Modified;
         await Db.SaveChangesAsync();
 
-        // STEP 3: Manually Handle Groups and Mappings
+        // Save Groups and Mappings individually
         foreach (var group in recipe.IngredientGroups) {
             group.RecipeId = recipe.Id;
             
             if (group.Id == 0) Db.PPP_RecipeIngredientGroups.Add(group);
-            else {
-                var trackedGroup = Db.PPP_RecipeIngredientGroups.Local.FirstOrDefault(g => g.Id == group.Id);
-                if (trackedGroup != null) Db.Entry(trackedGroup).CurrentValues.SetValues(group);
-                else Db.Entry(group).State = EntityState.Modified;
-            }
-            await Db.SaveChangesAsync(); // Ensure Group ID exists for mappings
+            else Db.Entry(group).State = EntityState.Modified;
+            await Db.SaveChangesAsync();
 
             foreach (var mapping in group.Ingredients) {
                 mapping.IngredientGroupId = group.Id;
+                
+                // Scrub UI-specific logic
                 if (mapping is IngredientUIModel ui) ui.BaseIngredient = null;
 
                 if (mapping.Id == 0) Db.PPP_RecipeIngredientMappings.Add(mapping);
-                else {
-                    var trackedMap = Db.PPP_RecipeIngredientMappings.Local.FirstOrDefault(m => m.Id == mapping.Id);
-                    if (trackedMap != null) Db.Entry(trackedMap).CurrentValues.SetValues(mapping);
-                    else Db.Entry(mapping).State = EntityState.Modified;
-                }
+                else Db.Entry(mapping).State = EntityState.Modified;
             }
             await Db.SaveChangesAsync();
         }
 
-        _ = ShowToast("Recipe Saved Successfully");
+        _ = ShowToast("Recipe Saved Successfully!");
         await Task.Delay(800);
         Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}");
         
     } catch (Exception ex) { 
         var msg = ex.InnerException?.Message ?? ex.Message;
-        Console.WriteLine($"[SAVE ERROR] {msg}");
+        Console.WriteLine($"[CRITICAL SAVE FAIL] {msg}");
         Db.ChangeTracker.Clear();
-        await ShowToast("Finalizing sync... please click save one more time.", true); 
+        await ShowToast("Save Error: " + msg, true); 
     }
 }
     private async Task HandleImageUpload(InputFileChangeEventArgs e) {
