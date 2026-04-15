@@ -190,8 +190,7 @@ private async Task SaveRecipe() {
     if (recipe.OwnerId == 0) { await ShowToast("Select an Owner", true); return; }
     
     try {
-        // --- PASS 1: INDEPENDENT INGREDIENT COMMITS ---
-        // We find all new ingredients and force them into the DB as standalone items.
+        // --- PHASE 1: Standalone Ingredient Creation ---
         foreach(var group in recipe.IngredientGroups) {
             foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
                 if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
@@ -209,27 +208,30 @@ private async Task SaveRecipe() {
                     };
                     
                     Db.PPP_Ingredients.Add(newIng);
-                    // Commit THIS ingredient immediately.
-                    await Db.SaveChangesAsync();
+                    await Db.SaveChangesAsync(); // Commit immediately to get the ID
                     
-                    // Assign the new integer ID and detach the object.
                     m.IngredientId = newIng.Id;
+                    m.BaseIngredient = null; // Break object link
                     Db.Entry(newIng).State = EntityState.Detached;
-                    m.BaseIngredient = null; 
                 }
             }
         }
 
-        // --- PASS 2: CLEAN THE CHANGE TRACKER ---
-        // This stops EF from trying to 'batch' the previous inserts with the recipe update.
-        Db.ChangeTracker.Clear();
+        // --- PHASE 2: Force IDs into the mappings and wipe object references ---
+        foreach (var group in recipe.IngredientGroups) {
+            foreach (var mapping in group.Ingredients) {
+                // Ensure the mapping ONLY has the ID, no tracking object
+                mapping.IngredientGroupId = group.Id;
+                if (mapping is IngredientUIModel ui) ui.BaseIngredient = null;
+            }
+        }
 
-        // --- PASS 3: SAVE THE RECIPE ---
-        // Since we cleared the tracker, we must re-attach the recipe.
+        // --- PHASE 3: Atomic Recipe Save ---
+        // We use a separate logic for Update vs Add to ensure collections aren't mangled
         if (recipe.Id == 0) {
             Db.PPP_Recipes.Add(recipe);
         } else {
-            // Re-attach existing recipe
+            // Re-fetch existing to merge or just update the root
             Db.Update(recipe);
         }
 
@@ -241,9 +243,12 @@ private async Task SaveRecipe() {
         
     } catch (Exception ex) { 
         var msg = ex.InnerException?.Message ?? ex.Message;
-        // Check for specific Postgres error details in logs
         Console.WriteLine($"[SAVE CRASH] Message: {ex.Message} | Inner: {msg}");
-        await ShowToast("Save Error: Database rejected the link. Try again.", true); 
+        
+        // Final fallback: If Postgres still hates the link, it might be a 
+        // deleted ID in the cache. Clear the tracker and try one more generic alert.
+        Db.ChangeTracker.Clear();
+        await ShowToast("Database Sync Error. Please try saving once more.", true); 
     }
 }
 
