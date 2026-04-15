@@ -190,8 +190,8 @@
         if (recipe.OwnerId == 0) { await ShowToast("Select a Business Owner", true); return; }
         
         try {
-            // STEP 1: Save NEW ingredients in their own isolated cycle
-            bool hasNewIngredients = false;
+            // STEP 1: ISOLATED INGREDIENT COMMIT
+            // We find all manual entries and save them to the DB as permanent library items first.
             foreach(var group in recipe.IngredientGroups) {
                 foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
                     if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
@@ -209,40 +209,28 @@
                         };
                         
                         Db.PPP_Ingredients.Add(newIng);
-                        hasNewIngredients = true;
+                        // Force a hard database write for this specific item right now
+                        await Db.SaveChangesAsync();
+                        
+                        // Assign the new ID to the mapping so the recipe knows how to link to it
+                        m.IngredientId = newIng.Id;
+                        // Wipe the object reference so EF only sees the ID (the foreign key)
+                        m.BaseIngredient = null;
                     }
                 }
             }
 
-            if (hasNewIngredients) {
-                await Db.SaveChangesAsync();
-                
-                // Re-map the IDs from the newly saved Ingredient objects back to the UI Models
-                // and set BaseIngredient to null to prevent FK constraint racing
-                foreach(var group in recipe.IngredientGroups) {
-                    foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
-                        if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
-                            // Find the ingredient we just added to the context by name (since it's now tracked with an ID)
-                            var saved = Db.PPP_Ingredients.Local.FirstOrDefault(i => i.Name == m.IngredientName);
-                            if (saved != null) {
-                                m.IngredientId = saved.Id;
-                                m.BaseIngredient = null; // Kill the object link
-                            }
-                        }
-                    }
-                }
-                
-                // CRITICAL: Clear the tracker so EF "forgets" the Ingredient objects 
-                // and only sees the IngredientId integers in the next step.
-                Db.ChangeTracker.Clear();
-            }
+            // STEP 2: CLEAR TRACKING
+            // This is the "Nuclear" fix. It forces EF to forget every object relationship currently in memory.
+            // When we save the recipe next, it will look at the IngredientId as a simple number, 
+            // and Postgres will see that number already exists in the Ingredients table.
+            Db.ChangeTracker.Clear();
 
-            // STEP 2: Save the Recipe
-            // Since we cleared the tracker, we need to re-attach the recipe 
-            // or add it if it's new.
+            // STEP 3: FINAL RECIPE COMMIT
             if (recipe.Id == 0) {
                 Db.PPP_Recipes.Add(recipe);
             } else {
+                // Since we cleared the tracker, we use Update to re-attach the recipe to the context
                 Db.Update(recipe);
             }
 
@@ -253,12 +241,13 @@
             Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}");
             
         } catch (Exception ex) { 
+            // If it still fails, the InnerException contains the raw SQL error
             var msg = ex.InnerException?.Message ?? ex.Message;
-            await ShowToast("Save Error: " + msg, true);
-            Console.WriteLine($"FK Violation Debug: {ex}");
+            await ShowToast("Critical Save Error: " + msg, true);
+            Console.WriteLine($"Detailed FK Error: {ex}");
         }
     }
-    
+
     private async Task HandleImageUpload(InputFileChangeEventArgs e) {
         try {
             var file = e.File;
