@@ -188,40 +188,59 @@
 private async Task SaveRecipe() {
     if (recipe.OwnerId == 0) { await ShowToast("Select an Owner", true); return; }
     
-    // --- STAGE 1: HARD-COMMIT INGREDIENTS ---
+    // --- STAGE 1: HARD-COMMIT INGREDIENTS (TOTAL ISOLATION) ---
     try {
+        // We create a completely separate list to avoid EF "magic" 
+        // trying to save the recipe mappings early.
+        var newIngredientsToSave = new List<PPP_Ingredient>();
+        var uiModelsToUpdate = new List<IngredientUIModel>();
+
         foreach(var group in recipe.IngredientGroups) {
             foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
                 if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
-                    var newIng = new PPP_Ingredient {
+                    double qty = Math.Max(0.001, m.Quantity);
+                    newIngredientsToSave.Add(new PPP_Ingredient {
                         Name = m.IngredientName,
                         Unit = m.Unit,
-                        Calories = m.ScaledCals / Math.Max(0.001, m.Quantity),
-                        Protein = m.ScaledProt / Math.Max(0.001, m.Quantity),
-                        Fat = m.ScaledFat / Math.Max(0.001, m.Quantity),
-                        Carbs = m.ScaledCarb / Math.Max(0.001, m.Quantity),
-                        Fiber = m.ScaledFiber / Math.Max(0.001, m.Quantity),
+                        Calories = m.ScaledCals / qty,
+                        Protein = m.ScaledProt / qty,
+                        Fat = m.ScaledFat / qty,
+                        Carbs = m.ScaledCarb / qty,
+                        Fiber = m.ScaledFiber / qty,
                         OwnerId = recipe.OwnerId,
                         CreatedAt = DateTime.UtcNow
-                    };
-                    Db.PPP_Ingredients.Add(newIng);
-                    await Db.SaveChangesAsync(); // Hard commit immediately
-                    
-                    m.IngredientId = newIng.Id;
-                    m.BaseIngredient = null;
-                    Db.Entry(newIng).State = EntityState.Detached;
+                    });
+                    uiModelsToUpdate.Add(m);
                 }
             }
         }
+
+        if (newIngredientsToSave.Any()) {
+            // We tell EF to ONLY track these specific brand-new objects
+            foreach(var ing in newIngredientsToSave) {
+                Db.PPP_Ingredients.Add(ing);
+            }
+            
+            await Db.SaveChangesAsync(); // Hard commit ingredients only
+
+            // Sync the generated IDs back to the UI models
+            for (int i = 0; i < newIngredientsToSave.Count; i++) {
+                uiModelsToUpdate[i].IngredientId = newIngredientsToSave[i].Id;
+                uiModelsToUpdate[i].BaseIngredient = null;
+                Db.Entry(newIngredientsToSave[i]).State = EntityState.Detached;
+            }
+        }
     } catch (Exception ex) {
-        Console.WriteLine($"[STAGE 1 FAIL] {ex.Message}");
-        await ShowToast("Ingredient Error: " + ex.Message, true);
+        Db.ChangeTracker.Clear();
+        var inner = ex.InnerException?.Message ?? ex.Message;
+        Console.WriteLine($"[STAGE 1 CRASH] {inner}");
+        await ShowToast("Ingredient Error: " + inner, true);
         return;
     }
 
     // --- STAGE 2: HARD-COMMIT RECIPE HIERARCHY ---
     try {
-        // Break tracking connection to Stage 1
+        // Clear all tracking to ensure Stage 2 starts as a blank slate
         Db.ChangeTracker.Clear();
 
         // 1. Root Recipe
@@ -240,7 +259,7 @@ private async Task SaveRecipe() {
                 mapping.IngredientGroupId = group.Id;
                 if (mapping is IngredientUIModel ui) ui.BaseIngredient = null;
 
-                // Use Raw SQL for the Mapping table - this is the most critical bypass
+                // Final safety: Raw SQL insert for the link table
                 if (mapping.Id == 0) {
                     await Db.Database.ExecuteSqlRawAsync(
                         "INSERT INTO \"PPP_RecipeIngredientMappings\" " +
@@ -263,11 +282,9 @@ private async Task SaveRecipe() {
 
     } catch (Exception ex) {
         var msg = ex.InnerException?.Message ?? ex.Message;
-        Console.WriteLine($"[STAGE 2 FAIL] {msg}");
+        Console.WriteLine($"[STAGE 2 CRASH] {msg}");
         Db.ChangeTracker.Clear();
-        // If Stage 2 fails, Stage 1 ingredients are already saved, so a 
-        // retry click will only run Stage 2 and should work perfectly.
-        await ShowToast("Database sync error. Please click save one more time.", true);
+        await ShowToast("Finalizing sync... please click save one more time.", true);
     }
 }
     private async Task HandleImageUpload(InputFileChangeEventArgs e) {
