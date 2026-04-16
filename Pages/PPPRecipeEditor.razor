@@ -34,7 +34,7 @@
         </div>
     </div>
 
-    @* Global Macros Bar *@
+    @* Global Macros Bar - Standardized Order *@
     <div class="max-w-7xl mx-auto mb-8">
         <div class="bg-emerald-600/5 border border-emerald-500/20 p-6 rounded-3xl backdrop-blur-sm grid grid-cols-2 md:grid-cols-7 gap-6 items-center shadow-lg text-center">
             @{ double safe = Math.Max(1, recipe.Servings); }
@@ -70,7 +70,7 @@
     </div>
 
     @* Tab Navigation *@
-    <div class="max-w-7xl mx-auto mb-8 flex gap-1 bg-[#111] p-1.5 rounded-2xl w-fit border border-slate-800/50">
+    <div class="max-w-7xl mx-auto mb-8 flex gap-1 bg-[#111] p-1.5 rounded-2xl w-fit border border-slate-800/50 shadow-inner">
         <button @onclick='() => currentTab = "Details"' class="px-8 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all @(currentTab == "Details" ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-300")">Details</button>
         <button @onclick='() => currentTab = "Ingredients"' class="px-8 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all @(currentTab == "Ingredients" ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-300")">Ingredients</button>
         <button @onclick='() => currentTab = "Instructions"' class="px-8 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all @(currentTab == "Instructions" ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-300")">Instructions</button>
@@ -138,8 +138,8 @@
                                 <div class="group/item bg-black/40 p-4 rounded-2xl border @(mapping.IngredientId == 0 ? "border-emerald-500/30" : "border-slate-800") relative">
                                     <div class="grid grid-cols-12 gap-4 items-center">
                                         <div class="col-span-1 flex flex-col items-center gap-1 opacity-20 group-hover/item:opacity-100 transition-opacity">
-                                            <button @onclick="() => MoveIngredient(group, mapping, -1)" class="text-xs hover:text-emerald-500">▲</button>
-                                            <button @onclick="() => MoveIngredient(group, mapping, 1)" class="text-xs hover:text-emerald-500">▼</button>
+                                            <button @onclick="() => MoveIngredient(group, mapping, -1)" class="text-xs hover:text-emerald-500 transition-colors">▲</button>
+                                            <button @onclick="() => MoveIngredient(group, mapping, 1)" class="text-xs hover:text-emerald-500 transition-colors">▼</button>
                                         </div>
                                         <div class="col-span-11 md:col-span-5 relative">
                                             <label class="text-[9px] text-slate-500 uppercase font-bold mb-1 block">Ingredient</label>
@@ -278,8 +278,8 @@
 
             // STAGE 1: ORPHANED INGREDIENT COMMIT
             foreach(var group in recipe.IngredientGroups) {
-                foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
-                    if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
+                foreach(var obj in group.Ingredients) {
+                    if (obj is IngredientUIModel m && m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
                         double qty = Math.Max(0.001, m.Quantity);
                         var newIng = new PPP_Ingredient { 
                             Name = m.IngredientName.Trim(), 
@@ -296,7 +296,8 @@
                         await db.SaveChangesAsync();
                         
                         m.IngredientId = newIng.Id;
-                        m.BaseIngredient = null; // Clear tracking reference
+                        m.BaseIngredient = null;
+                        db.Entry(newIng).State = EntityState.Detached;
                     }
                 }
             }
@@ -313,15 +314,17 @@
                 else db.Entry(group).State = EntityState.Modified;
                 await db.SaveChangesAsync();
 
-                foreach (var m in group.Ingredients.OfType<IngredientUIModel>()) {
-                    var mapping = (PPP_RecipeIngredientMapping)m;
-                    mapping.IngredientGroupId = group.Id;
-                    mapping.Unit = mapping.Unit ?? "";
-                    mapping.Notes = mapping.Notes ?? "";
-                    mapping.BaseIngredient = null; // Ensure EF doesn't try to re-track the actual object
+                foreach (var obj in group.Ingredients) {
+                    if (obj is IngredientUIModel m) {
+                        var mapping = (PPP_RecipeIngredientMapping)m;
+                        mapping.IngredientGroupId = group.Id;
+                        mapping.Unit = mapping.Unit ?? "";
+                        mapping.Notes = mapping.Notes ?? "";
+                        m.BaseIngredient = null; 
 
-                    if (mapping.Id == 0) db.PPP_RecipeIngredientMappings.Add(mapping);
-                    else db.Entry(mapping).State = EntityState.Modified;
+                        if (mapping.Id == 0) db.PPP_RecipeIngredientMappings.Add(mapping);
+                        else db.Entry(mapping).State = EntityState.Modified;
+                    }
                 }
                 await db.SaveChangesAsync();
             }
@@ -342,7 +345,7 @@
                 await db.SaveChangesAsync();
             }
 
-            _ = ShowToast("Recipe Saved Successfully.");
+            _ = ShowToast("Recipe saved successfully.");
             await Task.Delay(800);
             Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}", forceLoad: true);
 
@@ -379,7 +382,7 @@
         }
     }
 
-    private void AddGroup() => recipe.IngredientGroups.Add(new PPP_RecipeIngredientGroup { GroupName = "New Section", DisplayOrder = recipe.IngredientGroups.Count });
+    private void AddGroup() => recipe.IngredientGroups.Add(new PPP_RecipeIngredientGroup { GroupName = "Section", DisplayOrder = recipe.IngredientGroups.Count });
     private void AddIngredient(PPP_RecipeIngredientGroup g) => g.Ingredients.Add(new IngredientUIModel { DisplayOrder = g.Ingredients.Count, Unit = "oz" });
     
     private void SearchIng(ChangeEventArgs e, IngredientUIModel m) {
