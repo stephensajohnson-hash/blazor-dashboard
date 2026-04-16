@@ -186,16 +186,13 @@
         else { m.Unit = newUnit; }
     }
 private async Task SaveRecipe() {
-    if (recipe.OwnerId == 0) { await ShowToast("Select a Business Owner", true); return; }
-    
-    Console.WriteLine($"[DEBUG] Starting Save for Recipe: {recipe.Name} (ID: {recipe.Id})");
+    if (recipe.OwnerId == 0) { await ShowToast("Select an Owner", true); return; }
     
     try {
-        // --- PHASE 1: ISOLATED INGREDIENT COMMITS ---
+        // --- PHASE 1: HARD-COMMIT NEW INGREDIENTS ---
         foreach(var group in recipe.IngredientGroups) {
             foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
                 if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
-                    Console.WriteLine($"[DEBUG] Creating New Ingredient: {m.IngredientName}");
                     var newIng = new PPP_Ingredient {
                         Name = m.IngredientName,
                         Unit = m.Unit,
@@ -207,75 +204,58 @@ private async Task SaveRecipe() {
                         OwnerId = recipe.OwnerId,
                         CreatedAt = DateTime.UtcNow
                     };
-                    
                     Db.PPP_Ingredients.Add(newIng);
-                    await Db.SaveChangesAsync();
+                    await Db.SaveChangesAsync(); 
                     
                     m.IngredientId = newIng.Id;
-                    m.BaseIngredient = null; // Kill object link
-                    Db.Entry(newIng).State = EntityState.Detached; // Stop tracking
-                    Console.WriteLine($"[DEBUG] New Ingredient Saved. New ID: {m.IngredientId}");
+                    m.BaseIngredient = null;
+                    Db.Entry(newIng).State = EntityState.Detached;
                 }
             }
         }
 
-        // --- PHASE 2: NUCLEAR TRACKER WIPE ---
-        // We force EF to forget everything it knows before we touch the Recipe
-        Db.ChangeTracker.Clear();
-        Console.WriteLine("[DEBUG] Change Tracker Cleared.");
-
-        // --- PHASE 3: MANUAL RECIPE ROOT SAVE ---
-        if (recipe.Id == 0) {
-            Db.PPP_Recipes.Add(recipe);
-            Console.WriteLine("[DEBUG] Adding New Recipe Root.");
-        } else {
-            Db.Entry(recipe).State = EntityState.Modified;
-            Console.WriteLine($"[DEBUG] Updating Existing Recipe Root ID: {recipe.Id}");
-        }
+        // --- PHASE 2: SAVE RECIPE & GROUPS ---
+        // We use EF for these as they are the parents
+        if (recipe.Id == 0) Db.PPP_Recipes.Add(recipe);
+        else Db.Entry(recipe).State = EntityState.Modified;
         await Db.SaveChangesAsync();
 
-        // --- PHASE 4: SEQUENTIAL GROUP & MAPPING SAVE ---
         foreach (var group in recipe.IngredientGroups) {
             group.RecipeId = recipe.Id;
-            Console.WriteLine($"[DEBUG] Processing Group: {group.GroupName} (ID: {group.Id})");
-
             if (group.Id == 0) Db.PPP_RecipeIngredientGroups.Add(group);
             else Db.Entry(group).State = EntityState.Modified;
-            
             await Db.SaveChangesAsync();
-            Console.WriteLine($"[DEBUG] Group {group.GroupName} Saved. ID: {group.Id}");
 
+            // --- PHASE 3: RAW SQL FOR MAPPINGS (THE FIX) ---
+            // We bypass EF entirely here to stop the 23503 and Sync errors
             foreach (var mapping in group.Ingredients) {
-                mapping.IngredientGroupId = group.Id;
-                
-                // CRITICAL: Ensure we are using the ID we created in Phase 1
-                if (mapping is IngredientUIModel ui) {
-                    ui.BaseIngredient = null;
+                if (mapping.Id == 0) {
+                    // Manual INSERT
+                    await Db.Database.ExecuteSqlRawAsync(
+                        "INSERT INTO \"PPP_RecipeIngredientMappings\" " +
+                        "(\"IngredientGroupId\", \"IngredientId\", \"Quantity\", \"Unit\", \"Notes\", \"DisplayOrder\") " +
+                        "VALUES ({0}, {1}, {2}, {3}, {4}, {5})",
+                        group.Id, mapping.IngredientId, mapping.Quantity, mapping.Unit, mapping.Notes ?? "", mapping.DisplayOrder);
+                } else {
+                    // Manual UPDATE
+                    await Db.Database.ExecuteSqlRawAsync(
+                        "UPDATE \"PPP_RecipeIngredientMappings\" SET " +
+                        "\"IngredientGroupId\"={0}, \"IngredientId\"={1}, \"Quantity\"={2}, \"Unit\"={3}, \"Notes\"={4}, \"DisplayOrder\"={5} " +
+                        "WHERE \"Id\"={6}",
+                        group.Id, mapping.IngredientId, mapping.Quantity, mapping.Unit, mapping.Notes ?? "", mapping.DisplayOrder, mapping.Id);
                 }
-
-                Console.WriteLine($"[DEBUG] Mapping IngredientID: {mapping.IngredientId} to Group: {group.Id}");
-
-                if (mapping.Id == 0) Db.PPP_RecipeIngredientMappings.Add(mapping);
-                else Db.Entry(mapping).State = EntityState.Modified;
-                
-                // We save every mapping individually to pinpoint the exact failure
-                await Db.SaveChangesAsync(); 
             }
         }
 
-        Console.WriteLine("[DEBUG] All Phases Complete. Navigating...");
-        _ = ShowToast("Recipe Saved Successfully");
+        _ = ShowToast("Recipe Saved Successfully!");
         await Task.Delay(800);
         Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}");
         
     } catch (Exception ex) { 
-        var inner = ex.InnerException?.Message ?? "No Inner Exception";
-        Console.WriteLine($"[CRITICAL ERROR] Message: {ex.Message}");
-        Console.WriteLine($"[CRITICAL ERROR] Inner: {inner}");
-        Console.WriteLine($"[CRITICAL ERROR] Stack: {ex.StackTrace}");
-        
+        var msg = ex.InnerException?.Message ?? ex.Message;
+        Console.WriteLine($"[FINAL BYPASS FAIL] {msg}");
         Db.ChangeTracker.Clear();
-        await ShowToast($"Save Failed: {inner}", true); 
+        await ShowToast("Critical Error: " + msg, true); 
     }
 }
     private async Task HandleImageUpload(InputFileChangeEventArgs e) {
