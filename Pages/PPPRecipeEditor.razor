@@ -33,7 +33,7 @@
         </div>
     </div>
 
-    @* Global Macros Bar - Order: Cals, Prot, Fat, Carb, Fiber, Net *@
+    @* Global Macros Bar - Ordered: Calories, Protein, Fat, Carbs, Fiber, Net Carbs *@
     <div class="max-w-7xl mx-auto mb-8">
         <div class="bg-emerald-600/5 border border-emerald-500/20 p-6 rounded-3xl backdrop-blur-sm grid grid-cols-2 md:grid-cols-7 gap-6 items-center shadow-lg text-center">
             @{ double safe = Math.Max(1, recipe.Servings); }
@@ -140,9 +140,8 @@
                                 @{ var sortedIngs = group.Ingredients.OfType<IngredientUIModel>().OrderBy(i => i.DisplayOrder).ToList(); }
                                 @foreach (var mapping in sortedIngs)
                                 {
-                                    <div class="group/item bg-black/40 p-4 rounded-2xl border @(mapping.IngredientId == 0 ? "border-emerald-500/30" : "border-slate-800") relative">
+                                    <div class="group/item bg-black/40 p-4 rounded-2xl border @(mapping.IngredientId == 0 ? "border-emerald-500/30" : "border-slate-800") relative transition-all">
                                         <div class="grid grid-cols-12 gap-4 items-center">
-                                            @* Reorder Controls *@
                                             <div class="col-span-1 flex flex-col items-center gap-1 opacity-20 group-hover/item:opacity-100 transition-opacity">
                                                 <button @onclick="() => MoveIngredient(group, mapping, -1)" class="text-xs hover:text-emerald-500 transition-colors">▲</button>
                                                 <button @onclick="() => MoveIngredient(group, mapping, 1)" class="text-xs hover:text-emerald-500 transition-colors">▼</button>
@@ -171,8 +170,8 @@
                                                 <button @onclick="() => group.Ingredients.Remove(mapping)" class="text-slate-600 hover:text-red-500 p-2 text-lg transition-colors">✕</button>
                                             </div>
                                         </div>
-                                        <div class="mt-4 pt-4 border-t border-white/5 flex flex-wrap gap-2 text-center">
-                                            <div class="flex-1 bg-black/40 p-2 rounded-lg border border-white/5"><span class="text-[7px] text-slate-500 uppercase block mb-1">Cals</span><input type="number" step="0.1" @bind="mapping.ScaledCals" @bind:event="oninput" readonly="@(mapping.IngredientId != 0)" class="w-full bg-transparent text-white font-mono text-[10px] text-center outline-none" /></div>
+                                        <div class="mt-4 pt-4 border-t border-white/5 flex flex-wrap gap-2 text-center text-white">
+                                            <div class="flex-1 bg-black/40 p-2 rounded-lg border border-white/5"><span class="text-[7px] text-slate-500 uppercase block mb-1">Cals</span><input type="number" step="0.1" @bind="mapping.ScaledCals" @bind:event="oninput" readonly="@(mapping.IngredientId != 0)" class="w-full bg-transparent font-mono text-[10px] text-center outline-none" /></div>
                                             <div class="flex-1 bg-black/40 p-2 rounded-lg border border-white/5"><span class="text-[7px] text-slate-500 uppercase block mb-1">Prot</span><input type="number" step="0.1" @bind="mapping.ScaledProt" @bind:event="oninput" readonly="@(mapping.IngredientId != 0)" class="w-full bg-transparent text-blue-400 font-mono text-[10px] text-center outline-none" /></div>
                                             <div class="flex-1 bg-black/40 p-2 rounded-lg border border-white/5"><span class="text-[7px] text-slate-500 uppercase block mb-1">Fat</span><input type="number" step="0.1" @bind="mapping.ScaledFat" @bind:event="oninput" readonly="@(mapping.IngredientId != 0)" class="w-full bg-transparent text-yellow-500 font-mono text-[10px] text-center outline-none" /></div>
                                             <div class="flex-1 bg-black/40 p-2 rounded-lg border border-white/5"><span class="text-[7px] text-slate-500 uppercase block mb-1">Carb</span><input type="number" step="0.1" @bind="mapping.ScaledCarb" @bind:event="oninput" readonly="@(mapping.IngredientId != 0)" class="w-full bg-transparent text-red-400 font-mono text-[10px] text-center outline-none" /></div>
@@ -222,7 +221,7 @@
                     }
                     <button @onclick="AddInstructionGroup" class="w-full py-6 bg-white/5 border-2 border-dashed border-slate-800 rounded-3xl text-[11px] text-slate-500 font-black uppercase hover:bg-emerald-600/5 hover:border-emerald-600/30 hover:text-emerald-500 transition-all">＋ New Instruction Group</button>
                 </div>
-                <button @onclick="SaveRecipe" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-5 rounded-2xl font-black text-xs uppercase tracking-[0.3em] transition-all active:scale-[0.98]">Save Recipe</button>
+                <button @onclick="SaveRecipe" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-5 rounded-2xl font-black text-xs uppercase tracking-[0.3em] transition-all shadow-xl active:scale-[0.98]">Save Recipe</button>
             </div>
         }
     </div>
@@ -283,6 +282,7 @@
         if (recipe.OwnerId == 0) { await ShowToast("Select an Owner", true); return; }
         
         try {
+            // PHASE 1: ORPHANED INGREDIENT COMMITS
             var orphans = new List<(IngredientUIModel UI, PPP_Ingredient Entity)>();
             foreach(var group in recipe.IngredientGroups) {
                 foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
@@ -320,6 +320,7 @@
             else Db.Entry(recipe).State = EntityState.Modified;
             await Db.SaveChangesAsync();
 
+            // SQL Bypass for Ingredients using FormattableString (Compiler safe)
             foreach (var group in recipe.IngredientGroups) {
                 group.RecipeId = recipe.Id;
                 if (group.Id == 0) Db.Add(group);
@@ -327,21 +328,19 @@
                 await Db.SaveChangesAsync();
 
                 foreach (var m in group.Ingredients.OfType<IngredientUIModel>()) {
-                    m.IngredientGroupId = group.Id; m.BaseIngredient = null;
-                    string u = m.Unit ?? "";
-                    string n = m.Notes ?? "";
+                    m.IngredientGroupId = group.Id;
+                    string unitValue = m.Unit ?? "";
+                    string notesValue = m.Notes ?? "";
+                    
                     if (m.Id == 0) {
-                        await Db.Database.ExecuteSqlRawAsync(
-                            "INSERT INTO \"PPP_RecipeIngredientMappings\" (\"IngredientGroupId\", \"IngredientId\", \"Quantity\", \"Unit\", \"Notes\", \"DisplayOrder\") VALUES ({0}, {1}, {2}, {3}, {4}, {5})", 
-                            group.Id, m.IngredientId, m.Quantity, u, n, m.DisplayOrder);
+                        await Db.Database.ExecuteSqlAsync($"INSERT INTO \"PPP_RecipeIngredientMappings\" (\"IngredientGroupId\", \"IngredientId\", \"Quantity\", \"Unit\", \"Notes\", \"DisplayOrder\") VALUES ({group.Id}, {m.IngredientId}, {m.Quantity}, {unitValue}, {notesValue}, {m.DisplayOrder})");
                     } else {
-                        await Db.Database.ExecuteSqlRawAsync(
-                            "UPDATE \"PPP_RecipeIngredientMappings\" SET \"IngredientGroupId\"={0}, \"IngredientId\"={1}, \"Quantity\"={2}, \"Unit\"={3}, \"Notes\"={4}, \"DisplayOrder\"={5} WHERE \"Id\"={6}", 
-                            group.Id, m.IngredientId, m.Quantity, u, n, m.DisplayOrder, m.Id);
+                        await Db.Database.ExecuteSqlAsync($"UPDATE \"PPP_RecipeIngredientMappings\" SET \"IngredientGroupId\"={group.Id}, \"IngredientId\"={m.IngredientId}, \"Quantity\"={m.Quantity}, \"Unit\"={unitValue}, \"Notes\"={notesValue}, \"DisplayOrder\"={m.DisplayOrder} WHERE \"Id\"={m.Id}");
                     }
                 }
             }
 
+            // SQL Bypass for Instructions using FormattableString (Compiler safe)
             foreach (var insGroup in instructionGroups) {
                 insGroup.RecipeId = recipe.Id;
                 if (insGroup.Id == 0) Db.Add(insGroup);
@@ -350,16 +349,11 @@
 
                 foreach (var step in insGroup.Instructions) {
                     step.InstructionGroupId = insGroup.Id;
-                    string desc = step.StepDescription ?? "";
+                    string stepDesc = step.StepDescription ?? "";
                     if (step.Id == 0) {
-                        await Db.Database.ExecuteSqlRawAsync(
-                            "INSERT INTO \"PPP_RecipeInstructions\" (\"InstructionGroupId\", \"StepDescription\", \"DisplayOrder\") VALUES ({0}, {1}, {2})",
-                            insGroup.Id, desc, step.DisplayOrder);
-                    }
-                    else {
-                        await Db.Database.ExecuteSqlRawAsync(
-                            "UPDATE \"PPP_RecipeInstructions\" SET \"InstructionGroupId\"={0}, \"StepDescription\"={1}, \"DisplayOrder\"={2} WHERE \"Id\"={3}",
-                            insGroup.Id, desc, step.DisplayOrder, step.Id);
+                        await Db.Database.ExecuteSqlAsync($"INSERT INTO \"PPP_RecipeInstructions\" (\"InstructionGroupId\", \"StepDescription\", \"DisplayOrder\") VALUES ({insGroup.Id}, {stepDesc}, {step.DisplayOrder})");
+                    } else {
+                        await Db.Database.ExecuteSqlAsync($"UPDATE \"PPP_RecipeInstructions\" SET \"InstructionGroupId\"={insGroup.Id}, \"StepDescription\"={stepDesc}, \"DisplayOrder\"={step.DisplayOrder} WHERE \"Id\"={step.Id}");
                     }
                 }
                 await Db.SaveChangesAsync();
@@ -367,12 +361,12 @@
 
             recipe.IngredientGroups.Clear();
             Db.ChangeTracker.Clear();
-            _ = ShowToast("Saved.");
+            _ = ShowToast("Recipe Committed.");
             await Task.Delay(800);
             Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}", forceLoad: true);
         } catch (Exception ex) {
             Console.WriteLine($"[SAVE ERROR] {ex.Message}");
-            await ShowToast("Sync error. Please retry.", true);
+            await ShowToast("Sync conflict. Retry.", true);
         }
     }
 
@@ -383,7 +377,7 @@
             await file.OpenReadStream(5120 * 1024).CopyToAsync(ms);
             var img = new PPP_StoredImage { Data = ms.ToArray(), ContentType = file.ContentType, FileName = file.Name, UploadedAt = DateTime.UtcNow };
             Db.PPP_StoredImages.Add(img); await Db.SaveChangesAsync();
-            recipe.ImageId = img.Id; await ShowToast("Visual Loaded");
+            recipe.ImageId = img.Id; await ShowToast("Visual Ready");
         } catch (Exception ex) { await ShowToast(ex.Message, true); }
     }
 
@@ -441,7 +435,7 @@
     private async Task ShowToast(string msg, bool isError = false) { var toast = new ToastItem { Message = msg, IsError = isError }; toasts.Add(toast); StateHasChanged(); await Task.Delay(4000); toasts.Remove(toast); StateHasChanged(); }
 
     public class IngredientUIModel : PPP_RecipeIngredientMapping {
-        public string IngredientName { get; set; } = "";
+        public string? IngredientName { get; set; } = "";
         public PPP_Ingredient? BaseIngredient { get; set; }
         public double ScaledCals { get; set; }
         public double ScaledProt { get; set; }
