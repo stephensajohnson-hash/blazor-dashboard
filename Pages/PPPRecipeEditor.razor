@@ -151,8 +151,12 @@
     private List<ToastItem> toasts = new();
 
     protected override async Task OnInitializedAsync() {
+        // Reset state
+        recipe = new PPP_Recipe { Servings = 1, Name = "", ServingSize = "" };
+        
         owners = await Db.PPP_Owners.AsNoTracking().OrderBy(o => o.BusinessName).ToListAsync();
         masterIngs = await Db.PPP_Ingredients.AsNoTracking().ToListAsync();
+        
         if (RecipeId.HasValue) await LoadRecipe(RecipeId.Value);
         else { AddGroup(); if (ownerId.HasValue) recipe.OwnerId = ownerId.Value; }
     }
@@ -164,15 +168,10 @@
 
         if (m.BaseIngredient != null && !string.Equals(oldUnit, newUnit, StringComparison.OrdinalIgnoreCase)) 
         {
-            // Try to convert the quantity (e.g., 1 lb -> 16 oz)
             if (PPPUnitConverter.TryConvert(m.Quantity, oldUnit, newUnit, out double convertedQty)) 
             {
                 m.Quantity = Math.Round(convertedQty, 2);
                 m.Unit = newUnit;
-                // Scale() will now multiply (Base Calories per 1 lb) * (16) 
-                // Wait - if the Base is 1lb, and the qty is 16, that's 16lbs!
-                // We need to normalize the Base macros to the NEW unit.
-                
                 m.Scale();
                 _ = ShowToast($"Converted {oldUnit} to {newUnit}. Amount updated to {m.Quantity}.");
             } 
@@ -185,106 +184,108 @@
         } 
         else { m.Unit = newUnit; }
     }
-private async Task SaveRecipe() {
-    if (recipe.OwnerId == 0) { await ShowToast("Select an Owner", true); return; }
-    
-    try {
-        // --- PHASE 1: ORPHANED INGREDIENT COMMITS ---
-        // We create a list that has ZERO connection to the 'recipe' object
-        var orphans = new List<(IngredientUIModel UI, PPP_Ingredient Entity)>();
 
-        foreach(var group in recipe.IngredientGroups) {
-            foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
-                if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
-                    double qty = Math.Max(0.001, m.Quantity);
-                    // Create a brand new entity with no navigation properties set
-                    var standalone = new PPP_Ingredient {
-                        Name = m.IngredientName,
-                        Unit = m.Unit,
-                        Calories = m.ScaledCals / qty,
-                        Protein = m.ScaledProt / qty,
-                        Fat = m.ScaledFat / qty,
-                        Carbs = m.ScaledCarb / qty,
-                        Fiber = m.ScaledFiber / qty,
-                        OwnerId = recipe.OwnerId,
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    orphans.Add((m, standalone));
+    private async Task SaveRecipe() {
+        if (recipe.OwnerId == 0) { await ShowToast("Select an Owner", true); return; }
+        
+        try {
+            // --- STAGE 1: HARD-COMMIT INGREDIENTS (TOTAL ISOLATION) ---
+            var orphans = new List<(IngredientUIModel UI, PPP_Ingredient Entity)>();
+
+            foreach(var group in recipe.IngredientGroups) {
+                foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
+                    if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
+                        double qty = Math.Max(0.001, m.Quantity);
+                        var standalone = new PPP_Ingredient {
+                            Name = m.IngredientName,
+                            Unit = m.Unit,
+                            Calories = m.ScaledCals / qty,
+                            Protein = m.ScaledProt / qty,
+                            Fat = m.ScaledFat / qty,
+                            Carbs = m.ScaledCarb / qty,
+                            Fiber = m.ScaledFiber / qty,
+                            OwnerId = recipe.OwnerId,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        orphans.Add((m, standalone));
+                    }
                 }
             }
-        }
 
-        if (orphans.Any()) {
-            // Use a clean state - no recipe tracking allowed yet
-            Db.ChangeTracker.Clear();
-            
-            foreach(var item in orphans) {
-                Db.PPP_Ingredients.Add(item.Entity);
-                // Save EACH one immediately to guarantee Postgres visibility
-                await Db.SaveChangesAsync(); 
-                
-                // Link the new ID back to our UI model
-                item.UI.IngredientId = item.Entity.Id;
-                item.UI.BaseIngredient = null;
-                
-                // Detach immediately so it's "gone" from EF memory
-                Db.Entry(item.Entity).State = EntityState.Detached;
+            if (orphans.Any()) {
+                Db.ChangeTracker.Clear();
+                foreach(var item in orphans) {
+                    Db.PPP_Ingredients.Add(item.Entity);
+                    await Db.SaveChangesAsync(); 
+                    
+                    item.UI.IngredientId = item.Entity.Id;
+                    item.UI.BaseIngredient = null;
+                    Db.Entry(item.Entity).State = EntityState.Detached;
+                }
+                Db.ChangeTracker.Clear();
             }
+        } catch (Exception ex) {
             Db.ChangeTracker.Clear();
+            var inner = ex.InnerException?.Message ?? ex.Message;
+            Console.WriteLine($"[CLONE STAGE FAIL] {inner}");
+            await ShowToast("Ingredient Error: " + inner, true);
+            return;
         }
-    } catch (Exception ex) {
-        Db.ChangeTracker.Clear();
-        var inner = ex.InnerException?.Message ?? ex.Message;
-        Console.WriteLine($"[CLONE STAGE FAIL] {inner}");
-        await ShowToast("Ingredient Error: " + inner, true);
-        return;
-    }
 
-    // --- PHASE 2: RECIPE HIERARCHY ---
-    try {
-        // Tracker is already clear from Phase 1
-        if (recipe.Id == 0) Db.PPP_Recipes.Add(recipe);
-        else Db.Entry(recipe).State = EntityState.Modified;
-        await Db.SaveChangesAsync();
+        // --- STAGE 2: RECIPE HIERARCHY ---
+        try {
+            Db.ChangeTracker.Clear();
 
-        foreach (var group in recipe.IngredientGroups) {
-            group.RecipeId = recipe.Id;
-            if (group.Id == 0) Db.PPP_RecipeIngredientGroups.Add(group);
-            else Db.Entry(group).State = EntityState.Modified;
+            // 1. Root Recipe
+            if (recipe.Id == 0) Db.PPP_Recipes.Add(recipe);
+            else Db.Entry(recipe).State = EntityState.Modified;
             await Db.SaveChangesAsync();
 
-            foreach (var mapping in group.Ingredients) {
-                mapping.IngredientGroupId = group.Id;
-                if (mapping is IngredientUIModel ui) ui.BaseIngredient = null;
+            // 2. Groups and Mappings
+            foreach (var group in recipe.IngredientGroups) {
+                group.RecipeId = recipe.Id;
+                if (group.Id == 0) Db.PPP_RecipeIngredientGroups.Add(group);
+                else Db.Entry(group).State = EntityState.Modified;
+                await Db.SaveChangesAsync();
 
-                // Use Raw SQL for the mappings to bypass EF's validation entirely
-                if (mapping.Id == 0) {
-                    await Db.Database.ExecuteSqlRawAsync(
-                        "INSERT INTO \"PPP_RecipeIngredientMappings\" " +
-                        "(\"IngredientGroupId\", \"IngredientId\", \"Quantity\", \"Unit\", \"Notes\", \"DisplayOrder\") " +
-                        "VALUES ({0}, {1}, {2}, {3}, {4}, {5})",
-                        group.Id, mapping.IngredientId, mapping.Quantity, mapping.Unit, mapping.Notes ?? "", mapping.DisplayOrder);
-                } else {
-                    await Db.Database.ExecuteSqlRawAsync(
-                        "UPDATE \"PPP_RecipeIngredientMappings\" SET " +
-                        "\"IngredientGroupId\"={0}, \"IngredientId\"={1}, \"Quantity\"={2}, \"Unit\"={3}, \"Notes\"={4}, \"DisplayOrder\"={5} " +
-                        "WHERE \"Id\"={6}",
-                        group.Id, mapping.IngredientId, mapping.Quantity, mapping.Unit, mapping.Notes ?? "", mapping.DisplayOrder, mapping.Id);
+                foreach (var mapping in group.Ingredients) {
+                    mapping.IngredientGroupId = group.Id;
+                    if (mapping is IngredientUIModel ui) ui.BaseIngredient = null;
+
+                    if (mapping.Id == 0) {
+                        await Db.Database.ExecuteSqlRawAsync(
+                            "INSERT INTO \"PPP_RecipeIngredientMappings\" " +
+                            "(\"IngredientGroupId\", \"IngredientId\", \"Quantity\", \"Unit\", \"Notes\", \"DisplayOrder\") " +
+                            "VALUES ({0}, {1}, {2}, {3}, {4}, {5})",
+                            group.Id, mapping.IngredientId, mapping.Quantity, mapping.Unit, mapping.Notes ?? "", mapping.DisplayOrder);
+                    } else {
+                        await Db.Database.ExecuteSqlRawAsync(
+                            "UPDATE \"PPP_RecipeIngredientMappings\" SET " +
+                            "\"IngredientGroupId\"={0}, \"IngredientId\"={1}, \"Quantity\"={2}, \"Unit\"={3}, \"Notes\"={4}, \"DisplayOrder\"={5} " +
+                            "WHERE \"Id\"={6}",
+                            group.Id, mapping.IngredientId, mapping.Quantity, mapping.Unit, mapping.Notes ?? "", mapping.DisplayOrder, mapping.Id);
+                    }
                 }
             }
+
+            // --- FINAL CLEANUP & NAVIGATION ---
+            recipe.IngredientGroups.Clear();
+            Db.ChangeTracker.Clear();
+
+            _ = ShowToast("Saved successfully!");
+            await Task.Delay(800);
+            
+            // ForceLoad: true is critical to prevent duplicate UI ghosts
+            Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}", forceLoad: true);
+
+        } catch (Exception ex) {
+            var msg = ex.InnerException?.Message ?? ex.Message;
+            Console.WriteLine($"[RECIPE STAGE FAIL] {msg}");
+            Db.ChangeTracker.Clear();
+            await ShowToast("Sync error. Please click save one more time.", true);
         }
-
-        _ = ShowToast("Saved successfully!");
-        await Task.Delay(800);
-        Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}");
-
-    } catch (Exception ex) {
-        var msg = ex.InnerException?.Message ?? ex.Message;
-        Console.WriteLine($"[RECIPE STAGE FAIL] {msg}");
-        Db.ChangeTracker.Clear();
-        await ShowToast("Sync error. Please click save one more time.", true);
     }
-}
+
     private async Task HandleImageUpload(InputFileChangeEventArgs e) {
         try {
             var file = e.File;
@@ -318,35 +319,20 @@ private async Task SaveRecipe() {
     {
         activeMapping = m;
         var q = e.Value?.ToString()?.Trim() ?? "";
-        m.IngredientName = q; // Keep the model in sync while typing
-
-        if (q.Length < 2) 
-        { 
-            searchResults.Clear(); 
-            return; 
-        }
-
-        // Just show suggestions, don't trigger Manual Mode yet
-        searchResults = masterIngs
-            .Where(i => i.Name.ToLower().Contains(q.ToLower()))
-            .Take(5)
-            .ToList();
+        m.IngredientName = q;
+        if (q.Length < 2) { searchResults.Clear(); return; }
+        searchResults = masterIngs.Where(i => i.Name.ToLower().Contains(q.ToLower())).Take(5).ToList();
     }
 
     private async Task HandleBlur(IngredientUIModel m)
     {
-        // Give the UI a tiny moment to process a click on a search result instead of a blur
         await Task.Delay(200); 
-
         var q = m.IngredientName?.Trim() ?? "";
         if (string.IsNullOrEmpty(q)) return;
 
-        // Check for an exact match in the library
         var match = masterIngs.FirstOrDefault(i => i.Name.Equals(q, StringComparison.OrdinalIgnoreCase));
-
         if (match != null)
         {
-            // Typo fixed or found exact match! Re-lock to library
             if (m.IngredientId != match.Id)
             {
                 m.IngredientId = match.Id;
@@ -356,17 +342,12 @@ private async Task SaveRecipe() {
                 _ = ShowToast($"Matched to library: {match.Name}");
             }
         }
-        else
+        else if (m.IngredientId != 0)
         {
-            // No match found - This is a Custom Ingredient
-            if (m.IngredientId != 0)
-            {
-                m.IngredientId = 0;
-                m.BaseIngredient = null;
-                _ = ShowToast("Custom New Ingredient - please enter macro values.", false);
-            }
+            m.IngredientId = 0;
+            m.BaseIngredient = null;
+            _ = ShowToast("Custom New Ingredient - please enter macro values.", false);
         }
-        
         searchResults.Clear();
         activeMapping = null;
     }
@@ -391,21 +372,12 @@ private async Task SaveRecipe() {
         public void Scale() 
         { 
             if (BaseIngredient == null || IngredientId == 0) return; 
-
             double calcQty = Quantity;
-
-            // Normalize back to base unit
             if (!string.Equals(Unit, BaseIngredient.Unit, StringComparison.OrdinalIgnoreCase))
             {
                 if (PPPUnitConverter.TryConvert(Quantity, Unit, BaseIngredient.Unit ?? "", out double normalized))
-                {
-                    // We use a high-precision round here to handle the 0.9999999 drift
                     calcQty = Math.Round(normalized, 6);
-                }
             }
-
-            // Multiply and round to 2 decimal places for storage/display
-            // Using MidpointRounding.AwayFromZero ensures 1151.999 becomes 1152.00
             ScaledCals = Math.Round(BaseIngredient.Calories * calcQty, 2, MidpointRounding.AwayFromZero); 
             ScaledProt = Math.Round(BaseIngredient.Protein * calcQty, 2, MidpointRounding.AwayFromZero); 
             ScaledFat = Math.Round(BaseIngredient.Fat * calcQty, 2, MidpointRounding.AwayFromZero); 
