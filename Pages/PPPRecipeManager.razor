@@ -44,7 +44,7 @@
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
             @foreach (var r in recipes)
             {
-                <div class="bg-[#111] border border-gray-800 rounded-3xl overflow-hidden hover:border-orange-500/50 transition group flex flex-col">
+                <div class="bg-[#111] border border-gray-800 rounded-3xl overflow-hidden hover:border-orange-500/50 transition group flex flex-col shadow-2xl">
                     @* Recipe Image Header *@
                     <div class="aspect-video bg-black relative overflow-hidden border-b border-gray-800">
                         @if (r.ImageId.HasValue)
@@ -63,13 +63,46 @@
                     </div>
 
                     <div class="p-6 flex-1 flex flex-col">
-                        <div class="mb-4">
-                            <h4 class="text-lg uppercase tracking-tight text-white group-hover:text-orange-400 transition">@r.Name</h4>
-                            <p class="text-[9px] text-gray-500 uppercase">@r.Owner?.BusinessName</p>
+                        <div class="mb-6">
+                            <h4 class="text-lg uppercase tracking-tight text-white group-hover:text-orange-400 transition mb-1">@r.Name</h4>
+                            <p class="text-[9px] text-gray-500 uppercase tracking-widest">@r.Owner?.BusinessName</p>
+                        </div>
+
+                        @* Macro Quick-Look Display *@
+                        <div class="grid grid-cols-4 gap-2 mb-6">
+                            @{
+                                var safe = Math.Max(1, r.Servings);
+                                var totalCals = r.IngredientGroups.SelectMany(g => g.Ingredients).Sum(i => i.Quantity * (i.Ingredient?.Calories ?? 0));
+                                var totalProt = r.IngredientGroups.SelectMany(g => g.Ingredients).Sum(i => i.Quantity * (i.Ingredient?.Protein ?? 0));
+                                var totalFat = r.IngredientGroups.SelectMany(g => g.Ingredients).Sum(i => i.Quantity * (i.Ingredient?.Fat ?? 0));
+                                var totalCarb = r.IngredientGroups.SelectMany(g => g.Ingredients).Sum(i => i.Quantity * (i.Ingredient?.Carbs ?? 0));
+                                var totalFiber = r.IngredientGroups.SelectMany(g => g.Ingredients).Sum(i => i.Quantity * (i.Ingredient?.Fiber ?? 0));
+                                var netCarb = totalCarb - totalFiber;
+                            }
+                            <div class="col-span-4 bg-white/5 rounded-xl p-3 border border-white/5 flex justify-between items-center mb-1">
+                                <span class="text-[10px] text-gray-500 uppercase">Calories</span>
+                                <span class="text-2xl font-black text-white">@((totalCals / safe).ToString("N0"))</span>
+                            </div>
+                            <div class="bg-blue-900/10 rounded-xl p-2 border border-blue-500/10 text-center">
+                                <span class="text-[8px] text-blue-500 uppercase block">Prot</span>
+                                <span class="text-[14px] font-bold text-blue-400">@((totalProt / safe).ToString("N1"))g</span>
+                            </div>
+                            <div class="bg-yellow-900/10 rounded-xl p-2 border border-yellow-500/10 text-center">
+                                <span class="text-[8px] text-yellow-500 uppercase block">Fat</span>
+                                <span class="text-[14px] font-bold text-yellow-500">@((totalFat / safe).ToString("N1"))g</span>
+                            </div>
+                            <div class="bg-red-900/10 rounded-xl p-2 border border-red-500/10 text-center">
+                                <span class="text-[8px] text-red-500 uppercase block">Carb</span>
+                                <span class="text-[14px] font-bold text-red-400">@((totalCarb / safe).ToString("N1"))g</span>
+                            </div>
+                            <div class="bg-emerald-900/10 rounded-xl p-2 border border-emerald-500/10 text-center">
+                                <span class="text-[8px] text-emerald-500 uppercase block">Net</span>
+                                <span class="text-[14px] font-bold text-emerald-400">@((netCarb / safe).ToString("N1"))g</span>
+                            </div>
                         </div>
 
                         <div class="flex justify-end items-center mt-auto pt-6 border-t border-white/5 gap-2">
-                            <button @onclick='() => Nav.NavigateTo($"/ppp-recipe-editor/{r.Id}")' class="px-4 py-2 bg-blue-600/10 text-blue-400 text-[10px] uppercase font-black rounded-lg hover:bg-blue-600 hover:text-white transition">Edit</button>
+                            <button @onclick='() => Nav.NavigateTo($"/ppp-recipe-editor/{r.Id}")' class="px-6 py-2 bg-blue-600/10 text-blue-400 text-[10px] uppercase font-black rounded-lg hover:bg-blue-600 hover:text-white transition">Edit Formula</button>
                             <button @onclick="() => ConfirmDelete(r)" class="p-2 bg-red-600/10 text-red-500 rounded-lg hover:bg-red-600 hover:text-white transition">✕</button>
                         </div>
                     </div>
@@ -90,7 +123,14 @@
     private async Task LoadData() {
         isLoading = true;
         try {
-            var query = Db.PPP_Recipes.Include(r => r.Owner).AsNoTracking();
+            // Updated query to Include ingredients so macros calculate correctly
+            var query = Db.PPP_Recipes
+                .Include(r => r.Owner)
+                .Include(r => r.IngredientGroups)
+                    .ThenInclude(ig => ig.Ingredients)
+                        .ThenInclude(m => m.Ingredient)
+                .AsNoTracking();
+
             if (OwnerId.HasValue) {
                 recipes = await query.Where(r => r.OwnerId == OwnerId.Value).OrderBy(r => r.Name).ToListAsync();
                 currentOwner = await Db.PPP_Owners.FindAsync(OwnerId.Value);
@@ -98,7 +138,9 @@
                 recipes = await query.OrderBy(r => r.Name).ToListAsync();
                 currentOwner = null;
             }
-        } catch { }
+        } catch (Exception ex) {
+            Console.WriteLine($"Error loading manager data: {ex.Message}");
+        }
         isLoading = false;
     }
 
