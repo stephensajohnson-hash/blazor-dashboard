@@ -6,6 +6,7 @@
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.AspNetCore.Components.Forms
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject IDbContextFactory<AppDbContext> DbFactory
 @inject AppDbContext Db
 @inject NavigationManager Nav
 
@@ -33,7 +34,7 @@
         </div>
     </div>
 
-    @* Global Macros Bar - Standardized Order *@
+    @* Global Macros Bar *@
     <div class="max-w-7xl mx-auto mb-8">
         <div class="bg-emerald-600/5 border border-emerald-500/20 p-6 rounded-3xl backdrop-blur-sm grid grid-cols-2 md:grid-cols-7 gap-6 items-center shadow-lg text-center">
             @{ double safe = Math.Max(1, recipe.Servings); }
@@ -80,7 +81,7 @@
         {
             <div class="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div class="bg-[#111] border border-slate-800 rounded-3xl p-8 shadow-xl grid grid-cols-12 gap-8">
-                    <div class="col-span-12 md:col-span-4">
+                    <div class="col-span-12 md:col-span-4 text-center">
                         <div class="aspect-square bg-black rounded-3xl border border-slate-800 flex items-center justify-center overflow-hidden relative group">
                             @if (recipe.ImageId.HasValue) {
                                 <img src="/db-images-ppp/@recipe.ImageId" class="w-full h-full object-cover" />
@@ -124,62 +125,60 @@
         @if (currentTab == "Ingredients")
         {
             <div class="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div class="space-y-6">
-                    @foreach (var group in recipe.IngredientGroups.OrderBy(g => g.DisplayOrder))
-                    {
-                        <div class="bg-[#111] border border-slate-800 rounded-3xl overflow-hidden shadow-lg">
-                            <div class="bg-white/5 px-6 py-4 border-b border-slate-800 flex justify-between items-center">
-                                <input @bind="group.GroupName" class="bg-transparent border-none text-white font-black text-lg focus:ring-0 outline-none" />
-                                <button @onclick="() => recipe.IngredientGroups.Remove(group)" class="text-[10px] text-red-500 uppercase font-black tracking-widest hover:text-red-400">Remove Group</button>
-                            </div>
-                            <div class="p-6 space-y-4">
-                                @foreach (var mapping in group.Ingredients.OfType<IngredientUIModel>().OrderBy(i => i.DisplayOrder))
-                                {
-                                    <div class="group/item bg-black/40 p-4 rounded-2xl border @(mapping.IngredientId == 0 ? "border-emerald-500/30" : "border-slate-800") relative">
-                                        <div class="grid grid-cols-12 gap-4 items-center">
-                                            <div class="col-span-1 flex flex-col items-center gap-1 opacity-20 group-hover/item:opacity-100 transition-opacity">
-                                                <button @onclick="() => MoveIngredient(group, mapping, -1)" class="text-xs hover:text-emerald-500">▲</button>
-                                                <button @onclick="() => MoveIngredient(group, mapping, 1)" class="text-xs hover:text-emerald-500">▼</button>
-                                            </div>
-                                            <div class="col-span-11 md:col-span-5 relative">
-                                                <label class="text-[9px] text-slate-500 uppercase font-bold mb-1 block">Ingredient</label>
-                                                <input @bind="mapping.IngredientName" @oninput="(e) => SearchIng(e, mapping)" @onblur="() => HandleBlur(mapping)" class="w-full bg-[#111] border border-slate-800 rounded-xl p-3 text-xs outline-none focus:border-emerald-500 transition-colors" />
-                                                @if (activeMapping == mapping && searchResults.Any()) {
-                                                    <div class="absolute z-[110] w-full mt-2 bg-[#1a1a1a] border border-slate-700 rounded-xl shadow-2xl max-h-60 overflow-y-auto">
-                                                        @foreach (var r in searchResults) {
-                                                            <div @onclick="() => SelectIng(r, mapping)" class="p-4 text-xs hover:bg-emerald-600 transition-colors cursor-pointer text-white font-bold border-b border-white/5 last:border-none">@r.Name (@r.Unit)</div>
-                                                        }
-                                                    </div>
-                                                }
-                                            </div>
-                                            <div class="col-span-4 md:col-span-2">
-                                                <label class="text-[9px] text-slate-500 uppercase font-bold mb-1 block">Qty</label>
-                                                <input type="number" step="0.01" value="@mapping.Quantity" @oninput="(e) => UpdateQty(e, mapping)" class="w-full bg-[#111] border border-slate-800 rounded-xl p-3 text-xs text-center font-mono focus:border-emerald-500" />
-                                            </div>
-                                            <div class="col-span-4 md:col-span-3">
-                                                <label class="text-[9px] text-slate-500 uppercase font-bold mb-1 block">Unit</label>
-                                                <input @bind="mapping.Unit" class="w-full bg-[#111] border border-slate-800 rounded-xl p-3 text-xs focus:border-emerald-500" />
-                                            </div>
-                                            <div class="col-span-4 md:col-span-1 text-right">
-                                                <button @onclick="() => group.Ingredients.Remove(mapping)" class="text-slate-600 hover:text-red-500 p-2 text-lg transition-colors">✕</button>
-                                            </div>
+                @foreach (var group in recipe.IngredientGroups.OrderBy(g => g.DisplayOrder))
+                {
+                    <div class="bg-[#111] border border-slate-800 rounded-3xl overflow-hidden shadow-lg">
+                        <div class="bg-white/5 px-6 py-4 border-b border-slate-800 flex justify-between items-center">
+                            <input @bind="group.GroupName" class="bg-transparent border-none text-white font-black text-lg focus:ring-0 outline-none" />
+                            <button @onclick="() => recipe.IngredientGroups.Remove(group)" class="text-[10px] text-red-500 uppercase font-black tracking-widest hover:text-red-400">Remove Group</button>
+                        </div>
+                        <div class="p-6 space-y-4">
+                            @foreach (var mapping in group.Ingredients.OfType<IngredientUIModel>().OrderBy(i => i.DisplayOrder))
+                            {
+                                <div class="group/item bg-black/40 p-4 rounded-2xl border @(mapping.IngredientId == 0 ? "border-emerald-500/30" : "border-slate-800") relative">
+                                    <div class="grid grid-cols-12 gap-4 items-center">
+                                        <div class="col-span-1 flex flex-col items-center gap-1 opacity-20 group-hover/item:opacity-100 transition-opacity">
+                                            <button @onclick="() => MoveIngredient(group, mapping, -1)" class="text-xs hover:text-emerald-500">▲</button>
+                                            <button @onclick="() => MoveIngredient(group, mapping, 1)" class="text-xs hover:text-emerald-500">▼</button>
                                         </div>
-                                        <div class="mt-4 pt-4 border-t border-white/5 flex flex-wrap gap-2 text-center text-white">
-                                            <div class="flex-1 bg-black/40 p-2 rounded-lg border border-white/5"><span class="text-[7px] text-slate-500 uppercase block mb-1">Cals</span><input type="number" step="0.1" @bind="mapping.ScaledCals" @bind:event="oninput" readonly="@(mapping.IngredientId != 0)" class="w-full bg-transparent font-mono text-[10px] text-center outline-none" /></div>
-                                            <div class="flex-1 bg-black/40 p-2 rounded-lg border border-white/5"><span class="text-[7px] text-slate-500 uppercase block mb-1">Prot</span><input type="number" step="0.1" @bind="mapping.ScaledProt" @bind:event="oninput" readonly="@(mapping.IngredientId != 0)" class="w-full bg-transparent text-blue-400 font-mono text-[10px] text-center outline-none" /></div>
-                                            <div class="flex-1 bg-black/40 p-2 rounded-lg border border-white/5"><span class="text-[7px] text-slate-500 uppercase block mb-1">Fat</span><input type="number" step="0.1" @bind="mapping.ScaledFat" @bind:event="oninput" readonly="@(mapping.IngredientId != 0)" class="w-full bg-transparent text-yellow-500 font-mono text-[10px] text-center outline-none" /></div>
-                                            <div class="flex-1 bg-black/40 p-2 rounded-lg border border-white/5"><span class="text-[7px] text-slate-500 uppercase block mb-1">Carb</span><input type="number" step="0.1" @bind="mapping.ScaledCarb" @bind:event="oninput" readonly="@(mapping.IngredientId != 0)" class="w-full bg-transparent text-red-400 font-mono text-[10px] text-center outline-none" /></div>
-                                            <div class="flex-1 bg-black/40 p-2 rounded-lg border border-white/5"><span class="text-[7px] text-slate-500 uppercase block mb-1">Fiber</span><input type="number" step="0.1" @bind="mapping.ScaledFiber" @bind:event="oninput" readonly="@(mapping.IngredientId != 0)" class="w-full bg-transparent text-emerald-600 font-mono text-[10px] text-center outline-none" /></div>
-                                            <div class="flex-1 bg-emerald-400/5 p-2 rounded-lg border border-emerald-500/20 text-emerald-400 font-mono"><span class="text-[7px] text-emerald-500 uppercase block mb-1">Net C</span><span class="text-[10px]">@((mapping.ScaledCarb - mapping.ScaledFiber).ToString("N1"))</span></div>
+                                        <div class="col-span-11 md:col-span-5 relative">
+                                            <label class="text-[9px] text-slate-500 uppercase font-bold mb-1 block">Ingredient</label>
+                                            <input @bind="mapping.IngredientName" @oninput="(e) => SearchIng(e, mapping)" @onblur="() => HandleBlur(mapping)" class="w-full bg-[#111] border border-slate-800 rounded-xl p-3 text-xs outline-none focus:border-emerald-500 transition-colors" />
+                                            @if (activeMapping == mapping && searchResults.Any()) {
+                                                <div class="absolute z-[110] w-full mt-2 bg-[#1a1a1a] border border-slate-700 rounded-xl shadow-2xl max-h-60 overflow-y-auto">
+                                                    @foreach (var r in searchResults) {
+                                                        <div @onclick="() => SelectIng(r, mapping)" class="p-4 text-xs hover:bg-emerald-600 transition-colors cursor-pointer text-white font-bold border-b border-white/5 last:border-none">@r.Name (@r.Unit)</div>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                        <div class="col-span-4 md:col-span-2">
+                                            <label class="text-[9px] text-slate-500 uppercase font-bold mb-1 block">Qty</label>
+                                            <input type="number" step="0.01" value="@mapping.Quantity" @oninput="(e) => UpdateQty(e, mapping)" class="w-full bg-[#111] border border-slate-800 rounded-xl p-3 text-xs text-center font-mono focus:border-emerald-500" />
+                                        </div>
+                                        <div class="col-span-4 md:col-span-3">
+                                            <label class="text-[9px] text-slate-500 uppercase font-bold mb-1 block">Unit</label>
+                                            <input @bind="mapping.Unit" class="w-full bg-[#111] border border-slate-800 rounded-xl p-3 text-xs focus:border-emerald-500" />
+                                        </div>
+                                        <div class="col-span-4 md:col-span-1 text-right">
+                                            <button @onclick="() => group.Ingredients.Remove(mapping)" class="text-slate-600 hover:text-red-500 p-2 text-lg transition-colors">✕</button>
                                         </div>
                                     </div>
-                                }
-                                <button @onclick="() => AddIngredient(group)" class="w-full py-4 border-2 border-dashed border-slate-800 rounded-2xl text-[10px] text-slate-500 uppercase font-black hover:border-emerald-500 hover:text-emerald-500 transition-all">＋ Add Ingredient</button>
-                            </div>
+                                    <div class="mt-4 pt-4 border-t border-white/5 flex flex-wrap gap-2 text-center text-white">
+                                        <div class="flex-1 bg-black/40 p-2 rounded-lg border border-white/5"><span class="text-[7px] text-slate-500 uppercase block mb-1">Cals</span><input type="number" step="0.1" @bind="mapping.ScaledCals" @bind:event="oninput" readonly="@(mapping.IngredientId != 0)" class="w-full bg-transparent font-mono text-[10px] text-center outline-none" /></div>
+                                        <div class="flex-1 bg-black/40 p-2 rounded-lg border border-white/5"><span class="text-[7px] text-slate-500 uppercase block mb-1">Prot</span><input type="number" step="0.1" @bind="mapping.ScaledProt" @bind:event="oninput" readonly="@(mapping.IngredientId != 0)" class="w-full bg-transparent text-blue-400 font-mono text-[10px] text-center outline-none" /></div>
+                                        <div class="flex-1 bg-black/40 p-2 rounded-lg border border-white/5"><span class="text-[7px] text-slate-500 uppercase block mb-1">Fat</span><input type="number" step="0.1" @bind="mapping.ScaledFat" @bind:event="oninput" readonly="@(mapping.IngredientId != 0)" class="w-full bg-transparent text-yellow-500 font-mono text-[10px] text-center outline-none" /></div>
+                                        <div class="flex-1 bg-black/40 p-2 rounded-lg border border-white/5"><span class="text-[7px] text-slate-500 uppercase block mb-1">Carb</span><input type="number" step="0.1" @bind="mapping.ScaledCarb" @bind:event="oninput" readonly="@(mapping.IngredientId != 0)" class="w-full bg-transparent text-red-400 font-mono text-[10px] text-center outline-none" /></div>
+                                        <div class="flex-1 bg-black/40 p-2 rounded-lg border border-white/5"><span class="text-[7px] text-slate-500 uppercase block mb-1">Fiber</span><input type="number" step="0.1" @bind="mapping.ScaledFiber" @bind:event="oninput" readonly="@(mapping.IngredientId != 0)" class="w-full bg-transparent text-emerald-600 font-mono text-[10px] text-center outline-none" /></div>
+                                        <div class="flex-1 bg-emerald-400/5 p-2 rounded-lg border border-emerald-500/20 text-emerald-400 font-mono"><span class="text-[7px] text-emerald-500 uppercase block mb-1">Net C</span><span class="text-[10px]">@((mapping.ScaledCarb - mapping.ScaledFiber).ToString("N1"))</span></div>
+                                    </div>
+                                </div>
+                            }
+                            <button @onclick="() => AddIngredient(group)" class="w-full py-4 border-2 border-dashed border-slate-800 rounded-2xl text-[10px] text-slate-500 uppercase font-black hover:border-emerald-500 hover:text-emerald-500 transition-all">＋ Add Ingredient</button>
                         </div>
-                    }
-                    <button @onclick="AddGroup" class="w-full py-6 bg-white/5 border-2 border-dashed border-slate-800 rounded-3xl text-[11px] text-slate-500 font-black uppercase hover:bg-emerald-600/5 transition-all">＋ New Ingredient Group</button>
-                </div>
+                    </div>
+                }
+                <button @onclick="AddGroup" class="w-full py-6 bg-white/5 border-2 border-dashed border-slate-800 rounded-3xl text-[11px] text-slate-500 font-black uppercase hover:bg-emerald-600/5 transition-all">＋ New Ingredient Group</button>
                 <button @onclick="SaveRecipe" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-5 rounded-2xl font-black text-xs uppercase tracking-[0.3em] transition-all mt-8 shadow-xl">Save Recipe</button>
             </div>
         }
@@ -275,14 +274,15 @@
         if (recipe.OwnerId == 0) { await ShowToast("Select an Owner", true); return; }
         
         try {
-            // STAGE 1: NEW INGREDIENT COMMIT
-            // We use a fresh context scope for Stage 1 to ensure new IDs are fully committed before Stage 2
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            // STAGE 1: ORPHANED INGREDIENT COMMIT
             foreach(var group in recipe.IngredientGroups) {
                 foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
                     if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
                         double qty = Math.Max(0.001, m.Quantity);
                         var newIng = new PPP_Ingredient { 
-                            Name = m.IngredientName, 
+                            Name = m.IngredientName.Trim(), 
                             Unit = m.Unit ?? "", 
                             Calories = m.ScaledCals / qty, 
                             Protein = m.ScaledProt / qty, 
@@ -292,68 +292,62 @@
                             OwnerId = recipe.OwnerId, 
                             CreatedAt = DateTime.UtcNow 
                         };
-                        Db.PPP_Ingredients.Add(newIng);
-                        await Db.SaveChangesAsync();
+                        db.PPP_Ingredients.Add(newIng);
+                        await db.SaveChangesAsync();
                         
                         m.IngredientId = newIng.Id;
-                        m.BaseIngredient = null;
-                        // DETACH to prevent Stage 2 from trying to re-insert or track these
-                        Db.Entry(newIng).State = EntityState.Detached;
+                        m.BaseIngredient = null; // Clear tracking reference
                     }
                 }
             }
 
             // STAGE 2: ROOT RECIPE SAVE
-            // Force a clear of the change tracker to ensure a clean state for the hierarchy save
-            Db.ChangeTracker.Clear();
-
-            /* // STAGE 2: ROOT RECIPE (Commented for discussed step-by-step progress)
-            if (recipe.Id == 0) Db.PPP_Recipes.Add(recipe);
-            else Db.Entry(recipe).State = EntityState.Modified;
-            await Db.SaveChangesAsync();
+            if (recipe.Id == 0) db.PPP_Recipes.Add(recipe);
+            else db.Entry(recipe).State = EntityState.Modified;
+            await db.SaveChangesAsync();
 
             // STAGE 3: INGREDIENT HIERARCHY
             foreach (var group in recipe.IngredientGroups) {
                 group.RecipeId = recipe.Id;
-                if (group.Id == 0) Db.PPP_RecipeIngredientGroups.Add(group);
-                else Db.Entry(group).State = EntityState.Modified;
-                await Db.SaveChangesAsync();
+                if (group.Id == 0) db.PPP_RecipeIngredientGroups.Add(group);
+                else db.Entry(group).State = EntityState.Modified;
+                await db.SaveChangesAsync();
 
                 foreach (var m in group.Ingredients.OfType<IngredientUIModel>()) {
                     var mapping = (PPP_RecipeIngredientMapping)m;
                     mapping.IngredientGroupId = group.Id;
                     mapping.Unit = mapping.Unit ?? "";
                     mapping.Notes = mapping.Notes ?? "";
+                    mapping.BaseIngredient = null; // Ensure EF doesn't try to re-track the actual object
 
-                    if (mapping.Id == 0) Db.PPP_RecipeIngredientMappings.Add(mapping);
-                    else Db.Entry(mapping).State = EntityState.Modified;
+                    if (mapping.Id == 0) db.PPP_RecipeIngredientMappings.Add(mapping);
+                    else db.Entry(mapping).State = EntityState.Modified;
                 }
-                await Db.SaveChangesAsync();
+                await db.SaveChangesAsync();
             }
 
             // STAGE 4: INSTRUCTION HIERARCHY
             foreach (var insGroup in instructionGroups) {
                 insGroup.RecipeId = recipe.Id;
-                if (insGroup.Id == 0) Db.Set<PPP_RecipeInstructionGroup>().Add(insGroup);
-                else Db.Entry(insGroup).State = EntityState.Modified;
-                await Db.SaveChangesAsync();
+                if (insGroup.Id == 0) db.Set<PPP_RecipeInstructionGroup>().Add(insGroup);
+                else db.Entry(insGroup).State = EntityState.Modified;
+                await db.SaveChangesAsync();
 
                 foreach (var step in insGroup.Instructions) {
                     step.InstructionGroupId = insGroup.Id;
                     step.StepDescription = step.StepDescription ?? "";
-                    if (step.Id == 0) Db.Set<PPP_RecipeInstruction>().Add(step);
-                    else Db.Entry(step).State = EntityState.Modified;
+                    if (step.Id == 0) db.Set<PPP_RecipeInstruction>().Add(step);
+                    else db.Entry(step).State = EntityState.Modified;
                 }
-                await Db.SaveChangesAsync();
+                await db.SaveChangesAsync();
             }
-            */
 
-            _ = ShowToast("Stage 1 synced successfully.");
+            _ = ShowToast("Recipe Saved Successfully.");
             await Task.Delay(800);
             Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}", forceLoad: true);
 
         } catch (Exception ex) {
-            Db.ChangeTracker.Clear();
+            Console.WriteLine(ex.ToString());
             await ShowToast("Save Error: " + (ex.InnerException?.Message ?? ex.Message), true);
         }
     }
@@ -385,7 +379,7 @@
         }
     }
 
-    private void AddGroup() => recipe.IngredientGroups.Add(new PPP_RecipeIngredientGroup { GroupName = "Section", DisplayOrder = recipe.IngredientGroups.Count });
+    private void AddGroup() => recipe.IngredientGroups.Add(new PPP_RecipeIngredientGroup { GroupName = "New Section", DisplayOrder = recipe.IngredientGroups.Count });
     private void AddIngredient(PPP_RecipeIngredientGroup g) => g.Ingredients.Add(new IngredientUIModel { DisplayOrder = g.Ingredients.Count, Unit = "oz" });
     
     private void SearchIng(ChangeEventArgs e, IngredientUIModel m) {
