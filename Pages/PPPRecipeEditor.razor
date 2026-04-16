@@ -188,18 +188,17 @@
 private async Task SaveRecipe() {
     if (recipe.OwnerId == 0) { await ShowToast("Select an Owner", true); return; }
     
-    // --- STAGE 1: HARD-COMMIT INGREDIENTS (TOTAL ISOLATION) ---
     try {
-        // We create a completely separate list to avoid EF "magic" 
-        // trying to save the recipe mappings early.
-        var newIngredientsToSave = new List<PPP_Ingredient>();
-        var uiModelsToUpdate = new List<IngredientUIModel>();
+        // --- PHASE 1: ORPHANED INGREDIENT COMMITS ---
+        // We create a list that has ZERO connection to the 'recipe' object
+        var orphans = new List<(IngredientUIModel UI, PPP_Ingredient Entity)>();
 
         foreach(var group in recipe.IngredientGroups) {
             foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
                 if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
                     double qty = Math.Max(0.001, m.Quantity);
-                    newIngredientsToSave.Add(new PPP_Ingredient {
+                    // Create a brand new entity with no navigation properties set
+                    var standalone = new PPP_Ingredient {
                         Name = m.IngredientName,
                         Unit = m.Unit,
                         Calories = m.ScaledCals / qty,
@@ -209,46 +208,45 @@ private async Task SaveRecipe() {
                         Fiber = m.ScaledFiber / qty,
                         OwnerId = recipe.OwnerId,
                         CreatedAt = DateTime.UtcNow
-                    });
-                    uiModelsToUpdate.Add(m);
+                    };
+                    orphans.Add((m, standalone));
                 }
             }
         }
 
-        if (newIngredientsToSave.Any()) {
-            // We tell EF to ONLY track these specific brand-new objects
-            foreach(var ing in newIngredientsToSave) {
-                Db.PPP_Ingredients.Add(ing);
-            }
+        if (orphans.Any()) {
+            // Use a clean state - no recipe tracking allowed yet
+            Db.ChangeTracker.Clear();
             
-            await Db.SaveChangesAsync(); // Hard commit ingredients only
-
-            // Sync the generated IDs back to the UI models
-            for (int i = 0; i < newIngredientsToSave.Count; i++) {
-                uiModelsToUpdate[i].IngredientId = newIngredientsToSave[i].Id;
-                uiModelsToUpdate[i].BaseIngredient = null;
-                Db.Entry(newIngredientsToSave[i]).State = EntityState.Detached;
+            foreach(var item in orphans) {
+                Db.PPP_Ingredients.Add(item.Entity);
+                // Save EACH one immediately to guarantee Postgres visibility
+                await Db.SaveChangesAsync(); 
+                
+                // Link the new ID back to our UI model
+                item.UI.IngredientId = item.Entity.Id;
+                item.UI.BaseIngredient = null;
+                
+                // Detach immediately so it's "gone" from EF memory
+                Db.Entry(item.Entity).State = EntityState.Detached;
             }
+            Db.ChangeTracker.Clear();
         }
     } catch (Exception ex) {
         Db.ChangeTracker.Clear();
         var inner = ex.InnerException?.Message ?? ex.Message;
-        Console.WriteLine($"[STAGE 1 CRASH] {inner}");
+        Console.WriteLine($"[CLONE STAGE FAIL] {inner}");
         await ShowToast("Ingredient Error: " + inner, true);
         return;
     }
 
-    // --- STAGE 2: HARD-COMMIT RECIPE HIERARCHY ---
+    // --- PHASE 2: RECIPE HIERARCHY ---
     try {
-        // Clear all tracking to ensure Stage 2 starts as a blank slate
-        Db.ChangeTracker.Clear();
-
-        // 1. Root Recipe
+        // Tracker is already clear from Phase 1
         if (recipe.Id == 0) Db.PPP_Recipes.Add(recipe);
         else Db.Entry(recipe).State = EntityState.Modified;
         await Db.SaveChangesAsync();
 
-        // 2. Groups and Mappings
         foreach (var group in recipe.IngredientGroups) {
             group.RecipeId = recipe.Id;
             if (group.Id == 0) Db.PPP_RecipeIngredientGroups.Add(group);
@@ -259,7 +257,7 @@ private async Task SaveRecipe() {
                 mapping.IngredientGroupId = group.Id;
                 if (mapping is IngredientUIModel ui) ui.BaseIngredient = null;
 
-                // Final safety: Raw SQL insert for the link table
+                // Use Raw SQL for the mappings to bypass EF's validation entirely
                 if (mapping.Id == 0) {
                     await Db.Database.ExecuteSqlRawAsync(
                         "INSERT INTO \"PPP_RecipeIngredientMappings\" " +
@@ -276,15 +274,15 @@ private async Task SaveRecipe() {
             }
         }
 
-        _ = ShowToast("Success! Recipe Saved.");
+        _ = ShowToast("Saved successfully!");
         await Task.Delay(800);
         Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}");
 
     } catch (Exception ex) {
         var msg = ex.InnerException?.Message ?? ex.Message;
-        Console.WriteLine($"[STAGE 2 CRASH] {msg}");
+        Console.WriteLine($"[RECIPE STAGE FAIL] {msg}");
         Db.ChangeTracker.Clear();
-        await ShowToast("Finalizing sync... please click save one more time.", true);
+        await ShowToast("Sync error. Please click save one more time.", true);
     }
 }
     private async Task HandleImageUpload(InputFileChangeEventArgs e) {
