@@ -188,8 +188,8 @@
 private async Task SaveRecipe() {
     if (recipe.OwnerId == 0) { await ShowToast("Select an Owner", true); return; }
     
+    // --- STAGE 1: HARD-COMMIT INGREDIENTS ---
     try {
-        // --- PHASE 1: HARD-COMMIT NEW INGREDIENTS ---
         foreach(var group in recipe.IngredientGroups) {
             foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
                 if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
@@ -205,7 +205,7 @@ private async Task SaveRecipe() {
                         CreatedAt = DateTime.UtcNow
                     };
                     Db.PPP_Ingredients.Add(newIng);
-                    await Db.SaveChangesAsync(); 
+                    await Db.SaveChangesAsync(); // Hard commit immediately
                     
                     m.IngredientId = newIng.Id;
                     m.BaseIngredient = null;
@@ -213,31 +213,41 @@ private async Task SaveRecipe() {
                 }
             }
         }
+    } catch (Exception ex) {
+        Console.WriteLine($"[STAGE 1 FAIL] {ex.Message}");
+        await ShowToast("Ingredient Error: " + ex.Message, true);
+        return;
+    }
 
-        // --- PHASE 2: SAVE RECIPE & GROUPS ---
-        // We use EF for these as they are the parents
+    // --- STAGE 2: HARD-COMMIT RECIPE HIERARCHY ---
+    try {
+        // Break tracking connection to Stage 1
+        Db.ChangeTracker.Clear();
+
+        // 1. Root Recipe
         if (recipe.Id == 0) Db.PPP_Recipes.Add(recipe);
         else Db.Entry(recipe).State = EntityState.Modified;
         await Db.SaveChangesAsync();
 
+        // 2. Groups and Mappings
         foreach (var group in recipe.IngredientGroups) {
             group.RecipeId = recipe.Id;
             if (group.Id == 0) Db.PPP_RecipeIngredientGroups.Add(group);
             else Db.Entry(group).State = EntityState.Modified;
             await Db.SaveChangesAsync();
 
-            // --- PHASE 3: RAW SQL FOR MAPPINGS (THE FIX) ---
-            // We bypass EF entirely here to stop the 23503 and Sync errors
             foreach (var mapping in group.Ingredients) {
+                mapping.IngredientGroupId = group.Id;
+                if (mapping is IngredientUIModel ui) ui.BaseIngredient = null;
+
+                // Use Raw SQL for the Mapping table - this is the most critical bypass
                 if (mapping.Id == 0) {
-                    // Manual INSERT
                     await Db.Database.ExecuteSqlRawAsync(
                         "INSERT INTO \"PPP_RecipeIngredientMappings\" " +
                         "(\"IngredientGroupId\", \"IngredientId\", \"Quantity\", \"Unit\", \"Notes\", \"DisplayOrder\") " +
                         "VALUES ({0}, {1}, {2}, {3}, {4}, {5})",
                         group.Id, mapping.IngredientId, mapping.Quantity, mapping.Unit, mapping.Notes ?? "", mapping.DisplayOrder);
                 } else {
-                    // Manual UPDATE
                     await Db.Database.ExecuteSqlRawAsync(
                         "UPDATE \"PPP_RecipeIngredientMappings\" SET " +
                         "\"IngredientGroupId\"={0}, \"IngredientId\"={1}, \"Quantity\"={2}, \"Unit\"={3}, \"Notes\"={4}, \"DisplayOrder\"={5} " +
@@ -247,15 +257,17 @@ private async Task SaveRecipe() {
             }
         }
 
-        _ = ShowToast("Recipe Saved Successfully!");
+        _ = ShowToast("Success! Recipe Saved.");
         await Task.Delay(800);
         Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}");
-        
-    } catch (Exception ex) { 
+
+    } catch (Exception ex) {
         var msg = ex.InnerException?.Message ?? ex.Message;
-        Console.WriteLine($"[FINAL BYPASS FAIL] {msg}");
+        Console.WriteLine($"[STAGE 2 FAIL] {msg}");
         Db.ChangeTracker.Clear();
-        await ShowToast("Critical Error: " + msg, true); 
+        // If Stage 2 fails, Stage 1 ingredients are already saved, so a 
+        // retry click will only run Stage 2 and should work perfectly.
+        await ShowToast("Database sync error. Please click save one more time.", true);
     }
 }
     private async Task HandleImageUpload(InputFileChangeEventArgs e) {
