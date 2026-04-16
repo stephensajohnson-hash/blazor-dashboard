@@ -188,14 +188,14 @@
 private async Task SaveRecipe() {
     if (recipe.OwnerId == 0) { await ShowToast("Select a Business Owner", true); return; }
     
-    // We use a transaction to ensure that if any part fails, the whole thing rolls back.
-    using var transaction = await Db.Database.BeginTransactionAsync();
+    Console.WriteLine($"[DEBUG] Starting Save for Recipe: {recipe.Name} (ID: {recipe.Id})");
     
     try {
-        // STEP 1: Save New Ingredients Standalone
+        // --- PHASE 1: ISOLATED INGREDIENT COMMITS ---
         foreach(var group in recipe.IngredientGroups) {
             foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
                 if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
+                    Console.WriteLine($"[DEBUG] Creating New Ingredient: {m.IngredientName}");
                     var newIng = new PPP_Ingredient {
                         Name = m.IngredientName,
                         Unit = m.Unit,
@@ -207,57 +207,75 @@ private async Task SaveRecipe() {
                         OwnerId = recipe.OwnerId,
                         CreatedAt = DateTime.UtcNow
                     };
+                    
                     Db.PPP_Ingredients.Add(newIng);
-                    await Db.SaveChangesAsync(); 
+                    await Db.SaveChangesAsync();
                     
                     m.IngredientId = newIng.Id;
-                    m.BaseIngredient = null;
+                    m.BaseIngredient = null; // Kill object link
+                    Db.Entry(newIng).State = EntityState.Detached; // Stop tracking
+                    Console.WriteLine($"[DEBUG] New Ingredient Saved. New ID: {m.IngredientId}");
                 }
             }
         }
 
-        // STEP 2: Clear the Tracker to prevent "Instance already tracked" errors
+        // --- PHASE 2: NUCLEAR TRACKER WIPE ---
+        // We force EF to forget everything it knows before we touch the Recipe
         Db.ChangeTracker.Clear();
+        Console.WriteLine("[DEBUG] Change Tracker Cleared.");
 
-        // STEP 3: Save the Recipe Root
-        if (recipe.Id == 0) Db.PPP_Recipes.Add(recipe);
-        else Db.Entry(recipe).State = EntityState.Modified;
+        // --- PHASE 3: MANUAL RECIPE ROOT SAVE ---
+        if (recipe.Id == 0) {
+            Db.PPP_Recipes.Add(recipe);
+            Console.WriteLine("[DEBUG] Adding New Recipe Root.");
+        } else {
+            Db.Entry(recipe).State = EntityState.Modified;
+            Console.WriteLine($"[DEBUG] Updating Existing Recipe Root ID: {recipe.Id}");
+        }
         await Db.SaveChangesAsync();
 
-        // STEP 4: Save Groups and Mappings using State management
+        // --- PHASE 4: SEQUENTIAL GROUP & MAPPING SAVE ---
         foreach (var group in recipe.IngredientGroups) {
             group.RecipeId = recipe.Id;
+            Console.WriteLine($"[DEBUG] Processing Group: {group.GroupName} (ID: {group.Id})");
+
             if (group.Id == 0) Db.PPP_RecipeIngredientGroups.Add(group);
             else Db.Entry(group).State = EntityState.Modified;
+            
             await Db.SaveChangesAsync();
+            Console.WriteLine($"[DEBUG] Group {group.GroupName} Saved. ID: {group.Id}");
 
             foreach (var mapping in group.Ingredients) {
                 mapping.IngredientGroupId = group.Id;
                 
-                // Nuclear scrub of the UI model reference
-                if (mapping is IngredientUIModel ui) ui.BaseIngredient = null;
+                // CRITICAL: Ensure we are using the ID we created in Phase 1
+                if (mapping is IngredientUIModel ui) {
+                    ui.BaseIngredient = null;
+                }
+
+                Console.WriteLine($"[DEBUG] Mapping IngredientID: {mapping.IngredientId} to Group: {group.Id}");
 
                 if (mapping.Id == 0) Db.PPP_RecipeIngredientMappings.Add(mapping);
                 else Db.Entry(mapping).State = EntityState.Modified;
+                
+                // We save every mapping individually to pinpoint the exact failure
+                await Db.SaveChangesAsync(); 
             }
-            await Db.SaveChangesAsync();
         }
 
-        // Commit the transaction - this makes everything permanent in one shot
-        await transaction.CommitAsync();
-
+        Console.WriteLine("[DEBUG] All Phases Complete. Navigating...");
         _ = ShowToast("Recipe Saved Successfully");
         await Task.Delay(800);
         Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}");
         
     } catch (Exception ex) { 
-        await transaction.RollbackAsync();
-        var msg = ex.InnerException?.Message ?? ex.Message;
-        Console.WriteLine($"[TX SAVE FAIL] {msg}");
+        var inner = ex.InnerException?.Message ?? "No Inner Exception";
+        Console.WriteLine($"[CRITICAL ERROR] Message: {ex.Message}");
+        Console.WriteLine($"[CRITICAL ERROR] Inner: {inner}");
+        Console.WriteLine($"[CRITICAL ERROR] Stack: {ex.StackTrace}");
         
-        // Final fallback: Completely wipe the tracker for the retry pass
         Db.ChangeTracker.Clear();
-        await ShowToast("Syncing Database... please click Save one more time.", true); 
+        await ShowToast($"Save Failed: {inner}", true); 
     }
 }
     private async Task HandleImageUpload(InputFileChangeEventArgs e) {
