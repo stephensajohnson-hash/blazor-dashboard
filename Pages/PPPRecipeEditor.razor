@@ -33,7 +33,7 @@
         </div>
     </div>
 
-    @* Global Macros Bar - Ordered: Calories, Protein, Fat, Carbs, Fiber, Net Carbs *@
+    @* Global Macros Bar - Order: Cals, Prot, Fat, Carb, Fiber, Net *@
     <div class="max-w-7xl mx-auto mb-8">
         <div class="bg-emerald-600/5 border border-emerald-500/20 p-6 rounded-3xl backdrop-blur-sm grid grid-cols-2 md:grid-cols-7 gap-6 items-center shadow-lg text-center">
             @{ double safe = Math.Max(1, recipe.Servings); }
@@ -142,9 +142,10 @@
                                 {
                                     <div class="group/item bg-black/40 p-4 rounded-2xl border @(mapping.IngredientId == 0 ? "border-emerald-500/30" : "border-slate-800") relative">
                                         <div class="grid grid-cols-12 gap-4 items-center">
+                                            @* Reorder Controls *@
                                             <div class="col-span-1 flex flex-col items-center gap-1 opacity-20 group-hover/item:opacity-100 transition-opacity">
-                                                <button @onclick="() => MoveIngredient(group, mapping, -1)" class="text-xs hover:text-emerald-500">▲</button>
-                                                <button @onclick="() => MoveIngredient(group, mapping, 1)" class="text-xs hover:text-emerald-500">▼</button>
+                                                <button @onclick="() => MoveIngredient(group, mapping, -1)" class="text-xs hover:text-emerald-500 transition-colors">▲</button>
+                                                <button @onclick="() => MoveIngredient(group, mapping, 1)" class="text-xs hover:text-emerald-500 transition-colors">▼</button>
                                             </div>
                                             <div class="col-span-11 md:col-span-5 relative">
                                                 <label class="text-[9px] text-slate-500 uppercase font-bold mb-1 block">Ingredient</label>
@@ -186,7 +187,7 @@
                     }
                     <button @onclick="AddGroup" class="w-full py-6 bg-white/5 border-2 border-dashed border-slate-800 rounded-3xl text-[11px] text-slate-500 font-black uppercase tracking-widest hover:bg-emerald-600/5 hover:border-emerald-600/30 hover:text-emerald-500 transition-all">＋ New Ingredient Group</button>
                 </div>
-                <button @onclick="SaveRecipe" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-5 rounded-2xl font-black text-xs uppercase tracking-[0.3em] transition-all active:scale-[0.98]">Save Recipe</button>
+                <button @onclick="SaveRecipe" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-5 rounded-2xl font-black text-xs uppercase tracking-[0.3em] transition-all shadow-xl active:scale-[0.98]">Save Recipe</button>
             </div>
         }
 
@@ -349,8 +350,17 @@
 
                 foreach (var step in insGroup.Instructions) {
                     step.InstructionGroupId = insGroup.Id;
-                    if (step.Id == 0) Db.Add(step);
-                    else Db.Entry(step).State = EntityState.Modified;
+                    string desc = step.StepDescription ?? "";
+                    if (step.Id == 0) {
+                        await Db.Database.ExecuteSqlRawAsync(
+                            "INSERT INTO \"PPP_RecipeInstructions\" (\"InstructionGroupId\", \"StepDescription\", \"DisplayOrder\") VALUES ({0}, {1}, {2})",
+                            insGroup.Id, desc, step.DisplayOrder);
+                    }
+                    else {
+                        await Db.Database.ExecuteSqlRawAsync(
+                            "UPDATE \"PPP_RecipeInstructions\" SET \"InstructionGroupId\"={0}, \"StepDescription\"={1}, \"DisplayOrder\"={2} WHERE \"Id\"={3}",
+                            insGroup.Id, desc, step.DisplayOrder, step.Id);
+                    }
                 }
                 await Db.SaveChangesAsync();
             }
@@ -373,7 +383,7 @@
             await file.OpenReadStream(5120 * 1024).CopyToAsync(ms);
             var img = new PPP_StoredImage { Data = ms.ToArray(), ContentType = file.ContentType, FileName = file.Name, UploadedAt = DateTime.UtcNow };
             Db.PPP_StoredImages.Add(img); await Db.SaveChangesAsync();
-            recipe.ImageId = img.Id; await ShowToast("Visual Ready");
+            recipe.ImageId = img.Id; await ShowToast("Visual Loaded");
         } catch (Exception ex) { await ShowToast(ex.Message, true); }
     }
 
