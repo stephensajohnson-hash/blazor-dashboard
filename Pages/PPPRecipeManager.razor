@@ -1,110 +1,97 @@
-@page "/ppp-recipe-manager"
 @page "/ppp-recipe-manager/{OwnerId:int}"
 @using Dashboard
 @using Dashboard.Components
+@using Dashboard.Services
 @using Microsoft.EntityFrameworkCore
-@using Microsoft.AspNetCore.Components.Web
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject AppDbContext Db
 @inject NavigationManager Nav
 
-<div class="min-h-screen bg-[#0a0a0a] text-white p-6 font-black relative overflow-hidden">
-    
-    <PPPAdminNav CurrentPage="Recipe Manager" />
+<div class="min-h-screen bg-[#050505] text-slate-200 p-4 md:p-8 font-sans antialiased">
+    <PPPAdminNav CurrentPage="Recipe Vault" />
 
-    <div class="flex justify-between items-end mb-10">
-        <div>
-            <h2 class="text-2xl uppercase tracking-tighter">
-                @(currentOwner != null ? $"{currentOwner.BusinessName} Recipes" : "All System Recipes")
-            </h2>
-            <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1">
-                Visual Formula Catalog
-            </p>
+    @if (owner != null)
+    {
+        <div class="max-w-7xl mx-auto mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6">
+            <div>
+                <h1 class="text-5xl font-black tracking-tighter text-white italic uppercase">@owner.BusinessName</h1>
+                <p class="text-emerald-500 font-bold tracking-[0.3em] text-xs mt-2">PROPRIETARY FORMULARY</p>
+            </div>
+            <button @onclick='() => Nav.NavigateTo($"/ppp-recipe-editor?ownerId={OwnerId}")' 
+                    class="bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-emerald-900/20">
+                ＋ Create New Recipe
+            </button>
         </div>
-        <button @onclick="CreateNew" class="bg-orange-600 hover:bg-orange-500 text-white px-8 py-3 rounded-xl text-[10px] uppercase tracking-widest transition shadow-lg">
-            ＋ Create New Recipe
-        </button>
-    </div>
 
-    @if (isLoading)
-    {
-        <div class="py-20 flex justify-center">
-            <div class="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-        </div>
-    }
-    else if (!recipes.Any())
-    {
-        <div class="bg-[#111] border-2 border-dashed border-gray-800 rounded-3xl p-20 text-center">
-            <span class="text-5xl mb-4 block">🍳</span>
-            <h3 class="text-gray-500 uppercase tracking-widest text-sm">No formulas found</h3>
-        </div>
-    }
-    else
-    {
-        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-            @foreach (var r in recipes)
+        <div class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            @foreach (var recipe in recipes)
             {
-                <div class="bg-[#111] border border-gray-800 rounded-3xl overflow-hidden hover:border-orange-500/50 transition group flex flex-col shadow-2xl">
-                    @* Recipe Image Header *@
-                    <div class="aspect-video bg-black relative overflow-hidden border-b border-gray-800">
-                        @if (r.ImageId.HasValue)
+                <div class="group bg-[#0a0a0a] border border-slate-800/50 rounded-[2.5rem] overflow-hidden hover:border-emerald-500/50 transition-all duration-500 shadow-2xl hover:shadow-emerald-900/10 flex flex-col">
+                    @* Image Header *@
+                    <div class="aspect-video w-full bg-slate-900 relative overflow-hidden">
+                        @if (recipe.ImageId.HasValue)
                         {
-                            <img src="/db-images-ppp/@r.ImageId" class="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
+                            <img src="/db-images-ppp/@recipe.ImageId" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
                         }
                         else
                         {
                             <div class="w-full h-full flex items-center justify-center opacity-20">
-                                <span class="text-4xl">🍲</span>
+                                <span class="text-4xl">🍳</span>
                             </div>
                         }
-                        <div class="absolute top-4 right-4 bg-black/80 backdrop-blur-md px-3 py-1 rounded-full border border-gray-700 text-[9px] font-mono text-emerald-400">
-                            @r.Servings Servings @(!string.IsNullOrEmpty(r.ServingSize) ? $"({r.ServingSize})" : "")
-                        </div>
+                        <div class="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-transparent to-transparent"></div>
                     </div>
 
-                    <div class="p-6 flex-1 flex flex-col">
-                        <div class="mb-6">
-                            <h4 class="text-lg uppercase tracking-tight text-white group-hover:text-orange-400 transition mb-1">@r.Name</h4>
-                            <p class="text-[9px] text-gray-500 uppercase tracking-widest">@r.Owner?.BusinessName</p>
+                    @* Content *@
+                    <div class="p-8 flex-1 flex flex-col">
+                        <h3 class="text-2xl font-black text-white tracking-tight mb-2 uppercase italic group-hover:text-emerald-400 transition-colors">@recipe.Name</h3>
+                        
+                        <div class="flex items-center gap-3 mb-6">
+                            <span class="bg-emerald-500/10 text-emerald-500 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-500/20">
+                                @recipe.Servings Servings
+                            </span>
+                            <span class="text-slate-500 text-[10px] font-bold uppercase tracking-widest">
+                                @(string.IsNullOrEmpty(recipe.ServingSize) ? "Yield Volume" : recipe.ServingSize)
+                            </span>
                         </div>
 
-                        @* Macro Quick-Look Display *@
-                        <div class="grid grid-cols-4 gap-2 mb-6">
+                        @* Macro Grid *@
+                        <div class="grid grid-cols-3 gap-3 mb-8">
                             @{
-                                var safe = Math.Max(1, r.Servings);
-                                var totalCals = r.IngredientGroups.SelectMany(g => g.Ingredients).Sum(i => i.Quantity * (i.Ingredient?.Calories ?? 0));
-                                var totalProt = r.IngredientGroups.SelectMany(g => g.Ingredients).Sum(i => i.Quantity * (i.Ingredient?.Protein ?? 0));
-                                var totalFat = r.IngredientGroups.SelectMany(g => g.Ingredients).Sum(i => i.Quantity * (i.Ingredient?.Fat ?? 0));
-                                var totalCarb = r.IngredientGroups.SelectMany(g => g.Ingredients).Sum(i => i.Quantity * (i.Ingredient?.Carbs ?? 0));
-                                var totalFiber = r.IngredientGroups.SelectMany(g => g.Ingredients).Sum(i => i.Quantity * (i.Ingredient?.Fiber ?? 0));
-                                var netCarb = totalCarb - totalFiber;
+                                var totals = CalculateTotals(recipe);
+                                double perServing = Math.Max(1, recipe.Servings);
                             }
-                            <div class="col-span-4 bg-white/5 rounded-xl p-3 border border-white/5 flex justify-between items-center mb-1">
-                                <span class="text-[10px] text-gray-500 uppercase">Calories</span>
-                                <span class="text-2xl font-black text-white">@((totalCals / safe).ToString("N0"))</span>
+                            <div class="bg-white/5 rounded-2xl p-3 border border-white/5 text-center">
+                                <span class="text-[8px] text-slate-500 uppercase font-black block mb-1">Cals</span>
+                                <span class="text-sm font-mono font-bold text-white">@((totals.Cals / perServing).ToString("N0"))</span>
                             </div>
-                            <div class="bg-blue-900/10 rounded-xl p-2 border border-blue-500/10 text-center">
-                                <span class="text-[8px] text-blue-500 uppercase block">Prot</span>
-                                <span class="text-[14px] font-bold text-blue-400">@((totalProt / safe).ToString("N1"))g</span>
+                            <div class="bg-white/5 rounded-2xl p-3 border border-white/5 text-center">
+                                <span class="text-[8px] text-slate-500 uppercase font-black block mb-1">Prot</span>
+                                <span class="text-sm font-mono font-bold text-blue-400">@((totals.Prot / perServing).ToString("N1"))g</span>
                             </div>
-                            <div class="bg-yellow-900/10 rounded-xl p-2 border border-yellow-500/10 text-center">
-                                <span class="text-[8px] text-yellow-500 uppercase block">Fat</span>
-                                <span class="text-[14px] font-bold text-yellow-500">@((totalFat / safe).ToString("N1"))g</span>
+                            <div class="bg-white/5 rounded-2xl p-3 border border-white/5 text-center">
+                                <span class="text-[8px] text-slate-500 uppercase font-black block mb-1">Fat</span>
+                                <span class="text-sm font-mono font-bold text-yellow-500">@((totals.Fat / perServing).ToString("N1"))g</span>
                             </div>
-                            <div class="bg-red-900/10 rounded-xl p-2 border border-red-500/10 text-center">
-                                <span class="text-[8px] text-red-500 uppercase block">Carb</span>
-                                <span class="text-[14px] font-bold text-red-400">@((totalCarb / safe).ToString("N1"))g</span>
+                            <div class="bg-white/5 rounded-2xl p-3 border border-white/5 text-center">
+                                <span class="text-[8px] text-slate-500 uppercase font-black block mb-1">Carb</span>
+                                <span class="text-sm font-mono font-bold text-red-500">@((totals.Carb / perServing).ToString("N1"))g</span>
                             </div>
-                            <div class="bg-emerald-900/10 rounded-xl p-2 border border-emerald-500/10 text-center">
-                                <span class="text-[8px] text-emerald-500 uppercase block">Net</span>
-                                <span class="text-[14px] font-bold text-emerald-400">@((netCarb / safe).ToString("N1"))g</span>
+                            <div class="bg-white/5 rounded-2xl p-3 border border-white/5 text-center">
+                                <span class="text-[8px] text-slate-500 uppercase font-black block mb-1">Fiber</span>
+                                <span class="text-sm font-mono font-bold text-emerald-600">@((totals.Fiber / perServing).ToString("N1"))g</span>
+                            </div>
+                            <div class="bg-emerald-500/10 rounded-2xl p-3 border border-emerald-500/20 text-center">
+                                <span class="text-[8px] text-emerald-500 uppercase font-black block mb-1">Net Carbs</span>
+                                <span class="text-sm font-mono font-bold text-emerald-400">@(((totals.Carb - totals.Fiber) / perServing).ToString("N1"))g</span>
                             </div>
                         </div>
 
-                        <div class="flex justify-end items-center mt-auto pt-6 border-t border-white/5 gap-2">
-                            <button @onclick='() => Nav.NavigateTo($"/ppp-recipe-editor/{r.Id}")' class="px-6 py-2 bg-blue-600/10 text-blue-400 text-[10px] uppercase font-black rounded-lg hover:bg-blue-600 hover:text-white transition">Edit Formula</button>
-                            <button @onclick="() => ConfirmDelete(r)" class="p-2 bg-red-600/10 text-red-500 rounded-lg hover:bg-red-600 hover:text-white transition">✕</button>
-                        </div>
+                        @* Action Button *@
+                        <button @onclick='() => Nav.NavigateTo($"/ppp-recipe-editor/{recipe.Id}")'
+                                class="w-full bg-slate-800 hover:bg-emerald-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all group-hover:shadow-lg active:scale-[0.98]">
+                            Edit
+                        </button>
                     </div>
                 </div>
             }
@@ -113,45 +100,50 @@
 </div>
 
 @code {
-    [Parameter] public int? OwnerId { get; set; }
+    [Parameter] public int OwnerId { get; set; }
+    private PPP_Owner? owner;
     private List<PPP_Recipe> recipes = new();
-    private PPP_Owner? currentOwner;
-    private bool isLoading = true;
 
-    protected override async Task OnParametersSetAsync() => await LoadData();
+    protected override async Task OnInitializedAsync()
+    {
+        owner = await Db.PPP_Owners.AsNoTracking().FirstOrDefaultAsync(o => o.Id == OwnerId);
+        recipes = await Db.PPP_Recipes
+            .AsNoTracking()
+            .Include(r => r.IngredientGroups)
+                .ThenInclude(ig => ig.Ingredients)
+                    .ThenInclude(m => m.Ingredient)
+            .Where(r => r.OwnerId == OwnerId)
+            .OrderBy(r => r.Name)
+            .ToListAsync();
+    }
 
-    private async Task LoadData() {
-        isLoading = true;
-        try {
-            // Updated query to Include ingredients so macros calculate correctly
-            var query = Db.PPP_Recipes
-                .Include(r => r.Owner)
-                .Include(r => r.IngredientGroups)
-                    .ThenInclude(ig => ig.Ingredients)
-                        .ThenInclude(m => m.Ingredient)
-                .AsNoTracking();
+    private (double Cals, double Prot, double Fat, double Carb, double Fiber) CalculateTotals(PPP_Recipe r)
+    {
+        double cals = 0, prot = 0, fat = 0, carb = 0, fiber = 0;
+        foreach (var group in r.IngredientGroups)
+        {
+            foreach (var mapping in group.Ingredients)
+            {
+                if (mapping.Ingredient != null)
+                {
+                    double qty = mapping.Quantity;
+                    // Standardize if units differ (logic handled by converter service if needed)
+                    double factor = qty; 
+                    
+                    if (!string.Equals(mapping.Unit, mapping.Ingredient.Unit, StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (PPPUnitConverter.TryConvert(qty, mapping.Unit ?? "", mapping.Ingredient.Unit ?? "", out double norm))
+                            factor = norm;
+                    }
 
-            if (OwnerId.HasValue) {
-                recipes = await query.Where(r => r.OwnerId == OwnerId.Value).OrderBy(r => r.Name).ToListAsync();
-                currentOwner = await Db.PPP_Owners.FindAsync(OwnerId.Value);
-            } else {
-                recipes = await query.OrderBy(r => r.Name).ToListAsync();
-                currentOwner = null;
+                    cals += mapping.Ingredient.Calories * factor;
+                    prot += mapping.Ingredient.Protein * factor;
+                    fat += mapping.Ingredient.Fat * factor;
+                    carb += mapping.Ingredient.Carbs * factor;
+                    fiber += mapping.Ingredient.Fiber * factor;
+                }
             }
-        } catch (Exception ex) {
-            Console.WriteLine($"Error loading manager data: {ex.Message}");
         }
-        isLoading = false;
-    }
-
-    private void CreateNew() {
-        if (OwnerId.HasValue) Nav.NavigateTo($"/ppp-recipe-editor?ownerId={OwnerId}");
-        else Nav.NavigateTo("/ppp-recipe-editor");
-    }
-
-    private async Task ConfirmDelete(PPP_Recipe r) {
-        Db.PPP_Recipes.Remove(r);
-        await Db.SaveChangesAsync();
-        await LoadData();
+        return (cals, prot, fat, carb, fiber);
     }
 }
