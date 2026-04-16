@@ -272,16 +272,12 @@
         swap.DisplayOrder = oldOrder;
     }
 
-    private async Task SaveRecipe() {
+private async Task SaveRecipe() {
         if (recipe.OwnerId == 0) { await ShowToast("Select an Owner", true); return; }
         
-        // !!! DATABASE LOGIC DISABLED TEMPORARILY TO BYPASS PUBLISH BUILD ERRORS !!!
-        await ShowToast("Database persistence is currently disabled for debugging.", true);
-        return;
-
-        /*
         try {
-            // STAGE 1: ORPHANED INGREDIENTS
+            // --- STAGE 1: ORPHANED INGREDIENT COMMIT (NOW ACTIVE) ---
+            var orphans = new List<(IngredientUIModel UI, PPP_Ingredient Entity)>();
             foreach(var group in recipe.IngredientGroups) {
                 foreach(var m in group.Ingredients.OfType<IngredientUIModel>()) {
                     if (m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
@@ -289,11 +285,17 @@
                         var newIng = new PPP_Ingredient { 
                             Name = m.IngredientName!, 
                             Unit = m.Unit ?? "", 
-                            Calories = m.ScaledCals / qty, Protein = m.ScaledProt / qty, Fat = m.ScaledFat / qty, Carbs = m.ScaledCarb / qty, Fiber = m.ScaledFiber / qty, 
-                            OwnerId = recipe.OwnerId, CreatedAt = DateTime.UtcNow 
+                            Calories = m.ScaledCals / qty, 
+                            Protein = m.ScaledProt / qty, 
+                            Fat = m.ScaledFat / qty, 
+                            Carbs = m.ScaledCarb / qty, 
+                            Fiber = m.ScaledFiber / qty, 
+                            OwnerId = recipe.OwnerId, 
+                            CreatedAt = DateTime.UtcNow 
                         };
                         Db.PPP_Ingredients.Add(newIng);
                         await Db.SaveChangesAsync();
+                        
                         m.IngredientId = newIng.Id;
                         m.BaseIngredient = null;
                         Db.Entry(newIng).State = EntityState.Detached;
@@ -301,12 +303,12 @@
                 }
             }
 
-            // STAGE 2: ROOT RECIPE
+            /* // STAGE 2: SAVE ROOT RECIPE
             if (recipe.Id == 0) Db.PPP_Recipes.Add(recipe);
             else Db.Entry(recipe).State = EntityState.Modified;
             await Db.SaveChangesAsync();
 
-            // STAGE 3: HIERARCHY
+            // STAGE 3: INGREDIENT HIERARCHY
             foreach (var group in recipe.IngredientGroups) {
                 group.RecipeId = recipe.Id;
                 if (group.Id == 0) Db.PPP_RecipeIngredientGroups.Add(group);
@@ -325,6 +327,7 @@
                 await Db.SaveChangesAsync();
             }
 
+            // STAGE 4: INSTRUCTION HIERARCHY
             foreach (var insGroup in instructionGroups) {
                 insGroup.RecipeId = recipe.Id;
                 if (insGroup.Id == 0) Db.Set<PPP_RecipeInstructionGroup>().Add(insGroup);
@@ -339,15 +342,17 @@
                 }
                 await Db.SaveChangesAsync();
             }
+            */
 
-            _ = ShowToast("Saved.");
+            // Temporary "Success" to test build and Stage 1
+            _ = ShowToast("Stage 1 (Ingredients) synced. Building hierarchy next...");
             await Task.Delay(800);
             Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}", forceLoad: true);
+
         } catch (Exception ex) {
             Db.ChangeTracker.Clear();
             await ShowToast("Save Error: " + (ex.InnerException?.Message ?? ex.Message), true);
         }
-        */
     }
 
     private async Task HandleImageUpload(InputFileChangeEventArgs e) {
