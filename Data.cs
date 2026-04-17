@@ -917,9 +917,10 @@ public class PPP_Menu
 {
     public int Id { get; set; }
     public int OwnerId { get; set; }
-    public string Name { get; set; } = ""; // e.g. "Week of April 13th"
-    public DateTime StartDate { get; set; } = DateTime.Today;
-    public DateTime EndDate { get; set; } = DateTime.Today.AddDays(6);
+    public string Name { get; set; } = "";
+    public DateTime StartDate { get; set; }
+    public DateTime EndDate { get; set; }
+    public bool IsPublished { get; set; } // <--- Add this line
     public List<PPP_MenuItem> Items { get; set; } = new();
 }
 
