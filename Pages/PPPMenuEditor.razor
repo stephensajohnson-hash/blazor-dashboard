@@ -227,7 +227,9 @@
     protected override async Task OnInitializedAsync() {
         availableRecipes = await Db.PPP_Recipes.AsNoTracking().Where(r => r.OwnerId == OwnerId).OrderBy(r => r.Name).ToListAsync();
         if (MenuId.HasValue) {
+            // CRITICAL: Use AsNoTracking() so the "page context" doesn't fight the "save context"
             menu = await Db.Set<PPP_Menu>()
+                .AsNoTracking()
                 .Include(m => m.Items).ThenInclude(i => i.Recipe)
                 .Include(m => m.Items).ThenInclude(i => i.Timeframes)
                 .Include(m => m.Items).ThenInclude(i => i.Sizes).ThenInclude(s => s.Options)
@@ -262,7 +264,7 @@
 
     private void DuplicateItem(PPP_MenuItem original) {
         var clone = new PPP_MenuItem {
-            RecipeId = 0, Recipe = null, // START EMPTY AS REQUESTED
+            RecipeId = 0, Recipe = null, 
             StartDate = original.StartDate, EndDate = original.EndDate,
             Timeframes = original.Timeframes.Select(t => new PPP_MenuItemTimeframe { Name = t.Name }).ToList(),
             Sizes = original.Sizes.Select(s => new PPP_MenuItemSize { Name = s.Name, BasePrice = s.BasePrice,
@@ -294,7 +296,7 @@
     }
 
     private void OpenConfig(PPP_MenuItem item) => activeItem = item;
-    private void AddTimeframe(PPP_MenuItem item) => item.Timeframes.Add(new PPP_MenuItemTimeframe { Name = "Dinner" });
+    private void AddTimeframe(PPP_MenuItem item) => item.Timeframes.Add(new PPP_MenuItemTimeframe { Name = "Lunch" });
     private void AddSize(PPP_MenuItem item) {
         var newSize = new PPP_MenuItemSize { Name = "Standard", BasePrice = 10.00 };
         var existing = item.Sizes.SelectMany(s => s.Options).GroupBy(o => o.Name).Select(g => g.First());
@@ -309,49 +311,20 @@
         
         try {
             await using var db = await DbFactory.CreateDbContextAsync();
-            
-            // Fix: If it's an existing menu, we need to handle child deletions properly
+
+            // 1. If updating an existing menu, wipe the old item tree first to avoid mapping ghosts
             if (menu.Id != 0) {
-                var existingMenu = await db.Set<PPP_Menu>()
-                    .Include(m => m.Items).ThenInclude(i => i.Timeframes)
-                    .Include(m => m.Items).ThenInclude(i => i.Sizes).ThenInclude(s => s.Options)
-                    .FirstOrDefaultAsync(m => m.Id == menu.Id);
-
-                if (existingMenu != null) {
-                    // Update main properties
-                    db.Entry(existingMenu).CurrentValues.SetValues(menu);
-
-                    // Remove items not in the current list
-                    foreach (var existingItem in existingMenu.Items.ToList()) {
-                        if (!menu.Items.Any(i => i.Id == existingItem.Id)) db.Remove(existingItem);
-                    }
-
-                    // Add or update items
-                    foreach (var currentItem in menu.Items) {
-                        var existingItem = existingMenu.Items.FirstOrDefault(i => i.Id == currentItem.Id && i.Id != 0);
-                        if (existingItem != null) {
-                            db.Entry(existingItem).CurrentValues.SetValues(currentItem);
-                            // Nested sync for Timeframes/Sizes omitted for brevity but logic follows...
-                            // To keep it robust, we'll use the simpler but heavy clear-and-add logic
-                        }
-                    }
-                }
-            }
-
-            // FALLBACK TO ROBUST SAVE:
-            // Because of the nested complexity (Menu -> Item -> Sizes -> Options), 
-            // the most reliable way in this UI is to wipe children for existing menus.
-            if (menu.Id != 0) {
-                var itemsToDelete = await db.Set<PPP_MenuItem>().Where(i => i.MenuId == menu.Id).ToListAsync();
-                db.RemoveRange(itemsToDelete);
+                var oldItems = await db.PPP_MenuItems.Where(i => i.MenuId == menu.Id).ToListAsync();
+                db.PPP_MenuItems.RemoveRange(oldItems);
                 await db.SaveChangesAsync();
             }
 
-            // Detach recipe objects and reset IDs for the fresh write
-            foreach(var item in menu.Items) { 
-                item.Recipe = null; 
+            // 2. Prepare the new/updated state
+            // Reset IDs for the re-insert logic
+            foreach(var item in menu.Items) {
                 item.Id = 0; 
-                item.MenuId = 0; 
+                item.MenuId = menu.Id;
+                item.Recipe = null; // Don't try to re-save the master recipe record
                 foreach(var tf in item.Timeframes) tf.Id = 0;
                 foreach(var sz in item.Sizes) {
                     sz.Id = 0;
@@ -359,7 +332,8 @@
                 }
             }
 
-            if (menu.Id == 0) db.Set<PPP_Menu>().Add(menu);
+            // 3. Attach and Save
+            if (menu.Id == 0) db.Add(menu);
             else db.Entry(menu).State = EntityState.Modified;
 
             await db.SaveChangesAsync();
