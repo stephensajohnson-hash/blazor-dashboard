@@ -227,9 +227,7 @@
     protected override async Task OnInitializedAsync() {
         availableRecipes = await Db.PPP_Recipes.AsNoTracking().Where(r => r.OwnerId == OwnerId).OrderBy(r => r.Name).ToListAsync();
         if (MenuId.HasValue) {
-            // CRITICAL: Use AsNoTracking() so the "page context" doesn't fight the "save context"
             menu = await Db.Set<PPP_Menu>()
-                .AsNoTracking()
                 .Include(m => m.Items).ThenInclude(i => i.Recipe)
                 .Include(m => m.Items).ThenInclude(i => i.Timeframes)
                 .Include(m => m.Items).ThenInclude(i => i.Sizes).ThenInclude(s => s.Options)
@@ -312,19 +310,29 @@
         try {
             await using var db = await DbFactory.CreateDbContextAsync();
 
-            // 1. If updating an existing menu, wipe the old item tree first to avoid mapping ghosts
+            // 1. If updating an existing menu, we must handle tracking carefully
             if (menu.Id != 0) {
-                var oldItems = await db.PPP_MenuItems.Where(i => i.MenuId == menu.Id).ToListAsync();
-                db.PPP_MenuItems.RemoveRange(oldItems);
-                await db.SaveChangesAsync();
+                // Fetch the existing menu with its items and children from the NEW context
+                var existingMenu = await db.Set<PPP_Menu>()
+                    .Include(m => m.Items).ThenInclude(i => i.Timeframes)
+                    .Include(m => m.Items).ThenInclude(i => i.Sizes).ThenInclude(s => s.Options)
+                    .FirstOrDefaultAsync(m => m.Id == menu.Id);
+
+                if (existingMenu != null) {
+                    // Update simple properties
+                    db.Entry(existingMenu).CurrentValues.SetValues(menu);
+
+                    // Wipe items and reconstruct to avoid complex graph diffing errors
+                    db.RemoveRange(existingMenu.Items);
+                    await db.SaveChangesAsync();
+                }
             }
 
-            // 2. Prepare the new/updated state
-            // Reset IDs for the re-insert logic
+            // 2. Prepare items for a fresh insert
             foreach(var item in menu.Items) {
                 item.Id = 0; 
                 item.MenuId = menu.Id;
-                item.Recipe = null; // Don't try to re-save the master recipe record
+                item.Recipe = null; // Important: Clear navigation to prevent master data save
                 foreach(var tf in item.Timeframes) tf.Id = 0;
                 foreach(var sz in item.Sizes) {
                     sz.Id = 0;
@@ -332,7 +340,7 @@
                 }
             }
 
-            // 3. Attach and Save
+            // 3. Perform final save
             if (menu.Id == 0) db.Add(menu);
             else db.Entry(menu).State = EntityState.Modified;
 
