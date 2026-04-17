@@ -111,8 +111,8 @@
 
             @if(menu.Items.Any())
             {
-                <div class="fixed bottom-8 left-1/2 -translate-x-1/2 z-[50] w-full max-w-xl px-4 text-center">
-                    <button @onclick="SaveMenu" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-6 rounded-[2rem] font-black text-xs uppercase tracking-[0.5em] transition-all shadow-[0_20px_50px_rgba(0,0,0,0.5)] active:scale-95 border border-emerald-400/20">
+                <div class="pt-12 pb-20 flex justify-center">
+                    <button @onclick="SaveMenu" class="w-full max-w-xl bg-emerald-600 hover:bg-emerald-500 text-white py-6 rounded-[2rem] font-black text-xs uppercase tracking-[0.5em] transition-all shadow-[0_20px_50px_rgba(0,0,0,0.5)] active:scale-95 border border-emerald-400/20">
                         Save Menu
                     </button>
                 </div>
@@ -139,6 +139,7 @@
             </div>
             
             <div class="p-10 grid grid-cols-1 md:grid-cols-2 gap-12 max-h-[60vh] overflow-y-auto">
+                @* LEFT: Scheduling *@
                 <div class="space-y-8">
                     <div>
                         <p class="text-xs text-emerald-500 font-black uppercase tracking-[0.2em] mb-4">Availability Window</p>
@@ -170,9 +171,13 @@
                     </div>
                 </div>
 
+                @* RIGHT: Pricing & Add-ons *@
                 <div class="space-y-8">
                     <div class="flex justify-between items-center mb-4">
-                        <p class="text-xs text-blue-500 font-black uppercase tracking-[0.2em]">Sizes & Add-ons</p>
+                        <div class="flex items-center gap-4">
+                            <p class="text-xs text-blue-500 font-black uppercase tracking-[0.2em]">Sizes & Add-ons</p>
+                            <button @onclick="ClearAllOptions" class="text-[8px] bg-red-900/20 text-red-500 px-3 py-1 rounded-full border border-red-900/20 font-black uppercase hover:bg-red-600 hover:text-white transition-colors" title="Remove all options from every size">Clear All Options</button>
+                        </div>
                         <button @onclick="() => AddSize(activeItem)" class="text-[9px] bg-blue-600 text-white px-4 py-1.5 rounded-full font-black uppercase tracking-widest">＋ Add Size</button>
                     </div>
 
@@ -200,7 +205,7 @@
                                             <button @onclick="() => size.Options.Remove(opt)" class="text-slate-800">✕</button>
                                         </div>
                                     }
-                                    <button @onclick="() => AddOption(size)" class="text-[9px] text-blue-500 font-black uppercase tracking-widest mt-2 hover:text-blue-400">＋ New Option</button>
+                                    <button @onclick="() => AddOption(size)" class="text-[9px] text-blue-500 font-black uppercase tracking-widest mt-2">＋ New Option</button>
                                 </div>
                             </div>
                         }
@@ -294,6 +299,12 @@
         _ = ShowToast("Option synced across all sizes.");
     }
 
+    private void ClearAllOptions() {
+        if (activeItem == null) return;
+        foreach(var size in activeItem.Sizes) size.Options.Clear();
+        _ = ShowToast("All options cleared.");
+    }
+
     private void OpenConfig(PPP_MenuItem item) => activeItem = item;
     private void AddTimeframe(PPP_MenuItem item) => item.Timeframes.Add(new PPP_MenuItemTimeframe { Name = "Lunch" });
     private void AddSize(PPP_MenuItem item) {
@@ -312,7 +323,6 @@
             await using var db = await DbFactory.CreateDbContextAsync();
             db.ChangeTracker.Clear();
 
-            // 1. Fetch current database state for this menu ID (if editing)
             PPP_Menu? dbMenu = null;
             if (menu.Id != 0) {
                 dbMenu = await db.Set<PPP_Menu>()
@@ -321,12 +331,9 @@
                     .FirstOrDefaultAsync(m => m.Id == menu.Id);
             }
 
-            // 2. Clear out existing items to handle the "re-insert" clean logic
             if (dbMenu != null) {
                 db.RemoveRange(dbMenu.Items);
-                await db.SaveChangesAsync(); // Commit the wipe
-                
-                // Update master menu details
+                await db.SaveChangesAsync(); 
                 db.Entry(dbMenu).CurrentValues.SetValues(menu);
             } else {
                 dbMenu = new PPP_Menu { OwnerId = OwnerId };
@@ -334,12 +341,10 @@
                 db.Add(dbMenu);
             }
 
-            // 3. Re-map current UI items to the dbMenu instance
-            // We set Ids to 0 to ensure they are treated as brand new inserts
             foreach(var uiItem in menu.Items) {
                 uiItem.Id = 0;
-                uiItem.MenuId = 0; // Let EF manage this
-                uiItem.Recipe = null; // Prevent recipe re-save
+                uiItem.MenuId = 0; 
+                uiItem.Recipe = null; 
                 foreach(var tf in uiItem.Timeframes) tf.Id = 0;
                 foreach(var sz in uiItem.Sizes) {
                     sz.Id = 0;
