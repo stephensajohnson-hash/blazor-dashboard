@@ -1018,15 +1018,14 @@ public class PPP_Menu
 public class PPP_MenuItem
 {
     public int Id { get; set; }
-    public int MenuId { get; set; }
+    public int MenuId { get; set; } // Matches DB Column
     public int RecipeId { get; set; }
     public PPP_Recipe? Recipe { get; set; }
-    
-    // Allows specific recipes to only appear on certain days of the menu
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
     
     public List<PPP_MenuItemTimeframe> Timeframes { get; set; } = new();
+    public List<PPP_MenuItemSize> Sizes { get; set; } = new();
 }
 
 public class PPP_MenuItemTimeframe
@@ -1035,4 +1034,21 @@ public class PPP_MenuItemTimeframe
     public int MenuItemId { get; set; }
     public string Name { get; set; } = ""; // e.g. "Lunch" or "Dinner"
     public string TimeRange { get; set; } = ""; // e.g. "11:00 AM - 2:00 PM"
+}
+
+public class PPP_MenuItemSize
+{
+    public int Id { get; set; }
+    public int MenuItemId { get; set; }
+    public string Name { get; set; } = ""; // e.g. "Small", "Medium"
+    public double BasePrice { get; set; }
+    public List<PPP_MenuItemOption> Options { get; set; } = new();
+}
+
+public class PPP_MenuItemOption
+{
+    public int Id { get; set; }
+    public int MenuItemSizeId { get; set; }
+    public string Name { get; set; } = ""; // e.g. "Add Chicken"
+    public double AddOnPrice { get; set; }
 }
