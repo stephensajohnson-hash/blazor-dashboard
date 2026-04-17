@@ -1,0 +1,231 @@
+@page "/ppp-menu-editor/{OwnerId:int}/{MenuId:int?}"
+@using Dashboard
+@using Dashboard.Components
+@using Dashboard.Services
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Forms
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject AppDbContext Db
+@inject NavigationManager Nav
+
+<div class="min-h-screen bg-[#050505] text-slate-200 p-4 md:p-8 font-sans antialiased">
+    <PPPAdminNav CurrentPage="Menu Architect" />
+
+    @* Notification Stack *@
+    <div class="fixed top-24 right-6 z-[100] flex flex-col gap-3">
+        @foreach (var toast in toasts)
+        {
+            <div class="p-4 rounded-xl border shadow-2xl animate-in slide-in-from-right duration-300 @(toast.IsError ? "bg-red-950/90 border-red-500/50 text-red-200" : "bg-emerald-950/90 border-emerald-500/50 text-emerald-200") backdrop-blur-md">
+                <div class="flex items-center gap-3">
+                    <span class="text-lg">@(toast.IsError ? "✕" : "✓")</span>
+                    <span class="text-xs font-bold uppercase tracking-widest">@toast.Message</span>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="max-w-7xl mx-auto mb-10">
+        <h1 class="text-4xl font-black tracking-tighter text-white uppercase italic">Menu Architect</h1>
+        <p class="text-slate-500 text-sm uppercase tracking-[0.2em] mt-1">Design your seasonal availability</p>
+    </div>
+
+    <div class="max-w-7xl mx-auto grid grid-cols-12 gap-8">
+        @* Left Column: Menu Basics *@
+        <div class="col-span-12 lg:col-span-4 space-y-6">
+            <div class="bg-[#111] border border-slate-800 rounded-3xl p-8 shadow-xl">
+                <h2 class="text-xs font-black uppercase tracking-[0.2em] text-emerald-500 mb-6">Menu Identity</h2>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-2 block">Menu Name</label>
+                        <input @bind="menu.Name" placeholder="e.g. Week of Monday, April 13th" class="w-full bg-black border border-slate-800 rounded-2xl p-4 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-2 block">Global Start</label>
+                            <input type="date" @bind="menu.StartDate" class="w-full bg-black border border-slate-800 rounded-2xl p-4 text-sm focus:border-emerald-500 outline-none text-white" />
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-2 block">Global End</label>
+                            <input type="date" @bind="menu.EndDate" class="w-full bg-black border border-slate-800 rounded-2xl p-4 text-sm focus:border-emerald-500 outline-none text-white" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <button @onclick="SaveMenu" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-5 rounded-2xl font-black text-xs uppercase tracking-[0.3em] transition-all shadow-xl active:scale-[0.98]">
+                Publish Menu
+            </button>
+        </div>
+
+        @* Right Column: Menu Items *@
+        <div class="col-span-12 lg:col-span-8 space-y-6">
+            <div class="flex items-center justify-between">
+                <h2 class="text-xs font-black uppercase tracking-[0.2em] text-slate-400 px-4">Scheduled Recipes</h2>
+                <div class="relative w-64">
+                    <select @onchange="AddRecipeToMenu" class="w-full bg-[#111] border border-slate-800 rounded-xl p-3 text-[10px] font-black uppercase tracking-widest text-emerald-500 outline-none appearance-none cursor-pointer">
+                        <option value="0">＋ Add Recipe...</option>
+                        @foreach (var r in availableRecipes)
+                        {
+                            <option value="@r.Id">@r.Name</option>
+                        }
+                    </select>
+                </div>
+            </div>
+
+            @if (!menu.Items.Any())
+            {
+                <div class="bg-[#111] border border-dashed border-slate-800 rounded-3xl p-20 text-center opacity-40">
+                    <span class="text-4xl block mb-4">🍽️</span>
+                    <p class="text-xs font-bold uppercase tracking-widest">No recipes scheduled for this menu</p>
+                </div>
+            }
+
+            @foreach (var item in menu.Items)
+            {
+                <div class="bg-[#111] border border-slate-800 rounded-3xl overflow-hidden shadow-lg animate-in fade-in slide-in-from-right-4 duration-300">
+                    <div class="bg-white/5 px-6 py-4 border-b border-slate-800 flex justify-between items-center">
+                        <div class="flex items-center gap-4">
+                            <span class="text-white font-black text-lg">@item.Recipe?.Name</span>
+                        </div>
+                        <button @onclick="() => menu.Items.Remove(item)" class="text-[10px] text-red-500 uppercase font-black hover:text-red-400">Remove</button>
+                    </div>
+                    
+                    <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
+                        @* Item Date Overrides *@
+                        <div class="space-y-4">
+                            <p class="text-[9px] text-emerald-500 uppercase font-black tracking-widest">Item Availability</p>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="text-[8px] text-slate-500 uppercase font-bold block mb-1">Start Date</label>
+                                    <input type="date" @bind="item.StartDate" class="w-full bg-black border border-slate-800 rounded-xl p-3 text-[10px] text-white outline-none" />
+                                </div>
+                                <div>
+                                    <label class="text-[8px] text-slate-500 uppercase font-bold block mb-1">End Date</label>
+                                    <input type="date" @bind="item.EndDate" class="w-full bg-black border border-slate-800 rounded-xl p-3 text-[10px] text-white outline-none" />
+                                </div>
+                            </div>
+                        </div>
+
+                        @* Timeframes *@
+                        <div class="space-y-4">
+                            <div class="flex justify-between items-center">
+                                <p class="text-[9px] text-emerald-500 uppercase font-black tracking-widest">Daily Timeframes</p>
+                                <button @onclick="() => AddTimeframe(item)" class="text-[8px] bg-emerald-500/10 text-emerald-500 px-2 py-1 rounded border border-emerald-500/20 uppercase font-black hover:bg-emerald-500/20">＋ Add</button>
+                            </div>
+                            
+                            <div class="space-y-2">
+                                @foreach (var tf in item.Timeframes)
+                                {
+                                    <div class="flex gap-2 items-center group/tf">
+                                        <input @bind="tf.Name" placeholder="Slot Name" class="flex-1 bg-black border border-slate-800 rounded-lg p-2 text-[10px] text-white" />
+                                        <input @bind="tf.TimeRange" placeholder="e.g. 11a-2p" class="flex-1 bg-black border border-slate-800 rounded-lg p-2 text-[10px] text-white" />
+                                        <button @onclick="() => item.Timeframes.Remove(tf)" class="text-slate-600 hover:text-red-500 transition-colors">✕</button>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public int OwnerId { get; set; }
+    [Parameter] public int? MenuId { get; set; }
+
+    private PPP_Menu menu = new();
+    private List<PPP_Recipe> availableRecipes = new();
+    private List<ToastItem> toasts = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        availableRecipes = await Db.PPP_Recipes.AsNoTracking()
+            .Where(r => r.OwnerId == OwnerId)
+            .OrderBy(r => r.Name)
+            .ToListAsync();
+
+        if (MenuId.HasValue)
+        {
+            var existing = await Db.Set<PPP_Menu>()
+                .Include(m => m.Items).ThenInclude(i => i.Recipe)
+                .Include(m => m.Items).ThenInclude(i => i.Timeframes)
+                .FirstOrDefaultAsync(m => m.Id == MenuId.Value);
+            if (existing != null) menu = existing;
+        }
+        else
+        {
+            menu.OwnerId = OwnerId;
+        }
+    }
+
+    private void AddRecipeToMenu(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int recipeId) && recipeId > 0)
+        {
+            var recipe = availableRecipes.FirstOrDefault(r => r.Id == recipeId);
+            if (recipe != null && !menu.Items.Any(i => i.RecipeId == recipeId))
+            {
+                menu.Items.Add(new PPP_MenuItem 
+                { 
+                    RecipeId = recipeId, 
+                    Recipe = recipe,
+                    StartDate = menu.StartDate,
+                    EndDate = menu.EndDate
+                });
+            }
+        }
+    }
+
+    private void AddTimeframe(PPP_MenuItem item) => 
+        item.Timeframes.Add(new PPP_MenuItemTimeframe { Name = "Lunch", TimeRange = "11:00 AM - 2:00 PM" });
+
+    private async Task SaveMenu()
+    {
+        if (string.IsNullOrWhiteSpace(menu.Name)) { await ShowToast("Please name the menu", true); return; }
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            
+            // Clean references before saving to avoid yesterday's tracking issues
+            foreach(var item in menu.Items) item.Recipe = null;
+
+            if (menu.Id == 0) db.Set<PPP_Menu>().Add(menu);
+            else db.Entry(menu).State = EntityState.Modified;
+
+            // Handle Item tracking
+            foreach(var item in menu.Items)
+            {
+                if (item.Id == 0) db.Set<PPP_MenuItem>().Add(item);
+                else db.Entry(item).State = EntityState.Modified;
+            }
+
+            await db.SaveChangesAsync();
+            _ = ShowToast("Menu Saved Successfully");
+            await Task.Delay(1000);
+            Nav.NavigateTo($"/ppp-recipe-manager/{OwnerId}");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Save Error: {ex.Message}", true);
+        }
+    }
+
+    private async Task ShowToast(string msg, bool isError = false)
+    {
+        var toast = new ToastItem { Message = msg, IsError = isError };
+        toasts.Add(toast);
+        StateHasChanged();
+        await Task.Delay(4000);
+        toasts.Remove(toast);
+        StateHasChanged();
+    }
+
+    private class ToastItem { public string Message { get; set; } = ""; public bool IsError { get; set; } }
+}

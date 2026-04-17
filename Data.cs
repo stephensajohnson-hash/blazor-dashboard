@@ -96,6 +96,9 @@ public class AppDbContext : DbContext
     public DbSet<PPP_RecipeIngredientMapping> PPP_RecipeIngredientMappings { get; set; }
     public DbSet<PPP_RecipeInstructionGroup> PPP_RecipeInstructionGroups { get; set; }
     public DbSet<PPP_RecipeInstruction> PPP_RecipeInstructions { get; set; }
+    public DbSet<PPP_Menu> PPP_Menus { get; set; }
+    public DbSet<PPP_MenuItem> PPP_MenuItems { get; set; }
+    public DbSet<PPP_MenuItemTimeframe> PPP_MenuItemTimeframes { get; set; }
 }
 
 public class BulletItem 
@@ -1000,4 +1003,36 @@ public class PPP_RecipeInstruction
 
     public string StepDescription { get; set; } = "";
     public int DisplayOrder { get; set; }
+}
+
+public class PPP_Menu
+{
+    public int Id { get; set; }
+    public int OwnerId { get; set; }
+    public string Name { get; set; } = ""; // e.g. "Week of April 13th"
+    public DateTime StartDate { get; set; } = DateTime.Today;
+    public DateTime EndDate { get; set; } = DateTime.Today.AddDays(6);
+    public List<PPP_MenuItem> Items { get; set; } = new();
+}
+
+public class PPP_MenuItem
+{
+    public int Id { get; set; }
+    public int MenuId { get; set; }
+    public int RecipeId { get; set; }
+    public PPP_Recipe? Recipe { get; set; }
+    
+    // Allows specific recipes to only appear on certain days of the menu
+    public DateTime StartDate { get; set; }
+    public DateTime EndDate { get; set; }
+    
+    public List<PPP_MenuItemTimeframe> Timeframes { get; set; } = new();
+}
+
+public class PPP_MenuItemTimeframe
+{
+    public int Id { get; set; }
+    public int MenuItemId { get; set; }
+    public string Name { get; set; } = ""; // e.g. "Lunch" or "Dinner"
+    public string TimeRange { get; set; } = ""; // e.g. "11:00 AM - 2:00 PM"
 }
