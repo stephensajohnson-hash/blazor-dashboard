@@ -227,7 +227,6 @@
     protected override async Task OnInitializedAsync() {
         availableRecipes = await Db.PPP_Recipes.AsNoTracking().Where(r => r.OwnerId == OwnerId).OrderBy(r => r.Name).ToListAsync();
         if (MenuId.HasValue) {
-            // CRITICAL: Use AsNoTracking() so the page context doesn't track this instance
             menu = await Db.Set<PPP_Menu>()
                 .AsNoTracking()
                 .Include(m => m.Items).ThenInclude(i => i.Recipe)
@@ -311,31 +310,43 @@
         
         try {
             await using var db = await DbFactory.CreateDbContextAsync();
-            db.ChangeTracker.Clear(); // Force clear any pre-existing tracking
+            db.ChangeTracker.Clear();
 
-            // 1. Wipe Old Items for existing menus to prevent relational conflicts
+            // 1. Fetch current database state for this menu ID (if editing)
+            PPP_Menu? dbMenu = null;
             if (menu.Id != 0) {
-                var oldItems = await db.PPP_MenuItems.Where(i => i.MenuId == menu.Id).ToListAsync();
-                db.PPP_MenuItems.RemoveRange(oldItems);
-                await db.SaveChangesAsync();
-                db.ChangeTracker.Clear();
+                dbMenu = await db.Set<PPP_Menu>()
+                    .Include(m => m.Items).ThenInclude(i => i.Timeframes)
+                    .Include(m => m.Items).ThenInclude(i => i.Sizes).ThenInclude(s => s.Options)
+                    .FirstOrDefaultAsync(m => m.Id == menu.Id);
             }
 
-            // 2. Prepare items for Re-Insert
-            foreach(var item in menu.Items) {
-                item.Id = 0; 
-                item.MenuId = menu.Id;
-                item.Recipe = null; // Clear nav property
-                foreach(var tf in item.Timeframes) tf.Id = 0;
-                foreach(var sz in item.Sizes) {
+            // 2. Clear out existing items to handle the "re-insert" clean logic
+            if (dbMenu != null) {
+                db.RemoveRange(dbMenu.Items);
+                await db.SaveChangesAsync(); // Commit the wipe
+                
+                // Update master menu details
+                db.Entry(dbMenu).CurrentValues.SetValues(menu);
+            } else {
+                dbMenu = new PPP_Menu { OwnerId = OwnerId };
+                db.Entry(dbMenu).CurrentValues.SetValues(menu);
+                db.Add(dbMenu);
+            }
+
+            // 3. Re-map current UI items to the dbMenu instance
+            // We set Ids to 0 to ensure they are treated as brand new inserts
+            foreach(var uiItem in menu.Items) {
+                uiItem.Id = 0;
+                uiItem.MenuId = 0; // Let EF manage this
+                uiItem.Recipe = null; // Prevent recipe re-save
+                foreach(var tf in uiItem.Timeframes) tf.Id = 0;
+                foreach(var sz in uiItem.Sizes) {
                     sz.Id = 0;
                     foreach(var opt in sz.Options) opt.Id = 0;
                 }
+                dbMenu.Items.Add(uiItem);
             }
-
-            // 3. Save Menu
-            if (menu.Id == 0) db.Set<PPP_Menu>().Add(menu);
-            else db.Entry(menu).State = EntityState.Modified;
 
             await db.SaveChangesAsync();
             Nav.NavigateTo($"/ppp-menu-manager/{OwnerId}", forceLoad: true);
