@@ -1,0 +1,51 @@
+@page "/ppp-menu-manager/{OwnerId:int}"
+@using Dashboard.Services
+@using Dashboard.Components
+@using Microsoft.EntityFrameworkCore
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject AppDbContext Db
+@inject NavigationManager Nav
+
+<div class="min-h-screen bg-[#050505] text-slate-200 p-4 md:p-8 font-sans antialiased">
+    <PPPAdminNav CurrentPage="Menu Vault" />
+
+    <div class="max-w-7xl mx-auto mb-10 flex justify-between items-end">
+        <div>
+            <h1 class="text-4xl font-black text-white uppercase italic">Active Menus</h1>
+            <p class="text-slate-500 text-sm uppercase tracking-widest mt-1">Current and Future Schedules</p>
+        </div>
+        <button @onclick='() => Nav.NavigateTo($"/ppp-menu-editor/{OwnerId}")' class="bg-emerald-600 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all hover:bg-emerald-500">
+            ＋ Create New Menu
+        </button>
+    </div>
+
+    <div class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        @foreach (var m in menus)
+        {
+            <div class="bg-[#111] border border-slate-800 rounded-[2rem] p-8 hover:border-emerald-500/50 transition-all group">
+                <div class="text-[10px] text-emerald-500 font-black uppercase tracking-[0.2em] mb-2">@m.StartDate.ToString("MMM dd") - @m.EndDate.ToString("MMM dd, yyyy")</div>
+                <h2 class="text-2xl font-black text-white uppercase italic mb-6">@m.Name</h2>
+                
+                <div class="flex items-center justify-between pt-6 border-t border-white/5">
+                    <span class="text-xs text-slate-500 font-bold uppercase">@m.Items.Count Recipes</span>
+                    <button @onclick='() => Nav.NavigateTo($"/ppp-menu-editor/{OwnerId}/{m.Id}")' class="bg-white/5 group-hover:bg-emerald-600 px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all">Edit Menu</button>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public int OwnerId { get; set; }
+    private List<PPP_Menu> menus = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var today = DateTime.Today.ToUniversalTime();
+        menus = await Db.Set<PPP_Menu>()
+            .Include(m => m.Items)
+            .Where(m => m.OwnerId == OwnerId && m.EndDate >= today)
+            .OrderBy(m => m.StartDate)
+            .ToListAsync();
+    }
+}
