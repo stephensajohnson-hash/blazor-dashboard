@@ -1,0 +1,183 @@
+@page "/ppp-store/{OwnerId:int}"
+@using Dashboard
+@using Dashboard.Services
+@using Dashboard.Components
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject AppDbContext Db
+@inject NavigationManager Nav
+
+<div class="min-h-screen bg-[#050505] text-slate-200 font-sans antialiased pb-32">
+    @if (owner != null)
+    {
+        @* Hero Branding Section *@
+        <div class="relative h-48 bg-emerald-900/20 overflow-hidden">
+            <div class="absolute inset-0 bg-gradient-to-b from-transparent to-[#050505]"></div>
+            <div class="absolute bottom-6 left-6 flex items-center gap-4">
+                @if (owner.LogoId.HasValue)
+                {
+                    <div class="w-20 h-20 rounded-3xl overflow-hidden border-2 border-slate-800 bg-black shadow-2xl">
+                        <img src="/db-images-ppp/@owner.LogoId" class="w-full h-full object-contain" />
+                    </div>
+                }
+                <div>
+                    <h1 class="text-3xl font-black text-white italic uppercase tracking-tighter">@owner.BusinessName</h1>
+                    <p class="text-[10px] text-emerald-500 font-black uppercase tracking-[0.3em]">Freshly Prepared Meals</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="max-w-3xl mx-auto px-4 mt-8">
+            @if (!activeMenus.Any())
+            {
+                <div class="py-20 text-center opacity-40">
+                    <span class="text-5xl block mb-4">🍳</span>
+                    <p class="text-xs font-black uppercase tracking-widest">No active menus available right now.</p>
+                </div>
+            }
+            else
+            {
+                @foreach (var menu in activeMenus)
+                {
+                    @* Group items by Date *@
+                    @foreach (var dayGroup in menu.Items.OrderBy(i => i.StartDate).GroupBy(i => i.StartDate.Date))
+                    {
+                        <div class="mb-10">
+                            <h3 class="text-xs font-black uppercase tracking-[0.4em] text-emerald-500 mb-6 flex items-center gap-4">
+                                @dayGroup.Key.ToString("dddd, MMM d") 
+                                <span class="h-[1px] flex-1 bg-emerald-500/20"></span>
+                            </h3>
+
+                            <div class="grid grid-cols-1 gap-6">
+                                @foreach (var item in dayGroup)
+                                {
+                                    <div @onclick="() => SelectItem(item)" class="bg-[#111] border border-slate-800 rounded-[2rem] overflow-hidden flex flex-col md:flex-row cursor-pointer hover:border-emerald-500/40 transition-all group shadow-xl">
+                                        @if (item.Recipe?.ImageId != null)
+                                        {
+                                            <div class="w-full md:w-48 aspect-square bg-black overflow-hidden">
+                                                <img src="/db-images-ppp/@item.Recipe.ImageId" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                            </div>
+                                        }
+                                        <div class="p-6 flex-1 flex flex-col">
+                                            <div class="flex justify-between items-start">
+                                                <h4 class="text-xl font-black text-white uppercase italic tracking-tight">@item.Recipe?.Name</h4>
+                                                @if (item.Sizes.Any())
+                                                {
+                                                    <span class="text-emerald-500 font-mono font-bold">from $@item.Sizes.Min(s => s.BasePrice).ToString("N2")</span>
+                                                }
+                                            </div>
+                                            <p class="text-xs text-slate-500 mt-2 line-clamp-2">@item.Recipe?.Description</p>
+                                            
+                                            <div class="mt-auto pt-6 flex items-center gap-3">
+                                                @foreach (var tf in item.Timeframes)
+                                                {
+                                                    <span class="text-[9px] bg-white/5 px-3 py-1 rounded-full font-black uppercase tracking-tighter text-slate-400">@tf.Name</span>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                }
+            }
+        </div>
+    }
+
+    @* Selection Modal (Slide up) *@
+    @if (selectedItem != null)
+    {
+        <div class="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-end justify-center">
+            <div class="bg-[#0f0f0f] w-full max-w-2xl rounded-t-[3rem] border-t border-slate-800 p-8 shadow-[0_-20px_50px_rgba(0,0,0,0.5)] animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto">
+                <div class="flex justify-between items-start mb-8">
+                    <div>
+                        <h2 class="text-2xl font-black text-white uppercase italic">@selectedItem.Recipe?.Name</h2>
+                        <p class="text-xs text-emerald-500 font-bold uppercase mt-1">Select your options</p>
+                    </div>
+                    <button @onclick="() => selectedItem = null" class="bg-white/5 p-3 rounded-2xl text-slate-400 hover:text-white">&times;</button>
+                </div>
+
+                <div class="space-y-10">
+                    @* 1. Choose Size *@
+                    <section>
+                        <h5 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-4">Choose Size</h5>
+                        <div class="grid grid-cols-1 gap-3">
+                            @foreach (var sz in selectedItem.Sizes)
+                            {
+                                <div @onclick="() => currentSize = sz" class="p-4 rounded-2xl border transition-all cursor-pointer @(currentSize == sz ? "border-emerald-500 bg-emerald-500/10" : "border-slate-800 bg-black/40 hover:border-slate-600") flex justify-between items-center">
+                                    <span class="font-bold text-sm uppercase">@sz.Name</span>
+                                    <span class="font-mono text-sm @(currentSize == sz ? "text-white" : "text-slate-400")">$@sz.BasePrice.ToString("N2")</span>
+                                </div>
+                            }
+                        </div>
+                    </section>
+
+                    @* 2. Choose Options (Add-ons) *@
+                    @if (currentSize != null && currentSize.Options.Any())
+                    {
+                        <section>
+                            <h5 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-4">Add-ons / Modifications</h5>
+                            <div class="space-y-3">
+                                @foreach (var opt in currentSize.Options)
+                                {
+                                    <div class="flex items-center justify-between p-4 bg-black/40 border border-slate-800 rounded-2xl">
+                                        <div>
+                                            <span class="text-xs font-bold uppercase block">@opt.Name</span>
+                                            <span class="text-[10px] text-slate-500">+$@opt.AddOnPrice.ToString("N2")</span>
+                                        </div>
+                                        <input type="checkbox" class="w-6 h-6 rounded-lg accent-emerald-500 bg-slate-800 border-none" />
+                                    </div>
+                                }
+                            </div>
+                        </section>
+                    }
+                </div>
+
+                <div class="mt-12 pt-8 border-t border-white/5">
+                    <button class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-5 rounded-2xl font-black text-xs uppercase tracking-[0.3em] transition-all shadow-lg active:scale-95">
+                        Add to Order — $@(GetTotal().ToString("N2"))
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public int OwnerId { get; set; }
+    private PPP_Owner? owner;
+    private List<PPP_Menu> activeMenus = new();
+    
+    private PPP_MenuItem? selectedItem;
+    private PPP_MenuItemSize? currentSize;
+
+    protected override async Task OnInitializedAsync()
+    {
+        owner = await Db.PPP_Owners.AsNoTracking().FirstOrDefaultAsync(o => o.Id == OwnerId);
+        
+        var today = DateTime.Today.ToUniversalTime();
+        activeMenus = await Db.Set<PPP_Menu>()
+            .AsNoTracking()
+            .Include(m => m.Items).ThenInclude(i => i.Recipe)
+            .Include(m => m.Items).ThenInclude(i => i.Timeframes)
+            .Include(m => m.Items).ThenInclude(i => i.Sizes).ThenInclude(s => s.Options)
+            .Where(m => m.OwnerId == OwnerId && m.IsPublished && m.EndDate >= today)
+            .OrderBy(m => m.StartDate)
+            .ToListAsync();
+    }
+
+    private void SelectItem(PPP_MenuItem item)
+    {
+        selectedItem = item;
+        currentSize = item.Sizes.FirstOrDefault(); // Auto-select first size
+    }
+
+    private double GetTotal()
+    {
+        if (currentSize == null) return 0;
+        // Calculation logic for add-ons will go here once we bind checkboxes
+        return currentSize.BasePrice;
+    }
+}
