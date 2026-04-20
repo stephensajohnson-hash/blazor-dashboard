@@ -84,7 +84,6 @@ namespace Dashboard
         public DbSet<PPP_MenuItemTimeframe> PPP_MenuItemTimeframes { get; set; }
         public DbSet<PPP_MenuItemSize> PPP_MenuItemSizes { get; set; }
         public DbSet<PPP_MenuItemOption> PPP_MenuItemOptions { get; set; }
-
         public DbSet<PPP_Order> PPP_Orders { get; set; }
         public DbSet<PPP_OrderItem> PPP_OrderItems { get; set; }
         public DbSet<PPP_OrderItemOption> PPP_OrderItemOptions { get; set; }
@@ -113,6 +112,16 @@ namespace Dashboard
                 .HasOne<PPP_MenuItemSize>()
                 .WithMany(s => s.Options)
                 .HasForeignKey(o => o.MenuItemSizeId);
+
+            modelBuilder.Entity<PPP_OrderItem>()
+                .HasOne<PPP_Order>()
+                .WithMany(o => o.Items)
+                .HasForeignKey(i => i.OrderId);
+
+            modelBuilder.Entity<PPP_OrderItemOption>()
+                .HasOne<PPP_OrderItem>()
+                .WithMany(i => i.SelectedOptions)
+                .HasForeignKey(o => o.OrderItemId);
         }
     }
 }
