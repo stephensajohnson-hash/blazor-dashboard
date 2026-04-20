@@ -4,31 +4,48 @@
 @using Dashboard.Components
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
-@inject AppDbContext Db
+@inject IDbContextFactory<AppDbContext> DbFactory
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <div class="min-h-screen bg-[#050505] text-slate-200 font-sans antialiased pb-32">
+    @* Notification Stack *@
+    <div class="fixed top-6 right-6 z-[200] flex flex-col gap-3">
+        @foreach (var toast in toasts)
+        {
+            <div class="p-4 rounded-2xl border shadow-2xl animate-in slide-in-from-right duration-300 @(toast.IsError ? "bg-red-950 border-red-500 text-red-200" : "bg-emerald-950 border-emerald-500 text-emerald-200") backdrop-blur-md">
+                <div class="flex items-center gap-3">
+                    <span class="text-lg">@(toast.IsError ? "✕" : "✓")</span>
+                    <span class="text-[10px] font-black uppercase tracking-widest">@toast.Message</span>
+                </div>
+            </div>
+        }
+    </div>
+
     @if (owner != null)
     {
         @* Hero Branding Section *@
-        <div class="relative h-48 bg-emerald-900/20 overflow-hidden">
+        <div class="relative h-56 bg-emerald-900/10 overflow-hidden border-b border-white/5">
             <div class="absolute inset-0 bg-gradient-to-b from-transparent to-[#050505]"></div>
-            <div class="absolute bottom-6 left-6 flex items-center gap-4">
+            <div class="absolute bottom-8 left-8 flex items-center gap-6">
                 @if (owner.LogoId.HasValue)
                 {
-                    <div class="w-20 h-20 rounded-3xl overflow-hidden border-2 border-slate-800 bg-black shadow-2xl">
+                    <div class="w-24 h-24 rounded-[2rem] overflow-hidden border-2 border-slate-800 bg-black shadow-2xl">
                         <img src="/db-images-ppp/@owner.LogoId" class="w-full h-full object-contain" />
                     </div>
                 }
                 <div>
-                    <h1 class="text-3xl font-black text-white italic uppercase tracking-tighter">@owner.BusinessName</h1>
-                    <p class="text-[10px] text-emerald-500 font-black uppercase tracking-[0.3em]">Freshly Prepared Meals</p>
+                    <h1 class="text-4xl font-black text-white italic uppercase tracking-tighter">@owner.BusinessName</h1>
+                    <p class="text-[10px] text-emerald-500 font-black uppercase tracking-[0.4em] flex items-center gap-2">
+                        <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span> Open for Orders
+                    </p>
                 </div>
             </div>
         </div>
 
-        <div class="max-w-3xl mx-auto px-4 mt-8">
+        <div class="max-w-3xl mx-auto px-4 mt-12">
             @if (!activeMenus.Any())
             {
                 <div class="py-20 text-center opacity-40">
@@ -40,39 +57,40 @@
             {
                 @foreach (var menu in activeMenus)
                 {
-                    @* Group items by Date *@
                     @foreach (var dayGroup in menu.Items.OrderBy(i => i.StartDate).GroupBy(i => i.StartDate.Date))
                     {
-                        <div class="mb-10">
-                            <h3 class="text-xs font-black uppercase tracking-[0.4em] text-emerald-500 mb-6 flex items-center gap-4">
+                        <div class="mb-12">
+                            <h3 class="text-[10px] font-black uppercase tracking-[0.4em] text-slate-500 mb-6 flex items-center gap-4">
                                 @dayGroup.Key.ToString("dddd, MMM d") 
-                                <span class="h-[1px] flex-1 bg-emerald-500/20"></span>
+                                <span class="h-[1px] flex-1 bg-white/5"></span>
                             </h3>
 
-                            <div class="grid grid-cols-1 gap-6">
+                            <div class="grid grid-cols-1 gap-4">
                                 @foreach (var item in dayGroup)
                                 {
-                                    <div @onclick="() => SelectItem(item)" class="bg-[#111] border border-slate-800 rounded-[2rem] overflow-hidden flex flex-col md:flex-row cursor-pointer hover:border-emerald-500/40 transition-all group shadow-xl">
+                                    <div @onclick="() => SelectItem(item)" class="bg-[#111] border border-slate-800 rounded-[2.5rem] overflow-hidden flex flex-col md:flex-row cursor-pointer hover:border-emerald-500/40 transition-all group shadow-xl">
                                         @if (item.Recipe?.ImageId != null)
                                         {
-                                            <div class="w-full md:w-48 aspect-square bg-black overflow-hidden">
-                                                <img src="/db-images-ppp/@item.Recipe.ImageId" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                            <div class="w-full md:w-44 aspect-square bg-black overflow-hidden shrink-0">
+                                                <img src="/db-images-ppp/@item.Recipe.ImageId" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
                                             </div>
                                         }
                                         <div class="p-6 flex-1 flex flex-col">
-                                            <div class="flex justify-between items-start">
-                                                <h4 class="text-xl font-black text-white uppercase italic tracking-tight">@item.Recipe?.Name</h4>
+                                            <div class="flex justify-between items-start mb-2">
+                                                <h4 class="text-xl font-black text-white uppercase italic tracking-tight group-hover:text-emerald-400 transition-colors">@item.Recipe?.Name</h4>
                                                 @if (item.Sizes.Any())
                                                 {
-                                                    <span class="text-emerald-500 font-mono font-bold">from $@item.Sizes.Min(s => s.BasePrice).ToString("N2")</span>
+                                                    <span class="text-emerald-500 font-mono font-bold bg-emerald-500/5 px-3 py-1 rounded-lg border border-emerald-500/10">
+                                                        $@item.Sizes.Min(s => s.BasePrice).ToString("N2")+
+                                                    </span>
                                                 }
                                             </div>
-                                            <p class="text-xs text-slate-500 mt-2 line-clamp-2">@item.Recipe?.Description</p>
+                                            <p class="text-xs text-slate-500 leading-relaxed line-clamp-2">@item.Recipe?.Description</p>
                                             
-                                            <div class="mt-auto pt-6 flex items-center gap-3">
+                                            <div class="mt-6 flex flex-wrap gap-2">
                                                 @foreach (var tf in item.Timeframes)
                                                 {
-                                                    <span class="text-[9px] bg-white/5 px-3 py-1 rounded-full font-black uppercase tracking-tighter text-slate-400">@tf.Name</span>
+                                                    <span class="text-[8px] bg-white/5 border border-white/5 px-3 py-1 rounded-full font-black uppercase tracking-tighter text-slate-400">@tf.Name</span>
                                                 }
                                             </div>
                                         </div>
@@ -86,48 +104,68 @@
         </div>
     }
 
-    @* Selection Modal (Slide up) *@
+    @* Persistent Cart Floating Bar *@
+    @if (cart != null && cart.Items.Any())
+    {
+        <div class="fixed bottom-8 left-1/2 -translate-x-1/2 z-[150] w-full max-w-lg px-4">
+            <button class="w-full bg-emerald-600 hover:bg-emerald-500 text-white p-6 rounded-[2rem] flex justify-between items-center shadow-[0_20px_50px_rgba(0,0,0,0.6)] transition-all active:scale-95 border border-emerald-400/20">
+                <div class="flex items-center gap-4">
+                    <span class="bg-white/20 px-3 py-1 rounded-lg font-black text-xs">@cart.Items.Count</span>
+                    <span class="text-xs font-black uppercase tracking-widest">View Your Cart</span>
+                </div>
+                <span class="font-mono font-bold">$@cart.Items.Sum(i => i.BasePrice + i.SelectedOptions.Sum(o => o.AddOnPrice)).ToString("N2")</span>
+            </button>
+        </div>
+    }
+
+    @* Configuration Bottom Sheet *@
     @if (selectedItem != null)
     {
-        <div class="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-end justify-center">
-            <div class="bg-[#0f0f0f] w-full max-w-2xl rounded-t-[3rem] border-t border-slate-800 p-8 shadow-[0_-20px_50px_rgba(0,0,0,0.5)] animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto">
-                <div class="flex justify-between items-start mb-8">
+        <div class="fixed inset-0 bg-black/90 backdrop-blur-sm z-[200] flex items-end justify-center">
+            <div @onclick:stopPropagation="true" class="bg-[#0f0f0f] w-full max-w-2xl rounded-t-[3rem] border-t border-slate-800 p-10 shadow-[0_-20px_50px_rgba(0,0,0,0.5)] animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto">
+                <div class="flex justify-between items-start mb-10">
                     <div>
-                        <h2 class="text-2xl font-black text-white uppercase italic">@selectedItem.Recipe?.Name</h2>
-                        <p class="text-xs text-emerald-500 font-bold uppercase mt-1">Select your options</p>
+                        <h2 class="text-3xl font-black text-white uppercase italic tracking-tighter">@selectedItem.Recipe?.Name</h2>
+                        <p class="text-[10px] text-emerald-500 font-black uppercase tracking-[0.2em] mt-1">Customize your meal</p>
                     </div>
-                    <button @onclick="() => selectedItem = null" class="bg-white/5 p-3 rounded-2xl text-slate-400 hover:text-white">&times;</button>
+                    <button @onclick="() => selectedItem = null" class="bg-white/5 w-12 h-12 rounded-2xl text-slate-400 hover:text-white flex items-center justify-center text-2xl transition-all">&times;</button>
                 </div>
 
-                <div class="space-y-10">
-                    @* 1. Choose Size *@
+                <div class="space-y-12">
+                    @* 1. Size Selection *@
                     <section>
-                        <h5 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-4">Choose Size</h5>
+                        <h5 class="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 mb-6 flex items-center gap-3">
+                            Size <span class="h-[1px] flex-1 bg-white/5"></span>
+                        </h5>
                         <div class="grid grid-cols-1 gap-3">
                             @foreach (var sz in selectedItem.Sizes)
                             {
-                                <div @onclick="() => currentSize = sz" class="p-4 rounded-2xl border transition-all cursor-pointer @(currentSize == sz ? "border-emerald-500 bg-emerald-500/10" : "border-slate-800 bg-black/40 hover:border-slate-600") flex justify-between items-center">
-                                    <span class="font-bold text-sm uppercase">@sz.Name</span>
-                                    <span class="font-mono text-sm @(currentSize == sz ? "text-white" : "text-slate-400")">$@sz.BasePrice.ToString("N2")</span>
+                                <div @onclick="() => SetSize(sz)" class="p-5 rounded-2xl border transition-all cursor-pointer @(currentSize == sz ? "border-emerald-500 bg-emerald-500/5 shadow-[0_0_20px_rgba(16,185,129,0.1)]" : "border-slate-800 bg-black/40 hover:border-slate-600") flex justify-between items-center group">
+                                    <span class="font-black text-xs uppercase tracking-widest @(currentSize == sz ? "text-emerald-400" : "text-slate-300")">@sz.Name</span>
+                                    <span class="font-mono text-sm @(currentSize == sz ? "text-white" : "text-slate-500")">$@sz.BasePrice.ToString("N2")</span>
                                 </div>
                             }
                         </div>
                     </section>
 
-                    @* 2. Choose Options (Add-ons) *@
+                    @* 2. Options Selection *@
                     @if (currentSize != null && currentSize.Options.Any())
                     {
                         <section>
-                            <h5 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-4">Add-ons / Modifications</h5>
+                            <h5 class="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 mb-6 flex items-center gap-3">
+                                Add-ons <span class="h-[1px] flex-1 bg-white/5"></span>
+                            </h5>
                             <div class="space-y-3">
                                 @foreach (var opt in currentSize.Options)
                                 {
-                                    <div class="flex items-center justify-between p-4 bg-black/40 border border-slate-800 rounded-2xl">
+                                    <div @onclick="() => ToggleOption(opt)" class="flex items-center justify-between p-5 bg-black/40 border border-slate-800 rounded-2xl cursor-pointer hover:border-slate-600 transition-all @(selectedOptionIds.Contains(opt.Id) ? "border-emerald-500/50 bg-emerald-500/5" : "")">
                                         <div>
-                                            <span class="text-xs font-bold uppercase block">@opt.Name</span>
-                                            <span class="text-[10px] text-slate-500">+$@opt.AddOnPrice.ToString("N2")</span>
+                                            <span class="text-xs font-black uppercase @(selectedOptionIds.Contains(opt.Id) ? "text-white" : "text-slate-400")">@opt.Name</span>
+                                            <span class="text-[10px] text-slate-600 block mt-1">+$@opt.AddOnPrice.ToString("N2")</span>
                                         </div>
-                                        <input type="checkbox" class="w-6 h-6 rounded-lg accent-emerald-500 bg-slate-800 border-none" />
+                                        <div class="w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all @(selectedOptionIds.Contains(opt.Id) ? "bg-emerald-500 border-emerald-500" : "border-slate-700")">
+                                            @if(selectedOptionIds.Contains(opt.Id)) { <span class="text-white text-[10px]">✓</span> }
+                                        </div>
                                     </div>
                                 }
                             </div>
@@ -135,9 +173,10 @@
                     }
                 </div>
 
-                <div class="mt-12 pt-8 border-t border-white/5">
-                    <button class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-5 rounded-2xl font-black text-xs uppercase tracking-[0.3em] transition-all shadow-lg active:scale-95">
-                        Add to Order — $@(GetTotal().ToString("N2"))
+                <div class="mt-16 pt-8 border-t border-white/5">
+                    <button @onclick="AddToCart" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-6 rounded-3xl font-black text-xs uppercase tracking-[0.4em] transition-all shadow-xl active:scale-95 flex justify-between items-center px-10">
+                        <span>Add to Order</span>
+                        <span class="font-mono">$@GetConfigTotal().ToString("N2")</span>
                     </button>
                 </div>
             </div>
@@ -149,16 +188,22 @@
     [Parameter] public int OwnerId { get; set; }
     private PPP_Owner? owner;
     private List<PPP_Menu> activeMenus = new();
+    private List<ToastItem> toasts = new();
     
+    private PPP_Order? cart;
+    private string? customerId;
+
     private PPP_MenuItem? selectedItem;
     private PPP_MenuItemSize? currentSize;
+    private HashSet<int> selectedOptionIds = new();
 
     protected override async Task OnInitializedAsync()
     {
-        owner = await Db.PPP_Owners.AsNoTracking().FirstOrDefaultAsync(o => o.Id == OwnerId);
+        await using var db = await DbFactory.CreateDbContextAsync();
+        owner = await db.PPP_Owners.AsNoTracking().FirstOrDefaultAsync(o => o.Id == OwnerId);
         
         var today = DateTime.Today.ToUniversalTime();
-        activeMenus = await Db.Set<PPP_Menu>()
+        activeMenus = await db.Set<PPP_Menu>()
             .AsNoTracking()
             .Include(m => m.Items).ThenInclude(i => i.Recipe)
             .Include(m => m.Items).ThenInclude(i => i.Timeframes)
@@ -168,16 +213,120 @@
             .ToListAsync();
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            customerId = await JS.InvokeAsync<string>("localStorage.getItem", "ppp_customer_id");
+            if (string.IsNullOrEmpty(customerId))
+            {
+                customerId = Guid.NewGuid().ToString();
+                await JS.InvokeVoidAsync("localStorage.setItem", "ppp_customer_id", customerId);
+            }
+            await LoadCart();
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadCart()
+    {
+        if (string.IsNullOrEmpty(customerId)) return;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        cart = await db.Set<PPP_Order>()
+            .Include(o => o.Items).ThenInclude(i => i.SelectedOptions)
+            .FirstOrDefaultAsync(o => o.OwnerId == OwnerId && o.CustomerIdentifier == customerId && !o.IsCheckedOut);
+
+        if (cart == null)
+        {
+            cart = new PPP_Order { OwnerId = OwnerId, CustomerIdentifier = customerId, CreatedAt = DateTime.UtcNow };
+            db.Add(cart);
+            await db.SaveChangesAsync();
+        }
+        else
+        {
+            // Validate: Scrub past items
+            var today = DateTime.Today.ToUniversalTime();
+            var expired = cart.Items.Where(i => i.ScheduledDate < today).ToList();
+            if (expired.Any())
+            {
+                db.RemoveRange(expired);
+                await db.SaveChangesAsync();
+                cart.Items.RemoveAll(i => expired.Contains(i));
+                _ = ShowToast("Items for past dates were removed from your cart.");
+            }
+        }
+    }
+
     private void SelectItem(PPP_MenuItem item)
     {
         selectedItem = item;
-        currentSize = item.Sizes.FirstOrDefault(); // Auto-select first size
+        currentSize = item.Sizes.FirstOrDefault();
+        selectedOptionIds.Clear();
     }
 
-    private double GetTotal()
+    private void SetSize(PPP_MenuItemSize sz)
+    {
+        currentSize = sz;
+        selectedOptionIds.Clear(); // Options are specific to size
+    }
+
+    private void ToggleOption(PPP_MenuItemOption opt)
+    {
+        if (selectedOptionIds.Contains(opt.Id)) selectedOptionIds.Remove(opt.Id);
+        else selectedOptionIds.Add(opt.Id);
+    }
+
+    private double GetConfigTotal()
     {
         if (currentSize == null) return 0;
-        // Calculation logic for add-ons will go here once we bind checkboxes
-        return currentSize.BasePrice;
+        var addons = currentSize.Options.Where(o => selectedOptionIds.Contains(o.Id)).Sum(o => o.AddOnPrice);
+        return currentSize.BasePrice + addons;
     }
+
+    private async Task AddToCart()
+    {
+        if (selectedItem == null || currentSize == null || cart == null) return;
+
+        try 
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var orderItem = new PPP_OrderItem
+            {
+                OrderId = cart.Id,
+                MenuItemId = selectedItem.Id,
+                RecipeName = selectedItem.Recipe?.Name ?? "Item",
+                SizeName = currentSize.Name,
+                BasePrice = currentSize.BasePrice,
+                ScheduledDate = selectedItem.StartDate.ToUniversalTime(),
+                SelectedOptions = currentSize.Options
+                    .Where(o => selectedOptionIds.Contains(o.Id))
+                    .Select(o => new PPP_OrderItemOption { OptionName = o.Name, AddOnPrice = o.AddOnPrice })
+                    .ToList()
+            };
+
+            db.Add(orderItem);
+            await db.SaveChangesAsync();
+            
+            await LoadCart(); // Refresh local UI
+            selectedItem = null;
+            _ = ShowToast("Added to order");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast("Error adding to cart: " + ex.Message, true);
+        }
+    }
+
+    private async Task ShowToast(string msg, bool isError = false)
+    {
+        var toast = new ToastItem { Message = msg, IsError = isError };
+        toasts.Add(toast);
+        StateHasChanged();
+        await Task.Delay(4000);
+        toasts.Remove(toast);
+        StateHasChanged();
+    }
+
+    private class ToastItem { public string Message { get; set; } = ""; public bool IsError { get; set; } }
 }

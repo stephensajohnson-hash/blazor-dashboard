@@ -85,6 +85,10 @@ namespace Dashboard
         public DbSet<PPP_MenuItemSize> PPP_MenuItemSizes { get; set; }
         public DbSet<PPP_MenuItemOption> PPP_MenuItemOptions { get; set; }
 
+        public DbSet<PPP_Order> PPP_Orders { get; set; }
+        public DbSet<PPP_OrderItem> PPP_OrderItems { get; set; }
+        public DbSet<PPP_OrderItemOption> PPP_OrderItemOptions { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);

@@ -961,3 +961,34 @@ public class PPP_MenuItemOption
     public string Name { get; set; } = ""; // e.g. "Add Chicken"
     public double AddOnPrice { get; set; }
 }
+
+public class PPP_Order
+{
+    public int Id { get; set; }
+    public int OwnerId { get; set; }
+    public string CustomerIdentifier { get; set; } = ""; // Unique ID (e.g., from LocalStorage/Cookie)
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public bool IsCheckedOut { get; set; } = false;
+    public DateTime? CheckedOutAt { get; set; }
+    public List<PPP_OrderItem> Items { get; set; } = new();
+}
+
+public class PPP_OrderItem
+{
+    public int Id { get; set; }
+    public int OrderId { get; set; }
+    public int MenuItemId { get; set; } // Link to the menu item for validation
+    public string RecipeName { get; set; } = ""; // Snapshot for history
+    public string SizeName { get; set; } = "";   // Snapshot
+    public double BasePrice { get; set; }        // Snapshot
+    public DateTime ScheduledDate { get; set; }  // Used to clear expired items
+    public List<PPP_OrderItemOption> SelectedOptions { get; set; } = new();
+}
+
+public class PPP_OrderItemOption
+{
+    public int Id { get; set; }
+    public int OrderItemId { get; set; }
+    public string OptionName { get; set; } = ""; // Snapshot
+    public double AddOnPrice { get; set; }      // Snapshot
+}
