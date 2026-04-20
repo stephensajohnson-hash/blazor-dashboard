@@ -12,7 +12,7 @@
 
 <div class="min-h-screen bg-[#050505] text-slate-200 font-sans antialiased pb-32">
     @* Notification Stack *@
-    <div class="fixed top-6 right-6 z-[200] flex flex-col gap-3">
+    <div class="fixed top-6 right-6 z-[300] flex flex-col gap-3">
         @foreach (var toast in toasts)
         {
             <div class="p-4 rounded-2xl border shadow-2xl animate-in slide-in-from-right duration-300 @(toast.IsError ? "bg-red-950 border-red-500 text-red-200" : "bg-emerald-950 border-emerald-500 text-emerald-200") backdrop-blur-md">
@@ -121,7 +121,7 @@
     @* Configuration Bottom Sheet *@
     @if (selectedItem != null)
     {
-        <div class="fixed inset-0 bg-black/90 backdrop-blur-sm z-[200] flex items-end justify-center">
+        <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[200] flex items-end justify-center" @onclick="() => selectedItem = null">
             <div @onclick:stopPropagation="true" class="bg-[#0f0f0f] w-full max-w-2xl rounded-t-[3rem] border-t border-slate-800 p-10 shadow-[0_-20px_50px_rgba(0,0,0,0.5)] animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto">
                 <div class="flex justify-between items-start mb-10">
                     <div>
@@ -140,9 +140,9 @@
                         <div class="grid grid-cols-1 gap-3">
                             @foreach (var sz in selectedItem.Sizes)
                             {
-                                <div @onclick="() => SetSize(sz)" class="p-5 rounded-2xl border transition-all cursor-pointer @(currentSize == sz ? "border-emerald-500 bg-emerald-500/5 shadow-[0_0_20px_rgba(16,185,129,0.1)]" : "border-slate-800 bg-black/40 hover:border-slate-600") flex justify-between items-center group">
-                                    <span class="font-black text-xs uppercase tracking-widest @(currentSize == sz ? "text-emerald-400" : "text-slate-300")">@sz.Name</span>
-                                    <span class="font-mono text-sm @(currentSize == sz ? "text-white" : "text-slate-500")">$@sz.BasePrice.ToString("N2")</span>
+                                <div @onclick="() => SetSize(sz)" class="p-5 rounded-2xl border transition-all cursor-pointer @(currentSize?.Id == sz.Id ? "border-emerald-500 bg-emerald-500/5 shadow-[0_0_20px_rgba(16,185,129,0.1)]" : "border-slate-800 bg-black/40 hover:border-slate-600") flex justify-between items-center group">
+                                    <span class="font-black text-xs uppercase tracking-widest @(currentSize?.Id == sz.Id ? "text-emerald-400" : "text-slate-300")">@sz.Name</span>
+                                    <span class="font-mono text-sm @(currentSize?.Id == sz.Id ? "text-white" : "text-slate-500")">$@sz.BasePrice.ToString("N2")</span>
                                 </div>
                             }
                         </div>
@@ -217,14 +217,18 @@
     {
         if (firstRender)
         {
-            customerId = await JS.InvokeAsync<string>("localStorage.getItem", "ppp_customer_id");
-            if (string.IsNullOrEmpty(customerId))
+            try 
             {
-                customerId = Guid.NewGuid().ToString();
-                await JS.InvokeVoidAsync("localStorage.setItem", "ppp_customer_id", customerId);
+                customerId = await JS.InvokeAsync<string>("localStorage.getItem", "ppp_customer_id");
+                if (string.IsNullOrEmpty(customerId))
+                {
+                    customerId = Guid.NewGuid().ToString();
+                    await JS.InvokeVoidAsync("localStorage.setItem", "ppp_customer_id", customerId);
+                }
+                await LoadCart();
+                StateHasChanged();
             }
-            await LoadCart();
-            StateHasChanged();
+            catch (Exception) { /* JS Interop might fail during pre-render or navigation */ }
         }
     }
 
@@ -245,7 +249,6 @@
         }
         else
         {
-            // Validate: Scrub past items
             var today = DateTime.Today.ToUniversalTime();
             var expired = cart.Items.Where(i => i.ScheduledDate < today).ToList();
             if (expired.Any())
@@ -253,7 +256,7 @@
                 db.RemoveRange(expired);
                 await db.SaveChangesAsync();
                 cart.Items.RemoveAll(i => expired.Contains(i));
-                _ = ShowToast("Items for past dates were removed from your cart.");
+                _ = ShowToast("Old items were removed from cart.");
             }
         }
     }
@@ -263,18 +266,21 @@
         selectedItem = item;
         currentSize = item.Sizes.FirstOrDefault();
         selectedOptionIds.Clear();
+        StateHasChanged(); // Force UI to show modal
     }
 
     private void SetSize(PPP_MenuItemSize sz)
     {
         currentSize = sz;
-        selectedOptionIds.Clear(); // Options are specific to size
+        selectedOptionIds.Clear(); 
+        StateHasChanged();
     }
 
     private void ToggleOption(PPP_MenuItemOption opt)
     {
         if (selectedOptionIds.Contains(opt.Id)) selectedOptionIds.Remove(opt.Id);
         else selectedOptionIds.Add(opt.Id);
+        StateHasChanged();
     }
 
     private double GetConfigTotal()
@@ -308,13 +314,13 @@
             db.Add(orderItem);
             await db.SaveChangesAsync();
             
-            await LoadCart(); // Refresh local UI
+            await LoadCart(); 
             selectedItem = null;
             _ = ShowToast("Added to order");
         }
         catch (Exception ex)
         {
-            await ShowToast("Error adding to cart: " + ex.Message, true);
+            await ShowToast("Error: " + ex.Message, true);
         }
     }
 
