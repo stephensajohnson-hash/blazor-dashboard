@@ -327,17 +327,13 @@
 
 private async Task AddToCart()
 {
-    if (selectedItem == null || currentSize == null || cart == null || selectedItem.Recipe == null)
-    {
-        await ShowToast("Missing selection details.", true);
-        return;
-    }
-
+    if (selectedItem == null || currentSize == null || cart == null || selectedItem.Recipe == null) return;
+    
     try 
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         
-        var orderEntry = new PPP_OrderItem
+        var newEntry = new PPP_OrderItem
         {
             OrderId = cart.Id,
             MenuItemId = selectedItem.Id,
@@ -349,18 +345,19 @@ private async Task AddToCart()
             FulfillmentMethod = selFulfillment,
             PickupLocationId = selFulfillment == "Pickup" ? selPickupId : null,
             DeliveryFee = selFulfillment == "Delivery" ? Math.Max(0, GetDeliveryFee(selZip)) : 0,
+            
+            // Map options with null safety
             SelectedOptions = currentSize?.Options
                 .Where(o => selectedOptionIds.Contains(o.Id))
                 .Select(o => new PPP_OrderItemOption { OptionName = o.Name, AddOnPrice = o.AddOnPrice })
                 .ToList() ?? new List<PPP_OrderItemOption>()
         };
 
-        db.Add(orderEntry);
+        db.Add(newEntry);
         await db.SaveChangesAsync();
         
         await LoadCart(); 
         selectedItem = null;
-        selectedOptionIds.Clear();
         _ = ShowToast("Added to cart!");
     }
     catch (Exception ex)

@@ -13,91 +13,62 @@
     <div class="max-w-6xl mx-auto mb-12 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div>
             <h1 class="text-4xl font-black text-white italic uppercase tracking-tighter">Kitchen Production</h1>
-            <p class="text-emerald-500 text-[10px] font-black uppercase tracking-[0.3em] mt-1">Live Order Stream</p>
+            <p class="text-emerald-500 text-[10px] font-black uppercase tracking-[0.3em] mt-1">Live Production Feed</p>
         </div>
-        <div class="flex gap-4">
-            <div class="bg-[#111] border border-slate-800 px-6 py-3 rounded-2xl">
-                <span class="text-[9px] text-slate-500 uppercase font-black block">Active Items</span>
-                <span class="text-xl font-mono font-bold text-white">@MasterKitchenQueue.Count</span>
-            </div>
+        <div class="bg-[#111] border border-slate-800 px-6 py-3 rounded-2xl">
+            <span class="text-[9px] text-slate-500 uppercase font-black block">Active Items</span>
+            <span class="text-xl font-mono font-bold text-white">@ProductionQueue.Count</span>
         </div>
     </div>
 
     <div class="max-w-6xl mx-auto space-y-16">
-        @if (!MasterKitchenQueue.Any())
+        @if (!ProductionQueue.Any())
         {
             <div class="py-20 text-center bg-[#111] rounded-[3rem] border border-slate-800 border-dashed">
                 <span class="text-4xl block mb-4">🍳</span>
-                <p class="text-xs font-black uppercase tracking-widest text-slate-600">No active production items found.</p>
+                <p class="text-xs font-black uppercase tracking-widest text-slate-600">No orders found.</p>
             </div>
         }
         else
         {
-            @foreach (var dayBucket in MasterKitchenQueue.GroupBy(x => x.ScheduledDate.Date).OrderBy(x => x.Key))
+            @foreach (var dayGroup in ProductionQueue.GroupBy(x => x.ScheduledDate.Date).OrderBy(x => x.Key))
             {
                 <div class="space-y-6">
                     <h2 class="text-xl font-black text-white uppercase tracking-widest flex items-center gap-4">
-                        <span class="text-emerald-500">@dayBucket.Key.ToString("dddd")</span>
-                        <span>@dayBucket.Key.ToString("MMMM d, yyyy")</span>
+                        <span class="text-emerald-500">@dayGroup.Key.ToString("dddd, MMM d")</span>
                         <span class="h-[1px] flex-1 bg-white/5"></span>
                     </h2>
 
-                    @foreach (var timeBucket in dayBucket.GroupBy(x => x.TimeframeName).OrderBy(x => x.Key))
+                    @foreach (var timeGroup in dayGroup.GroupBy(x => x.TimeframeName).OrderBy(x => x.Key))
                     {
-                        <div class="bg-[#111] border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-2xl">
+                        <div class="bg-[#111] border border-slate-800 rounded-[2.5rem] overflow-hidden">
                             <div class="bg-white/5 p-6 border-b border-white/5 flex justify-between items-center">
-                                <div class="flex items-center gap-3">
-                                    <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-                                    <h3 class="text-sm font-black text-white uppercase italic tracking-widest">Window: @(string.IsNullOrEmpty(timeBucket.Key) ? "Standard" : timeBucket.Key)</h3>
-                                </div>
-                                <span class="text-[10px] bg-white/10 text-slate-300 px-4 py-1.5 rounded-full font-black uppercase">
-                                    @timeBucket.Count() Units
-                                </span>
+                                <h3 class="text-sm font-black text-white uppercase italic">Window: @(string.IsNullOrEmpty(timeGroup.Key) ? "Standard" : timeGroup.Key)</h3>
+                                <span class="text-[10px] bg-white/10 text-slate-300 px-4 py-1.5 rounded-full font-black">@timeGroup.Count() Items</span>
                             </div>
 
                             <div class="divide-y divide-white/5">
-                                @foreach (var lineItem in timeBucket)
+                                @foreach (var itemRow in timeGroup)
                                 {
-                                    <div class="p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 group hover:bg-white/[0.02] transition-all">
+                                    <div class="p-6 flex flex-col md:flex-row justify-between items-center gap-6">
                                         <div class="flex items-center gap-6">
-                                            <div class="w-12 h-12 rounded-2xl flex items-center justify-center text-xl @(lineItem.FulfillmentMethod == "Pickup" ? "bg-emerald-950/30 text-emerald-500" : "bg-blue-950/30 text-blue-500")">
-                                                @(lineItem.FulfillmentMethod == "Pickup" ? "🏢" : "🚚")
+                                            <div class="w-12 h-12 rounded-2xl flex items-center justify-center text-xl @(itemRow.FulfillmentMethod == "Pickup" ? "bg-emerald-950/30 text-emerald-500" : "bg-blue-950/30 text-blue-500")">
+                                                @(itemRow.FulfillmentMethod == "Pickup" ? "🏢" : "🚚")
                                             </div>
-
                                             <div>
-                                                <div class="flex items-center gap-3 mb-1">
-                                                    <p class="text-white font-black uppercase text-base">@lineItem.RecipeName</p>
-                                                    <span class="text-[9px] font-mono text-slate-600">ID: @lineItem.Id</span>
-                                                </div>
+                                                <p class="text-white font-black uppercase text-base">@itemRow.RecipeName</p>
                                                 <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
-                                                    @lineItem.SizeName 
-                                                    @if (lineItem.SelectedOptions != null && lineItem.SelectedOptions.Any())
-                                                    {
-                                                        <span class="text-blue-400"> + @GetOptionString(lineItem)</span>
-                                                    }
+                                                    @itemRow.SizeName • @(itemRow.FulfillmentMethod == "Pickup" ? GetLocation(itemRow.PickupLocationId) : "Delivery")
                                                 </p>
-                                                
-                                                <div class="mt-2 text-[10px] font-black uppercase tracking-tighter">
-                                                    @if (lineItem.FulfillmentMethod == "Pickup")
-                                                    {
-                                                        <span class="text-emerald-500/80 italic">Spot: @GetSpotName(lineItem.PickupLocationId)</span>
-                                                    }
-                                                    else
-                                                    {
-                                                        <span class="text-blue-500/80 italic">Delivery Fee: $@lineItem.DeliveryFee.ToString("N2")</span>
-                                                    }
-                                                </div>
                                             </div>
                                         </div>
 
-                                        <div class="flex items-center gap-4 w-full md:w-auto border-t md:border-t-0 border-white/5 pt-4 md:pt-0">
-                                            <div class="text-right flex-1 md:flex-none">
-                                                <p class="text-[9px] text-slate-500 font-black uppercase mb-1">Customer Identifier</p>
-                                                <p class="text-xs font-mono text-white opacity-60">@GetSafeCustId(lineItem)</p>
+                                        <div class="flex items-center gap-6">
+                                            <div class="text-right">
+                                                <p class="text-[9px] text-slate-500 font-black uppercase">Customer</p>
+                                                <p class="text-xs font-mono text-white opacity-60">@GetCustId(itemRow)</p>
                                             </div>
-                                            <button class="bg-emerald-600/10 hover:bg-emerald-600 text-emerald-500 hover:text-white px-6 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all">
-                                                Mark Ready
-                                            </button>
+                                            <button class="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all">Mark Ready</button>
                                         </div>
                                     </div>
                                 }
@@ -112,50 +83,29 @@
 
 @code {
     [Parameter] public int OwnerId { get; set; }
-    
-    private List<PPP_OrderItem> MasterKitchenQueue = new();
+    private List<PPP_OrderItem> ProductionQueue = new();
     private List<PPP_PickupLocation> LocationsLookup = new();
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadData();
-    }
-
-    private async Task LoadData()
-    {
         await using var db = await DbFactory.CreateDbContextAsync();
         
-        MasterKitchenQueue = await db.Set<PPP_OrderItem>()
-            .Include(i => i.Order)
+        // Use the NEW Property Name: ParentOrderContainer
+        ProductionQueue = await db.Set<PPP_OrderItem>()
+            .Include(i => i.ParentOrderContainer) 
             .Include(i => i.SelectedOptions)
-            .Where(i => i.Order != null && i.Order.OwnerId == OwnerId && i.Order.IsCheckedOut)
+            .Where(i => i.ParentOrderContainer != null && i.ParentOrderContainer.OwnerId == OwnerId && i.ParentOrderContainer.IsCheckedOut)
             .ToListAsync();
 
-        LocationsLookup = await db.Set<PPP_PickupLocation>()
-            .Where(l => l.OwnerId == OwnerId)
-            .ToListAsync();
+        LocationsLookup = await db.Set<PPP_PickupLocation>().Where(l => l.OwnerId == OwnerId).ToListAsync();
     }
 
-    private string GetOptionString(PPP_OrderItem item)
-    {
-        if (item.SelectedOptions == null) return "";
-        return string.Join(", ", item.SelectedOptions.Select(o => o.OptionName));
-    }
+    private string GetLocation(int? id) => id.HasValue ? LocationsLookup.FirstOrDefault(l => l.Id == id)?.Name ?? "Shop" : "Shop";
 
-    private string GetSpotName(int? id)
+    private string GetCustId(PPP_OrderItem item)
     {
-        if (!id.HasValue) return "Default Location";
-        return LocationsLookup.FirstOrDefault(l => l.Id == id.Value)?.Name ?? "Main Location";
-    }
-
-    private string GetSafeCustId(PPP_OrderItem item)
-    {
-        // Accessing the parent object properties strictly inside C# to avoid LINQ Order() confusion
-        var parentData = item.Order;
-        if (parentData == null) return "GUEST";
-        
-        var cid = parentData.CustomerIdentifier;
-        if (string.IsNullOrEmpty(cid)) return "GUEST";
-        return cid.Length > 8 ? cid.Substring(0, 8).ToUpper() : cid.ToUpper();
+        var id = item.ParentOrderContainer?.CustomerIdentifier;
+        if (string.IsNullOrEmpty(id)) return "GUEST";
+        return id.Length > 8 ? id.Substring(0, 8).ToUpper() : id.ToUpper();
     }
 }

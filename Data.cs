@@ -981,17 +981,21 @@ public class PPP_OrderItem
 {
     public int Id { get; set; }
     public int OrderId { get; set; }
-    public int MenuItemId { get; set; } // Link to the menu item for validation
-    public string RecipeName { get; set; } = ""; // Snapshot for history
-    public string SizeName { get; set; } = "";   // Snapshot
-    public double BasePrice { get; set; }        // Snapshot
-    public DateTime ScheduledDate { get; set; }  // Used to clear expired items
-    public List<PPP_OrderItemOption> SelectedOptions { get; set; } = new();
-    public string FulfillmentMethod { get; set; } = "Pickup"; // Pickup or Delivery
+    
+    // RENAME THIS FROM 'Order' TO 'ParentOrderContainer'
+    [ForeignKey("OrderId")]
+    public PPP_Order? ParentOrderContainer { get; set; } 
+
+    public int MenuItemId { get; set; }
+    public string RecipeName { get; set; } = "";
+    public string SizeName { get; set; } = "";
+    public double BasePrice { get; set; }
+    public DateTime ScheduledDate { get; set; }
+    public string FulfillmentMethod { get; set; } = "Pickup";
     public int? PickupLocationId { get; set; }
-    public int? DeliveryAddressId { get; set; }
-    public string TimeframeName { get; set; } = ""; // e.g. 'Lunch' or 'Dinner'
+    public string TimeframeName { get; set; } = "";
     public double DeliveryFee { get; set; }
+    public List<PPP_OrderItemOption> SelectedOptions { get; set; } = new();
 }
 
 public class PPP_OrderItemOption
