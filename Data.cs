@@ -987,6 +987,11 @@ public class PPP_OrderItem
     public double BasePrice { get; set; }        // Snapshot
     public DateTime ScheduledDate { get; set; }  // Used to clear expired items
     public List<PPP_OrderItemOption> SelectedOptions { get; set; } = new();
+    public string FulfillmentMethod { get; set; } = "Pickup"; // Pickup or Delivery
+    public int? PickupLocationId { get; set; }
+    public int? DeliveryAddressId { get; set; }
+    public string TimeframeName { get; set; } = ""; // e.g. 'Lunch' or 'Dinner'
+    public double DeliveryFee { get; set; }
 }
 
 public class PPP_OrderItemOption
