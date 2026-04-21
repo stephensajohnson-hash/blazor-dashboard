@@ -935,6 +935,10 @@ public class PPP_MenuItem
     
     public List<PPP_MenuItemTimeframe> Timeframes { get; set; } = new();
     public List<PPP_MenuItemSize> Sizes { get; set; } = new();
+
+    public TimeSpan CutoffTime { get; set; } = new TimeSpan(22, 0, 0); // Default 10 PM
+    public int MaxQuantity { get; set; }
+    public bool IsUnlimited { get; set; } = true;
 }
 
 public class PPP_MenuItemTimeframe
