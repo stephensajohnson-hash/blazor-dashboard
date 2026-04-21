@@ -13,87 +13,79 @@
     <div class="max-w-6xl mx-auto mb-12 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div>
             <h1 class="text-4xl font-black text-white italic uppercase tracking-tighter">Kitchen Production</h1>
-            <p class="text-emerald-500 text-[10px] font-black uppercase tracking-[0.3em] mt-1">Live Order Stream & Fulfillment</p>
+            <p class="text-emerald-500 text-[10px] font-black uppercase tracking-[0.3em] mt-1">Live Order Stream</p>
         </div>
         <div class="flex gap-4">
             <div class="bg-[#111] border border-slate-800 px-6 py-3 rounded-2xl">
                 <span class="text-[9px] text-slate-500 uppercase font-black block">Active Items</span>
-                <span class="text-xl font-mono font-bold text-white">@allOrderedItems.Count</span>
-            </div>
-            <div class="bg-[#111] border border-slate-800 px-6 py-3 rounded-2xl">
-                <span class="text-[9px] text-slate-500 uppercase font-black block">Revenue</span>
-                <span class="text-xl font-mono font-bold text-emerald-400">$@allOrderedItems.Sum(i => i.BasePrice + i.DeliveryFee).ToString("N2")</span>
+                <span class="text-xl font-mono font-bold text-white">@ProductionList.Count</span>
             </div>
         </div>
     </div>
 
     <div class="max-w-6xl mx-auto space-y-16">
-        @if (!allOrderedItems.Any())
+        @if (!ProductionList.Any())
         {
             <div class="py-20 text-center bg-[#111] rounded-[3rem] border border-slate-800 border-dashed">
                 <span class="text-4xl block mb-4">🍳</span>
-                <p class="text-xs font-black uppercase tracking-widest text-slate-600">The kitchen is quiet. No orders found.</p>
+                <p class="text-xs font-black uppercase tracking-widest text-slate-600">No active production items found.</p>
             </div>
         }
         else
         {
-            @foreach (var dateGroup in allOrderedItems
-                .GroupBy(x => x.ScheduledDate.Date)
-                .OrderBy(x => x.Key))
+            @* Use 'grpDate' instead of 'dateGroup' to avoid naming collisions *@
+            @foreach (var grpDate in ProductionList.GroupBy(x => x.ScheduledDate.Date).OrderBy(x => x.Key))
             {
                 <div class="space-y-6">
                     <h2 class="text-xl font-black text-white uppercase tracking-widest flex items-center gap-4">
-                        <span class="text-emerald-500">@dateGroup.Key.ToString("dddd")</span>
-                        <span>@dateGroup.Key.ToString("MMMM d, yyyy")</span>
+                        <span class="text-emerald-500">@grpDate.Key.ToString("dddd")</span>
+                        <span>@grpDate.Key.ToString("MMMM d, yyyy")</span>
                         <span class="h-[1px] flex-1 bg-white/5"></span>
                     </h2>
 
-                    @foreach (var timeframeGroup in dateGroup
-                        .GroupBy(x => x.TimeframeName)
-                        .OrderBy(x => x.Key))
+                    @foreach (var grpTime in grpDate.GroupBy(x => x.TimeframeName).OrderBy(x => x.Key))
                     {
                         <div class="bg-[#111] border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-2xl">
                             <div class="bg-white/5 p-6 border-b border-white/5 flex justify-between items-center">
                                 <div class="flex items-center gap-3">
                                     <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-                                    <h3 class="text-sm font-black text-white uppercase italic tracking-widest">Window: @(string.IsNullOrEmpty(timeframeGroup.Key) ? "Anytime" : timeframeGroup.Key)</h3>
+                                    <h3 class="text-sm font-black text-white uppercase italic tracking-widest">Window: @(string.IsNullOrEmpty(grpTime.Key) ? "Standard" : grpTime.Key)</h3>
                                 </div>
                                 <span class="text-[10px] bg-white/10 text-slate-300 px-4 py-1.5 rounded-full font-black uppercase">
-                                    @timeframeGroup.Count() Units
+                                    @grpTime.Count() Units
                                 </span>
                             </div>
 
                             <div class="divide-y divide-white/5">
-                                @foreach (var rowItem in timeframeGroup)
+                                @foreach (var entry in grpTime)
                                 {
                                     <div class="p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 group hover:bg-white/[0.02] transition-all">
                                         <div class="flex items-center gap-6">
-                                            <div class="w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-inner @(rowItem.FulfillmentMethod == "Pickup" ? "bg-emerald-950/30 text-emerald-500 border border-emerald-900/50" : "bg-blue-950/30 text-blue-500 border border-blue-900/50")">
-                                                @(rowItem.FulfillmentMethod == "Pickup" ? "🏢" : "🚚")
+                                            <div class="w-12 h-12 rounded-2xl flex items-center justify-center text-xl @(entry.FulfillmentMethod == "Pickup" ? "bg-emerald-950/30 text-emerald-500" : "bg-blue-950/30 text-blue-500")">
+                                                @(entry.FulfillmentMethod == "Pickup" ? "🏢" : "🚚")
                                             </div>
 
                                             <div>
                                                 <div class="flex items-center gap-3 mb-1">
-                                                    <p class="text-white font-black uppercase text-base">@rowItem.RecipeName</p>
-                                                    <span class="text-[9px] font-mono text-slate-600">#@rowItem.OrderId</span>
+                                                    <p class="text-white font-black uppercase text-base">@entry.RecipeName</p>
+                                                    <span class="text-[9px] font-mono text-slate-600">Order# @entry.OrderId</span>
                                                 </div>
                                                 <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
-                                                    @rowItem.SizeName 
-                                                    @if (rowItem.SelectedOptions != null && rowItem.SelectedOptions.Any())
+                                                    @entry.SizeName 
+                                                    @if (entry.SelectedOptions != null && entry.SelectedOptions.Any())
                                                     {
-                                                        var optList = rowItem.SelectedOptions.Select(o => o.OptionName);
-                                                        <span class="text-blue-400"> + @string.Join(", ", optList)</span>
+                                                        <span class="text-blue-400"> + @string.Join(", ", entry.SelectedOptions.Select(o => o.OptionName))</span>
                                                     }
                                                 </p>
                                                 
                                                 <div class="mt-2 text-[10px] font-black uppercase tracking-tighter">
-                                                    @if (rowItem.FulfillmentMethod == "Pickup")
+                                                    @if (entry.FulfillmentMethod == "Pickup")
                                                     {
-                                                        <span class="text-emerald-500/80 italic">Pickup: @(GetPickupName(rowItem.PickupLocationId))</span>
+                                                        <span class="text-emerald-500/80 italic">Spot: @(GetSpotName(entry.PickupLocationId))</span>
                                                     }
                                                     else
                                                     {
-                                                        <span class="text-blue-500/80 italic">Delivery Fee: $@rowItem.DeliveryFee.ToString("N2")</span>
+                                                        <span class="text-blue-500/80 italic">Delivery Fee: $@entry.DeliveryFee.ToString("N2")</span>
                                                     }
                                                 </div>
                                             </div>
@@ -101,15 +93,10 @@
 
                                         <div class="flex items-center gap-4 w-full md:w-auto border-t md:border-t-0 border-white/5 pt-4 md:pt-0">
                                             <div class="text-right flex-1 md:flex-none">
-                                                <p class="text-[9px] text-slate-500 font-black uppercase mb-1">Customer</p>
-                                                <p class="text-xs font-mono text-white opacity-60">
-                                                    @{
-                                                        string custId = rowItem.Order?.CustomerIdentifier ?? "GUEST";
-                                                        @GetShortId(custId)
-                                                    }
-                                                </p>
+                                                <p class="text-[9px] text-slate-500 font-black uppercase mb-1">Customer Identifier</p>
+                                                <p class="text-xs font-mono text-white opacity-60">@GetCustId(entry)</p>
                                             </div>
-                                            <button class="bg-emerald-600/10 hover:bg-emerald-600 text-emerald-500 hover:text-white px-6 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95">
+                                            <button class="bg-emerald-600/10 hover:bg-emerald-600 text-emerald-500 hover:text-white px-6 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all">
                                                 Mark Ready
                                             </button>
                                         </div>
@@ -127,38 +114,41 @@
 @code {
     [Parameter] public int OwnerId { get; set; }
     
-    private List<PPP_OrderItem> allOrderedItems = new();
-    private List<PPP_PickupLocation> pickupLocations = new();
+    // Renamed collection to avoid conflict with Order model name
+    private List<PPP_OrderItem> ProductionList = new();
+    private List<PPP_PickupLocation> LocationsLookup = new();
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadProductionData();
+        await LoadData();
     }
 
-    private async Task LoadProductionData()
+    private async Task LoadData()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         
-        allOrderedItems = await db.Set<PPP_OrderItem>()
+        ProductionList = await db.Set<PPP_OrderItem>()
             .Include(i => i.Order)
             .Include(i => i.SelectedOptions)
             .Where(i => i.Order != null && i.Order.OwnerId == OwnerId && i.Order.IsCheckedOut)
             .ToListAsync();
 
-        pickupLocations = await db.Set<PPP_PickupLocation>()
+        LocationsLookup = await db.Set<PPP_PickupLocation>()
             .Where(l => l.OwnerId == OwnerId)
             .ToListAsync();
     }
 
-    private string GetPickupName(int? id)
+    private string GetSpotName(int? id)
     {
-        if (!id.HasValue) return "Main Shop";
-        return pickupLocations.FirstOrDefault(l => l.Id == id.Value)?.Name ?? "Main Shop";
+        if (!id.HasValue) return "Default Shop";
+        return LocationsLookup.FirstOrDefault(l => l.Id == id.Value)?.Name ?? "Main Location";
     }
 
-    private string GetShortId(string? id)
+    private string GetCustId(PPP_OrderItem item)
     {
-        if (string.IsNullOrEmpty(id)) return "Guest";
-        return id.Length > 8 ? id.Substring(0, 8).ToUpper() : id.ToUpper();
+        // Explicitly accessing the property through a method to prevent LINQ method collision in markup
+        var cid = item.Order?.CustomerIdentifier;
+        if (string.IsNullOrEmpty(cid)) return "GUEST";
+        return cid.Length > 8 ? cid.Substring(0, 8).ToUpper() : cid.ToUpper();
     }
 }
