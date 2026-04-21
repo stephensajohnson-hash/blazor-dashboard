@@ -794,15 +794,14 @@ public class PPP_Owner
     public string Email { get; set; } = "";
     public string Phone { get; set; } = "";
     public string Bio { get; set; } = "";
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; }
     public int? LogoId { get; set; }
-    [ForeignKey("LogoId")]
-    public virtual PPP_StoredImage? Logo { get; set; }
-
-    // Changed from string to AddressId
     public int? AddressId { get; set; }
-    [ForeignKey("AddressId")]
-    public virtual PPP_Address? Address { get; set; }
+    public PPP_Address? Address { get; set; }
+    
+    // ADD THESE TWO LINES:
+    public bool OffersPickup { get; set; } = true;
+    public bool OffersDelivery { get; set; } = false;
 }
 
 public class PPP_Ingredient
@@ -1025,4 +1024,33 @@ public class PPP_PickupLocation
     public string Name { get; set; } = ""; // e.g. "Springs Crossing Parking Lot"
     public string Address { get; set; } = "";
     public string Details { get; set; } = ""; // e.g. "Look for the white van"
+}
+
+public class PPP_DeliveryZipCode
+{
+    public int Id { get; set; }
+    public int OwnerId { get; set; }
+    public string ZipCode { get; set; } = "";
+    public double Fee { get; set; } = 0;
+}
+
+public class PPP_PickupLocation
+{
+    public int Id { get; set; }
+    public int OwnerId { get; set; }
+    public string Name { get; set; } = "";
+    public string Address { get; set; } = "";
+    public string Details { get; set; } = "";
+}
+
+public class PPP_UserAddress
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public string Label { get; set; } = "";
+    public string Street { get; set; } = "";
+    public string City { get; set; } = "";
+    public string State { get; set; } = "";
+    public string ZipCode { get; set; } = "";
+    public bool IsDefault { get; set; }
 }

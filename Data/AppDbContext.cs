@@ -87,6 +87,9 @@ namespace Dashboard
         public DbSet<PPP_Order> PPP_Orders { get; set; }
         public DbSet<PPP_OrderItem> PPP_OrderItems { get; set; }
         public DbSet<PPP_OrderItemOption> PPP_OrderItemOptions { get; set; }
+        public DbSet<PPP_DeliveryZipCode> PPP_DeliveryZipCodes { get; set; }
+        public DbSet<PPP_PickupLocation> PPP_PickupLocations { get; set; }
+        public DbSet<PPP_UserAddress> PPP_UserAddresses { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
