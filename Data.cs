@@ -1004,9 +1004,16 @@ public class PPP_OrderItem
 public class PPP_OrderItemOption
 {
     public int Id { get; set; }
+    
+    // This is the actual column in the database
     public int OrderItemId { get; set; }
-    public string OptionName { get; set; } = ""; // Snapshot
-    public double AddOnPrice { get; set; }      // Snapshot
+
+    // This is the navigation back to the parent
+    [ForeignKey("OrderItemId")]
+    public PPP_OrderItem? ParentItem { get; set; }
+
+    public string OptionName { get; set; } = "";
+    public double AddOnPrice { get; set; }
 }
 
 // Physical spots where customers can meet the owner

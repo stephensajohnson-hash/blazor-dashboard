@@ -96,7 +96,7 @@ namespace Dashboard
         {
             base.OnModelCreating(modelBuilder);
 
-            // Force EF to use our manual column names for PPP Menu Engine
+            // Menu Engine Mapping
             modelBuilder.Entity<PPP_MenuItem>()
                 .HasOne<PPP_Menu>()
                 .WithMany(m => m.Items)
@@ -117,20 +117,17 @@ namespace Dashboard
                 .WithMany(s => s.Options)
                 .HasForeignKey(o => o.MenuItemSizeId);
 
-            modelBuilder.Entity<PPP_OrderItem>()
-                .HasOne<PPP_Order>()
-                .WithMany(o => o.Items)
-                .HasForeignKey(i => i.OrderId);
-
-            modelBuilder.Entity<PPP_OrderItemOption>()
-                .HasOne<PPP_OrderItem>()
-                .WithMany(i => i.SelectedOptions)
-                .HasForeignKey(o => o.OrderItemId);
-
+            // Fulfillment & Order Mapping
+            // This 'ParentOrderContainer' is the renamed property to avoid LINQ conflicts
             modelBuilder.Entity<PPP_OrderItem>()
                 .HasOne(i => i.ParentOrderContainer)
                 .WithMany(o => o.Items)
                 .HasForeignKey(i => i.OrderId);
+        
+            modelBuilder.Entity<PPP_OrderItemOption>()
+                .HasOne(opt => opt.ParentItem)
+                .WithMany(i => i.SelectedOptions)
+                .HasForeignKey(opt => opt.OrderItemId);
         }
     }
 }
