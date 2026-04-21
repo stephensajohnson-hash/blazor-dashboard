@@ -400,18 +400,41 @@ private async Task AddToCart()
 
     private async Task LoadCart()
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        // This query was likely triggering the bad SQL join
-        cart = await db.Set<PPP_Order>()
-            .Include(o => o.Items)
-                .ThenInclude(i => i.SelectedOptions)
-            .FirstOrDefaultAsync(o => o.OwnerId == OwnerId && o.CustomerIdentifier == customerId && !o.IsCheckedOut);
-
-        if (cart == null)
+        try 
         {
-            cart = new PPP_Order { OwnerId = OwnerId, CustomerIdentifier = customerId, CreatedAt = DateTime.UtcNow };
-            db.Add(cart);
-            await db.SaveChangesAsync();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            
+            // Find the order first without the problematic join
+            var existingOrder = await db.Set<PPP_Order>()
+                .FirstOrDefaultAsync(o => o.OwnerId == OwnerId && 
+                                        o.CustomerIdentifier == customerId && 
+                                        !o.IsCheckedOut);
+
+            if (existingOrder == null)
+            {
+                cart = new PPP_Order 
+                { 
+                    OwnerId = OwnerId, 
+                    CustomerIdentifier = customerId, 
+                    CreatedAt = DateTime.UtcNow 
+                };
+                db.Add(cart);
+                await db.SaveChangesAsync();
+            }
+            else 
+            {
+                // Now load the items separately to avoid the complex Join error
+                cart = existingOrder;
+                cart.Items = await db.Set<PPP_OrderItem>()
+                    .Where(i => i.OrderId == cart.Id)
+                    .Include(i => i.SelectedOptions)
+                    .ToListAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            // This will prevent the circuit from crashing silently
+            Console.WriteLine($"Cart Load Error: {ex.Message}");
         }
     }
 
