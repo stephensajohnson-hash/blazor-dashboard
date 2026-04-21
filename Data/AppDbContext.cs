@@ -126,6 +126,11 @@ namespace Dashboard
                 .HasOne<PPP_OrderItem>()
                 .WithMany(i => i.SelectedOptions)
                 .HasForeignKey(o => o.OrderItemId);
+
+            modelBuilder.Entity<PPP_OrderItem>()
+                .HasOne(i => i.ParentOrderContainer)
+                .WithMany(o => o.Items)
+                .HasForeignKey(i => i.OrderId);
         }
     }
 }
