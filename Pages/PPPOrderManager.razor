@@ -1,0 +1,120 @@
+@page "/ppp-order-manager/{OwnerId:int}"
+@using Dashboard
+@using Dashboard.Services
+@using Dashboard.Components
+@using Microsoft.EntityFrameworkCore
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject IDbContextFactory<AppDbContext> DbFactory
+
+<div class="min-h-screen bg-[#050505] text-slate-200 p-8 font-sans antialiased pb-40">
+    <PPPAdminNav CurrentPage="Orders" />
+
+    <div class="max-w-6xl mx-auto mb-12 flex justify-between items-end">
+        <div>
+            <h1 class="text-4xl font-black text-white italic uppercase tracking-tighter">Order Manager</h1>
+            <p class="text-emerald-500 text-[10px] font-black uppercase tracking-[0.3em] mt-1">Incoming Revenue & Logistics</p>
+        </div>
+        <div class="bg-[#111] border border-slate-800 px-6 py-3 rounded-2xl">
+            <span class="text-[9px] text-slate-500 uppercase font-black block">Total Sales</span>
+            <span class="text-xl font-mono font-bold text-white">$@orders.Sum(o => GetOrderTotal(o)).ToString("N2")</span>
+        </div>
+    </div>
+
+    <div class="max-w-6xl mx-auto space-y-6">
+        @if (!orders.Any())
+        {
+            <div class="py-20 text-center bg-[#111] rounded-[3rem] border border-slate-800 border-dashed">
+                <span class="text-4xl block mb-4">📦</span>
+                <p class="text-xs font-black uppercase tracking-widest text-slate-600">No orders have been placed yet.</p>
+            </div>
+        }
+        else
+        {
+            @foreach (var order in orders.OrderByDescending(o => o.CheckedOutAt))
+            {
+                <div class="bg-[#111] border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-xl">
+                    <div class="p-8 flex flex-col md:flex-row justify-between gap-6 bg-white/5">
+                        <div>
+                            <div class="flex items-center gap-3 mb-2">
+                                <span class="bg-emerald-600 text-white text-[9px] font-black px-3 py-1 rounded-full uppercase">Confirmed</span>
+                                <span class="text-xs text-slate-500 font-mono">Order #@order.Id</span>
+                            </div>
+                            <h3 class="text-lg font-black text-white uppercase tracking-tight">
+                                Customer: <span class="text-slate-400 font-mono text-sm">@order.CustomerIdentifier.Substring(0, 8)...</span>
+                            </h3>
+                            <p class="text-[10px] text-slate-500 uppercase font-bold mt-1">
+                                Placed: @order.CheckedOutAt?.ToString("MMM d, h:mm tt")
+                            </p>
+                        </div>
+                        <div class="text-right flex flex-col justify-center">
+                            <span class="text-[10px] text-slate-500 uppercase font-black block mb-1">Order Value</span>
+                            <span class="text-2xl font-mono font-black text-emerald-400">$@GetOrderTotal(order).ToString("N2")</span>
+                        </div>
+                    </div>
+
+                    <div class="p-8 grid grid-cols-1 md:grid-cols-2 gap-10 border-t border-white/5">
+                        @* Items List *@
+                        <div>
+                            <h4 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-4">Items Scheduled</h4>
+                            <div class="space-y-4">
+                                @foreach (var item in order.Items)
+                                {
+                                    <div class="flex justify-between items-start border-b border-white/5 pb-4">
+                                        <div>
+                                            <span class="text-[9px] font-black text-emerald-500 uppercase block mb-1">@item.ScheduledDate.ToString("ddd, MMM d")</span>
+                                            <p class="text-sm font-bold text-white uppercase">@item.RecipeName</p>
+                                            <p class="text-[10px] text-slate-500 font-bold uppercase">@item.SizeName</p>
+                                            @foreach (var opt in item.SelectedOptions)
+                                            {
+                                                <span class="text-[9px] text-slate-600 uppercase block">+ @opt.OptionName</span>
+                                            }
+                                        </div>
+                                        <span class="font-mono text-xs text-slate-400">$@((item.BasePrice + item.SelectedOptions.Sum(o => o.AddOnPrice)).ToString("N2"))</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        @* Fulfillment & Notes *@
+                        <div class="bg-black/30 rounded-3xl p-6 border border-white/5">
+                            <h4 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-4">Logistics & Instructions</h4>
+                            <div class="bg-black rounded-2xl p-4 border border-slate-800 mb-4">
+                                <p class="text-sm text-slate-300 leading-relaxed italic">
+                                    @(string.IsNullOrEmpty(order.Notes) ? "No special instructions provided." : order.Notes)
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button class="flex-1 bg-white/5 hover:bg-white/10 text-[10px] font-black uppercase py-3 rounded-xl transition-all">Print Receipt</button>
+                                <button class="flex-1 bg-emerald-900/20 text-emerald-500 border border-emerald-500/20 text-[10px] font-black uppercase py-3 rounded-xl">Mark Prepared</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public int OwnerId { get; set; }
+    private List<PPP_Order> orders = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadOrders();
+    }
+
+    private async Task LoadOrders()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        orders = await db.PPP_Orders
+            .Include(o => o.Items).ThenInclude(i => i.SelectedOptions)
+            .Where(o => o.OwnerId == OwnerId && o.IsCheckedOut)
+            .ToListAsync();
+    }
+
+    private double GetOrderTotal(PPP_Order o)
+    {
+        return o.Items.Sum(i => i.BasePrice + i.SelectedOptions.Sum(opt => opt.AddOnPrice));
+    }
+}

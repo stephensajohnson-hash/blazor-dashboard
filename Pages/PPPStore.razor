@@ -503,12 +503,47 @@
         }
         catch (Exception ex) { await ShowToast("Error: " + ex.Message, true); }
     }
+private async Task ProcessCheckout()
+{
+    if (cart == null || !IsCheckoutReady()) return;
 
-    private async Task ProcessCheckout()
+    try 
     {
-        await ShowToast("Checkout Complete!");
-        showCart = false;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var dbOrder = await db.PPP_Orders.FirstOrDefaultAsync(o => o.Id == cart.Id);
+        
+        if (dbOrder != null)
+        {
+            dbOrder.IsCheckedOut = true;
+            dbOrder.CheckedOutAt = DateTime.UtcNow;
+            
+            // Capture fulfillment details in the notes or a new field? 
+            // For now, let's prepend them to the notes snapshot for the owner.
+            var fulfillmentSummary = fulfillmentMethod == "Pickup" 
+                ? $"[PICKUP: {pickupLocations.FirstOrDefault(l => l.Id == selectedPickupId)?.Name}] "
+                : $"[DELIVERY to {deliveryZip} - Fee: ${GetDeliveryFee(deliveryZip):N2}] ";
+            
+            dbOrder.Notes = fulfillmentSummary + (cart.Notes ?? "");
+
+            await db.SaveChangesAsync();
+            
+            // Clear local UI state
+            cart = null;
+            showCart = false;
+            deliveryZip = "";
+            selectedPickupId = 0;
+            
+            _ = ShowToast("Order placed successfully! Check your email soon.");
+            
+            // Optional: Generate new empty cart for next time
+            await LoadCart();
+        }
     }
+    catch (Exception ex)
+    {
+        await ShowToast("Checkout Error: " + ex.Message, true);
+    }
+}
 
     private async Task ShowToast(string msg, bool isError = false)
     {
