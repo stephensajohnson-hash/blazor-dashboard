@@ -160,6 +160,32 @@ private async Task InitializePPP()
 
     try 
     {
+        // Add this to your InitializePPP() method
+        await Db.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS ""PPP_DeliveryZipCodes"" (
+                ""Id"" SERIAL PRIMARY KEY,
+                ""OwnerId"" integer NOT NULL REFERENCES ""PPP_Owners""(""Id"") ON DELETE CASCADE,
+                ""ZipCode"" text NOT NULL,
+                ""Fee"" float8 NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS ""PPP_DeliveryRadiusRules"" (
+                ""Id"" SERIAL PRIMARY KEY,
+                ""OwnerId"" integer NOT NULL REFERENCES ""PPP_Owners""(""Id"") ON DELETE CASCADE,
+                ""MaxMiles"" float8 NOT NULL,
+                ""Fee"" float8 NOT NULL,
+                ""Enabled"" boolean NOT NULL DEFAULT false
+            );
+
+            CREATE TABLE IF NOT EXISTS ""PPP_PickupLocations"" (
+                ""Id"" SERIAL PRIMARY KEY,
+                ""OwnerId"" integer NOT NULL REFERENCES ""PPP_Owners""(""Id"") ON DELETE CASCADE,
+                ""Name"" text NOT NULL,
+                ""Address"" text NOT NULL,
+                ""Details"" text NOT NULL
+            );
+        ");
+
         // Execute specialized schema patches for Ordering Rules, Publishing, and Cart Notes
         await Db.Database.ExecuteSqlRawAsync(@"
             DO $$ 
@@ -186,6 +212,28 @@ private async Task InitializePPP()
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Orders' AND column_name='Notes') THEN
                     ALTER TABLE ""PPP_Orders"" ADD COLUMN ""Notes"" varchar(500);
                 END IF;
+            END $$;
+
+            -- Run these via your patch logic
+            DO $$ 
+            BEGIN 
+                -- 1. Master Fulfillment Toggles on Owners
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Owners' AND column_name='OffersPickup') THEN
+                    ALTER TABLE ""PPP_Owners"" ADD COLUMN ""OffersPickup"" boolean NOT NULL DEFAULT true;
+                    ALTER TABLE ""PPP_Owners"" ADD COLUMN ""OffersDelivery"" boolean NOT NULL DEFAULT false;
+                END IF;
+
+                -- 2. New table for Customer Saved Addresses
+                CREATE TABLE IF NOT EXISTS ""PPP_UserAddresses"" (
+                    ""Id"" SERIAL PRIMARY KEY,
+                    ""UserId"" integer NOT NULL REFERENCES ""PPP_Users""(""Id"") ON DELETE CASCADE,
+                    ""Label"" text NOT NULL, -- 'Home', 'Work', 'Mom's House'
+                    ""Street"" text NOT NULL,
+                    ""City"" text NOT NULL,
+                    ""State"" text NOT NULL,
+                    ""ZipCode"" text NOT NULL,
+                    ""IsDefault"" boolean NOT NULL DEFAULT false
+                );
             END $$;
         ");
 

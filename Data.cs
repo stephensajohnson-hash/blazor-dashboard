@@ -997,3 +997,32 @@ public class PPP_OrderItemOption
     public string OptionName { get; set; } = ""; // Snapshot
     public double AddOnPrice { get; set; }      // Snapshot
 }
+
+// The specific zip codes for free or flat-rate delivery
+public class PPP_DeliveryZipCode
+{
+    public int Id { get; set; }
+    public int OwnerId { get; set; }
+    public string ZipCode { get; set; } = "";
+    public double Fee { get; set; } = 0; // 0 = Free
+}
+
+// The "Radius" rule for people outside the specific zips
+public class PPP_DeliveryRadiusRule
+{
+    public int Id { get; set; }
+    public int OwnerId { get; set; }
+    public double MaxMiles { get; set; }
+    public double Fee { get; set; }
+    public bool Enabled { get; set; }
+}
+
+// Physical spots where customers can meet the owner
+public class PPP_PickupLocation
+{
+    public int Id { get; set; }
+    public int OwnerId { get; set; }
+    public string Name { get; set; } = ""; // e.g. "Springs Crossing Parking Lot"
+    public string Address { get; set; } = "";
+    public string Details { get; set; } = ""; // e.g. "Look for the white van"
+}
