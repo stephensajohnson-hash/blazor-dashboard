@@ -108,7 +108,7 @@
     @if (cart != null && cart.Items.Any())
     {
         <div class="fixed bottom-8 left-1/2 -translate-x-1/2 z-[150] w-full max-w-lg px-4">
-            <button class="w-full bg-emerald-600 hover:bg-emerald-500 text-white p-6 rounded-[2rem] flex justify-between items-center shadow-[0_20px_50px_rgba(0,0,0,0.6)] transition-all active:scale-95 border border-emerald-400/20">
+            <button @onclick="() => showCart = true" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white p-6 rounded-[2rem] flex justify-between items-center shadow-[0_20px_50px_rgba(0,0,0,0.6)] transition-all active:scale-95 border border-emerald-400/20">
                 <div class="flex items-center gap-4">
                     <span class="bg-white/20 px-3 py-1 rounded-lg font-black text-xs">@cart.Items.Count</span>
                     <span class="text-xs font-black uppercase tracking-widest">View Your Cart</span>
@@ -118,7 +118,60 @@
         </div>
     }
 
-    @* Configuration Bottom Sheet *@
+    @* Cart Detail Overlay *@
+    @if (showCart && cart != null)
+    {
+        <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[250] flex items-end justify-center" @onclick="() => showCart = false">
+            <div @onclick:stopPropagation="true" class="bg-[#0f0f0f] w-full max-w-2xl rounded-t-[3rem] border-t border-slate-800 p-10 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[92vh] flex flex-col">
+                <div class="flex justify-between items-start mb-10 shrink-0">
+                    <div>
+                        <h2 class="text-3xl font-black text-white uppercase italic tracking-tighter">Your Cart</h2>
+                        <p class="text-[10px] text-emerald-500 font-black uppercase tracking-[0.2em] mt-1">Ready to check out?</p>
+                    </div>
+                    <button @onclick="() => showCart = false" class="bg-white/5 w-12 h-12 rounded-2xl text-slate-400 hover:text-white flex items-center justify-center text-2xl transition-all">&times;</button>
+                </div>
+
+                <div class="flex-1 overflow-y-auto space-y-6 pr-2">
+                    @foreach (var item in cart.Items.OrderBy(i => i.ScheduledDate))
+                    {
+                        <div class="bg-white/5 border border-white/5 rounded-3xl p-6 relative group">
+                            <div class="flex justify-between items-start mb-2">
+                                <span class="text-[9px] font-black text-emerald-500 uppercase tracking-widest">@item.ScheduledDate.ToString("ddd, MMM d")</span>
+                                <button @onclick="() => RemoveFromCart(item.Id)" class="text-slate-600 hover:text-red-500 transition-colors text-xs">✕ Remove</button>
+                            </div>
+                            <h4 class="text-lg font-black text-white uppercase italic tracking-tight">@item.RecipeName</h4>
+                            <p class="text-[10px] text-slate-400 font-bold uppercase mt-1">Size: @item.SizeName — $@item.BasePrice.ToString("N2")</p>
+                            
+                            @if (item.SelectedOptions.Any())
+                            {
+                                <div class="mt-4 pt-4 border-t border-white/5 space-y-1">
+                                    @foreach (var opt in item.SelectedOptions)
+                                    {
+                                        <div class="flex justify-between text-[10px] uppercase">
+                                            <span class="text-slate-500">+ @opt.OptionName</span>
+                                            <span class="text-slate-300 font-mono">+$@opt.AddOnPrice.ToString("N2")</span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <div class="mt-8 pt-8 border-t border-white/10 shrink-0">
+                    <div class="flex justify-between items-end mb-8">
+                        <span class="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Order Total</span>
+                        <span class="text-3xl font-black text-white italic tracking-tighter font-mono">$@cart.Items.Sum(i => i.BasePrice + i.SelectedOptions.Sum(o => o.AddOnPrice)).ToString("N2")</span>
+                    </div>
+                    <button class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-6 rounded-3xl font-black text-xs uppercase tracking-[0.5em] transition-all shadow-xl active:scale-95">
+                        Proceed to Checkout
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* Configuration Bottom Sheet (Selection) *@
     @if (selectedItem != null)
     {
         <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[200] flex items-end justify-center" @onclick="() => selectedItem = null">
@@ -132,7 +185,6 @@
                 </div>
 
                 <div class="space-y-12">
-                    @* 1. Size Selection *@
                     <section>
                         <h5 class="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 mb-6 flex items-center gap-3">
                             Size <span class="h-[1px] flex-1 bg-white/5"></span>
@@ -140,7 +192,7 @@
                         <div class="grid grid-cols-1 gap-3">
                             @foreach (var sz in selectedItem.Sizes)
                             {
-                                <div @onclick="() => SetSize(sz)" class="p-5 rounded-2xl border transition-all cursor-pointer @(currentSize?.Id == sz.Id ? "border-emerald-500 bg-emerald-500/5 shadow-[0_0_20px_rgba(16,185,129,0.1)]" : "border-slate-800 bg-black/40 hover:border-slate-600") flex justify-between items-center group">
+                                <div @onclick="() => SetSize(sz)" class="p-5 rounded-2xl border transition-all cursor-pointer @(currentSize?.Id == sz.Id ? "border-emerald-500 bg-emerald-500/5" : "border-slate-800 bg-black/40 hover:border-slate-600") flex justify-between items-center group">
                                     <span class="font-black text-xs uppercase tracking-widest @(currentSize?.Id == sz.Id ? "text-emerald-400" : "text-slate-300")">@sz.Name</span>
                                     <span class="font-mono text-sm @(currentSize?.Id == sz.Id ? "text-white" : "text-slate-500")">$@sz.BasePrice.ToString("N2")</span>
                                 </div>
@@ -148,7 +200,6 @@
                         </div>
                     </section>
 
-                    @* 2. Options Selection *@
                     @if (currentSize != null && currentSize.Options.Any())
                     {
                         <section>
@@ -192,6 +243,7 @@
     
     private PPP_Order? cart;
     private string? customerId;
+    private bool showCart = false;
 
     private PPP_MenuItem? selectedItem;
     private PPP_MenuItemSize? currentSize;
@@ -228,7 +280,7 @@
                 await LoadCart();
                 StateHasChanged();
             }
-            catch (Exception) { /* JS Interop might fail during pre-render or navigation */ }
+            catch (Exception) { }
         }
     }
 
@@ -266,7 +318,7 @@
         selectedItem = item;
         currentSize = item.Sizes.FirstOrDefault();
         selectedOptionIds.Clear();
-        StateHasChanged(); // Force UI to show modal
+        StateHasChanged();
     }
 
     private void SetSize(PPP_MenuItemSize sz)
@@ -322,6 +374,23 @@
         {
             await ShowToast("Error: " + ex.Message, true);
         }
+    }
+
+    private async Task RemoveFromCart(int orderItemId)
+    {
+        try 
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var item = await db.Set<PPP_OrderItem>().FirstOrDefaultAsync(i => i.Id == orderItemId);
+            if (item != null)
+            {
+                db.Remove(item);
+                await db.SaveChangesAsync();
+                await LoadCart();
+                _ = ShowToast("Item removed");
+            }
+        }
+        catch (Exception ex) { await ShowToast("Error: " + ex.Message, true); }
     }
 
     private async Task ShowToast(string msg, bool isError = false)
