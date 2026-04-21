@@ -1015,15 +1015,6 @@ public class PPP_DeliveryZipCode
     public double Fee { get; set; } = 0;
 }
 
-public class PPP_PickupLocation
-{
-    public int Id { get; set; }
-    public int OwnerId { get; set; }
-    public string Name { get; set; } = "";
-    public string Address { get; set; } = "";
-    public string Details { get; set; } = "";
-}
-
 public class PPP_UserAddress
 {
     public int Id { get; set; }

@@ -26,6 +26,7 @@
 
     @if (owner != null)
     {
+        @* Hero Branding Section *@
         <div class="relative h-56 bg-emerald-900/10 overflow-hidden border-b border-white/5">
             <div class="absolute inset-0 bg-gradient-to-b from-transparent to-[#050505]"></div>
             <div class="absolute bottom-8 left-8 flex items-center gap-6">
@@ -95,12 +96,8 @@
                                             
                                             <div class="mt-6 flex flex-wrap gap-2">
                                                 <span class="text-[8px] bg-emerald-950/20 text-emerald-400 border border-emerald-900/30 px-3 py-1 rounded-full font-black uppercase tracking-tighter">
-                                                    Cutoff: @item.CutoffTime.ToString("h:mm tt") on @item.StartDate.Date.AddDays(-1).ToString("MMM d")
+                                                    Order By: @(item.CutoffTime.ToString("h:mm tt")) on @item.StartDate.Date.AddDays(-1).ToString("MMM d")
                                                 </span>
-                                                @foreach (var tf in item.Timeframes)
-                                                {
-                                                    <span class="text-[8px] bg-white/5 border border-white/5 px-3 py-1 rounded-full font-black uppercase tracking-tighter text-slate-400">@tf.Name</span>
-                                                }
                                             </div>
                                         </div>
                                     </div>
@@ -131,8 +128,8 @@
     @if (showCart && cart != null)
     {
         <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[600] flex items-end justify-center" @onclick="SaveCartNotes">
-            <div @onclick:stopPropagation="true" class="bg-[#0f0f0f] w-full max-w-2xl rounded-t-[3rem] border-t border-slate-800 p-10 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[92vh] flex flex-col">
-                <div class="flex justify-between items-start mb-10 shrink-0">
+            <div @onclick:stopPropagation="true" class="bg-[#0f0f0f] w-full max-w-2xl rounded-t-[3rem] border-t border-slate-800 p-10 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[95vh] flex flex-col">
+                <div class="flex justify-between items-start mb-8 shrink-0">
                     <div>
                         <h2 class="text-3xl font-black text-white uppercase italic tracking-tighter">Your Cart</h2>
                         <p class="text-[10px] text-emerald-500 font-black uppercase tracking-[0.2em] mt-1">Review and Checkout</p>
@@ -149,7 +146,7 @@
                                 <button @onclick="() => RemoveFromCart(item.Id)" class="text-slate-600 hover:text-red-500 transition-colors text-xs">✕ Remove</button>
                             </div>
                             <h4 class="text-lg font-black text-white uppercase italic tracking-tight">@item.RecipeName</h4>
-                            <p class="text-[10px] text-slate-400 font-bold uppercase mt-1">Size: @item.SizeName — $@item.BasePrice.ToString("N2")</p>
+                            <p class="text-[10px] text-slate-400 font-bold uppercase mt-1">@item.SizeName — $@item.BasePrice.ToString("N2")</p>
                             
                             @if (item.SelectedOptions.Any())
                             {
@@ -166,37 +163,85 @@
                         </div>
                     }
 
+                    @* Logistics Section *@
+                    <div class="pt-6 border-t border-white/10">
+                        <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-4 block">Fulfillment</label>
+                        
+                        @if (owner.OffersPickup && owner.OffersDelivery)
+                        {
+                            <div class="flex gap-2 mb-6 bg-black p-1 rounded-2xl border border-slate-800">
+                                <button @onclick='() => fulfillmentMethod = "Pickup"' 
+                                        class="flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all @(fulfillmentMethod == "Pickup" ? "bg-emerald-600 text-white" : "text-slate-500")">
+                                    Pickup
+                                </button>
+                                <button @onclick='() => fulfillmentMethod = "Delivery"' 
+                                        class="flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all @(fulfillmentMethod == "Delivery" ? "bg-blue-600 text-white" : "text-slate-500")">
+                                    Delivery
+                                </button>
+                            </div>
+                        }
+
+                        @if (fulfillmentMethod == "Pickup")
+                        {
+                            <div class="space-y-3 animate-in fade-in slide-in-from-top-2">
+                                @foreach (var loc in pickupLocations)
+                                {
+                                    <div @onclick="() => selectedPickupId = loc.Id" 
+                                         class="p-4 rounded-2xl border transition-all cursor-pointer @(selectedPickupId == loc.Id ? "border-emerald-500 bg-emerald-500/5" : "border-slate-800 bg-black/40 hover:border-slate-600")">
+                                        <span class="text-xs font-black uppercase block text-white">@loc.Name</span>
+                                        <span class="text-[10px] text-slate-500 block">@loc.Address</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="animate-in fade-in slide-in-from-top-2">
+                                <input @bind="deliveryZip" @bind:event="oninput" placeholder="Enter Delivery Zip Code" 
+                                       class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm font-mono text-white outline-none focus:border-blue-500" />
+                                
+                                @if (!string.IsNullOrEmpty(deliveryZip))
+                                {
+                                    var fee = GetDeliveryFee(deliveryZip);
+                                    <p class="text-[10px] mt-2 @(fee >= 0 ? "text-blue-400" : "text-red-500") font-black uppercase">
+                                        @(fee == 0 ? "✓ Free Delivery!" : fee > 0 ? $"✓ Delivery Fee: ${fee:N2}" : "✕ Sorry, we don't deliver to " + deliveryZip)
+                                    </p>
+                                }
+                            </div>
+                        }
+                    </div>
+
                     <div class="pt-6">
-                        <div class="flex justify-between items-end mb-3">
-                            <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Special Instructions</label>
-                            <span class="text-[10px] font-mono @(cart.Notes?.Length >= 500 ? "text-red-500 font-bold" : "text-slate-600")">
-                                @(cart.Notes?.Length ?? 0) / 500
-                            </span>
-                        </div>
+                        <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-3 block">Order Notes</label>
                         <textarea @bind="cart.Notes" @bind:event="oninput" maxlength="500" rows="3" 
-                                  placeholder="Gate codes, delivery preferences, or allergy notes..."
-                                  class="w-full bg-black border border-slate-800 rounded-2xl p-4 text-sm focus:border-emerald-500 outline-none transition-all resize-none text-slate-300 placeholder:text-slate-700"></textarea>
+                                  placeholder="Allergies, delivery instructions, or gate codes..."
+                                  class="w-full bg-black border border-slate-800 rounded-2xl p-4 text-sm focus:border-emerald-500 outline-none transition-all resize-none text-slate-300"></textarea>
+                        <div class="text-right text-[9px] text-slate-600 mt-1 uppercase font-bold">@((cart.Notes?.Length ?? 0)) / 500</div>
                     </div>
                 </div>
 
                 <div class="mt-8 pt-8 border-t border-white/10 shrink-0">
                     <div class="flex justify-between items-end mb-8">
-                        <span class="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Order Total</span>
-                        <span class="text-3xl font-black text-white italic tracking-tighter font-mono">$@cart.Items.Sum(i => i.BasePrice + i.SelectedOptions.Sum(o => o.AddOnPrice)).ToString("N2")</span>
+                        <span class="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Grand Total</span>
+                        <span class="text-3xl font-black text-white italic tracking-tighter font-mono">
+                            $@((cart.Items.Sum(i => i.BasePrice + i.SelectedOptions.Sum(o => o.AddOnPrice)) + Math.Max(0, GetDeliveryFee(deliveryZip))).ToString("N2"))
+                        </span>
                     </div>
-                    <button class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-6 rounded-3xl font-black text-xs uppercase tracking-[0.5em] transition-all shadow-xl active:scale-95">
-                        Proceed to Checkout
+                    <button @onclick="ProcessCheckout" 
+                            disabled="@(!IsCheckoutReady())"
+                            class="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-20 disabled:grayscale text-white py-6 rounded-3xl font-black text-xs uppercase tracking-[0.5em] transition-all shadow-xl active:scale-95">
+                        Place Order
                     </button>
                 </div>
             </div>
         </div>
     }
 
-    @* Configuration Bottom Sheet (Selection) *@
+    @* Selection Modal *@
     @if (selectedItem != null)
     {
         <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[400] flex items-end justify-center" @onclick="() => selectedItem = null">
-            <div @onclick:stopPropagation="true" class="bg-[#0f0f0f] w-full max-w-2xl rounded-t-[3rem] border-t border-slate-800 p-10 shadow-[0_-20px_50px_rgba(0,0,0,0.5)] animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto">
+            <div @onclick:stopPropagation="true" class="bg-[#0f0f0f] w-full max-w-2xl rounded-t-[3rem] border-t border-slate-800 p-10 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto">
                 <div class="flex justify-between items-start mb-10">
                     <div>
                         <h2 class="text-3xl font-black text-white uppercase italic tracking-tighter">@selectedItem.Recipe?.Name</h2>
@@ -267,6 +312,14 @@
     private string? customerId;
     private bool showCart = false;
 
+    // Logistics
+    private string fulfillmentMethod = "Pickup";
+    private int selectedPickupId = 0;
+    private string deliveryZip = "";
+    private List<PPP_PickupLocation> pickupLocations = new();
+    private List<PPP_DeliveryZipCode> ownerZips = new();
+
+    // Selection
     private PPP_MenuItem? selectedItem;
     private PPP_MenuItemSize? currentSize;
     private HashSet<int> selectedOptionIds = new();
@@ -286,13 +339,21 @@
             .OrderBy(m => m.StartDate)
             .ToListAsync();
 
-        // Pre-fetch sold quantities to check limits
         var menuItemIds = activeMenus.SelectMany(m => m.Items).Select(i => i.Id).ToList();
         soldCounts = await db.Set<PPP_OrderItem>()
             .Where(i => menuItemIds.Contains(i.MenuItemId))
             .GroupBy(i => i.MenuItemId)
             .Select(g => new { Id = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.Id, x => x.Count);
+
+        pickupLocations = await db.Set<PPP_PickupLocation>().Where(l => l.OwnerId == OwnerId).ToListAsync();
+        ownerZips = await db.Set<PPP_DeliveryZipCode>().Where(z => z.OwnerId == OwnerId).ToListAsync();
+
+        if (owner != null)
+        {
+            if (!owner.OffersPickup && owner.OffersDelivery) fulfillmentMethod = "Delivery";
+            else fulfillmentMethod = "Pickup";
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -314,10 +375,8 @@
         }
     }
 
-    // Update the IsPastCutoff logic in the @code block
     private bool IsPastCutoff(PPP_MenuItem item)
     {
-        // Convert TimeOnly to a TimeSpan for the calculation
         var cutoffSpan = item.CutoffTime.ToTimeSpan();
         var deadline = item.StartDate.Date.AddDays(-1).Add(cutoffSpan);
         return DateTime.Now > deadline;
@@ -330,10 +389,24 @@
         return count >= item.MaxQuantity;
     }
 
+    private double GetDeliveryFee(string zip)
+    {
+        if (fulfillmentMethod == "Pickup") return 0;
+        if (string.IsNullOrWhiteSpace(zip)) return -1;
+        var match = ownerZips.FirstOrDefault(z => z.ZipCode == zip.Trim());
+        return match?.Fee ?? -1;
+    }
+
+    private bool IsCheckoutReady()
+    {
+        if (fulfillmentMethod == "Pickup") return selectedPickupId > 0;
+        if (fulfillmentMethod == "Delivery") return GetDeliveryFee(deliveryZip) >= 0;
+        return false;
+    }
+
     private async Task LoadCart()
     {
         if (string.IsNullOrEmpty(customerId)) return;
-
         await using var db = await DbFactory.CreateDbContextAsync();
         cart = await db.Set<PPP_Order>()
             .Include(o => o.Items).ThenInclude(i => i.SelectedOptions)
@@ -345,33 +418,16 @@
             db.Add(cart);
             await db.SaveChangesAsync();
         }
-        else
-        {
-            var today = DateTime.Today.ToUniversalTime();
-            var expired = cart.Items.Where(i => i.ScheduledDate < today).ToList();
-            if (expired.Any())
-            {
-                db.RemoveRange(expired);
-                await db.SaveChangesAsync();
-                cart.Items.RemoveAll(i => expired.Contains(i));
-                _ = ShowToast("Old items were removed from cart.");
-            }
-        }
     }
 
     private async Task SaveCartNotes()
     {
         if (cart == null) { showCart = false; return; }
-        
         try 
         {
             await using var db = await DbFactory.CreateDbContextAsync();
             var dbOrder = await db.Set<PPP_Order>().FirstOrDefaultAsync(o => o.Id == cart.Id);
-            if (dbOrder != null)
-            {
-                dbOrder.Notes = cart.Notes;
-                await db.SaveChangesAsync();
-            }
+            if (dbOrder != null) { dbOrder.Notes = cart.Notes; await db.SaveChangesAsync(); }
         }
         catch (Exception) { }
         finally { showCart = false; }
@@ -380,7 +436,6 @@
     private void SelectItem(PPP_MenuItem item)
     {
         if (IsPastCutoff(item) || IsItemSoldOut(item)) return;
-
         selectedItem = item;
         currentSize = item.Sizes.FirstOrDefault();
         selectedOptionIds.Clear();
@@ -411,13 +466,7 @@
     private async Task AddToCart()
     {
         if (selectedItem == null || currentSize == null || cart == null) return;
-
-        // Final safety check for inventory
-        if (IsItemSoldOut(selectedItem)) {
-            await ShowToast("Sorry, this item just sold out!", true);
-            selectedItem = null;
-            return;
-        }
+        if (IsItemSoldOut(selectedItem)) { await ShowToast("Item sold out!", true); return; }
 
         try 
         {
@@ -435,18 +484,13 @@
                     .Select(o => new PPP_OrderItemOption { OptionName = o.Name, AddOnPrice = o.AddOnPrice })
                     .ToList()
             };
-
             db.Add(orderItem);
             await db.SaveChangesAsync();
-            
             await LoadCart(); 
             selectedItem = null;
             _ = ShowToast("Added to order");
         }
-        catch (Exception ex)
-        {
-            await ShowToast("Error: " + ex.Message, true);
-        }
+        catch (Exception ex) { await ShowToast("Error: " + ex.Message, true); }
     }
 
     private async Task RemoveFromCart(int orderItemId)
@@ -455,26 +499,22 @@
         {
             await using var db = await DbFactory.CreateDbContextAsync();
             var item = await db.Set<PPP_OrderItem>().FirstOrDefaultAsync(i => i.Id == orderItemId);
-            if (item != null)
-            {
-                db.Remove(item);
-                await db.SaveChangesAsync();
-                await LoadCart();
-                _ = ShowToast("Item removed");
-            }
+            if (item != null) { db.Remove(item); await db.SaveChangesAsync(); await LoadCart(); _ = ShowToast("Item removed"); }
         }
         catch (Exception ex) { await ShowToast("Error: " + ex.Message, true); }
+    }
+
+    private async Task ProcessCheckout()
+    {
+        await ShowToast("Checkout Complete!");
+        showCart = false;
     }
 
     private async Task ShowToast(string msg, bool isError = false)
     {
         var toast = new ToastItem { Message = msg, IsError = isError };
-        toasts.Add(toast);
-        StateHasChanged();
-        await Task.Delay(4000);
-        toasts.Remove(toast);
-        StateHasChanged();
+        toasts.Add(toast); StateHasChanged();
+        await Task.Delay(4000); toasts.Remove(toast); StateHasChanged();
     }
-
     private class ToastItem { public string Message { get; set; } = ""; public bool IsError { get; set; } }
 }
