@@ -980,11 +980,13 @@ public class PPP_Order
 public class PPP_OrderItem
 {
     public int Id { get; set; }
+
+    // 1. Keep this as the actual Database Column Name
     public int OrderId { get; set; }
-    
-    // RENAME THIS FROM 'Order' TO 'ParentOrderContainer'
+
+    // 2. Add the [ForeignKey] attribute HERE to link the two
     [ForeignKey("OrderId")]
-    public PPP_Order? ParentOrderContainer { get; set; } 
+    public PPP_Order? ParentOrderContainer { get; set; }
 
     public int MenuItemId { get; set; }
     public string RecipeName { get; set; } = "";
@@ -995,6 +997,7 @@ public class PPP_OrderItem
     public int? PickupLocationId { get; set; }
     public string TimeframeName { get; set; } = "";
     public double DeliveryFee { get; set; }
+    
     public List<PPP_OrderItemOption> SelectedOptions { get; set; } = new();
 }
 
