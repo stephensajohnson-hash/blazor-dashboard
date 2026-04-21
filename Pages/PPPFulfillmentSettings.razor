@@ -2,11 +2,26 @@
 @using Dashboard
 @using Dashboard.Services
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject NavigationManager Nav
 
 <div class="min-h-screen bg-[#050505] text-slate-200 p-8 font-sans antialiased pb-40">
     <PPPAdminNav CurrentPage="Logistics" />
+
+    @* Toast Notifications *@
+    <div class="fixed top-24 right-6 z-[100] flex flex-col gap-3">
+        @foreach (var toast in toasts)
+        {
+            <div class="p-4 rounded-2xl border shadow-2xl animate-in slide-in-from-right duration-300 @(toast.IsError ? "bg-red-950 border-red-500 text-red-200" : "bg-emerald-950 border-emerald-500 text-emerald-200")">
+                <div class="flex items-center gap-3">
+                    <span>@(toast.IsError ? "❌" : "✅")</span>
+                    <span class="text-xs uppercase tracking-widest font-black">@toast.Message</span>
+                </div>
+            </div>
+        }
+    </div>
 
     @if (owner != null)
     {
@@ -27,7 +42,7 @@
                                 <span class="text-sm font-black uppercase block">Offer Pickup</span>
                                 <span class="text-[9px] text-slate-500 uppercase">Customers meet you</span>
                             </div>
-                            <input type="checkbox" @bind="owner.OffersPickup" @oninput="ValidateToggles" class="w-6 h-6 accent-emerald-500" />
+                            <input type="checkbox" @bind="owner.OffersPickup" @bind:after="ValidateToggles" class="w-6 h-6 accent-emerald-500" />
                         </label>
 
                         <label class="flex items-center justify-between p-4 bg-black/40 rounded-2xl border @(owner.OffersDelivery ? "border-blue-500/50" : "border-slate-800") cursor-pointer transition-all">
@@ -35,12 +50,13 @@
                                 <span class="text-sm font-black uppercase block">Offer Delivery</span>
                                 <span class="text-[9px] text-slate-500 uppercase">You go to them</span>
                             </div>
-                            <input type="checkbox" @bind="owner.OffersDelivery" @oninput="ValidateToggles" class="w-6 h-6 accent-blue-500" />
+                            <input type="checkbox" @bind="owner.OffersDelivery" @bind:after="ValidateToggles" class="w-6 h-6 accent-blue-500" />
                         </label>
                     </div>
                 </div>
-                <button @onclick="SaveGlobalSettings" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg">
-                    Save Global Rules
+
+                <button @onclick="SaveSettings" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg active:scale-95">
+                    Save
                 </button>
             </div>
 
@@ -58,11 +74,11 @@
                             {
                                 <div class="bg-black/40 p-6 rounded-2xl border border-slate-800 flex gap-4">
                                     <div class="flex-1 grid grid-cols-2 gap-4">
-                                        <input @bind="loc.Name" placeholder="Location Name (e.g. Town Square)" class="col-span-2 bg-transparent border-b border-slate-800 p-2 text-sm text-white font-bold" />
-                                        <input @bind="loc.Address" placeholder="Address" class="bg-transparent border-b border-slate-800 p-2 text-xs text-slate-400" />
-                                        <input @bind="loc.Details" placeholder="Instructions" class="bg-transparent border-b border-slate-800 p-2 text-xs text-slate-400" />
+                                        <input @bind="loc.Name" placeholder="Location Name (e.g. Town Square)" class="col-span-2 bg-transparent border-b border-slate-800 p-2 text-sm text-white font-bold outline-none" />
+                                        <input @bind="loc.Address" placeholder="Address" class="bg-transparent border-b border-slate-800 p-2 text-xs text-slate-400 outline-none" />
+                                        <input @bind="loc.Details" placeholder="Instructions" class="bg-transparent border-b border-slate-800 p-2 text-xs text-slate-400 outline-none" />
                                     </div>
-                                    <button @onclick="() => pickupLocations.Remove(loc)" class="text-slate-700 hover:text-red-500 text-xl">✕</button>
+                                    <button @onclick="() => pickupLocations.Remove(loc)" class="text-slate-700 hover:text-red-500 text-xl transition-colors">✕</button>
                                 </div>
                             }
                         </div>
@@ -71,23 +87,46 @@
 
                 @if (owner.OffersDelivery)
                 {
+                    @* Zip Code Fees *@
                     <div class="bg-[#111] border border-slate-800 rounded-[2.5rem] p-8 shadow-xl animate-in fade-in slide-in-from-bottom-4">
                         <div class="flex justify-between items-center mb-6">
-                            <h3 class="text-xs font-black uppercase tracking-[0.2em] text-blue-500">Delivery Zip Codes</h3>
-                            <button @onclick="AddZipCode" class="text-[9px] bg-blue-600 text-white px-4 py-2 rounded-full font-black uppercase tracking-widest">＋ Add Zip</button>
+                            <h3 class="text-xs font-black uppercase tracking-[0.2em] text-blue-500">Local Delivery Zip Codes</h3>
+                            <button @onclick="AddZipCode" class="text-[9px] bg-blue-600 text-white px-4 py-2 rounded-full font-black uppercase tracking-widest">＋ Add Zip Code</button>
                         </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             @foreach (var zip in zipCodes)
                             {
                                 <div class="bg-black/40 p-4 rounded-2xl border border-slate-800 flex items-center gap-3">
-                                    <input @bind="zip.ZipCode" placeholder="Zip" class="w-20 bg-transparent border-b border-slate-800 p-2 text-sm font-mono text-white" />
+                                    <input @bind="zip.ZipCode" placeholder="Zip" class="w-20 bg-transparent border-b border-slate-800 p-2 text-sm font-mono text-white outline-none" />
                                     <div class="flex-1 flex items-center gap-2">
                                         <span class="text-[10px] text-slate-600">$</span>
-                                        <input type="number" @bind="zip.Fee" class="w-full bg-transparent border-b border-slate-800 p-2 text-sm text-blue-400" />
+                                        <input type="number" @bind="zip.Fee" step="0.50" class="w-full bg-transparent border-b border-slate-800 p-2 text-sm text-blue-400 font-mono outline-none" />
                                     </div>
-                                    <button @onclick="() => zipCodes.Remove(zip)" class="text-slate-800 hover:text-red-500">✕</button>
+                                    <button @onclick="() => zipCodes.Remove(zip)" class="text-slate-800 hover:text-red-500 transition-colors">✕</button>
                                 </div>
                             }
+                        </div>
+                        <p class="text-[8px] text-slate-600 uppercase mt-6 tracking-wider">Set fee to 0 for free delivery in that zip code.</p>
+                    </div>
+
+                    @* Extended Radius Fee (Optional Logic) *@
+                    <div class="bg-[#111] border border-slate-800 rounded-[2.5rem] p-8 shadow-xl animate-in fade-in slide-in-from-bottom-4">
+                        <h3 class="text-xs font-black uppercase tracking-[0.2em] text-orange-500 mb-6">Extended Delivery Area</h3>
+                        <div class="grid grid-cols-2 gap-6 p-6 bg-black/40 rounded-3xl border border-slate-800">
+                             <div>
+                                <label class="text-[9px] text-slate-500 uppercase font-black block mb-2">Max Distance (Miles)</label>
+                                <input type="number" @bind="radiusRule.MaxMiles" class="w-full bg-black border border-slate-800 rounded-xl p-3 text-sm text-white font-mono" />
+                            </div>
+                            <div>
+                                <label class="text-[9px] text-slate-500 uppercase font-black block mb-2">Extended Fee ($)</label>
+                                <input type="number" @bind="radiusRule.Fee" step="0.50" class="w-full bg-black border border-slate-800 rounded-xl p-3 text-sm text-orange-400 font-mono" />
+                            </div>
+                            <div class="col-span-2 pt-2">
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    <input type="checkbox" @bind="radiusRule.Enabled" class="w-5 h-5 accent-orange-500" />
+                                    <span class="text-[10px] font-black uppercase text-slate-400">Enable Distance-Based Fee (applied outside local zips)</span>
+                                </label>
+                            </div>
                         </div>
                     </div>
                 }
@@ -101,49 +140,82 @@
     private PPP_Owner? owner;
     private List<PPP_PickupLocation> pickupLocations = new();
     private List<PPP_DeliveryZipCode> zipCodes = new();
+    private PPP_DeliveryRadiusRule radiusRule = new();
+    private List<ToastItem> toasts = new();
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
         await using var db = await DbFactory.CreateDbContextAsync();
         owner = await db.PPP_Owners.FirstOrDefaultAsync(o => o.Id == OwnerId);
+        
         if (owner != null)
         {
             pickupLocations = await db.Set<PPP_PickupLocation>().Where(l => l.OwnerId == OwnerId).ToListAsync();
             zipCodes = await db.Set<PPP_DeliveryZipCode>().Where(z => z.OwnerId == OwnerId).ToListAsync();
+            radiusRule = await db.Set<PPP_DeliveryRadiusRule>().FirstOrDefaultAsync(r => r.OwnerId == OwnerId) 
+                         ?? new PPP_DeliveryRadiusRule { OwnerId = OwnerId };
         }
     }
 
     private void ValidateToggles()
     {
-        // Enforce that at least one must be true
-        if (!owner.OffersPickup && !owner.OffersDelivery)
+        if (owner != null && !owner.OffersPickup && !owner.OffersDelivery)
         {
-            owner.OffersPickup = true; // Default back to pickup
+            owner.OffersPickup = true;
+            _ = ShowToast("At least one fulfillment method is required.", true);
         }
+        StateHasChanged();
     }
 
     private void AddPickupLocation() => pickupLocations.Add(new PPP_PickupLocation { OwnerId = OwnerId });
     private void AddZipCode() => zipCodes.Add(new PPP_DeliveryZipCode { OwnerId = OwnerId });
 
-    private async Task SaveGlobalSettings()
+    private async Task SaveSettings()
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        
-        // Update master toggles
-        db.Update(owner);
+        try 
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            
+            // 1. Update Owner Toggles
+            db.Update(owner!);
 
-        // Wipe and re-insert child collections for simplicity
-        var oldLocs = db.Set<PPP_PickupLocation>().Where(l => l.OwnerId == OwnerId);
-        db.RemoveRange(oldLocs);
-        var oldZips = db.Set<PPP_DeliveryZipCode>().Where(z => z.OwnerId == OwnerId);
-        db.RemoveRange(oldZips);
-        
-        await db.SaveChangesAsync();
+            // 2. Refresh Pickup Locations
+            var existingLocs = db.Set<PPP_PickupLocation>().Where(l => l.OwnerId == OwnerId);
+            db.RemoveRange(existingLocs);
+            db.AddRange(pickupLocations);
 
-        db.AddRange(pickupLocations);
-        db.AddRange(zipCodes);
-        await db.SaveChangesAsync();
-        
-        Nav.NavigateTo($"/ppp-owner-admin");
+            // 3. Refresh Zip Codes
+            var existingZips = db.Set<PPP_DeliveryZipCode>().Where(z => z.OwnerId == OwnerId);
+            db.RemoveRange(existingZips);
+            db.AddRange(zipCodes);
+
+            // 4. Update/Add Radius Rule
+            if (radiusRule.Id == 0) db.Add(radiusRule);
+            else db.Update(radiusRule);
+
+            await db.SaveChangesAsync();
+            _ = ShowToast("Settings saved successfully.");
+        }
+        catch (Exception ex)
+        {
+            _ = ShowToast("Error saving: " + ex.Message, true);
+        }
     }
+
+    private async Task ShowToast(string msg, bool isError = false)
+    {
+        var toast = new ToastItem { Message = msg, IsError = isError };
+        toasts.Add(toast);
+        StateHasChanged();
+        await Task.Delay(4000);
+        toasts.Remove(toast);
+        StateHasChanged();
+    }
+
+    private class ToastItem { public string Message { get; set; } = ""; public bool IsError { get; set; } }
 }
