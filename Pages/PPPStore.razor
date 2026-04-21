@@ -325,25 +325,79 @@
         return currentSize.BasePrice + fee + currentSize.Options.Where(o => selectedOptionIds.Contains(o.Id)).Sum(o => o.AddOnPrice);
     }
 
-    private async Task AddToCart()
+private async Task AddToCart()
+{
+    // Safety check: Ensure we have an active selection and a valid recipe/cart
+    if (selectedItem == null || currentSize == null || cart == null || selectedItem.Recipe == null)
     {
-        if (selectedItem == null || currentSize == null || cart == null) return;
-        
-        try {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            var item = new PPP_OrderItem {
-                OrderId = cart.Id, MenuItemId = selectedItem.Id, RecipeName = selectedItem.Recipe.Name,
-                SizeName = currentSize.Name, BasePrice = currentSize.BasePrice, ScheduledDate = selectedItem.StartDate.ToUniversalTime(),
-                TimeframeName = selTimeframe, FulfillmentMethod = selFulfillment,
-                PickupLocationId = selFulfillment == "Pickup" ? selPickupId : null,
-                DeliveryFee = selFulfillment == "Delivery" ? GetDeliveryFee(selZip) : 0,
-                SelectedOptions = currentSize.Options.Where(o => selectedOptionIds.Contains(o.Id))
-                                  .Select(o => new PPP_OrderItemOption { OptionName = o.Name, AddOnPrice = o.AddOnPrice }).ToList()
-            };
-            db.Add(item); await db.SaveChangesAsync();
-            await LoadCart(); selectedItem = null; _ = ShowToast("Added to cart");
-        } catch (Exception ex) { await ShowToast(ex.Message, true); }
+        await ShowToast("Missing selection details. Please try again.", true);
+        return;
     }
+
+    // Double check inventory and cutoff before committing to DB
+    if (IsItemSoldOut(selectedItem))
+    {
+        await ShowToast("Sorry, this item just sold out!", true);
+        selectedItem = null;
+        return;
+    }
+
+    if (IsPastCutoff(selectedItem))
+    {
+        await ShowToast("The ordering deadline for this item has passed.", true);
+        selectedItem = null;
+        return;
+    }
+
+    try 
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        
+        // Create the new OrderItem with fulfillment and timeframe data
+        var orderItem = new PPP_OrderItem
+        {
+            OrderId = cart.Id,
+            MenuItemId = selectedItem.Id,
+            RecipeName = selectedItem.Recipe.Name,
+            SizeName = currentSize.Name,
+            BasePrice = currentSize.BasePrice,
+            ScheduledDate = selectedItem.StartDate.ToUniversalTime(),
+            
+            // New Per-Item Fulfillment Logic
+            TimeframeName = selTimeframe,
+            FulfillmentMethod = selFulfillment,
+            PickupLocationId = selFulfillment == "Pickup" ? selPickupId : null,
+            DeliveryFee = selFulfillment == "Delivery" ? Math.Max(0, GetDeliveryFee(selZip)) : 0,
+
+            // Map selected options/add-ons
+            SelectedOptions = currentSize.Options
+                .Where(o => selectedOptionIds.Contains(o.Id))
+                .Select(o => new PPP_OrderItemOption 
+                { 
+                    OptionName = o.Name, 
+                    AddOnPrice = o.AddOnPrice 
+                })
+                .ToList()
+        };
+
+        // Add to database
+        db.Add(orderItem);
+        await db.SaveChangesAsync();
+        
+        // Refresh local cart state and reset the selection modal
+        await LoadCart(); 
+        selectedItem = null;
+        selectedOptionIds.Clear();
+        selZip = "";
+        
+        _ = ShowToast($"{orderItem.RecipeName} added to your order!");
+    }
+    catch (Exception ex)
+    {
+        // Handle database or mapping errors
+        await ShowToast("Error adding to cart: " + ex.Message, true);
+    }
+}
 
     private async Task ProcessCheckout()
     {
