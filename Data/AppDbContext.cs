@@ -90,6 +90,7 @@ namespace Dashboard
         public DbSet<PPP_DeliveryZipCode> PPP_DeliveryZipCodes { get; set; }
         public DbSet<PPP_PickupLocation> PPP_PickupLocations { get; set; }
         public DbSet<PPP_UserAddress> PPP_UserAddresses { get; set; }
+        public DbSet<PPP_DeliveryRadiusRule> PPP_DeliveryRadiusRules { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

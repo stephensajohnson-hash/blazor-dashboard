@@ -1026,3 +1026,12 @@ public class PPP_UserAddress
     public string ZipCode { get; set; } = "";
     public bool IsDefault { get; set; }
 }
+
+public class PPP_DeliveryRadiusRule
+{
+    public int Id { get; set; }
+    public int OwnerId { get; set; }
+    public double MaxMiles { get; set; }
+    public double Fee { get; set; }
+    public bool Enabled { get; set; }
+}
