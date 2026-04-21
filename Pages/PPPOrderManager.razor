@@ -39,7 +39,7 @@
         }
         else
         {
-            @* FIXED: Explicitly casting i as PPP_OrderItem to avoid LINQ 'Order' method collision *@
+            @* CRITICAL FIX: Explicitly referencing .Key and avoid method group confusion *@
             @foreach (var dateGroup in allOrderedItems
                 .GroupBy(i => i.ScheduledDate.Date)
                 .OrderBy(g => g.Key))
@@ -56,7 +56,6 @@
                         .OrderBy(g => g.Key))
                     {
                         <div class="bg-[#111] border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-2xl">
-                            @* Timeframe Header *@
                             <div class="bg-white/5 p-6 border-b border-white/5 flex justify-between items-center">
                                 <div class="flex items-center gap-3">
                                     <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
@@ -67,37 +66,36 @@
                                 </span>
                             </div>
 
-                            @* List of Individual Portions *@
                             <div class="divide-y divide-white/5">
-                                @foreach (PPP_OrderItem item in timeframeGroup)
+                                @foreach (PPP_OrderItem row in timeframeGroup)
                                 {
                                     <div class="p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 group hover:bg-white/[0.02] transition-all">
                                         <div class="flex items-center gap-6">
-                                            <div class="w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-inner @(item.FulfillmentMethod == "Pickup" ? "bg-emerald-950/30 text-emerald-500 border border-emerald-900/50" : "bg-blue-950/30 text-blue-500 border border-blue-900/50")">
-                                                @(item.FulfillmentMethod == "Pickup" ? "🏢" : "🚚")
+                                            <div class="w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-inner @(row.FulfillmentMethod == "Pickup" ? "bg-emerald-950/30 text-emerald-500 border border-emerald-900/50" : "bg-blue-950/30 text-blue-500 border border-blue-900/50")">
+                                                @(row.FulfillmentMethod == "Pickup" ? "🏢" : "🚚")
                                             </div>
 
                                             <div>
                                                 <div class="flex items-center gap-3 mb-1">
-                                                    <p class="text-white font-black uppercase text-base">@item.RecipeName</p>
-                                                    <span class="text-[9px] font-mono text-slate-600">#@item.OrderId</span>
+                                                    <p class="text-white font-black uppercase text-base">@row.RecipeName</p>
+                                                    <span class="text-[9px] font-mono text-slate-600">#@row.OrderId</span>
                                                 </div>
                                                 <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
-                                                    @item.SizeName 
-                                                    @if (item.SelectedOptions != null && item.SelectedOptions.Any())
+                                                    @row.SizeName 
+                                                    @if (row.SelectedOptions != null && row.SelectedOptions.Any())
                                                     {
-                                                        <span class="text-blue-400"> + @string.Join(", ", item.SelectedOptions.Select(o => o.OptionName))</span>
+                                                        <span class="text-blue-400"> + @string.Join(", ", row.SelectedOptions.Select(o => o.OptionName))</span>
                                                     }
                                                 </p>
                                                 
                                                 <div class="mt-2 text-[10px] font-black uppercase tracking-tighter">
-                                                    @if (item.FulfillmentMethod == "Pickup")
+                                                    @if (row.FulfillmentMethod == "Pickup")
                                                     {
-                                                        <span class="text-emerald-500/80 italic">Pickup: @(pickupLocations.FirstOrDefault(l => l.Id == item.PickupLocationId)?.Name ?? "Main Shop")</span>
+                                                        <span class="text-emerald-500/80 italic">Pickup: @(pickupLocations.FirstOrDefault(l => l.Id == row.PickupLocationId)?.Name ?? "Main Shop")</span>
                                                     }
                                                     else
                                                     {
-                                                        <span class="text-blue-500/80 italic">Delivery Fee: $@item.DeliveryFee.ToString("N2")</span>
+                                                        <span class="text-blue-500/80 italic">Delivery Fee: $@row.DeliveryFee.ToString("N2")</span>
                                                     }
                                                 </div>
                                             </div>
@@ -106,12 +104,15 @@
                                         <div class="flex items-center gap-4 w-full md:w-auto border-t md:border-t-0 border-white/5 pt-4 md:pt-0">
                                             <div class="text-right">
                                                 <p class="text-[9px] text-slate-500 font-black uppercase mb-1">Customer</p>
-                                                @* FIXED: Explicitly checking Order property to avoid method group error *@
+                                                @* CRITICAL FIX: Using 'row.Order' explicitly and avoid method name collision *@
                                                 <p class="text-xs font-mono text-white opacity-60">
-                                                    @if (item.Order != null) {
-                                                        @GetShortId(item.Order.CustomerIdentifier)
-                                                    } else {
-                                                        @("GUEST")
+                                                    @{
+                                                        var parentOrder = row.Order;
+                                                        if (parentOrder != null) {
+                                                            @GetShortId(parentOrder.CustomerIdentifier)
+                                                        } else {
+                                                            @("GUEST")
+                                                        }
                                                     }
                                                 </p>
                                             </div>
@@ -145,7 +146,7 @@
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         
-        // Ensure we explicitly include the Order object and check for null
+        // Use explicit naming in the query
         allOrderedItems = await db.Set<PPP_OrderItem>()
             .Include(i => i.Order)
             .Include(i => i.SelectedOptions)
