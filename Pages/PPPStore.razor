@@ -121,14 +121,14 @@
     @* Cart Detail Overlay *@
     @if (showCart && cart != null)
     {
-        <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[250] flex items-end justify-center" @onclick="() => showCart = false">
+        <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[250] flex items-end justify-center" @onclick="SaveCartNotes">
             <div @onclick:stopPropagation="true" class="bg-[#0f0f0f] w-full max-w-2xl rounded-t-[3rem] border-t border-slate-800 p-10 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[92vh] flex flex-col">
                 <div class="flex justify-between items-start mb-10 shrink-0">
                     <div>
                         <h2 class="text-3xl font-black text-white uppercase italic tracking-tighter">Your Cart</h2>
-                        <p class="text-[10px] text-emerald-500 font-black uppercase tracking-[0.2em] mt-1">Ready to check out?</p>
+                        <p class="text-[10px] text-emerald-500 font-black uppercase tracking-[0.2em] mt-1">Review and Checkout</p>
                     </div>
-                    <button @onclick="() => showCart = false" class="bg-white/5 w-12 h-12 rounded-2xl text-slate-400 hover:text-white flex items-center justify-center text-2xl transition-all">&times;</button>
+                    <button @onclick="SaveCartNotes" class="bg-white/5 w-12 h-12 rounded-2xl text-slate-400 hover:text-white flex items-center justify-center text-2xl transition-all">&times;</button>
                 </div>
 
                 <div class="flex-1 overflow-y-auto space-y-6 pr-2">
@@ -156,6 +156,19 @@
                             }
                         </div>
                     }
+
+                    @* New Order Notes Field *@
+                    <div class="pt-6">
+                        <div class="flex justify-between items-end mb-3">
+                            <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Special Instructions</label>
+                            <span class="text-[10px] font-mono @(cart.Notes?.Length >= 500 ? "text-red-500 font-bold" : "text-slate-600")">
+                                @(cart.Notes?.Length ?? 0) / 500
+                            </span>
+                        </div>
+                        <textarea @bind="cart.Notes" @bind:event="oninput" maxlength="500" rows="3" 
+                                  placeholder="Gate codes, delivery preferences, or allergy notes..."
+                                  class="w-full bg-black border border-slate-800 rounded-2xl p-4 text-sm focus:border-emerald-500 outline-none transition-all resize-none text-slate-300 placeholder:text-slate-700"></textarea>
+                    </div>
                 </div>
 
                 <div class="mt-8 pt-8 border-t border-white/10 shrink-0">
@@ -311,6 +324,24 @@
                 _ = ShowToast("Old items were removed from cart.");
             }
         }
+    }
+
+    private async Task SaveCartNotes()
+    {
+        if (cart == null) { showCart = false; return; }
+        
+        try 
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var dbOrder = await db.Set<PPP_Order>().FirstOrDefaultAsync(o => o.Id == cart.Id);
+            if (dbOrder != null)
+            {
+                dbOrder.Notes = cart.Notes;
+                await db.SaveChangesAsync();
+            }
+        }
+        catch (Exception) { /* Fail silently during close */ }
+        finally { showCart = false; }
     }
 
     private void SelectItem(PPP_MenuItem item)

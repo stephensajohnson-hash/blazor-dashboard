@@ -971,6 +971,7 @@ public class PPP_Order
     public bool IsCheckedOut { get; set; } = false;
     public DateTime? CheckedOutAt { get; set; }
     public List<PPP_OrderItem> Items { get; set; } = new();
+    public string? Notes { get; set; } // Add this
 }
 
 public class PPP_OrderItem
