@@ -981,11 +981,16 @@ public class PPP_OrderItem
 {
     public int Id { get; set; }
     public int OrderId { get; set; }
-
+    
     [ForeignKey("OrderId")]
     public PPP_Order? ParentOrderContainer { get; set; }
 
     public int MenuItemId { get; set; }
+    
+    // ADD THIS NAVIGATION PROPERTY
+    [ForeignKey("MenuItemId")]
+    public PPP_MenuItem? MenuItem { get; set; }
+
     public string RecipeName { get; set; } = "";
     public string SizeName { get; set; } = "";
     public double BasePrice { get; set; }
@@ -994,8 +999,6 @@ public class PPP_OrderItem
     public int? PickupLocationId { get; set; }
     public string TimeframeName { get; set; } = "";
     public double DeliveryFee { get; set; }
-    
-    // ADD THIS LINE
     public bool IsReady { get; set; } = false;
 
     public List<PPP_OrderItemOption> SelectedOptions { get; set; } = new();

@@ -10,13 +10,14 @@
 <div class="min-h-screen bg-[#050505] text-slate-200 p-8 font-sans antialiased pb-40">
     <PPPAdminNav CurrentPage="Orders" />
 
-    @* Header Section with Status Filter *@
+    @* Header Section *@
     <div class="max-w-6xl mx-auto mb-12 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div>
             <h1 class="text-4xl font-black text-white italic uppercase tracking-tighter">Kitchen Production</h1>
             <p class="text-emerald-500 text-[10px] font-black uppercase tracking-[0.3em] mt-1">Live Production Feed</p>
         </div>
 
+        @* Status Filter Toggle *@
         <div class="flex bg-[#111] border border-slate-800 p-1 rounded-2xl">
             <button @onclick='() => SetFilter("pending")' class="px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all @(activeFilter == "pending" ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-300")">Pending</button>
             <button @onclick='() => SetFilter("ready")' class="px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all @(activeFilter == "ready" ? "bg-blue-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-300")">Ready</button>
@@ -66,8 +67,8 @@
                                 {
                                     <div class="p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 group hover:bg-white/[0.02] transition-all">
                                         <div class="flex items-center gap-6">
-                                            @* RESTORED: Image/Icon Section *@
-                                            <div class="w-20 h-20 rounded-2xl overflow-hidden bg-black border border-slate-800 shrink-0">
+                                            @* RESTORED: Image Section *@
+                                            <div class="w-20 h-20 rounded-2xl overflow-hidden bg-black border border-slate-800 shrink-0 shadow-inner">
                                                 @if (lineItem.MenuItem?.Recipe?.ImageId != null)
                                                 {
                                                     <img src="/db-images-ppp/@lineItem.MenuItem.Recipe.ImageId" class="w-full h-full object-cover" />
@@ -121,7 +122,8 @@
                                                 </button>
 
                                                 <button @onclick="() => DeleteOrderItem(lineItem.Id)" 
-                                                        class="bg-red-500/10 hover:bg-red-600 text-red-500 hover:text-white w-12 h-12 rounded-xl flex items-center justify-center transition-all border border-red-500/20 active:scale-90">
+                                                        class="bg-red-500/10 hover:bg-red-600 text-red-500 hover:text-white w-12 h-12 rounded-xl flex items-center justify-center transition-all border border-red-500/20 active:scale-90"
+                                                        title="Delete Order Item">
                                                     <span class="text-xl font-bold">✕</span>
                                                 </button>
 
@@ -227,14 +229,17 @@
         var query = db.Set<PPP_OrderItem>()
             .Include(i => i.ParentOrderContainer)
             .Include(i => i.SelectedOptions)
-            .Include(i => i.MenuItem).ThenInclude(m => m.Recipe) // Added to get images
+            .Include(i => i.MenuItem).ThenInclude(m => m.Recipe) // FETCH IMAGES
             .Where(i => i.ParentOrderContainer != null && i.ParentOrderContainer.OwnerId == OwnerId && i.ParentOrderContainer.IsCheckedOut);
 
         if (activeFilter == "pending") query = query.Where(i => !i.IsReady);
         else if (activeFilter == "ready") query = query.Where(i => i.IsReady);
 
         MasterKitchenQueue = await query.ToListAsync();
-        LocationsLookup = await db.Set<PPP_PickupLocation>().Where(l => l.OwnerId == OwnerId).ToListAsync();
+
+        LocationsLookup = await db.Set<PPP_PickupLocation>()
+            .Where(l => l.OwnerId == OwnerId)
+            .ToListAsync();
     }
 
     private async Task ToggleReady(int itemId)
@@ -270,6 +275,7 @@
         if (editingItem == null) return;
         await using var db = await DbFactory.CreateDbContextAsync();
         var dbItem = await db.Set<PPP_OrderItem>().FindAsync(editingItem.Id);
+
         if (dbItem != null)
         {
             dbItem.ScheduledDate = editingItem.ScheduledDate.ToUniversalTime();
@@ -277,6 +283,7 @@
             dbItem.FulfillmentMethod = editingItem.FulfillmentMethod;
             dbItem.PickupLocationId = editingItem.PickupLocationId;
             dbItem.DeliveryFee = editingItem.DeliveryFee;
+
             await db.SaveChangesAsync();
             editingItem = null;
             await LoadData();
@@ -297,6 +304,7 @@
 
     private string GetOptionString(PPP_OrderItem item) => (item.SelectedOptions == null) ? "" : string.Join(", ", item.SelectedOptions.Select(o => o.OptionName));
     private string GetSpotName(int? id) => id.HasValue ? (LocationsLookup.FirstOrDefault(l => l.Id == id.Value)?.Name ?? "Main Location") : "Main Location";
+
     private string GetSafeCustId(PPP_OrderItem item)
     {
         var parentData = item.ParentOrderContainer;
