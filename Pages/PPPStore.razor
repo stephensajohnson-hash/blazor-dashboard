@@ -113,7 +113,7 @@
                     <div>
                         <h2 class="text-3xl font-black text-white uppercase italic tracking-tighter">Your Cart</h2>
                     </div>
-                    <button @onclick="SaveCartNotes" class="bg-white/5 w-12 h-12 rounded-2xl text-slate-400 hover:text-white flex items-center justify-center text-2xl">&times;</button>
+                    <button @onclick="SaveCartNotes" class="bg-white/5 w-12 h-12 rounded-2xl text-slate-400 hover:text-white flex items-center justify-center text-2xl transition-all">&times;</button>
                 </div>
 
                 <div class="flex-1 overflow-y-auto space-y-4 pr-2">
@@ -154,7 +154,7 @@
     }
 
     @* Configuration Modal (The Logic Hub) *@
-    @if (selectedItem != null)
+    @if (selectedItem != null && currentSize != null)
     {
         <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[400] flex items-end justify-center" @onclick="() => selectedItem = null">
             <div @onclick:stopPropagation="true" class="bg-[#0f0f0f] w-full max-w-2xl rounded-t-[3rem] border-t border-slate-800 p-10 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[95vh] overflow-y-auto">
@@ -163,7 +163,7 @@
                         <h2 class="text-3xl font-black text-white uppercase italic tracking-tighter">@selectedItem.Recipe?.Name</h2>
                         <p class="text-[10px] text-emerald-500 font-black uppercase mt-1">Configure Delivery & Options</p>
                     </div>
-                    <button @onclick="() => selectedItem = null" class="bg-white/5 w-12 h-12 rounded-2xl text-slate-400 flex items-center justify-center text-2xl">&times;</button>
+                    <button @onclick="() => selectedItem = null" class="bg-white/5 w-12 h-12 rounded-2xl text-slate-400 flex items-center justify-center text-2xl transition-all">&times;</button>
                 </div>
 
                 <div class="space-y-10">
@@ -212,7 +212,7 @@
                         }
                     </section>
 
-                    @* 3. Sizes & Options *@
+                    @* 3. Size Selection *@
                     <section>
                         <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4">Size</h5>
                         <div class="space-y-2">
@@ -225,6 +225,28 @@
                             }
                         </div>
                     </section>
+
+                    @* 4. Add-ons / Options *@
+                    @if (currentSize?.Options != null && currentSize.Options.Any())
+                    {
+                        <section>
+                            <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4">Add-ons</h5>
+                            <div class="space-y-2">
+                                @foreach (var opt in currentSize.Options)
+                                {
+                                    <div @onclick="() => ToggleOption(opt)" class="p-4 bg-black/40 border @(selectedOptionIds.Contains(opt.Id) ? "border-emerald-500/50" : "border-slate-800") rounded-2xl cursor-pointer flex justify-between items-center transition-all">
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-5 h-5 rounded border border-slate-700 flex items-center justify-center @(selectedOptionIds.Contains(opt.Id) ? "bg-emerald-500 border-emerald-500" : "")">
+                                                @if(selectedOptionIds.Contains(opt.Id)) { <span class="text-white text-[10px]">✓</span> }
+                                            </div>
+                                            <span class="text-xs font-bold uppercase @(selectedOptionIds.Contains(opt.Id) ? "text-white" : "text-slate-500")">@opt.Name</span>
+                                        </div>
+                                        <span class="text-[10px] font-mono">+$@opt.AddOnPrice.ToString("N2")</span>
+                                    </div>
+                                }
+                            </div>
+                        </section>
+                    }
                 </div>
 
                 <div class="mt-12 pt-8 border-t border-white/5">
@@ -300,28 +322,15 @@
 
     private void SelectItem(PPP_MenuItem item)
     {
-        // 1. Assign the primary item
         selectedItem = item;
-        
-        // 2. Set default Size (required for the total calculation)
         currentSize = item.Sizes?.OrderBy(s => s.BasePrice).FirstOrDefault();
-        
-        // 3. Set default Timeframe (required for AddToCart)
-        // We look for the first available timeframe, otherwise default to "Standard"
         selTimeframe = item.Timeframes?.FirstOrDefault()?.Name ?? "Standard";
-        
-        // 4. Reset fulfillment defaults for this specific item
-        if (owner != null)
-        {
-            selFulfillment = owner.OffersPickup ? "Pickup" : "Delivery";
-        }
-        
-        // 5. Clear previous selections
         selectedOptionIds.Clear();
+        
+        if (owner != null) selFulfillment = owner.OffersPickup ? "Pickup" : "Delivery";
         selPickupId = pickupLocations.FirstOrDefault()?.Id ?? 0;
         selZip = ""; 
 
-        // 6. Force UI Refresh
         StateHasChanged();
     }
 
@@ -340,59 +349,62 @@
     private double GetConfigTotal() {
         if (currentSize == null) return 0;
         double fee = selFulfillment == "Delivery" ? Math.Max(0, GetDeliveryFee(selZip)) : 0;
-        return currentSize.BasePrice + fee + currentSize.Options.Where(o => selectedOptionIds.Contains(o.Id)).Sum(o => o.AddOnPrice);
+        var addons = currentSize.Options.Where(o => selectedOptionIds.Contains(o.Id)).Sum(o => o.AddOnPrice);
+        return currentSize.BasePrice + fee + addons;
     }
 
-private async Task AddToCart()
-{
-    if (selectedItem == null || currentSize == null || cart == null || selectedItem.Recipe == null) return;
-    
-    try 
+    private async Task AddToCart()
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
+        if (selectedItem == null || currentSize == null || cart == null || selectedItem.Recipe == null) return;
         
-        var newEntry = new PPP_OrderItem
+        try 
         {
-            OrderId = cart.Id,
-            MenuItemId = selectedItem.Id,
-            RecipeName = selectedItem.Recipe?.Name ?? "Selected Item",
-            SizeName = currentSize?.Name ?? "Standard",
-            BasePrice = currentSize?.BasePrice ?? 0,
-            ScheduledDate = selectedItem.StartDate.ToUniversalTime(),
-            TimeframeName = selTimeframe,
-            FulfillmentMethod = selFulfillment,
-            PickupLocationId = selFulfillment == "Pickup" ? selPickupId : null,
-            DeliveryFee = selFulfillment == "Delivery" ? Math.Max(0, GetDeliveryFee(selZip)) : 0,
+            await using var db = await DbFactory.CreateDbContextAsync();
             
-            // Map options with null safety
-            SelectedOptions = currentSize?.Options
-                .Where(o => selectedOptionIds.Contains(o.Id))
-                .Select(o => new PPP_OrderItemOption { OptionName = o.Name, AddOnPrice = o.AddOnPrice })
-                .ToList() ?? new List<PPP_OrderItemOption>()
-        };
+            var newEntry = new PPP_OrderItem
+            {
+                OrderId = cart.Id,
+                MenuItemId = selectedItem.Id,
+                RecipeName = selectedItem.Recipe?.Name ?? "Selected Item",
+                SizeName = currentSize?.Name ?? "Standard",
+                BasePrice = currentSize?.BasePrice ?? 0,
+                ScheduledDate = selectedItem.StartDate.ToUniversalTime(),
+                TimeframeName = selTimeframe,
+                FulfillmentMethod = selFulfillment,
+                PickupLocationId = selFulfillment == "Pickup" ? selPickupId : null,
+                DeliveryFee = selFulfillment == "Delivery" ? Math.Max(0, GetDeliveryFee(selZip)) : 0,
+                
+                SelectedOptions = currentSize?.Options
+                    .Where(o => selectedOptionIds.Contains(o.Id))
+                    .Select(o => new PPP_OrderItemOption { OptionName = o.Name, AddOnPrice = o.AddOnPrice })
+                    .ToList() ?? new List<PPP_OrderItemOption>()
+            };
 
-        db.Add(newEntry);
-        await db.SaveChangesAsync();
-        
-        await LoadCart(); 
-        selectedItem = null;
-        _ = ShowToast("Added to cart!");
+            db.Add(newEntry);
+            await db.SaveChangesAsync();
+            
+            await LoadCart(); 
+            selectedItem = null;
+            selectedOptionIds.Clear();
+            _ = ShowToast("Added to cart!");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast("Error: " + ex.Message, true);
+        }
     }
-    catch (Exception ex)
-    {
-        await ShowToast("Error: " + ex.Message, true);
-    }
-}
 
     private async Task ProcessCheckout()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         var dbOrder = await db.PPP_Orders.FirstOrDefaultAsync(o => o.Id == cart.Id);
         if (dbOrder != null) {
-            dbOrder.IsCheckedOut = true; dbOrder.CheckedOutAt = DateTime.UtcNow;
+            dbOrder.IsCheckedOut = true; 
+            dbOrder.CheckedOutAt = DateTime.UtcNow;
             dbOrder.Notes = cart.Notes;
             await db.SaveChangesAsync();
-            cart = null; showCart = false;
+            cart = null; 
+            showCart = false;
             await ShowToast("Order placed successfully!");
             await LoadCart();
         }
@@ -403,47 +415,58 @@ private async Task AddToCart()
         try 
         {
             await using var db = await DbFactory.CreateDbContextAsync();
-            
-            // Find the order first without the problematic join
             var existingOrder = await db.Set<PPP_Order>()
                 .FirstOrDefaultAsync(o => o.OwnerId == OwnerId && 
-                                        o.CustomerIdentifier == customerId && 
-                                        !o.IsCheckedOut);
+                                         o.CustomerIdentifier == customerId && 
+                                         !o.IsCheckedOut);
 
             if (existingOrder == null)
             {
-                cart = new PPP_Order 
-                { 
-                    OwnerId = OwnerId, 
-                    CustomerIdentifier = customerId, 
-                    CreatedAt = DateTime.UtcNow 
-                };
-                db.Add(cart);
+                existingOrder = new PPP_Order { OwnerId = OwnerId, CustomerIdentifier = customerId, CreatedAt = DateTime.UtcNow };
+                db.Add(existingOrder);
                 await db.SaveChangesAsync();
             }
-            else 
-            {
-                // Now load the items separately to avoid the complex Join error
-                cart = existingOrder;
-                cart.Items = await db.Set<PPP_OrderItem>()
-                    .Where(i => i.OrderId == cart.Id)
-                    .Include(i => i.SelectedOptions)
-                    .ToListAsync();
-            }
+
+            existingOrder.Items = await db.Set<PPP_OrderItem>()
+                .Where(i => i.OrderId == existingOrder.Id)
+                .Include(i => i.SelectedOptions)
+                .ToListAsync();
+
+            cart = existingOrder;
         }
         catch (Exception ex)
         {
-            // This will prevent the circuit from crashing silently
             Console.WriteLine($"Cart Load Error: {ex.Message}");
         }
     }
 
-    private async Task SaveCartNotes() { /* Logic to save cart.Notes to DB on close */ showCart = false; }
-    private async Task RemoveFromCart(int id) { /* Logic to remove */ await LoadCart(); }
+    private async Task SaveCartNotes() { showCart = false; }
+    
+    private async Task RemoveFromCart(int id) 
+    { 
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var item = await db.PPP_OrderItems.FindAsync(id);
+        if (item != null) { db.Remove(item); await db.SaveChangesAsync(); await LoadCart(); }
+    }
+    
     private void SetSize(PPP_MenuItemSize sz) { currentSize = sz; selectedOptionIds.Clear(); }
-    private void ToggleOption(PPP_MenuItemOption opt) { if (selectedOptionIds.Contains(opt.Id)) selectedOptionIds.Remove(opt.Id); else selectedOptionIds.Add(opt.Id); }
+    
+    private void ToggleOption(PPP_MenuItemOption opt) 
+    { 
+        if (selectedOptionIds.Contains(opt.Id)) selectedOptionIds.Remove(opt.Id); 
+        else selectedOptionIds.Add(opt.Id); 
+    }
+    
     private bool IsPastCutoff(PPP_MenuItem i) => DateTime.Now > i.StartDate.Date.AddDays(-1).Add(i.CutoffTime.ToTimeSpan());
-    private bool IsItemSoldOut(PPP_MenuItem i) => false; // Implement grouped count check
-    private async Task ShowToast(string msg, bool err = false) { toasts.Add(new ToastItem { Message = msg, IsError = err }); StateHasChanged(); await Task.Delay(3000); toasts.RemoveAt(0); StateHasChanged(); }
+    
+    private bool IsItemSoldOut(PPP_MenuItem i) => false;
+    
+    private async Task ShowToast(string msg, bool err = false) 
+    { 
+        var t = new ToastItem { Message = msg, IsError = err };
+        toasts.Add(t); StateHasChanged(); 
+        await Task.Delay(3000); toasts.Remove(t); StateHasChanged(); 
+    }
+    
     private class ToastItem { public string Message { get; set; } = ""; public bool IsError { get; set; } }
 }
