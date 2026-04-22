@@ -165,6 +165,27 @@ private async Task InitializePPP()
         // This is safer for heavy DDL (Data Definition Language) commands
         await using var db = await DbFactory.CreateDbContextAsync();
 
+        await db.Database.ExecuteSqlRawAsync(@"
+        DO $$ 
+        BEGIN 
+            -- 1. Add Label to Address if missing
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Addresses' AND column_name='Label') THEN
+                ALTER TABLE ""PPP_Addresses"" ADD COLUMN ""Label"" text NOT NULL DEFAULT 'Home';
+                ALTER TABLE ""PPP_Addresses"" ADD COLUMN ""IsDefault"" boolean NOT NULL DEFAULT false;
+            END IF;
+
+            -- 2. Add UserId to Address if missing (The Foreign Key)
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Addresses' AND column_name='UserId') THEN
+                ALTER TABLE ""PPP_Addresses"" ADD COLUMN ""UserId"" integer NULL;
+            END IF;
+
+            -- 3. Remove the old AddressId from Users (Cleanup)
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Users' AND column_name='AddressId') THEN
+                ALTER TABLE ""PPP_Users"" DROP COLUMN ""AddressId"";
+            END IF;
+        END $$;
+    ");
+
         // Add this inside your existing ExecuteSqlRawAsync block in InitializePPP
         await db.Database.ExecuteSqlRawAsync(@"
             DO $$ 

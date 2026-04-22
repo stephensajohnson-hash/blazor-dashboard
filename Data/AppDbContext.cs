@@ -128,6 +128,13 @@ namespace Dashboard
                 .HasOne(opt => opt.ParentItem)
                 .WithMany(i => i.SelectedOptions)
                 .HasForeignKey(opt => opt.OrderItemId);
+
+            // User to Addresses (One-to-Many)
+            modelBuilder.Entity<PPP_Address>()
+                .HasOne<PPP_User>()
+                .WithMany(u => u.Addresses)
+                .HasForeignKey(a => a.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }

@@ -12,7 +12,7 @@
 
 <div class="min-h-screen bg-[#050505] text-slate-200 font-sans antialiased pb-32">
     @* Notification Stack *@
-    <div class="fixed top-6 right-6 z-[500] flex flex-col gap-3">
+    <div class="fixed top-6 right-6 z-[700] flex flex-col gap-3">
         @foreach (var toast in toasts)
         {
             <div class="p-4 rounded-2xl border shadow-2xl animate-in slide-in-from-right duration-300 @(toast.IsError ? "bg-red-950 border-red-500 text-red-200" : "bg-emerald-950 border-emerald-500 text-emerald-200") backdrop-blur-md">
@@ -153,7 +153,7 @@
         </div>
     }
 
-    @* Configuration Modal (The Logic Hub) *@
+    @* Configuration Modal *@
     @if (selectedItem != null && currentSize != null)
     {
         <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[400] flex items-end justify-center" @onclick="() => selectedItem = null">
@@ -260,6 +260,45 @@
             </div>
         </div>
     }
+
+    @* Identity & Checkout Form Modal *@
+    @if (showContactForm)
+    {
+        <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[800] flex items-center justify-center p-4">
+            <div class="bg-[#0f0f0f] w-full max-w-lg rounded-[3rem] border border-slate-800 p-10 shadow-2xl animate-in zoom-in-95 duration-200">
+                <h2 class="text-2xl font-black text-white uppercase italic tracking-tighter mb-2">Order Details</h2>
+                <p class="text-[10px] text-slate-500 font-black uppercase mb-8">We'll email your magic link and receipt</p>
+                
+                <div class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <input @bind="tempUser.FirstName" placeholder="First Name" class="bg-black border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500" />
+                        <input @bind="tempUser.LastName" placeholder="Last Name" class="bg-black border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500" />
+                    </div>
+                    <input @bind="tempUser.Email" type="email" placeholder="Email Address" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500" />
+                    <input @bind="tempUser.Phone" type="tel" placeholder="Phone Number" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500" />
+                    
+                    @if (cart?.Items != null && cart.Items.Any(i => i.FulfillmentMethod == "Delivery"))
+                    {
+                        <div class="pt-4 border-t border-white/5">
+                            <label class="text-[9px] font-black uppercase text-emerald-500 mb-2 block">Delivery Address</label>
+                            <input @bind="tempAddress.Label" placeholder="Label (e.g. Home, Office)" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-xs text-white mb-2 outline-none" />
+                            <input @bind="tempAddress.Street" placeholder="Street Address" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm text-white mb-2 outline-none" />
+                            <div class="grid grid-cols-3 gap-2">
+                                <input @bind="tempAddress.City" placeholder="City" class="bg-black border border-slate-800 rounded-xl p-4 text-xs text-white outline-none" />
+                                <input @bind="tempAddress.State" placeholder="ST" class="bg-black border border-slate-800 rounded-xl p-4 text-xs text-white outline-none" />
+                                <input @bind="tempAddress.ZipCode" placeholder="Zip" class="bg-black border border-slate-800 rounded-xl p-4 text-xs text-white outline-none" />
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="mt-8 flex gap-3">
+                    <button @onclick="() => showContactForm = false" class="flex-1 py-4 text-[10px] font-black uppercase text-slate-500">Back</button>
+                    <button @onclick="FinalizeOrder" class="flex-[2] bg-emerald-600 text-white py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl">Complete Order</button>
+                </div>
+            </div>
+        </div>
+    }
 </div>
 
 @code {
@@ -267,10 +306,10 @@
     private PPP_Owner? owner;
     private List<PPP_Menu> activeMenus = new();
     private List<ToastItem> toasts = new();
-    private Dictionary<int, int> soldCounts = new();
     private PPP_Order? cart;
     private string? customerId;
     private bool showCart = false;
+    private bool showContactForm = false;
 
     // Selections
     private string selTimeframe = "";
@@ -283,6 +322,11 @@
 
     private List<PPP_PickupLocation> pickupLocations = new();
     private List<PPP_DeliveryZipCode> ownerZips = new();
+
+    // Identity State
+    private PPP_User? currentUser;
+    private PPP_User tempUser = new();
+    private PPP_Address tempAddress = new() { Label = "Home" };
 
     protected override async Task OnInitializedAsync()
     {
@@ -315,6 +359,22 @@
                 customerId = Guid.NewGuid().ToString();
                 await JS.InvokeVoidAsync("localStorage.setItem", "ppp_customer_id", customerId);
             }
+
+            // Persistence Check: Look for Magic Token Cookie
+            var token = await JS.InvokeAsync<string>("eval", "(function() { var match = document.cookie.match(new RegExp('(^| )ppp_token=([^;]+)')); if (match) return match[2]; return null; })()");
+            if (!string.IsNullOrEmpty(token))
+            {
+                await using var db = await DbFactory.CreateDbContextAsync();
+                currentUser = await db.PPP_Users.Include(u => u.Addresses).FirstOrDefaultAsync(u => u.MagicToken == token && u.TokenExpiresAt > DateTime.UtcNow);
+                if (currentUser != null) 
+                {
+                    tempUser.FirstName = currentUser.FirstName;
+                    tempUser.LastName = currentUser.LastName;
+                    tempUser.Email = currentUser.Email;
+                    tempUser.Phone = currentUser.Phone;
+                }
+            }
+
             await LoadCart();
             StateHasChanged();
         }
@@ -360,7 +420,6 @@
         try 
         {
             await using var db = await DbFactory.CreateDbContextAsync();
-            
             var newEntry = new PPP_OrderItem
             {
                 OrderId = cart.Id,
@@ -373,39 +432,74 @@
                 FulfillmentMethod = selFulfillment,
                 PickupLocationId = selFulfillment == "Pickup" ? selPickupId : null,
                 DeliveryFee = selFulfillment == "Delivery" ? Math.Max(0, GetDeliveryFee(selZip)) : 0,
-                
                 SelectedOptions = currentSize?.Options
                     .Where(o => selectedOptionIds.Contains(o.Id))
                     .Select(o => new PPP_OrderItemOption { OptionName = o.Name, AddOnPrice = o.AddOnPrice })
                     .ToList() ?? new List<PPP_OrderItemOption>()
             };
-
             db.Add(newEntry);
             await db.SaveChangesAsync();
-            
             await LoadCart(); 
             selectedItem = null;
             selectedOptionIds.Clear();
             _ = ShowToast("Added to cart!");
         }
-        catch (Exception ex)
-        {
-            await ShowToast("Error: " + ex.Message, true);
-        }
+        catch (Exception ex) { await ShowToast("Error: " + ex.Message, true); }
     }
 
     private async Task ProcessCheckout()
     {
+        // If we don't have a recognized session, show the form
+        if (currentUser == null) showContactForm = true;
+        else await FinalizeOrder();
+    }
+
+    private async Task FinalizeOrder()
+    {
+        if (string.IsNullOrWhiteSpace(tempUser.Email)) return;
+
         await using var db = await DbFactory.CreateDbContextAsync();
+        var user = await db.PPP_Users.FirstOrDefaultAsync(u => u.Email.ToLower() == tempUser.Email.ToLower());
+        
+        if (user == null)
+        {
+            user = new PPP_User { 
+                Email = tempUser.Email.ToLower(), FirstName = tempUser.FirstName, LastName = tempUser.LastName, Phone = tempUser.Phone,
+                MagicToken = Guid.NewGuid().ToString("N"), TokenExpiresAt = DateTime.UtcNow.AddMonths(6)
+            };
+            db.PPP_Users.Add(user);
+        }
+        else
+        {
+            user.FirstName = tempUser.FirstName; user.LastName = tempUser.LastName; user.Phone = tempUser.Phone;
+        }
+
+        // Handle new address storage if delivery is involved
+        if (cart.Items.Any(i => i.FulfillmentMethod == "Delivery") && !string.IsNullOrEmpty(tempAddress.Street))
+        {
+            var exists = await db.Set<PPP_Address>().AnyAsync(a => a.UserId == user.Id && a.Street == tempAddress.Street);
+            if (!exists)
+            {
+                db.Set<PPP_Address>().Add(new PPP_Address { 
+                    UserId = user.Id, Label = tempAddress.Label, Street = tempAddress.Street, 
+                    City = tempAddress.City, State = tempAddress.State, ZipCode = tempAddress.ZipCode 
+                });
+            }
+        }
+
         var dbOrder = await db.PPP_Orders.FirstOrDefaultAsync(o => o.Id == cart.Id);
         if (dbOrder != null) {
             dbOrder.IsCheckedOut = true; 
             dbOrder.CheckedOutAt = DateTime.UtcNow;
+            dbOrder.CustomerIdentifier = user.Email;
             dbOrder.Notes = cart.Notes;
             await db.SaveChangesAsync();
-            cart = null; 
-            showCart = false;
+            
+            // Set 6-month persistence cookie
+            await JS.InvokeVoidAsync("eval", $"document.cookie = 'ppp_token={user.MagicToken}; max-age={60*60*24*180}; path=/;'");
+            
             await ShowToast("Order placed successfully!");
+            cart = null; showCart = false; showContactForm = false;
             await LoadCart();
         }
     }
@@ -419,54 +513,38 @@
                 .FirstOrDefaultAsync(o => o.OwnerId == OwnerId && 
                                          o.CustomerIdentifier == customerId && 
                                          !o.IsCheckedOut);
-
             if (existingOrder == null)
             {
                 existingOrder = new PPP_Order { OwnerId = OwnerId, CustomerIdentifier = customerId, CreatedAt = DateTime.UtcNow };
                 db.Add(existingOrder);
                 await db.SaveChangesAsync();
             }
-
             existingOrder.Items = await db.Set<PPP_OrderItem>()
                 .Where(i => i.OrderId == existingOrder.Id)
                 .Include(i => i.SelectedOptions)
                 .ToListAsync();
-
             cart = existingOrder;
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Cart Load Error: {ex.Message}");
-        }
+        catch (Exception ex) { Console.WriteLine($"Cart Load Error: {ex.Message}"); }
     }
 
     private async Task SaveCartNotes() { showCart = false; }
-    
-    private async Task RemoveFromCart(int id) 
-    { 
+    private async Task RemoveFromCart(int id) { 
         await using var db = await DbFactory.CreateDbContextAsync();
         var item = await db.PPP_OrderItems.FindAsync(id);
         if (item != null) { db.Remove(item); await db.SaveChangesAsync(); await LoadCart(); }
     }
-    
     private void SetSize(PPP_MenuItemSize sz) { currentSize = sz; selectedOptionIds.Clear(); }
-    
-    private void ToggleOption(PPP_MenuItemOption opt) 
-    { 
+    private void ToggleOption(PPP_MenuItemOption opt) { 
         if (selectedOptionIds.Contains(opt.Id)) selectedOptionIds.Remove(opt.Id); 
         else selectedOptionIds.Add(opt.Id); 
     }
-    
     private bool IsPastCutoff(PPP_MenuItem i) => DateTime.Now > i.StartDate.Date.AddDays(-1).Add(i.CutoffTime.ToTimeSpan());
-    
     private bool IsItemSoldOut(PPP_MenuItem i) => false;
-    
-    private async Task ShowToast(string msg, bool err = false) 
-    { 
+    private async Task ShowToast(string msg, bool err = false) { 
         var t = new ToastItem { Message = msg, IsError = err };
         toasts.Add(t); StateHasChanged(); 
         await Task.Delay(3000); toasts.Remove(t); StateHasChanged(); 
     }
-    
     private class ToastItem { public string Message { get; set; } = ""; public bool IsError { get; set; } }
 }

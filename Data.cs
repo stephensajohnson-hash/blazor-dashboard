@@ -757,14 +757,23 @@ public class PPP_StoredImage
 public class PPP_Address
 {
     public int Id { get; set; }
+    
+    // Link back to the user
+    public int UserId { get; set; }
+    
+    // User-defined name (Home, Office, etc)
+    public string Label { get; set; } = "Home"; 
+    
     public string Street { get; set; } = "";
     public string City { get; set; } = "";
     public string State { get; set; } = "";
     public string ZipCode { get; set; } = "";
     public string? Apartment { get; set; }
     public string? DeliveryInstructions { get; set; }
+    
+    // Helpful for checkout defaults
+    public bool IsDefault { get; set; } = false;
 }
-
 public class PPP_User
 {
     public int Id { get; set; }
@@ -780,10 +789,12 @@ public class PPP_User
     [ForeignKey("AvatarId")]
     public virtual PPP_StoredImage? Avatar { get; set; }
 
-    // New Address Link
-    public int? AddressId { get; set; }
-    [ForeignKey("AddressId")]
-    public virtual PPP_Address? Address { get; set; }
+    // Navigation property for multiple addresses
+    public virtual List<PPP_Address> Addresses { get; set; } = new();
+
+    // Auth & Persistence
+    public string? MagicToken { get; set; }
+    public DateTime? TokenExpiresAt { get; set; }
 }
 
 public class PPP_Owner
