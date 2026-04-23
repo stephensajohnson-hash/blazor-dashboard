@@ -52,7 +52,7 @@
                 <thead>
                     <tr class="text-[10px] font-black uppercase text-gray-500 bg-gray-900/50 border-b border-gray-800">
                         <th class="p-5">User Profile</th>
-                        <th class="p-5">Location</th>
+                        <th class="p-5">Primary Location</th>
                         <th class="p-5">Role</th>
                         <th class="p-5 text-right">Actions</th>
                     </tr>
@@ -80,14 +80,17 @@
                                 </div>
                             </td>
                             <td class="p-5 font-mono text-[10px] text-gray-400">
-                                @if (user.Address != null)
+                                @{
+                                    var primaryAddr = user.Addresses?.FirstOrDefault(a => a.IsDefault) ?? user.Addresses?.FirstOrDefault();
+                                }
+                                @if (primaryAddr != null)
                                 {
-                                    <div>@user.Address.City, @user.Address.State</div>
-                                    <div class="text-gray-600">@user.Address.ZipCode</div>
+                                    <div>@primaryAddr.City, @primaryAddr.State</div>
+                                    <div class="text-gray-600">@primaryAddr.ZipCode</div>
                                 }
                                 else
                                 {
-                                    <span class="text-gray-700 italic">No Address</span>
+                                    <span class="text-gray-700 italic">No Addresses</span>
                                 }
                             </td>
                             <td class="p-5">
@@ -168,26 +171,26 @@
                     </select>
                 </div>
 
-                @* Address Section *@
+                @* Address Section (Modified for Collection) *@
                 <div class="col-span-2 mt-4 pt-4 border-t border-gray-800">
-                    <h4 class="text-[10px] uppercase tracking-[0.2em] text-gray-500 mb-4 font-black">Physical Address</h4>
+                    <h4 class="text-[10px] uppercase tracking-[0.2em] text-gray-500 mb-4 font-black">Primary Physical Address</h4>
                     <div class="grid grid-cols-2 gap-4 bg-white/5 p-4 rounded-2xl border border-gray-800">
                         <div class="col-span-2">
                             <label class="text-[9px] uppercase text-gray-600 mb-1 block">Street Address</label>
-                            <input @bind="editingUser.Address.Street" class="w-full bg-black border border-gray-800 rounded-lg p-2 text-xs focus:border-blue-500 outline-none" />
+                            <input @bind="editStreet" class="w-full bg-black border border-gray-800 rounded-lg p-2 text-xs focus:border-blue-500 outline-none" />
                         </div>
                         <div>
                             <label class="text-[9px] uppercase text-gray-600 mb-1 block">City</label>
-                            <input @bind="editingUser.Address.City" class="w-full bg-black border border-gray-800 rounded-lg p-2 text-xs focus:border-blue-500 outline-none" />
+                            <input @bind="editCity" class="w-full bg-black border border-gray-800 rounded-lg p-2 text-xs focus:border-blue-500 outline-none" />
                         </div>
                         <div class="grid grid-cols-2 gap-2">
                             <div>
                                 <label class="text-[9px] uppercase text-gray-600 mb-1 block">State</label>
-                                <input @bind="editingUser.Address.State" maxlength="2" class="w-full bg-black border border-gray-800 rounded-lg p-2 text-xs focus:border-blue-500 outline-none text-center uppercase" />
+                                <input @bind="editState" maxlength="2" class="w-full bg-black border border-gray-800 rounded-lg p-2 text-xs focus:border-blue-500 outline-none text-center uppercase" />
                             </div>
                             <div>
                                 <label class="text-[9px] uppercase text-gray-600 mb-1 block">Zip</label>
-                                <input @bind="editingUser.Address.ZipCode" class="w-full bg-black border border-gray-800 rounded-lg p-2 text-xs focus:border-blue-500 outline-none font-mono" />
+                                <input @bind="editZip" class="w-full bg-black border border-gray-800 rounded-lg p-2 text-xs focus:border-blue-500 outline-none font-mono" />
                             </div>
                         </div>
                     </div>
@@ -211,6 +214,9 @@
     private PPP_User editingUser = new();
     private List<ToastItem> toasts = new();
 
+    // UI state for the modal address fields
+    private string editStreet = "", editCity = "", editState = "", editZip = "";
+
     protected override async Task OnInitializedAsync()
     {
         await LoadUsers();
@@ -221,7 +227,7 @@
         isLoading = true;
         try {
             users = await Db.PPP_Users
-                .Include(u => u.Address)
+                .Include(u => u.Addresses)
                 .AsNoTracking()
                 .OrderBy(u => u.LastName)
                 .ThenBy(u => u.FirstName)
@@ -244,11 +250,8 @@
     {
         if (user == null)
         {
-            editingUser = new PPP_User { 
-                CreatedAt = DateTime.UtcNow, 
-                Role = "Customer",
-                Address = new PPP_Address() 
-            };
+            editingUser = new PPP_User { CreatedAt = DateTime.UtcNow, Role = "Customer" };
+            editStreet = editCity = editState = editZip = "";
         }
         else
         {
@@ -261,10 +264,14 @@
                 Phone = user.Phone,
                 Role = user.Role,
                 CreatedAt = user.CreatedAt,
-                AvatarId = user.AvatarId,
-                AddressId = user.AddressId,
-                Address = user.Address ?? new PPP_Address()
+                AvatarId = user.AvatarId
             };
+            
+            var addr = user.Addresses?.FirstOrDefault(a => a.IsDefault) ?? user.Addresses?.FirstOrDefault();
+            editStreet = addr?.Street ?? "";
+            editCity = addr?.City ?? "";
+            editState = addr?.State ?? "";
+            editZip = addr?.ZipCode ?? "";
         }
         showModal = true;
     }
@@ -315,43 +322,42 @@
     {
         editingUser.Phone = PPPUtils.FormatPhoneNumber(editingUser.Phone);
 
-        if (string.IsNullOrWhiteSpace(editingUser.FirstName) || 
-            string.IsNullOrWhiteSpace(editingUser.Email) || 
-            editingUser.Phone.Length != 12)
+        if (string.IsNullOrWhiteSpace(editingUser.FirstName) || string.IsNullOrWhiteSpace(editingUser.Email))
         {
-            _ = ShowToast("Name, Email, and 10-digit Phone are required", true);
+            _ = ShowToast("Name and Email are required", true);
             return;
         }
 
         try {
             Db.ChangeTracker.Clear();
 
-            if (editingUser.Address != null)
-            {
-                if (!string.IsNullOrWhiteSpace(editingUser.Address.Street))
-                {
-                    if (editingUser.Address.Id == 0)
-                        Db.PPP_Addresses.Add(editingUser.Address);
-                    else
-                        Db.PPP_Addresses.Update(editingUser.Address);
-
-                    await Db.SaveChangesAsync();
-                    editingUser.AddressId = editingUser.Address.Id;
-                }
-                else if (editingUser.Address.Id != 0)
-                {
-                    editingUser.AddressId = null;
-                }
-            }
-
             if (editingUser.Id == 0) {
                 Db.PPP_Users.Add(editingUser);
+                await Db.SaveChangesAsync();
             } else {
                 Db.Entry(editingUser).State = EntityState.Modified;
             }
+
+            // Sync Primary Address
+            var existingUser = await Db.PPP_Users.Include(u => u.Addresses).FirstOrDefaultAsync(u => u.Id == editingUser.Id);
+            if (existingUser != null)
+            {
+                var addr = existingUser.Addresses.FirstOrDefault(a => a.IsDefault) ?? existingUser.Addresses.FirstOrDefault();
+                if (addr != null)
+                {
+                    addr.Street = editStreet; addr.City = editCity; addr.State = editState; addr.ZipCode = editZip;
+                }
+                else if (!string.IsNullOrWhiteSpace(editStreet))
+                {
+                    existingUser.Addresses.Add(new PPP_Address { 
+                        Street = editStreet, City = editCity, State = editState, ZipCode = editZip, 
+                        IsDefault = true, Label = "Home", UserId = existingUser.Id 
+                    });
+                }
+            }
             
             await Db.SaveChangesAsync();
-            await LoadUsers(); // Re-fetch alphabetized list
+            await LoadUsers();
             _ = ShowToast("User record updated");
             CloseModal(); 
         } catch (Exception ex) {
@@ -365,7 +371,6 @@
         {
             try {
                 Db.ChangeTracker.Clear();
-                
                 if (user.AvatarId.HasValue)
                 {
                     var imgId = user.AvatarId.Value;
@@ -376,8 +381,8 @@
                         if (img != null) Db.PPP_StoredImages.Remove(img);
                     }
                 }
-
-                Db.PPP_Users.Remove(user);
+                var dbUser = await Db.PPP_Users.FindAsync(user.Id);
+                if (dbUser != null) Db.PPP_Users.Remove(dbUser);
                 await Db.SaveChangesAsync();
                 await LoadUsers();
                 _ = ShowToast("User deleted");
