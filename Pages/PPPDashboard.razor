@@ -161,116 +161,60 @@ private async Task InitializePPP()
 
     try 
     {
-        // Use the injected DbFactory to create a fresh, local context 
-        // This is safer for heavy DDL (Data Definition Language) commands
         await using var db = await DbFactory.CreateDbContextAsync();
 
-        await db.Database.ExecuteSqlRawAsync(@"
-        DO $$ 
-        BEGIN 
-            -- 1. Add Label to Address if missing
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Addresses' AND column_name='Label') THEN
-                ALTER TABLE ""PPP_Addresses"" ADD COLUMN ""Label"" text NOT NULL DEFAULT 'Home';
-                ALTER TABLE ""PPP_Addresses"" ADD COLUMN ""IsDefault"" boolean NOT NULL DEFAULT false;
-            END IF;
-
-            -- 2. Add UserId to Address if missing (The Foreign Key)
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Addresses' AND column_name='UserId') THEN
-                ALTER TABLE ""PPP_Addresses"" ADD COLUMN ""UserId"" integer NULL;
-            END IF;
-
-            -- 3. Remove the old AddressId from Users (Cleanup)
-            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Users' AND column_name='AddressId') THEN
-                ALTER TABLE ""PPP_Users"" DROP COLUMN ""AddressId"";
-            END IF;
-        END $$;
-    ");
-
-        // Add this inside your existing ExecuteSqlRawAsync block in InitializePPP
+        // 1. Update PPP_Users Table (Auth & Profile columns)
         await db.Database.ExecuteSqlRawAsync(@"
             DO $$ 
             BEGIN 
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_OrderItems' AND column_name='IsReady') THEN
-                    ALTER TABLE ""PPP_OrderItems"" ADD COLUMN ""IsReady"" boolean NOT NULL DEFAULT false;
+                -- Add MagicToken
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Users' AND column_name='MagicToken') THEN
+                    ALTER TABLE ""PPP_Users"" ADD COLUMN ""MagicToken"" text NULL;
+                END IF;
+
+                -- Add TokenExpiresAt
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Users' AND column_name='TokenExpiresAt') THEN
+                    ALTER TABLE ""PPP_Users"" ADD COLUMN ""TokenExpiresAt"" timestamp with time zone NULL;
+                END IF;
+
+                -- Add FirstName/LastName if they were somehow missed during the rename
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Users' AND column_name='FirstName') THEN
+                    ALTER TABLE ""PPP_Users"" ADD COLUMN ""FirstName"" text NOT NULL DEFAULT '';
+                END IF;
+                
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Users' AND column_name='LastName') THEN
+                    ALTER TABLE ""PPP_Users"" ADD COLUMN ""LastName"" text NOT NULL DEFAULT '';
                 END IF;
             END $$;
         ");
 
-        // 1. Core Logistics Columns on Owner Table
+        // 2. Fix PPP_Addresses Table for One-to-Many
         await db.Database.ExecuteSqlRawAsync(@"
             DO $$ 
             BEGIN 
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Owners' AND column_name='OffersPickup') THEN
-                    ALTER TABLE ""PPP_Owners"" ADD COLUMN ""OffersPickup"" boolean NOT NULL DEFAULT true;
-                    ALTER TABLE ""PPP_Owners"" ADD COLUMN ""OffersDelivery"" boolean NOT NULL DEFAULT false;
+                -- Add Label
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Addresses' AND column_name='Label') THEN
+                    ALTER TABLE ""PPP_Addresses"" ADD COLUMN ""Label"" text NOT NULL DEFAULT 'Home';
+                END IF;
+
+                -- Add IsDefault
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Addresses' AND column_name='IsDefault') THEN
+                    ALTER TABLE ""PPP_Addresses"" ADD COLUMN ""IsDefault"" boolean NOT NULL DEFAULT false;
+                END IF;
+
+                -- Add UserId (The link)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Addresses' AND column_name='UserId') THEN
+                    ALTER TABLE ""PPP_Addresses"" ADD COLUMN ""UserId"" integer NULL;
                 END IF;
             END $$;
         ");
 
-        // 2. Order Item Fulfillment Extension
-        await db.Database.ExecuteSqlRawAsync(@"
-            DO $$ 
-            BEGIN 
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_OrderItems' AND column_name='FulfillmentMethod') THEN
-                    ALTER TABLE ""PPP_OrderItems"" ADD COLUMN ""FulfillmentMethod"" text NOT NULL DEFAULT 'Pickup';
-                    ALTER TABLE ""PPP_OrderItems"" ADD COLUMN ""PickupLocationId"" integer NULL;
-                    ALTER TABLE ""PPP_OrderItems"" ADD COLUMN ""TimeframeName"" text NOT NULL DEFAULT 'Standard';
-                    ALTER TABLE ""PPP_OrderItems"" ADD COLUMN ""DeliveryFee"" float8 NOT NULL DEFAULT 0;
-                END IF;
-            END $$;
-        ");
-
-        // 3. Create Supporting Logistics Tables
-        await db.Database.ExecuteSqlRawAsync(@"
-            CREATE TABLE IF NOT EXISTS ""PPP_DeliveryZipCodes"" (
-                ""Id"" SERIAL PRIMARY KEY,
-                ""OwnerId"" integer NOT NULL REFERENCES ""PPP_Owners""(""Id"") ON DELETE CASCADE,
-                ""ZipCode"" text NOT NULL,
-                ""Fee"" float8 NOT NULL DEFAULT 0
-            );
-
-            CREATE TABLE IF NOT EXISTS ""PPP_PickupLocations"" (
-                ""Id"" SERIAL PRIMARY KEY,
-                ""OwnerId"" integer NOT NULL REFERENCES ""PPP_Owners""(""Id"") ON DELETE CASCADE,
-                ""Name"" text NOT NULL,
-                ""Address"" text NOT NULL,
-                ""Details"" text NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS ""PPP_DeliveryRadiusRules"" (
-                ""Id"" SERIAL PRIMARY KEY,
-                ""OwnerId"" integer NOT NULL REFERENCES ""PPP_Owners""(""Id"") ON DELETE CASCADE,
-                ""MaxMiles"" float8 NOT NULL,
-                ""Fee"" float8 NOT NULL,
-                ""Enabled"" boolean NOT NULL DEFAULT false
-            );
-
-            CREATE TABLE IF NOT EXISTS ""PPP_UserAddresses"" (
-                ""Id"" SERIAL PRIMARY KEY,
-                ""UserId"" integer NOT NULL REFERENCES ""PPP_Users""(""Id"") ON DELETE CASCADE,
-                ""Label"" text NOT NULL,
-                ""Street"" text NOT NULL,
-                ""City"" text NOT NULL,
-                ""State"" text NOT NULL,
-                ""ZipCode"" text NOT NULL,
-                ""IsDefault"" boolean NOT NULL DEFAULT false
-            );
-
-            CREATE TABLE IF NOT EXISTS ""PPP_OrderItemOptions"" (
-                ""Id"" SERIAL PRIMARY KEY,
-                ""OrderItemId"" integer NOT NULL REFERENCES ""PPP_OrderItems""(""Id"") ON DELETE CASCADE,
-                ""OptionName"" text NOT NULL,
-                ""AddOnPrice"" float8 NOT NULL DEFAULT 0
-            );
-        ");
-
-        // Use the page-level 'Db' for the stats load if that's how LoadSystemStats is written
         await LoadSystemStats();
-        await ShowToast("PPP Logistics Schema Initialized");
+        await ShowToast("PPP Schema Sync Successful");
     }
     catch (Exception ex)
     {
-        await ShowToast("Initialization Error: " + ex.Message, true);
+        await ShowToast("DB Fixer Failed: " + ex.Message, true);
     }
     finally 
     {
@@ -278,7 +222,6 @@ private async Task InitializePPP()
         StateHasChanged();
     }
 }
-
     private async Task SeedIngredients()
     {
         var library = new List<PPP_Ingredient>
