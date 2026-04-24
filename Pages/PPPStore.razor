@@ -26,6 +26,7 @@
 
     @if (owner != null)
     {
+        @* Hero Banner *@
         <div class="relative h-56 bg-emerald-900/10 overflow-hidden border-b border-white/5">
             <div class="absolute inset-0 bg-gradient-to-b from-transparent to-[#050505]"></div>
             <div class="absolute bottom-8 left-8 flex items-center gap-6">
@@ -44,6 +45,7 @@
             </div>
         </div>
 
+        @* Menu Feed *@
         <div class="max-w-3xl mx-auto px-4 mt-12">
             @foreach (var menu in activeMenus)
             {
@@ -71,8 +73,15 @@
                                     <div class="p-6 flex-1 flex flex-col">
                                         <div class="flex justify-between items-start mb-2">
                                             <h4 class="text-xl font-black text-white uppercase italic tracking-tight">@item.Recipe?.Name</h4>
+                                            @if (soldOut) { <span class="text-red-500 text-[10px] font-black uppercase">Sold Out</span> }
+                                            else if (pastCutoff) { <span class="text-amber-500 text-[10px] font-black uppercase">Cutoff Passed</span> }
                                         </div>
                                         <p class="text-xs text-slate-500 leading-relaxed line-clamp-2">@item.Recipe?.Description</p>
+                                        <div class="mt-auto pt-4 flex items-center gap-2">
+                                            <span class="text-[8px] bg-emerald-950/20 text-emerald-400 border border-emerald-900/30 px-3 py-1 rounded-full font-black uppercase">
+                                                By @item.CutoffTime.ToString("h:mm tt") @item.StartDate.Date.AddDays(-1).ToString("MMM d")
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                             }
@@ -92,7 +101,7 @@
                     <span class="bg-white/20 px-3 py-1 rounded-lg font-black text-xs">@cart.Items.Count</span>
                     <span class="text-xs font-black uppercase tracking-widest">Review & Checkout</span>
                 </div>
-                <span class="font-mono font-bold">$@cart.Items.Sum(i => i.BasePrice + i.DeliveryFee + i.SelectedOptions.Sum(o => o.AddOnPrice)).ToString("N2")</span>
+                <span class="font-mono font-bold">$@GetCartTotal().ToString("N2")</span>
             </button>
         </div>
     }
@@ -103,7 +112,9 @@
         <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[600] flex items-end justify-center" @onclick="SaveCartNotes">
             <div @onclick:stopPropagation="true" class="bg-[#0f0f0f] w-full max-w-2xl rounded-t-[3rem] border-t border-slate-800 p-10 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[92vh] flex flex-col">
                 <div class="flex justify-between items-start mb-8 shrink-0">
-                    <h2 class="text-3xl font-black text-white uppercase italic tracking-tighter">Your Cart</h2>
+                    <div>
+                        <h2 class="text-3xl font-black text-white uppercase italic tracking-tighter">Your Cart</h2>
+                    </div>
                     <button @onclick="SaveCartNotes" class="bg-white/5 w-12 h-12 rounded-2xl text-slate-400 hover:text-white flex items-center justify-center text-2xl transition-all">&times;</button>
                 </div>
 
@@ -118,7 +129,7 @@
                             <h4 class="text-lg font-black text-white uppercase italic">@item.RecipeName</h4>
                             <div class="flex justify-between items-center mt-2">
                                 <span class="text-[9px] text-slate-400 font-bold uppercase">@item.SizeName (@item.FulfillmentMethod)</span>
-                                <span class="text-xs font-mono">$@((item.BasePrice + item.DeliveryFee + item.SelectedOptions.Sum(o => o.AddOnPrice)).ToString("N2"))</span>
+                                <span class="text-xs font-mono">$@GetItemTotal(item).ToString("N2")</span>
                             </div>
                         </div>
                     }
@@ -134,7 +145,7 @@
                 <div class="mt-8 pt-8 border-t border-white/10 shrink-0">
                     <div class="flex justify-between items-end mb-8">
                         <span class="text-[10px] font-black uppercase text-slate-500">Order Total</span>
-                        <span class="text-3xl font-black text-white italic font-mono">$@cart.Items.Sum(i => i.BasePrice + i.DeliveryFee + i.SelectedOptions.Sum(o => o.AddOnPrice)).ToString("N2")</span>
+                        <span class="text-3xl font-black text-white italic font-mono">$@GetCartTotal().ToString("N2")</span>
                     </div>
                     <button @onclick="ProcessCheckout" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-6 rounded-3xl font-black text-xs uppercase tracking-[0.5em] transition-all shadow-xl active:scale-95">
                         Place Order
@@ -158,6 +169,7 @@
                 </div>
 
                 <div class="space-y-10">
+                    @* 1. Time Slot *@
                     <section>
                         <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4">Choose Time Slot</h5>
                         <div class="flex flex-wrap gap-2">
@@ -171,6 +183,7 @@
                         </div>
                     </section>
 
+                    @* 2. Logistics Selection *@
                     <section>
                         <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4">Fulfillment for this day</h5>
                         @if (owner.OffersPickup && owner.OffersDelivery)
@@ -204,6 +217,7 @@
                         }
                     </section>
 
+                    @* 3. Size Selection *@
                     <section>
                         <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4">Size</h5>
                         <div class="space-y-2">
@@ -217,6 +231,7 @@
                         </div>
                     </section>
 
+                    @* 4. Add-ons / Options *@
                     @if (currentSize?.Options != null && currentSize.Options.Any())
                     {
                         <section>
@@ -257,7 +272,7 @@
         <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[800] flex items-center justify-center p-4">
             <div class="bg-[#0f0f0f] w-full max-w-lg rounded-[3rem] border border-slate-800 p-10 shadow-2xl animate-in zoom-in-95 duration-200">
                 <h2 class="text-2xl font-black text-white uppercase italic tracking-tighter mb-2">Order Details</h2>
-                <p class="text-[10px] text-slate-500 font-black uppercase mb-8">Secure login & receipt details</p>
+                <p class="text-[10px] text-slate-500 font-black uppercase mb-8">Secure login session will be created</p>
                 
                 <div class="space-y-4">
                     <div class="grid grid-cols-2 gap-4">
@@ -305,7 +320,7 @@
     private bool showContactForm = false;
     private bool isLookupLoading = false;
 
-    // Selections
+    // Selections State
     private string selTimeframe = "";
     private string selFulfillment = "Pickup";
     private int selPickupId = 0;
@@ -313,6 +328,7 @@
     private PPP_MenuItem? selectedItem;
     private PPP_MenuItemSize? currentSize;
     private HashSet<int> selectedOptionIds = new();
+
     private List<PPP_PickupLocation> pickupLocations = new();
     private List<PPP_DeliveryZipCode> ownerZips = new();
 
@@ -357,7 +373,7 @@
 
             await ShowToast("Auth: Checking for session...");
             
-            // IMPROVED COOKIE RETRIEVAL
+            // Try reading the magic token from the cookie
             var token = await JS.InvokeAsync<string>("eval", @"
                 (function() {
                     var name = 'ppp_token=';
@@ -394,7 +410,7 @@
                         tempAddress.State = addr.State;
                         tempAddress.ZipCode = addr.ZipCode;
                         tempAddress.Label = addr.Label;
-                        selZip = addr.ZipCode; // prefill config zip
+                        selZip = addr.ZipCode;
                     }
                 }
                 else 
@@ -465,7 +481,6 @@
         currentSize = item.Sizes?.OrderBy(s => s.BasePrice).FirstOrDefault();
         selTimeframe = item.Timeframes?.FirstOrDefault()?.Name ?? "Standard";
         selectedOptionIds.Clear();
-        
         selZip = tempAddress.ZipCode;
 
         if (owner != null) 
@@ -480,7 +495,8 @@
     private double GetDeliveryFee(string zip)
     {
         var match = ownerZips.FirstOrDefault(z => z.ZipCode == zip.Trim());
-        return match?.Fee ?? -1;
+        if (match == null) return -1;
+        return match.Fee;
     }
 
     private bool IsConfigValid()
@@ -495,7 +511,9 @@
     {
         if (currentSize == null) return 0;
         double fee = selFulfillment == "Delivery" ? Math.Max(0, GetDeliveryFee(selZip)) : 0;
-        var addons = currentSize.Options.Where(o => selectedOptionIds.Contains(o.Id)).Sum(o => o.AddOnPrice);
+        var addons = currentSize.Options
+            .Where(o => selectedOptionIds.Contains(o.Id))
+            .Sum(o => o.AddOnPrice);
         return currentSize.BasePrice + fee + addons;
     }
 
@@ -554,7 +572,9 @@
         if (string.IsNullOrWhiteSpace(tempUser.Email)) return;
 
         await using var db = await DbFactory.CreateDbContextAsync();
-        var user = await db.PPP_Users.Include(u => u.Addresses).FirstOrDefaultAsync(u => u.Email.ToLower() == tempUser.Email.ToLower());
+        var user = await db.PPP_Users
+            .Include(u => u.Addresses)
+            .FirstOrDefaultAsync(u => u.Email.ToLower() == tempUser.Email.ToLower());
         
         if (user == null)
         {
@@ -568,15 +588,21 @@
                 TokenExpiresAt = DateTime.UtcNow.AddMonths(6)
             };
             db.PPP_Users.Add(user);
-            await db.SaveChangesAsync(); // get ID
+            await db.SaveChangesAsync();
         }
         else
         {
             user.FirstName = tempUser.FirstName; 
             user.LastName = tempUser.LastName; 
             user.Phone = tempUser.Phone;
+            if (string.IsNullOrEmpty(user.MagicToken))
+            {
+                user.MagicToken = Guid.NewGuid().ToString("N");
+            }
+            user.TokenExpiresAt = DateTime.UtcNow.AddMonths(6);
         }
 
+        // Handle Delivery Address logic
         if (cart.Items.Any(i => i.FulfillmentMethod == "Delivery") && !string.IsNullOrEmpty(tempAddress.Street))
         {
             var exists = user.Addresses.Any(a => a.Street == tempAddress.Street);
@@ -604,7 +630,7 @@
             dbOrder.Notes = cart.Notes;
             await db.SaveChangesAsync();
             
-            // SECURE COOKIE WRITE (Added SameSite/Path)
+            // Set Cookie logic with SameSite protection
             await JS.InvokeVoidAsync("eval", $@"
                 document.cookie = 'ppp_token={user.MagicToken}; max-age={60*60*24*180}; path=/; SameSite=Lax';
             ");
@@ -630,7 +656,12 @@
                                          !o.IsCheckedOut);
             if (existingOrder == null)
             {
-                existingOrder = new PPP_Order { OwnerId = OwnerId, CustomerIdentifier = identifier, CreatedAt = DateTime.UtcNow };
+                existingOrder = new PPP_Order 
+                { 
+                    OwnerId = OwnerId, 
+                    CustomerIdentifier = identifier, 
+                    CreatedAt = DateTime.UtcNow 
+                };
                 db.Add(existingOrder);
                 await db.SaveChangesAsync();
             }
@@ -644,6 +675,17 @@
         { 
             Console.WriteLine($"Cart Load Error: {ex.Message}"); 
         }
+    }
+
+    private double GetCartTotal()
+    {
+        if (cart == null) return 0;
+        return cart.Items.Sum(i => i.BasePrice + i.DeliveryFee + i.SelectedOptions.Sum(o => o.AddOnPrice));
+    }
+
+    private double GetItemTotal(PPP_OrderItem item)
+    {
+        return item.BasePrice + item.DeliveryFee + item.SelectedOptions.Sum(o => o.AddOnPrice);
     }
 
     private async Task SaveCartNotes() 
