@@ -71,15 +71,8 @@
                                     <div class="p-6 flex-1 flex flex-col">
                                         <div class="flex justify-between items-start mb-2">
                                             <h4 class="text-xl font-black text-white uppercase italic tracking-tight">@item.Recipe?.Name</h4>
-                                            @if (soldOut) { <span class="text-red-500 text-[10px] font-black uppercase">Sold Out</span> }
-                                            else if (pastCutoff) { <span class="text-amber-500 text-[10px] font-black uppercase">Cutoff Passed</span> }
                                         </div>
                                         <p class="text-xs text-slate-500 leading-relaxed line-clamp-2">@item.Recipe?.Description</p>
-                                        <div class="mt-auto pt-4 flex items-center gap-2">
-                                            <span class="text-[8px] bg-emerald-950/20 text-emerald-400 border border-emerald-900/30 px-3 py-1 rounded-full font-black uppercase">
-                                                By @item.CutoffTime.ToString("h:mm tt") @item.StartDate.Date.AddDays(-1).ToString("MMM d")
-                                            </span>
-                                        </div>
                                     </div>
                                 </div>
                             }
@@ -247,7 +240,8 @@
                 </div>
 
                 <div class="mt-12 pt-8 border-t border-white/5">
-                    <button @onclick="AddToCart" disabled="@(!IsConfigValid())"
+                    <button @onclick="AddToCart" 
+                            disabled="@(!IsConfigValid())"
                             class="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-20 text-white py-6 rounded-3xl font-black text-xs uppercase tracking-[0.4em] transition-all shadow-xl flex justify-between items-center px-10">
                         <span>Add to Cart</span>
                         <span class="font-mono">$@GetConfigTotal().ToString("N2")</span>
@@ -361,10 +355,22 @@
                 await JS.InvokeVoidAsync("localStorage.setItem", "ppp_customer_id", customerId);
             }
 
-            // Diagnostic: Check Cookie
             await ShowToast("Auth: Checking for session...");
-            var token = await JS.InvokeAsync<string>("eval", "(function() { var match = document.cookie.match(new RegExp('(^| )ppp_token=([^;]+)')); return match ? match[2] : null; })()");
             
+            // IMPROVED COOKIE RETRIEVAL
+            var token = await JS.InvokeAsync<string>("eval", @"
+                (function() {
+                    var name = 'ppp_token=';
+                    var decodedCookie = decodeURIComponent(document.cookie);
+                    var ca = decodedCookie.split(';');
+                    for(var i = 0; i <ca.length; i++) {
+                        var c = ca[i];
+                        while (c.charAt(0) == ' ') { c = c.substring(1); }
+                        if (c.indexOf(name) == 0) { return c.substring(name.length, c.length); }
+                    }
+                    return null;
+                })()");
+
             if (!string.IsNullOrEmpty(token))
             {
                 await using var db = await DbFactory.CreateDbContextAsync();
@@ -387,6 +393,8 @@
                         tempAddress.City = addr.City;
                         tempAddress.State = addr.State;
                         tempAddress.ZipCode = addr.ZipCode;
+                        tempAddress.Label = addr.Label;
+                        selZip = addr.ZipCode; // prefill config zip
                     }
                 }
                 else 
@@ -406,20 +414,22 @@
 
     private async Task HandleFeeZipInput(ChangeEventArgs e)
     {
-        selZip = e.Value?.ToString() ?? "";
-        tempAddress.ZipCode = selZip; // Sync to checkout form
-        if (selZip.Length == 5) 
+        var val = e.Value?.ToString() ?? "";
+        selZip = val;
+        tempAddress.ZipCode = val; 
+        if (val.Length == 5) 
         {
-            await LookupZip(selZip, true);
+            await LookupZip(val, true);
         }
     }
 
     private async Task HandleCheckoutZipLookup(ChangeEventArgs e)
     {
-        tempAddress.ZipCode = e.Value?.ToString() ?? "";
-        if (tempAddress.ZipCode.Length == 5) 
+        var val = e.Value?.ToString() ?? "";
+        tempAddress.ZipCode = val;
+        if (val.Length == 5) 
         {
-            await LookupZip(tempAddress.ZipCode, false);
+            await LookupZip(val, false);
         }
     }
 
@@ -441,10 +451,7 @@
                 }
             }
         }
-        catch 
-        { 
-            // Silent fail on API error
-        }
+        catch { }
         finally 
         { 
             isLookupLoading = false; 
@@ -459,7 +466,6 @@
         selTimeframe = item.Timeframes?.FirstOrDefault()?.Name ?? "Standard";
         selectedOptionIds.Clear();
         
-        // Ensure Zip syncing
         selZip = tempAddress.ZipCode;
 
         if (owner != null) 
@@ -562,6 +568,7 @@
                 TokenExpiresAt = DateTime.UtcNow.AddMonths(6)
             };
             db.PPP_Users.Add(user);
+            await db.SaveChangesAsync(); // get ID
         }
         else
         {
@@ -570,7 +577,6 @@
             user.Phone = tempUser.Phone;
         }
 
-        // Handle Address Storage
         if (cart.Items.Any(i => i.FulfillmentMethod == "Delivery") && !string.IsNullOrEmpty(tempAddress.Street))
         {
             var exists = user.Addresses.Any(a => a.Street == tempAddress.Street);
@@ -598,8 +604,10 @@
             dbOrder.Notes = cart.Notes;
             await db.SaveChangesAsync();
             
-            // Set Cookie
-            await JS.InvokeVoidAsync("eval", $"document.cookie = 'ppp_token={user.MagicToken}; max-age={60*60*24*180}; path=/;'");
+            // SECURE COOKIE WRITE (Added SameSite/Path)
+            await JS.InvokeVoidAsync("eval", $@"
+                document.cookie = 'ppp_token={user.MagicToken}; max-age={60*60*24*180}; path=/; SameSite=Lax';
+            ");
             
             await ShowToast("Order placed successfully!");
             cart = null; 
@@ -693,21 +701,7 @@
         StateHasChanged(); 
     }
 
-    private class ToastItem {
-         public string Message { get; set; } = ""; 
-         public bool IsError { get; set; } 
-    }
-    
-    public class ZipResponse {
-         [System.Text.Json.Serialization.JsonPropertyName("places")] 
-         public List<ZipPlace> Places { get; set; } = new(); 
-    }
-    
-    public class ZipPlace {
-         [System.Text.Json.Serialization.JsonPropertyName("place name")] 
-         public string PlaceName { get; set; } = ""; 
-         
-         [System.Text.Json.Serialization.JsonPropertyName("state abbreviation")] 
-         public string StateAbbreviation { get; set; } = ""; 
-    }
+    private class ToastItem { public string Message { get; set; } = ""; public bool IsError { get; set; } }
+    public class ZipResponse { [System.Text.Json.Serialization.JsonPropertyName("places")] public List<ZipPlace> Places { get; set; } = new(); }
+    public class ZipPlace { [System.Text.Json.Serialization.JsonPropertyName("place name")] public string PlaceName { get; set; } = ""; [System.Text.Json.Serialization.JsonPropertyName("state abbreviation")] public string StateAbbreviation { get; set; } = ""; }
 }
