@@ -113,13 +113,9 @@
                                                     {
                                                         <div class="flex flex-col">
                                                             <span class="text-[10px] font-black uppercase text-blue-500/80 italic">Delivery: @GetAddressInfo(lineItem)</span>
-                                                            @if (UserLookup.TryGetValue(lineItem.ParentOrderContainer?.CustomerIdentifier ?? "", out var u))
+                                                            @if (lineItem.ParentOrderContainer?.Address != null && !string.IsNullOrEmpty(lineItem.ParentOrderContainer.Address.DeliveryInstructions))
                                                             {
-                                                                var addr = u.Addresses.FirstOrDefault(a => a.IsDefault) ?? u.Addresses.FirstOrDefault();
-                                                                if (addr != null && !string.IsNullOrEmpty(addr.DeliveryInstructions))
-                                                                {
-                                                                    <span class="text-[9px] text-amber-500 font-bold uppercase mt-1 italic">Note: @addr.DeliveryInstructions</span>
-                                                                }
+                                                                <span class="text-[9px] text-amber-500 font-bold uppercase mt-1 italic">Note: @lineItem.ParentOrderContainer.Address.DeliveryInstructions</span>
                                                             }
                                                         </div>
                                                     }
@@ -213,7 +209,6 @@
     
     private List<PPP_OrderItem> MasterKitchenQueue = new();
     private List<PPP_PickupLocation> LocationsLookup = new();
-    private Dictionary<string, PPP_User> UserLookup = new();
     private PPP_OrderItem? editingItem;
     private string activeFilter = "pending";
 
@@ -233,7 +228,7 @@
         await using var db = await DbFactory.CreateDbContextAsync();
         
         var query = db.Set<PPP_OrderItem>()
-            .Include(i => i.ParentOrderContainer)
+            .Include(i => i.ParentOrderContainer).ThenInclude(o => o.Address) // Join the Address tied to the Order
             .Include(i => i.SelectedOptions)
             .Include(i => i.MenuItem).ThenInclude(m => m.Recipe)
             .Where(i => i.ParentOrderContainer != null && i.ParentOrderContainer.OwnerId == OwnerId && i.ParentOrderContainer.IsCheckedOut);
@@ -243,31 +238,16 @@
 
         MasterKitchenQueue = await query.ToListAsync();
         LocationsLookup = await db.Set<PPP_PickupLocation>().Where(l => l.OwnerId == OwnerId).ToListAsync();
-
-        // Build User/Address Lookup for orders
-        var emails = MasterKitchenQueue.Select(x => x.ParentOrderContainer?.CustomerIdentifier).Distinct().ToList();
-        var users = await db.PPP_Users
-            .Include(u => u.Addresses)
-            .Where(u => emails.Contains(u.Email))
-            .ToListAsync();
-        
-        UserLookup = users.ToDictionary(u => u.Email, u => u, StringComparer.OrdinalIgnoreCase);
     }
 
     private string GetAddressInfo(PPP_OrderItem item)
     {
-        var email = item.ParentOrderContainer?.CustomerIdentifier;
-        if (string.IsNullOrEmpty(email)) return "GUEST (No Address)";
-
-        if (UserLookup.TryGetValue(email, out var user))
+        var addr = item.ParentOrderContainer?.Address;
+        if (addr != null)
         {
-            var addr = user.Addresses.FirstOrDefault(a => a.IsDefault) ?? user.Addresses.FirstOrDefault();
-            if (addr != null)
-            {
-                return $"[{addr.Label}] {addr.Street}, {addr.City}";
-            }
+            return $"[{addr.Label}] {addr.Street}, {addr.City}";
         }
-        return "Address Not Found";
+        return "No Physical Address Found";
     }
 
     private async Task ToggleReady(int itemId)

@@ -166,12 +166,11 @@
                     @* Name Label Section *@
                     <section>
                         <h5 class="text-[10px] font-black uppercase text-emerald-500 mb-4 tracking-widest">Who is this for?</h5>
-                        <input value="@selLabelName" 
-                               @oninput="HandleLabelInput"
-                               placeholder="Optional: e.g. Bob, Lisa, Leigh..." 
+                        <input value="@selLabelName" @oninput="HandleLabelInput" placeholder="Optional: e.g. Bob, Lisa, Leigh..." 
                                class="w-full bg-black border border-slate-800 rounded-2xl p-4 text-sm text-white outline-none focus:border-emerald-500 transition-all font-bold italic" />
                     </section>
 
+                    @* 1. Time Slot *@
                     <section>
                         <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4">Choose Time Slot</h5>
                         <div class="flex flex-wrap gap-2">
@@ -185,6 +184,7 @@
                         </div>
                     </section>
 
+                    @* 2. Logistics Selection *@
                     <section>
                         <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4">Fulfillment for this day</h5>
                         @if (owner.OffersPickup && owner.OffersDelivery)
@@ -218,6 +218,7 @@
                         }
                     </section>
 
+                    @* 3. Size Selection *@
                     <section>
                         <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4">Size</h5>
                         <div class="space-y-2">
@@ -231,6 +232,7 @@
                         </div>
                     </section>
 
+                    @* 4. Add-ons / Options *@
                     @if (currentSize?.Options != null && currentSize.Options.Any())
                     {
                         <section>
@@ -361,7 +363,7 @@
     private int selPickupId = 0;
     private string selZip = "";
     private string selLabelName = "";
-    private bool isLabelUserEdited = false; // NEW FLAG
+    private bool isLabelUserEdited = false; 
     private PPP_MenuItem? selectedItem;
     private PPP_MenuItemSize? currentSize;
     private HashSet<int> selectedOptionIds = new();
@@ -437,7 +439,6 @@
                     tempUser.Email = currentUser.Email;
                     tempUser.Phone = currentUser.Phone;
                     
-                    // ONLY overwrite if the user hasn't started typing
                     if (selectedItem != null && !isLabelUserEdited)
                     {
                         selLabelName = currentUser.FirstName;
@@ -446,6 +447,7 @@
                     var addr = currentUser.Addresses.FirstOrDefault(a => a.IsDefault) ?? currentUser.Addresses.FirstOrDefault();
                     if (addr != null)
                     {
+                        tempAddress.Id = addr.Id;
                         tempAddress.Label = addr.Label;
                         tempAddress.Street = addr.Street;
                         tempAddress.City = addr.City;
@@ -464,7 +466,7 @@
     private void HandleLabelInput(ChangeEventArgs e)
     {
         selLabelName = e.Value?.ToString() ?? "";
-        isLabelUserEdited = true; // Mark as edited so background threads don't overwrite
+        isLabelUserEdited = true;
     }
 
     private void SelectSavedAddress(ChangeEventArgs e)
@@ -479,6 +481,7 @@
         var addr = currentUser?.Addresses.FirstOrDefault(a => a.Id == id);
         if (addr != null)
         {
+            tempAddress.Id = addr.Id;
             tempAddress.Label = addr.Label;
             tempAddress.Street = addr.Street;
             tempAddress.City = addr.City;
@@ -542,7 +545,7 @@
         selTimeframe = item.Timeframes?.FirstOrDefault()?.Name ?? "Standard";
         selectedOptionIds.Clear();
         
-        isLabelUserEdited = false; // Reset for new item selection
+        isLabelUserEdited = false; 
 
         if (currentUser != null && !string.IsNullOrEmpty(currentUser.FirstName))
         {
@@ -668,12 +671,13 @@
             user.TokenExpiresAt = DateTime.UtcNow.AddMonths(6);
         }
 
+        int chosenAddressId = 0;
         if (cart.Items.Any(i => i.FulfillmentMethod == "Delivery") && !string.IsNullOrEmpty(tempAddress.Street))
         {
-            var exists = user.Addresses.Any(a => a.Street == tempAddress.Street);
-            if (!exists)
+            var existing = user.Addresses.FirstOrDefault(a => a.Street.ToLower() == tempAddress.Street.ToLower());
+            if (existing == null)
             {
-                db.Set<PPP_Address>().Add(new PPP_Address 
+                var n = new PPP_Address 
                 { 
                     UserId = user.Id, 
                     Label = tempAddress.Label, 
@@ -682,13 +686,21 @@
                     State = tempAddress.State, 
                     ZipCode = tempAddress.ZipCode,
                     IsDefault = true
-                });
+                };
+                db.Set<PPP_Address>().Add(n);
+                await db.SaveChangesAsync();
+                chosenAddressId = n.Id;
+            }
+            else
+            {
+                chosenAddressId = existing.Id;
             }
         }
 
         var dbOrder = await db.PPP_Orders.FirstOrDefaultAsync(o => o.Id == cart.Id);
         if (dbOrder != null) 
         {
+            dbOrder.AddressId = chosenAddressId > 0 ? chosenAddressId : null;
             dbOrder.IsCheckedOut = true; 
             dbOrder.CheckedOutAt = DateTime.UtcNow;
             dbOrder.CustomerIdentifier = user.Email;

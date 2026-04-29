@@ -986,6 +986,10 @@ public class PPP_Order
     public DateTime? CheckedOutAt { get; set; }
     public List<PPP_OrderItem> Items { get; set; } = new();
     public string? Notes { get; set; } // Add this
+
+    public int? AddressId { get; set; }
+    [ForeignKey("AddressId")]
+    public virtual PPP_Address? Address { get; set; }
 }
 
 public class PPP_OrderItem
@@ -1012,7 +1016,7 @@ public class PPP_OrderItem
     public double DeliveryFee { get; set; }
     public bool IsReady { get; set; } = false;
     public string LabelName { get; set; } = "";
-    
+
     public List<PPP_OrderItemOption> SelectedOptions { get; set; } = new();
 }
 
