@@ -99,7 +99,7 @@
                     <span class="bg-white/20 px-3 py-1 rounded-lg font-black text-xs">@cart.Items.Count</span>
                     <span class="text-xs font-black uppercase tracking-widest">Review & Checkout</span>
                 </div>
-                <span class="font-mono font-bold">$@cart.Items.Sum(i => i.BasePrice + i.DeliveryFee + i.SelectedOptions.Sum(o => o.AddOnPrice)).ToString("N2")</span>
+                <span class="font-mono font-bold">$@GetCartTotal().ToString("N2")</span>
             </button>
         </div>
     }
@@ -288,7 +288,6 @@
                 </div>
                 
                 <div class="space-y-6 max-h-[60vh] overflow-y-auto pr-2">
-                    @* Contact Details *@
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="text-[8px] uppercase text-emerald-500 font-black mb-1 block">First Name</label>
@@ -310,7 +309,6 @@
                         <input @bind="tempUser.Phone" type="tel" placeholder="Required" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500 transition-all" />
                     </div>
                     
-                    @* Address Selection Logic *@
                     @if (cart?.Items != null && cart.Items.Any(i => i.FulfillmentMethod == "Delivery"))
                     {
                         <div class="pt-6 border-t border-white/5 space-y-4">
@@ -532,7 +530,7 @@
                 }
             }
         }
-        catch { /* Silent fail */ }
+        catch { }
         finally 
         { 
             isLookupLoading = false; 
@@ -547,10 +545,14 @@
         selTimeframe = item.Timeframes?.FirstOrDefault()?.Name ?? "Standard";
         selectedOptionIds.Clear();
         
-        // DEFAULTS Label to User's Name if they are logged in
+        // RE-FIXED: Use currentUser.FirstName if available
         if (currentUser != null && !string.IsNullOrEmpty(currentUser.FirstName))
         {
             selLabelName = currentUser.FirstName;
+        }
+        else if (tempUser != null && !string.IsNullOrEmpty(tempUser.FirstName))
+        {
+            selLabelName = tempUser.FirstName;
         }
         else
         {
@@ -661,7 +663,7 @@
                 TokenExpiresAt = DateTime.UtcNow.AddMonths(6)
             };
             db.PPP_Users.Add(user);
-            await db.SaveChangesAsync(); // get ID
+            await db.SaveChangesAsync();
         }
         else
         {
@@ -672,7 +674,6 @@
             user.TokenExpiresAt = DateTime.UtcNow.AddMonths(6);
         }
 
-        // Save/Update Address if delivery is selected
         if (cart.Items.Any(i => i.FulfillmentMethod == "Delivery") && !string.IsNullOrEmpty(tempAddress.Street))
         {
             var exists = user.Addresses.Any(a => a.Street == tempAddress.Street);
@@ -700,7 +701,6 @@
             dbOrder.Notes = cart.Notes;
             await db.SaveChangesAsync();
             
-            // Persistent Cookie Write
             await JS.InvokeVoidAsync("eval", $@"
                 document.cookie = 'ppp_token={user.MagicToken}; max-age={60*60*24*180}; path=/; SameSite=Lax';
             ");
