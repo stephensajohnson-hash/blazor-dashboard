@@ -67,7 +67,7 @@
                                 {
                                     <div class="p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 group hover:bg-white/[0.02] transition-all">
                                         <div class="flex items-center gap-6">
-                                            @* RESTORED: Image Section *@
+                                            @* Restored Image Section *@
                                             <div class="w-20 h-20 rounded-2xl overflow-hidden bg-black border border-slate-800 shrink-0 shadow-inner">
                                                 @if (lineItem.MenuItem?.Recipe?.ImageId != null)
                                                 {
@@ -83,7 +83,6 @@
                                                 <div class="flex items-center gap-3 mb-1">
                                                     <p class="text-white font-black uppercase text-base @(lineItem.IsReady ? "line-through opacity-40" : "")">@lineItem.RecipeName</p>
                                                     
-                                                    @* LABEL NAME *@
                                                     @if (!string.IsNullOrEmpty(lineItem.LabelName))
                                                     {
                                                         <span class="bg-emerald-500 text-black text-[9px] px-3 py-0.5 rounded-full font-black uppercase tracking-tighter">
@@ -105,14 +104,24 @@
                                                     }
                                                 </p>
                                                 
-                                                <div class="mt-2 text-[10px] font-black uppercase tracking-tighter">
+                                                <div class="mt-2 flex flex-col gap-1">
                                                     @if (lineItem.FulfillmentMethod == "Pickup")
                                                     {
-                                                        <span class="text-emerald-500/80 italic">Spot: @GetSpotName(lineItem.PickupLocationId)</span>
+                                                        <span class="text-[10px] font-black uppercase text-emerald-500/80 italic">Spot: @GetSpotName(lineItem.PickupLocationId)</span>
                                                     }
                                                     else
                                                     {
-                                                        <span class="text-blue-500/80 italic">Delivery Fee: $@lineItem.DeliveryFee.ToString("N2")</span>
+                                                        <div class="flex flex-col">
+                                                            <span class="text-[10px] font-black uppercase text-blue-500/80 italic">Delivery: @GetAddressInfo(lineItem)</span>
+                                                            @if (UserLookup.TryGetValue(lineItem.ParentOrderContainer?.CustomerIdentifier ?? "", out var u))
+                                                            {
+                                                                var addr = u.Addresses.FirstOrDefault(a => a.IsDefault) ?? u.Addresses.FirstOrDefault();
+                                                                if (addr != null && !string.IsNullOrEmpty(addr.DeliveryInstructions))
+                                                                {
+                                                                    <span class="text-[9px] text-amber-500 font-bold uppercase mt-1 italic">Note: @addr.DeliveryInstructions</span>
+                                                                }
+                                                            }
+                                                        </div>
                                                     }
                                                 </div>
                                             </div>
@@ -178,7 +187,7 @@
 
                     <div>
                         <label class="text-[9px] font-black uppercase text-slate-500 mb-2 block">Timeframe Window</label>
-                        <input type="text" @bind="editingItem.TimeframeName" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-xs text-white outline-none focus:border-emerald-500" placeholder="e.g. Lunch, Dinner" />
+                        <input type="text" @bind="editingItem.TimeframeName" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-xs text-white outline-none focus:border-emerald-500" placeholder="Lunch, Dinner, etc." />
                     </div>
 
                     <div>
@@ -188,24 +197,6 @@
                             <option value="Delivery">Delivery</option>
                         </select>
                     </div>
-
-                    @if (editingItem.FulfillmentMethod == "Pickup")
-                    {
-                        <div>
-                            <label class="text-[9px] font-black uppercase text-slate-500 mb-2 block">Pickup Location</label>
-                            <select @bind="editingItem.PickupLocationId" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-xs text-white outline-none focus:border-emerald-500">
-                                <option value="">-- Main Shop --</option>
-                                @foreach (var loc in LocationsLookup) { <option value="@loc.Id">@loc.Name</option> }
-                            </select>
-                        </div>
-                    }
-                    else
-                    {
-                        <div>
-                            <label class="text-[9px] font-black uppercase text-slate-500 mb-2 block">Delivery Fee</label>
-                            <input type="number" step="0.01" @bind="editingItem.DeliveryFee" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-xs text-white outline-none focus:border-emerald-500" />
-                        </div>
-                    }
                 </div>
 
                 <div class="mt-10 flex gap-3">
@@ -222,6 +213,7 @@
     
     private List<PPP_OrderItem> MasterKitchenQueue = new();
     private List<PPP_PickupLocation> LocationsLookup = new();
+    private Dictionary<string, PPP_User> UserLookup = new();
     private PPP_OrderItem? editingItem;
     private string activeFilter = "pending";
 
@@ -251,6 +243,31 @@
 
         MasterKitchenQueue = await query.ToListAsync();
         LocationsLookup = await db.Set<PPP_PickupLocation>().Where(l => l.OwnerId == OwnerId).ToListAsync();
+
+        // Build User/Address Lookup for orders
+        var emails = MasterKitchenQueue.Select(x => x.ParentOrderContainer?.CustomerIdentifier).Distinct().ToList();
+        var users = await db.PPP_Users
+            .Include(u => u.Addresses)
+            .Where(u => emails.Contains(u.Email))
+            .ToListAsync();
+        
+        UserLookup = users.ToDictionary(u => u.Email, u => u, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private string GetAddressInfo(PPP_OrderItem item)
+    {
+        var email = item.ParentOrderContainer?.CustomerIdentifier;
+        if (string.IsNullOrEmpty(email)) return "GUEST (No Address)";
+
+        if (UserLookup.TryGetValue(email, out var user))
+        {
+            var addr = user.Addresses.FirstOrDefault(a => a.IsDefault) ?? user.Addresses.FirstOrDefault();
+            if (addr != null)
+            {
+                return $"[{addr.Label}] {addr.Street}, {addr.City}";
+            }
+        }
+        return "Address Not Found";
     }
 
     private async Task ToggleReady(int itemId)
