@@ -1011,7 +1011,8 @@ public class PPP_OrderItem
     public string TimeframeName { get; set; } = "";
     public double DeliveryFee { get; set; }
     public bool IsReady { get; set; } = false;
-
+    public string LabelName { get; set; } = "";
+    
     public List<PPP_OrderItemOption> SelectedOptions { get; set; } = new();
 }
 
