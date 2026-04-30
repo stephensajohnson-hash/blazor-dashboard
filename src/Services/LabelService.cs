@@ -7,10 +7,8 @@ namespace Dashboard.Services
 {
     public class LabelService
     {
-        public static async Task<byte[]> CreateAveryLabels(PPP_Owner owner, List<PPP_OrderItem> items, int startPos)
+        public static async Task<byte[]> CreateAveryLabels(PPP_Owner owner, byte[]? logoBytes, List<PPP_OrderItem> items, int startPos)
         {
-            // Avery 5163: 2" x 4", 10 labels per page
-            
             var document = Document.Create(container =>
             {
                 container.Page(page =>
@@ -25,13 +23,12 @@ namespace Dashboard.Services
                     {
                         grid.Columns(2); 
 
-                        // 1. Handle Offset (Empty Labels)
+                        // 1. Handle Offset
                         for (int i = 1; i < startPos; i++)
                         {
-                            grid.Item().Height(2, Unit.Inch).Padding(5).Text("");
+                            grid.Item().Height(2, Unit.Inch).Text("");
                         }
 
-                        // 2. Generate Labels grouped by Order
                         var orders = items.GroupBy(x => x.OrderId);
 
                         foreach (var orderGroup in orders)
@@ -40,14 +37,20 @@ namespace Dashboard.Services
                             var order = firstItem.ParentOrderContainer;
                             var address = order?.Address;
 
-                            // A. BAG LABEL
-                            grid.Item().Height(2, Unit.Inch).Padding(10).Border(0.5f).BorderColor(Colors.Grey.Lighten3).Column(col =>
+                            // A. BAG LABEL (With Padding for "Safe Zone")
+                            grid.Item().Height(2, Unit.Inch).Padding(10).Column(col =>
                             {
                                 col.Item().Row(row => {
                                     row.RelativeItem().Column(c => {
                                         c.Item().Text(owner.BusinessName).FontSize(14).Bold();
                                         c.Item().Text("BAG LABEL").FontSize(8).SemiBold().FontColor(Colors.Green.Medium);
                                     });
+                                    
+                                    // Properly handle the logo bytes
+                                    if (logoBytes != null && logoBytes.Length > 0)
+                                    {
+                                        row.ConstantItem(40).Height(40).Image(logoBytes);
+                                    }
                                 });
 
                                 col.Item().PaddingTop(5).Text(t => {
@@ -59,10 +62,10 @@ namespace Dashboard.Services
                                 col.Item().AlignBottom().Text($"{orderGroup.Count()} ITEMS IN BAG").FontSize(10).Bold().FontColor(Colors.Grey.Medium);
                             });
 
-                            // B. CONTAINER LABELS
+                            // B. CONTAINER LABELS (With Padding for "Safe Zone")
                             foreach (var lineItem in orderGroup)
                             {
-                                grid.Item().Height(2, Unit.Inch).Padding(10).Border(0.5f).BorderColor(Colors.Grey.Lighten3).Column(col =>
+                                grid.Item().Height(2, Unit.Inch).Padding(10).Column(col =>
                                 {
                                     col.Item().Row(row => {
                                         row.RelativeItem().Text($"Order #{lineItem.OrderId}").FontSize(8).Bold();
@@ -89,7 +92,6 @@ namespace Dashboard.Services
                 });
             });
 
-            // QuestPDF works by returning the stream bytes
             return document.GeneratePdf();
         }
     }
