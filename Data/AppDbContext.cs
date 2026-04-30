@@ -86,10 +86,11 @@ namespace Dashboard
         public DbSet<PPP_MenuItemOption> PPP_MenuItemOptions { get; set; }
         public DbSet<PPP_Order> PPP_Orders { get; set; }
         public DbSet<PPP_OrderItem> PPP_OrderItems { get; set; }
+        public DbSet<PPP_OrderItemServing> PPP_OrderItemServings { get; set; } // NEW
         public DbSet<PPP_OrderItemOption> PPP_OrderItemOptions { get; set; }
         public DbSet<PPP_DeliveryZipCode> PPP_DeliveryZipCodes { get; set; }
         public DbSet<PPP_PickupLocation> PPP_PickupLocations { get; set; }
-        public DbSet<PPP_UserAddress> PPP_UserAddresses { get; set; }
+        public DbSet<PPP_UserAddress> PPP_UserAddresses { get; set; } // RESTORED
         public DbSet<PPP_DeliveryRadiusRule> PPP_DeliveryRadiusRules { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -118,16 +119,22 @@ namespace Dashboard
                 .HasForeignKey(o => o.MenuItemSizeId);
 
             // Fulfillment & Order Mapping
-            // This 'ParentOrderContainer' is the renamed property to avoid LINQ conflicts
             modelBuilder.Entity<PPP_OrderItem>()
                 .HasOne(i => i.ParentOrderContainer)
                 .WithMany(o => o.Items)
                 .HasForeignKey(i => i.OrderId);
-        
+
+            // NEW: Serving Mapping
+            modelBuilder.Entity<PPP_OrderItemServing>()
+                .HasOne(s => s.ParentItem)
+                .WithMany(i => i.Servings)
+                .HasForeignKey(s => s.OrderItemId);
+
+            // UPDATED: Option Mapping (Points to Serving now)
             modelBuilder.Entity<PPP_OrderItemOption>()
-                .HasOne(opt => opt.ParentItem)
-                .WithMany(i => i.SelectedOptions)
-                .HasForeignKey(opt => opt.OrderItemId);
+                .HasOne(opt => opt.ParentServing)
+                .WithMany(s => s.SelectedOptions)
+                .HasForeignKey(opt => opt.OrderItemServingId);
 
             // User to Addresses (One-to-Many)
             modelBuilder.Entity<PPP_Address>()

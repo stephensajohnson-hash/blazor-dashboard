@@ -963,9 +963,26 @@ public class PPP_MenuItemSize
 {
     public int Id { get; set; }
     public int MenuItemId { get; set; }
-    public string Name { get; set; } = ""; // e.g. "Small", "Medium"
+    public string Name { get; set; } = "";
     public double BasePrice { get; set; }
+    public int ServingsPerUnit { get; set; } = 1; // NEW
     public List<PPP_MenuItemOption> Options { get; set; } = new();
+}
+
+public class PPP_OrderItemServing
+{
+    public int Id { get; set; }
+    public int OrderItemId { get; set; }
+    
+    [ForeignKey("OrderItemId")]
+    public virtual PPP_OrderItem? ParentItem { get; set; }
+
+    public int ServingNumber { get; set; } // 1, 2, 3...
+    public string? LabelName { get; set; }
+    public bool IsReady { get; set; }
+
+    // This is the CRITICAL change: Options move here!
+    public virtual List<PPP_OrderItemOption> SelectedOptions { get; set; } = new();
 }
 
 public class PPP_MenuItemOption
@@ -1001,8 +1018,6 @@ public class PPP_OrderItem
     public PPP_Order? ParentOrderContainer { get; set; }
 
     public int MenuItemId { get; set; }
-    
-    // ADD THIS NAVIGATION PROPERTY
     [ForeignKey("MenuItemId")]
     public PPP_MenuItem? MenuItem { get; set; }
 
@@ -1015,21 +1030,23 @@ public class PPP_OrderItem
     public string TimeframeName { get; set; } = "";
     public double DeliveryFee { get; set; }
     public bool IsReady { get; set; } = false;
-    public string LabelName { get; set; } = "";
 
-    public List<PPP_OrderItemOption> SelectedOptions { get; set; } = new();
+    // NEW: Navigation property to the servings
+    public virtual List<PPP_OrderItemServing> Servings { get; set; } = new();
+
+    // REMOVE: SelectedOptions and LabelName from here 
+    // (They are now inside the Servings list)
 }
 
 public class PPP_OrderItemOption
 {
     public int Id { get; set; }
     
-    // This is the actual column in the database
-    public int OrderItemId { get; set; }
+    // CHANGE: Link to Serving, not Item
+    public int OrderItemServingId { get; set; }
 
-    // This is the navigation back to the parent
-    [ForeignKey("OrderItemId")]
-    public PPP_OrderItem? ParentItem { get; set; }
+    [ForeignKey("OrderItemServingId")]
+    public virtual PPP_OrderItemServing? ParentServing { get; set; }
 
     public string OptionName { get; set; } = "";
     public double AddOnPrice { get; set; }

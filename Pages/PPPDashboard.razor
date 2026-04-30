@@ -163,72 +163,62 @@ private async Task InitializePPP()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
 
+        // 1. Update Menu Item Sizes to support serving counts
         await db.Database.ExecuteSqlRawAsync(@"
             DO $$ 
             BEGIN 
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Orders' AND column_name='AddressId') THEN
-                    ALTER TABLE ""PPP_Orders"" ADD COLUMN ""AddressId"" integer NULL;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_MenuItemSizes' AND column_name='ServingsPerUnit') THEN
+                    ALTER TABLE ""PPP_MenuItemSizes"" ADD COLUMN ""ServingsPerUnit"" integer NOT NULL DEFAULT 1;
                 END IF;
             END $$;
         ");
 
+        // 2. Create the Order Item Servings table (The individual containers)
+        await db.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS ""PPP_OrderItemServings"" (
+                ""Id"" SERIAL PRIMARY KEY,
+                ""OrderItemId"" integer NOT NULL,
+                ""ServingNumber"" integer NOT NULL,
+                ""LabelName"" text NULL,
+                ""IsReady"" boolean NOT NULL DEFAULT false,
+                CONSTRAINT ""FK_OrderItemServings_OrderItems"" FOREIGN KEY (""OrderItemId"") REFERENCES ""PPP_OrderItems"" (""Id"") ON DELETE CASCADE
+            );
+        ");
+
+        // 3. Update Order Item Options to link to specific servings
         await db.Database.ExecuteSqlRawAsync(@"
             DO $$ 
             BEGIN 
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_OrderItems' AND column_name='LabelName') THEN
-                    ALTER TABLE ""PPP_OrderItems"" ADD COLUMN ""LabelName"" text NOT NULL DEFAULT '';
+                -- Add the Serving link column
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_OrderItemOptions' AND column_name='OrderItemServingId') THEN
+                    ALTER TABLE ""PPP_OrderItemOptions"" ADD COLUMN ""OrderItemServingId"" integer NULL;
+                    
+                    -- Add the Foreign Key Constraint
+                    ALTER TABLE ""PPP_OrderItemOptions"" 
+                    ADD CONSTRAINT ""FK_OrderItemOptions_OrderItemServings"" 
+                    FOREIGN KEY (""OrderItemServingId"") REFERENCES ""PPP_OrderItemServings"" (""Id"") ON DELETE CASCADE;
                 END IF;
             END $$;
         ");
 
-        // 1. Update PPP_Users Table (Auth & Profile columns)
+        // 4. Ensure PPP_OrderItem has the proper FK to PPP_MenuItem 
+        // (Matching your new [ForeignKey(""MenuItemId"")] in Data.cs)
         await db.Database.ExecuteSqlRawAsync(@"
             DO $$ 
             BEGIN 
-                -- Add MagicToken
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Users' AND column_name='MagicToken') THEN
-                    ALTER TABLE ""PPP_Users"" ADD COLUMN ""MagicToken"" text NULL;
-                END IF;
-
-                -- Add TokenExpiresAt
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Users' AND column_name='TokenExpiresAt') THEN
-                    ALTER TABLE ""PPP_Users"" ADD COLUMN ""TokenExpiresAt"" timestamp with time zone NULL;
-                END IF;
-
-                -- Add FirstName/LastName if they were somehow missed during the rename
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Users' AND column_name='FirstName') THEN
-                    ALTER TABLE ""PPP_Users"" ADD COLUMN ""FirstName"" text NOT NULL DEFAULT '';
-                END IF;
-                
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Users' AND column_name='LastName') THEN
-                    ALTER TABLE ""PPP_Users"" ADD COLUMN ""LastName"" text NOT NULL DEFAULT '';
-                END IF;
-            END $$;
-        ");
-
-        // 2. Fix PPP_Addresses Table for One-to-Many
-        await db.Database.ExecuteSqlRawAsync(@"
-            DO $$ 
-            BEGIN 
-                -- Add Label
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Addresses' AND column_name='Label') THEN
-                    ALTER TABLE ""PPP_Addresses"" ADD COLUMN ""Label"" text NOT NULL DEFAULT 'Home';
-                END IF;
-
-                -- Add IsDefault
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Addresses' AND column_name='IsDefault') THEN
-                    ALTER TABLE ""PPP_Addresses"" ADD COLUMN ""IsDefault"" boolean NOT NULL DEFAULT false;
-                END IF;
-
-                -- Add UserId (The link)
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Addresses' AND column_name='UserId') THEN
-                    ALTER TABLE ""PPP_Addresses"" ADD COLUMN ""UserId"" integer NULL;
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.table_constraints 
+                    WHERE constraint_name='FK_OrderItems_MenuItems'
+                ) THEN
+                    ALTER TABLE ""PPP_OrderItems"" 
+                    ADD CONSTRAINT ""FK_OrderItems_MenuItems"" 
+                    FOREIGN KEY (""MenuItemId"") REFERENCES ""PPP_MenuItems"" (""Id"") ON DELETE CASCADE;
                 END IF;
             END $$;
         ");
 
         await LoadSystemStats();
-        await ShowToast("PPP Schema Sync Successful");
+        await ShowToast("Multi-Serving Schema Sync Successful");
     }
     catch (Exception ex)
     {
