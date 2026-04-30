@@ -9,7 +9,7 @@ namespace Dashboard.Services
     {
         public static async Task<byte[]> CreateAveryLabels(PPP_Owner owner, List<PPP_OrderItem> items, int startPos)
         {
-            // Avery 5163: 2" x 4", 10 labels per page (2 columns, 5 rows)
+            // Avery 5163: 2" x 4", 10 labels per page
             
             var document = Document.Create(container =>
             {
@@ -45,7 +45,7 @@ namespace Dashboard.Services
                             {
                                 col.Item().Row(row => {
                                     row.RelativeItem().Column(c => {
-                                        c.Item().Text(owner.BusinessName).FontSize(14).Black();
+                                        c.Item().Text(owner.BusinessName).FontSize(14).Bold();
                                         c.Item().Text("BAG LABEL").FontSize(8).SemiBold().FontColor(Colors.Green.Medium);
                                     });
                                 });
@@ -56,7 +56,7 @@ namespace Dashboard.Services
                                     if (address != null) t.Line($"{address.Street}, {address.City}").FontSize(8);
                                 });
 
-                                col.Item().AlignBottom().Text($"{orderGroup.Count()} ITEMS IN BAG").FontSize(10).ExtraBold().FontColor(Colors.Grey.Medium);
+                                col.Item().AlignBottom().Text($"{orderGroup.Count()} ITEMS IN BAG").FontSize(10).Bold().FontColor(Colors.Grey.Medium);
                             });
 
                             // B. CONTAINER LABELS
@@ -67,15 +67,17 @@ namespace Dashboard.Services
                                     col.Item().Row(row => {
                                         row.RelativeItem().Text($"Order #{lineItem.OrderId}").FontSize(8).Bold();
                                         if (!string.IsNullOrEmpty(lineItem.LabelName))
-                                            row.ConstantItem(80).Background(Colors.Green.Lighten4).PaddingHorizontal(5).Text($"FOR: {lineItem.LabelName}").FontSize(9).Bold();
+                                            row.ConstantItem(80).Background(Colors.Grey.Lighten4).PaddingHorizontal(5).Text($"FOR: {lineItem.LabelName}").FontSize(9).Bold();
                                     });
 
-                                    // Format name as Uppercase here
-                                    col.Item().PaddingTop(5).Text(lineItem.RecipeName.ToUpper()).FontSize(12).ExtraBold();
-                                    col.Item().Text(lineItem.SizeName).FontSize(8).Italic();
+                                    col.Item().PaddingTop(5).Text(lineItem.RecipeName.ToUpper()).FontSize(12).Bold();
+                                    col.Item().Text(lineItem.SizeName).FontSize(8);
 
                                     if (lineItem.SelectedOptions != null && lineItem.SelectedOptions.Any())
-                                        col.Item().Text($"+ {string.Join(", ", lineItem.SelectedOptions.Select(o => o.OptionName))}").FontSize(7).FontColor(Colors.Blue.Medium);
+                                    {
+                                        var optString = string.Join(", ", lineItem.SelectedOptions.Select(o => o.OptionName));
+                                        col.Item().Text($"+ {optString}").FontSize(7).FontColor(Colors.Blue.Medium);
+                                    }
                                     
                                     col.Item().AlignBottom().Row(row => {
                                         row.RelativeItem().Text("Prep Date: " + lineItem.ScheduledDate.ToString("MM/dd/yy")).FontSize(7).FontColor(Colors.Grey.Medium);
@@ -87,6 +89,7 @@ namespace Dashboard.Services
                 });
             });
 
+            // QuestPDF works by returning the stream bytes
             return document.GeneratePdf();
         }
     }
