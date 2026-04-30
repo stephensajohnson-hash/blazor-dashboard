@@ -55,7 +55,7 @@
 
                     @foreach (var timeBucket in dayBucket.GroupBy(x => x.TimeframeName).OrderBy(x => x.Key))
                     {
-                        <div class="bg-[#111] border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-2xl">
+                        <div class="bg-[#111] border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-2xl mb-8">
                             <div class="bg-white/5 p-6 border-b border-white/5 flex justify-between items-center">
                                 <div class="flex items-center gap-3">
                                     <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
@@ -169,17 +169,40 @@
     @* Avery Start Position Selection Modal *@
     @if (showLabelDialog)
     {
-        <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[800] flex items-center justify-center p-4">
-            <div class="bg-[#111] border border-slate-800 w-full max-w-md rounded-[3rem] p-10 shadow-2xl animate-in zoom-in-95">
-                <h2 class="text-2xl font-black text-white uppercase italic tracking-tighter mb-2 text-center">Print Avery Labels</h2>
-                <p class="text-[9px] text-slate-500 font-black uppercase mb-8 text-center">Select starting label position (1-10)</p>
+        <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[800] flex items-center justify-center p-4" @onmousedown="() => showLabelDialog = false">
+            <div @onmousedown:stopPropagation="true" class="bg-[#111] border border-slate-800 w-full max-w-lg rounded-[3rem] p-10 shadow-2xl animate-in zoom-in-95">
+                <h2 class="text-2xl font-black text-white uppercase italic tracking-tighter mb-2 text-center">Label Settings</h2>
                 
-                <div class="grid grid-cols-2 gap-4 mb-10">
+                @* Workflow Toggles *@
+                <div class="grid grid-cols-2 gap-4 mb-8 bg-black/40 p-4 rounded-2xl border border-white/5">
+                    <div @onclick="() => printOrderLabels = !printOrderLabels" class="cursor-pointer flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all @(printOrderLabels ? "border-emerald-500 bg-emerald-500/5" : "border-slate-800 opacity-50")">
+                        <span class="text-xl">🛍️</span>
+                        <span class="text-[10px] font-black uppercase text-white">Order Labels</span>
+                    </div>
+                    <div @onclick="() => printContainerLabels = !printContainerLabels" class="cursor-pointer flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all @(printContainerLabels ? "border-emerald-500 bg-emerald-500/5" : "border-slate-800 opacity-50")">
+                        <span class="text-xl">🍱</span>
+                        <span class="text-[10px] font-black uppercase text-white">Serving Labels</span>
+                    </div>
+                </div>
+
+                @if (!printOrderLabels && !printContainerLabels)
+                {
+                    <div class="bg-red-900/20 border border-red-500/50 p-4 rounded-xl mb-6 animate-pulse text-center">
+                        <p class="text-[10px] text-red-400 font-black uppercase">⚠️ No labels selected for generation</p>
+                    </div>
+                }
+
+                <p class="text-[9px] text-slate-500 font-black uppercase mb-4 text-center">
+                    Select Start Position — <span class="text-emerald-500 font-bold">Est. @CalculateTotalPages(10) Page(s)</span>
+                </p>
+                
+                <div class="grid grid-cols-5 gap-3 mb-10">
                     @for (int i = 1; i <= 10; i++)
                     {
                         var pos = i;
                         <button @onclick="() => GeneratePdf(pos)" 
-                                class="h-20 rounded-2xl border-2 border-slate-800 hover:border-emerald-500 text-slate-600 hover:text-white font-black text-xl transition-all active:scale-95 flex items-center justify-center relative overflow-hidden group">
+                                disabled="@(!printOrderLabels && !printContainerLabels)"
+                                class="h-14 rounded-xl border-2 border-slate-800 hover:border-emerald-500 disabled:opacity-10 text-slate-600 hover:text-white font-black text-sm transition-all active:scale-95 flex items-center justify-center relative overflow-hidden group">
                             <span class="z-10">@pos</span>
                             <div class="absolute inset-0 bg-emerald-600 opacity-0 group-hover:opacity-10 transition-opacity"></div>
                         </button>
@@ -245,7 +268,11 @@
     private List<PPP_PickupLocation> LocationsLookup = new();
     private PPP_OrderItem? editingItem;
     private string activeFilter = "pending";
+    
+    // Label Generation State
     private bool showLabelDialog = false;
+    private bool printOrderLabels = true;
+    private bool printContainerLabels = true;
     private List<PPP_OrderItem> itemsToPrint = new();
 
     protected override async Task OnInitializedAsync()
@@ -292,8 +319,22 @@
         showLabelDialog = true;
     }
 
+    private int CalculateTotalPages(int labelsPerPage)
+    {
+        if (!printOrderLabels && !printContainerLabels) return 0;
+        int totalNeeded = 0;
+        var orders = itemsToPrint.GroupBy(x => x.OrderId);
+        foreach (var group in orders)
+        {
+            if (printOrderLabels) totalNeeded++;
+            if (printContainerLabels) totalNeeded += group.Count();
+        }
+        return (int)Math.Ceiling((double)totalNeeded / labelsPerPage);
+    }
+
     private async Task GeneratePdf(int startPos)
     {
+        if (!printOrderLabels && !printContainerLabels) return;
         showLabelDialog = false;
         
         await using var db = await DbFactory.CreateDbContextAsync();
@@ -308,24 +349,16 @@
         }
 
         var customerData = new Dictionary<string, (string Name, string Phone)>();
-        
         foreach(var item in itemsToPrint)
         {
             var email = item.ParentOrderContainer?.CustomerIdentifier;
             if (string.IsNullOrEmpty(email) || customerData.ContainsKey(email)) continue;
 
             var user = await db.PPP_Users.FirstOrDefaultAsync(u => u.Email == email);
-            if (user != null)
-            {
-                customerData[email] = ($"{user.FirstName} {user.LastName}", FormatPhoneNumber(user.Phone));
-            }
-            else
-            {
-                customerData[email] = (email, ""); 
-            }
+            customerData[email] = user != null ? ($"{user.FirstName} {user.LastName}", FormatPhoneNumber(user.Phone)) : (email, "");
         }
 
-        var pdfBytes = await LabelService.CreateAveryLabels(owner, logoBytes, itemsToPrint, startPos, customerData);
+        var pdfBytes = await LabelService.CreateAveryLabels(owner, logoBytes, itemsToPrint, startPos, customerData, printOrderLabels, printContainerLabels);
         
         var fileName = $"Delivery_Labels_{DateTime.Now:yyyyMMdd_HHmm}.pdf";
         var base64 = Convert.ToBase64String(pdfBytes);
@@ -345,23 +378,12 @@
     private string FormatPhoneNumber(string? phone)
     {
         if (string.IsNullOrWhiteSpace(phone)) return "";
-
-        // Strip non-digits
         var digits = new string(phone.Where(char.IsDigit).ToArray());
-
-        // Handle standard 10-digit US numbers
         if (digits.Length == 10)
-        {
             return $"({digits.Substring(0, 3)}) {digits.Substring(3, 3)}-{digits.Substring(6)}";
-        }
-        
-        // Handle 11-digit numbers (like 1-903...)
         if (digits.Length == 11 && digits.StartsWith("1"))
-        {
             return $"({digits.Substring(1, 3)}) {digits.Substring(4, 3)}-{digits.Substring(7)}";
-        }
-
-        return phone; // Fallback to original if it doesn't match US pattern
+        return phone;
     }
 
     private async Task ToggleReady(int itemId)
