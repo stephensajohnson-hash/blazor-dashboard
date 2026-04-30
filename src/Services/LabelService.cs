@@ -1,7 +1,7 @@
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
-using Dashboard; // Changed from Dashboard.Models to match your project structure
+using Dashboard; 
 
 namespace Dashboard.Services
 {
@@ -10,7 +10,6 @@ namespace Dashboard.Services
         public static async Task<byte[]> CreateAveryLabels(PPP_Owner owner, List<PPP_OrderItem> items, int startPos)
         {
             // Avery 5163: 2" x 4", 10 labels per page (2 columns, 5 rows)
-            // Margins: Top 0.5", Bottom 0.5", Left 0.16", Right 0.16"
             
             var document = Document.Create(container =>
             {
@@ -24,7 +23,7 @@ namespace Dashboard.Services
 
                     page.Content().Grid(grid =>
                     {
-                        grid.Columns(2); // 2 columns
+                        grid.Columns(2); 
 
                         // 1. Handle Offset (Empty Labels)
                         for (int i = 1; i < startPos; i++)
@@ -47,10 +46,8 @@ namespace Dashboard.Services
                                 col.Item().Row(row => {
                                     row.RelativeItem().Column(c => {
                                         c.Item().Text(owner.BusinessName).FontSize(14).Black();
-                                        c.Item().Text("BAG LABEL").FontSize(8).SemiBold().FontColor(Colors.Emerald.Medium);
+                                        c.Item().Text("BAG LABEL").FontSize(8).SemiBold().FontColor(Colors.Green.Medium);
                                     });
-                                    // Use owner logo if available
-                                    // if (owner.LogoId.HasValue) ... 
                                 });
 
                                 col.Item().PaddingTop(5).Text(t => {
@@ -70,10 +67,11 @@ namespace Dashboard.Services
                                     col.Item().Row(row => {
                                         row.RelativeItem().Text($"Order #{lineItem.OrderId}").FontSize(8).Bold();
                                         if (!string.IsNullOrEmpty(lineItem.LabelName))
-                                            row.ConstantItem(80).Background(Colors.Emerald.Lighten4).PaddingHorizontal(5).Text($"FOR: {lineItem.LabelName}").FontSize(9).Bold();
+                                            row.ConstantItem(80).Background(Colors.Green.Lighten4).PaddingHorizontal(5).Text($"FOR: {lineItem.LabelName}").FontSize(9).Bold();
                                     });
 
-                                    col.Item().PaddingTop(5).Text(lineItem.RecipeName).FontSize(12).ExtraBold().Uppercase();
+                                    // Format name as Uppercase here
+                                    col.Item().PaddingTop(5).Text(lineItem.RecipeName.ToUpper()).FontSize(12).ExtraBold();
                                     col.Item().Text(lineItem.SizeName).FontSize(8).Italic();
 
                                     if (lineItem.SelectedOptions != null && lineItem.SelectedOptions.Any())
