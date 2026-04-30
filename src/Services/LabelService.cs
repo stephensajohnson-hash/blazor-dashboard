@@ -1,7 +1,7 @@
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
-using Dashboard.Models;
+using Dashboard; // Changed from Dashboard.Models to match your project structure
 
 namespace Dashboard.Services
 {
@@ -10,7 +10,7 @@ namespace Dashboard.Services
         public static async Task<byte[]> CreateAveryLabels(PPP_Owner owner, List<PPP_OrderItem> items, int startPos)
         {
             // Avery 5163: 2" x 4", 10 labels per page (2 columns, 5 rows)
-            // Margins: Top 0.5", Bottom 0.5", Left 0.156", Right 0.156"
+            // Margins: Top 0.5", Bottom 0.5", Left 0.16", Right 0.16"
             
             var document = Document.Create(container =>
             {
@@ -49,8 +49,8 @@ namespace Dashboard.Services
                                         c.Item().Text(owner.BusinessName).FontSize(14).Black();
                                         c.Item().Text("BAG LABEL").FontSize(8).SemiBold().FontColor(Colors.Emerald.Medium);
                                     });
-                                    if (owner.LogoId.HasValue) 
-                                        row.ConstantItem(40).Height(40).Image($"/db-images-ppp/{owner.LogoId}");
+                                    // Use owner logo if available
+                                    // if (owner.LogoId.HasValue) ... 
                                 });
 
                                 col.Item().PaddingTop(5).Text(t => {
@@ -76,12 +76,11 @@ namespace Dashboard.Services
                                     col.Item().PaddingTop(5).Text(lineItem.RecipeName).FontSize(12).ExtraBold().Uppercase();
                                     col.Item().Text(lineItem.SizeName).FontSize(8).Italic();
 
-                                    if (lineItem.SelectedOptions.Any())
+                                    if (lineItem.SelectedOptions != null && lineItem.SelectedOptions.Any())
                                         col.Item().Text($"+ {string.Join(", ", lineItem.SelectedOptions.Select(o => o.OptionName))}").FontSize(7).FontColor(Colors.Blue.Medium);
-
-                                    // Macros (Placeholder - pull from Recipe if loaded)
+                                    
                                     col.Item().AlignBottom().Row(row => {
-                                        row.RelativeItem().Text("Macros: TBD").FontSize(7).FontColor(Colors.Grey.Medium);
+                                        row.RelativeItem().Text("Prep Date: " + lineItem.ScheduledDate.ToString("MM/dd/yy")).FontSize(7).FontColor(Colors.Grey.Medium);
                                     });
                                 });
                             }
@@ -90,9 +89,7 @@ namespace Dashboard.Services
                 });
             });
 
-            using var stream = new MemoryStream();
-            document.GeneratePdf(stream);
-            return stream.ToArray();
+            return document.GeneratePdf();
         }
     }
 }
