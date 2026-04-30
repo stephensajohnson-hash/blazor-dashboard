@@ -9,6 +9,7 @@ namespace Dashboard.Services
     {
         public static async Task<byte[]> CreateAveryLabels(PPP_Owner owner, byte[]? logoBytes, List<PPP_OrderItem> items, int startPos)
         {
+            // Avery 5163: 2 columns, 5 rows
             var document = Document.Create(container =>
             {
                 container.Page(page =>
@@ -19,14 +20,18 @@ namespace Dashboard.Services
                     page.MarginLeft(0.16f, Unit.Inch);
                     page.MarginRight(0.16f, Unit.Inch);
 
-                    page.Content().Grid(grid =>
+                    page.Content().Table(table =>
                     {
-                        grid.Columns(2); 
+                        table.ColumnsDefinition(columns =>
+                        {
+                            columns.RelativeColumn();
+                            columns.RelativeColumn();
+                        });
 
-                        // 1. Handle Offset
+                        // 1. Handle Offset (Empty Labels)
                         for (int i = 1; i < startPos; i++)
                         {
-                            grid.Item().Height(2, Unit.Inch).Text("");
+                            table.Cell().Height(2, Unit.Inch).Text("");
                         }
 
                         var orders = items.GroupBy(x => x.OrderId);
@@ -37,8 +42,8 @@ namespace Dashboard.Services
                             var order = firstItem.ParentOrderContainer;
                             var address = order?.Address;
 
-                            // A. BAG LABEL (With Padding for "Safe Zone")
-                            grid.Item().Height(2, Unit.Inch).Padding(10).Column(col =>
+                            // A. BAG LABEL
+                            table.Cell().Height(2, Unit.Inch).Padding(10).Column(col =>
                             {
                                 col.Item().Row(row => {
                                     row.RelativeItem().Column(c => {
@@ -46,7 +51,6 @@ namespace Dashboard.Services
                                         c.Item().Text("BAG LABEL").FontSize(8).SemiBold().FontColor(Colors.Green.Medium);
                                     });
                                     
-                                    // Properly handle the logo bytes
                                     if (logoBytes != null && logoBytes.Length > 0)
                                     {
                                         row.ConstantItem(40).Height(40).Image(logoBytes);
@@ -62,10 +66,10 @@ namespace Dashboard.Services
                                 col.Item().AlignBottom().Text($"{orderGroup.Count()} ITEMS IN BAG").FontSize(10).Bold().FontColor(Colors.Grey.Medium);
                             });
 
-                            // B. CONTAINER LABELS (With Padding for "Safe Zone")
+                            // B. CONTAINER LABELS
                             foreach (var lineItem in orderGroup)
                             {
-                                grid.Item().Height(2, Unit.Inch).Padding(10).Column(col =>
+                                table.Cell().Height(2, Unit.Inch).Padding(10).Column(col =>
                                 {
                                     col.Item().Row(row => {
                                         row.RelativeItem().Text($"Order #{lineItem.OrderId}").FontSize(8).Bold();
