@@ -14,6 +14,7 @@ namespace Dashboard.Services
             int startPos,
             Dictionary<string, (string Name, string Phone)> customerData)
         {
+            // Avery 5163: 2 columns, 5 rows (2" x 4" labels)
             var document = Document.Create(container =>
             {
                 container.Page(page =>
@@ -32,11 +33,13 @@ namespace Dashboard.Services
                             columns.RelativeColumn();
                         });
 
+                        // 1. Handle Offset (Skips used labels on the sheet)
                         for (int i = 1; i < startPos; i++)
                         {
-                            table.Cell().Height(2, Unit.Inch).Padding(10).Text("");
+                            table.Cell().Height(2, Unit.Inch).Text("");
                         }
 
+                        // 2. Group items by Order so Bag and Container labels stay together
                         var orders = items.GroupBy(x => x.OrderId);
 
                         foreach (var orderGroup in orders)
@@ -50,6 +53,7 @@ namespace Dashboard.Services
                             var displayName = customerData.ContainsKey(email) ? customerData[email].Name : email;
                             var displayPhone = customerData.ContainsKey(email) ? customerData[email].Phone : "";
 
+                            // Grammar check for item counts
                             var itemText = itemCount == 1 ? "1 Item in Order" : $"{itemCount} Items in Order";
 
                             // A. MAIN ORDER SUMMARY LABEL
@@ -71,8 +75,9 @@ namespace Dashboard.Services
                                     t.Line(displayName).FontSize(10).SemiBold();
                                     if (address != null) 
                                         t.Line($"{address.Street}, {address.City}").FontSize(8);
+                                    
                                     if (!string.IsNullOrEmpty(displayPhone))
-                                        t.Line(displayPhone).FontSize(8).Italic().FontColor(Colors.Grey.Darken2);
+                                        t.Line(displayPhone).FontSize(9).SemiBold().FontColor(Colors.Grey.Darken3);
                                 });
 
                                 col.Item().AlignBottom().Text(itemText).FontSize(9).Bold().FontColor(Colors.Grey.Medium);
@@ -96,12 +101,13 @@ namespace Dashboard.Services
                                     if (lineItem.SelectedOptions != null && lineItem.SelectedOptions.Any())
                                     {
                                         var optString = string.Join(", ", lineItem.SelectedOptions.Select(o => o.OptionName));
+                                        // High-readability Red for stand-out instructions
                                         col.Item().Text($"+ {optString}").FontSize(8).Bold().FontColor(Colors.Red.Darken2);
                                     }
                                     
                                     col.Item().AlignBottom().Row(row => {
                                         row.RelativeItem().Text("Prep Date: " + lineItem.ScheduledDate.ToString("MM/dd/yy")).FontSize(7).FontColor(Colors.Grey.Medium);
-                                        row.RelativeItem().AlignRight().Text(displayName).FontSize(7);
+                                        row.RelativeItem().AlignRight().Text(displayName).FontSize(7).FontColor(Colors.Grey.Darken1);
                                     });
                                 });
                             }
