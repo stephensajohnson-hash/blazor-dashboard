@@ -9,7 +9,6 @@ namespace Dashboard.Services
     {
         public static async Task<byte[]> CreateAveryLabels(PPP_Owner owner, byte[]? logoBytes, List<PPP_OrderItem> items, int startPos)
         {
-            // Avery 5163: 2 columns, 5 rows
             var document = Document.Create(container =>
             {
                 container.Page(page =>
@@ -31,7 +30,7 @@ namespace Dashboard.Services
                         // 1. Handle Offset (Empty Labels)
                         for (int i = 1; i < startPos; i++)
                         {
-                            table.Cell().Height(2, Unit.Inch).Text("");
+                            table.Cell().Height(2, Unit.Inch).Padding(10).Text("");
                         }
 
                         var orders = items.GroupBy(x => x.OrderId);
@@ -47,23 +46,25 @@ namespace Dashboard.Services
                             {
                                 col.Item().Row(row => {
                                     row.RelativeItem().Column(c => {
-                                        c.Item().Text(owner.BusinessName).FontSize(14).Bold();
+                                        c.Item().Text(owner.BusinessName).FontSize(12).Bold();
                                         c.Item().Text("BAG LABEL").FontSize(8).SemiBold().FontColor(Colors.Green.Medium);
                                     });
                                     
                                     if (logoBytes != null && logoBytes.Length > 0)
                                     {
-                                        row.ConstantItem(40).Height(40).Image(logoBytes);
+                                        // Constrain logo to prevent layout overflow
+                                        row.ConstantItem(35).Height(35).Image(logoBytes).FitArea();
                                     }
                                 });
 
-                                col.Item().PaddingTop(5).Text(t => {
-                                    t.Line($"Order #{orderGroup.Key}").FontSize(10).Bold();
-                                    t.Line($"{order?.CustomerIdentifier}").FontSize(9);
-                                    if (address != null) t.Line($"{address.Street}, {address.City}").FontSize(8);
+                                col.Item().PaddingTop(2).Text(t => {
+                                    t.Line($"Order #{orderGroup.Key}").FontSize(9).Bold();
+                                    t.Line($"{order?.CustomerIdentifier}").FontSize(8);
+                                    if (address != null) 
+                                        t.Line($"{address.Street}, {address.City}").FontSize(7);
                                 });
 
-                                col.Item().AlignBottom().Text($"{orderGroup.Count()} ITEMS IN BAG").FontSize(10).Bold().FontColor(Colors.Grey.Medium);
+                                col.Item().AlignBottom().Text($"{orderGroup.Count()} ITEMS IN BAG").FontSize(9).Bold().FontColor(Colors.Grey.Medium);
                             });
 
                             // B. CONTAINER LABELS
@@ -74,10 +75,10 @@ namespace Dashboard.Services
                                     col.Item().Row(row => {
                                         row.RelativeItem().Text($"Order #{lineItem.OrderId}").FontSize(8).Bold();
                                         if (!string.IsNullOrEmpty(lineItem.LabelName))
-                                            row.ConstantItem(80).Background(Colors.Grey.Lighten4).PaddingHorizontal(5).Text($"FOR: {lineItem.LabelName}").FontSize(9).Bold();
+                                            row.ConstantItem(80).Background(Colors.Grey.Lighten4).PaddingHorizontal(5).Text($"FOR: {lineItem.LabelName}").FontSize(8).Bold();
                                     });
 
-                                    col.Item().PaddingTop(5).Text(lineItem.RecipeName.ToUpper()).FontSize(12).Bold();
+                                    col.Item().PaddingTop(2).Text(lineItem.RecipeName.ToUpper()).FontSize(11).Bold();
                                     col.Item().Text(lineItem.SizeName).FontSize(8);
 
                                     if (lineItem.SelectedOptions != null && lineItem.SelectedOptions.Any())
