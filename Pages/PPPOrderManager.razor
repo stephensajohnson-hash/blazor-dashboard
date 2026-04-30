@@ -303,12 +303,31 @@
         byte[]? logoBytes = null;
         if (owner.LogoId.HasValue)
         {
-            // FIX: Changed PPP_StoredImages to PPP_StoredImage
             var logoImage = await db.Set<PPP_StoredImage>().FindAsync(owner.LogoId.Value);
             logoBytes = logoImage?.Data;
         }
 
-        var pdfBytes = await LabelService.CreateAveryLabels(owner, logoBytes, itemsToPrint, startPos);
+        // PRE-PROCESS NAMES AND PHONES
+        // We'll create a dictionary to pass to the service so it doesn't have to do DB lookups
+        var customerData = new Dictionary<string, (string Name, string Phone)>();
+        
+        foreach(var item in itemsToPrint)
+        {
+            var email = item.ParentOrderContainer?.CustomerIdentifier;
+            if (string.IsNullOrEmpty(email) || customerData.ContainsKey(email)) continue;
+
+            var user = await db.PPP_Users.FirstOrDefaultAsync(u => u.Email == email);
+            if (user != null)
+            {
+                customerData[email] = ($"{user.FirstName} {user.LastName}", user.Phone ?? "");
+            }
+            else
+            {
+                customerData[email] = (email, ""); // Fallback to email if user record missing
+            }
+        }
+
+        var pdfBytes = await LabelService.CreateAveryLabels(owner, logoBytes, itemsToPrint, startPos, customerData);
         
         var fileName = $"Delivery_Labels_{DateTime.Now:yyyyMMdd_HHmm}.pdf";
         var base64 = Convert.ToBase64String(pdfBytes);

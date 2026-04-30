@@ -7,9 +7,13 @@ namespace Dashboard.Services
 {
     public class LabelService
     {
-        public static async Task<byte[]> CreateAveryLabels(PPP_Owner owner, byte[]? logoBytes, List<PPP_OrderItem> items, int startPos)
+        public static async Task<byte[]> CreateAveryLabels(
+            PPP_Owner owner, 
+            byte[]? logoBytes, 
+            List<PPP_OrderItem> items, 
+            int startPos,
+            Dictionary<string, (string Name, string Phone)> customerData)
         {
-            // Avery 5163: 2 columns, 5 rows
             var document = Document.Create(container =>
             {
                 container.Page(page =>
@@ -28,7 +32,6 @@ namespace Dashboard.Services
                             columns.RelativeColumn();
                         });
 
-                        // 1. Handle Offset (Empty Labels)
                         for (int i = 1; i < startPos; i++)
                         {
                             table.Cell().Height(2, Unit.Inch).Padding(10).Text("");
@@ -43,16 +46,19 @@ namespace Dashboard.Services
                             var address = order?.Address;
                             var itemCount = orderGroup.Count();
                             
-                            // Handling pluralization for order summary
+                            var email = order?.CustomerIdentifier ?? "";
+                            var displayName = customerData.ContainsKey(email) ? customerData[email].Name : email;
+                            var displayPhone = customerData.ContainsKey(email) ? customerData[email].Phone : "";
+
                             var itemText = itemCount == 1 ? "1 Item in Order" : $"{itemCount} Items in Order";
 
-                            // A. MAIN ORDER SUMMARY LABEL (formerly Bag Label)
+                            // A. MAIN ORDER SUMMARY LABEL
                             table.Cell().Height(2, Unit.Inch).Padding(10).Column(col =>
                             {
                                 col.Item().Row(row => {
                                     row.RelativeItem().Column(c => {
                                         c.Item().Text($"ORDER #{orderGroup.Key}").FontSize(10).ExtraBold();
-                                        c.Item().PaddingTop(2).Text(owner.BusinessName).FontSize(12).Bold();
+                                        c.Item().PaddingTop(1).Text(owner.BusinessName).FontSize(11).Bold();
                                     });
                                     
                                     if (logoBytes != null && logoBytes.Length > 0)
@@ -61,13 +67,15 @@ namespace Dashboard.Services
                                     }
                                 });
 
-                                col.Item().PaddingTop(5).Text(t => {
-                                    t.Line($"{order?.CustomerIdentifier}").FontSize(9);
+                                col.Item().PaddingTop(4).Text(t => {
+                                    t.Line(displayName).FontSize(10).SemiBold();
                                     if (address != null) 
                                         t.Line($"{address.Street}, {address.City}").FontSize(8);
+                                    if (!string.IsNullOrEmpty(displayPhone))
+                                        t.Line(displayPhone).FontSize(8).Italic().FontColor(Colors.Grey.Darken2);
                                 });
 
-                                col.Item().AlignBottom().Text(itemText).FontSize(10).Bold().FontColor(Colors.Grey.Medium);
+                                col.Item().AlignBottom().Text(itemText).FontSize(9).Bold().FontColor(Colors.Grey.Medium);
                             });
 
                             // B. INDIVIDUAL CONTAINER LABELS
@@ -88,12 +96,12 @@ namespace Dashboard.Services
                                     if (lineItem.SelectedOptions != null && lineItem.SelectedOptions.Any())
                                     {
                                         var optString = string.Join(", ", lineItem.SelectedOptions.Select(o => o.OptionName));
-                                        // Using a high-readability Red (Red.Darken2) for contrast on white background
                                         col.Item().Text($"+ {optString}").FontSize(8).Bold().FontColor(Colors.Red.Darken2);
                                     }
                                     
                                     col.Item().AlignBottom().Row(row => {
                                         row.RelativeItem().Text("Prep Date: " + lineItem.ScheduledDate.ToString("MM/dd/yy")).FontSize(7).FontColor(Colors.Grey.Medium);
+                                        row.RelativeItem().AlignRight().Text(displayName).FontSize(7);
                                     });
                                 });
                             }
