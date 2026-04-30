@@ -9,6 +9,7 @@ namespace Dashboard.Services
     {
         public static async Task<byte[]> CreateAveryLabels(PPP_Owner owner, byte[]? logoBytes, List<PPP_OrderItem> items, int startPos)
         {
+            // Avery 5163: 2 columns, 5 rows
             var document = Document.Create(container =>
             {
                 container.Page(page =>
@@ -40,51 +41,55 @@ namespace Dashboard.Services
                             var firstItem = orderGroup.First();
                             var order = firstItem.ParentOrderContainer;
                             var address = order?.Address;
+                            var itemCount = orderGroup.Count();
+                            
+                            // Handling pluralization for order summary
+                            var itemText = itemCount == 1 ? "1 Item in Order" : $"{itemCount} Items in Order";
 
-                            // A. BAG LABEL
+                            // A. MAIN ORDER SUMMARY LABEL (formerly Bag Label)
                             table.Cell().Height(2, Unit.Inch).Padding(10).Column(col =>
                             {
                                 col.Item().Row(row => {
                                     row.RelativeItem().Column(c => {
-                                        c.Item().Text(owner.BusinessName).FontSize(12).Bold();
-                                        c.Item().Text("BAG LABEL").FontSize(8).SemiBold().FontColor(Colors.Green.Medium);
+                                        c.Item().Text($"ORDER #{orderGroup.Key}").FontSize(10).ExtraBold();
+                                        c.Item().PaddingTop(2).Text(owner.BusinessName).FontSize(12).Bold();
                                     });
                                     
                                     if (logoBytes != null && logoBytes.Length > 0)
                                     {
-                                        // Constrain logo to prevent layout overflow
                                         row.ConstantItem(35).Height(35).Image(logoBytes).FitArea();
                                     }
                                 });
 
-                                col.Item().PaddingTop(2).Text(t => {
-                                    t.Line($"Order #{orderGroup.Key}").FontSize(9).Bold();
-                                    t.Line($"{order?.CustomerIdentifier}").FontSize(8);
+                                col.Item().PaddingTop(5).Text(t => {
+                                    t.Line($"{order?.CustomerIdentifier}").FontSize(9);
                                     if (address != null) 
-                                        t.Line($"{address.Street}, {address.City}").FontSize(7);
+                                        t.Line($"{address.Street}, {address.City}").FontSize(8);
                                 });
 
-                                col.Item().AlignBottom().Text($"{orderGroup.Count()} ITEMS IN BAG").FontSize(9).Bold().FontColor(Colors.Grey.Medium);
+                                col.Item().AlignBottom().Text(itemText).FontSize(10).Bold().FontColor(Colors.Grey.Medium);
                             });
 
-                            // B. CONTAINER LABELS
+                            // B. INDIVIDUAL CONTAINER LABELS
                             foreach (var lineItem in orderGroup)
                             {
                                 table.Cell().Height(2, Unit.Inch).Padding(10).Column(col =>
                                 {
                                     col.Item().Row(row => {
-                                        row.RelativeItem().Text($"Order #{lineItem.OrderId}").FontSize(8).Bold();
+                                        row.RelativeItem().Text($"ORDER #{lineItem.OrderId}").FontSize(10).ExtraBold();
+                                        
                                         if (!string.IsNullOrEmpty(lineItem.LabelName))
-                                            row.ConstantItem(80).Background(Colors.Grey.Lighten4).PaddingHorizontal(5).Text($"FOR: {lineItem.LabelName}").FontSize(8).Bold();
+                                            row.RelativeItem().AlignRight().Text($"FOR: {lineItem.LabelName}").FontSize(9).Bold();
                                     });
 
-                                    col.Item().PaddingTop(2).Text(lineItem.RecipeName.ToUpper()).FontSize(11).Bold();
+                                    col.Item().PaddingTop(4).Text(lineItem.RecipeName.ToUpper()).FontSize(11).Bold();
                                     col.Item().Text(lineItem.SizeName).FontSize(8);
 
                                     if (lineItem.SelectedOptions != null && lineItem.SelectedOptions.Any())
                                     {
                                         var optString = string.Join(", ", lineItem.SelectedOptions.Select(o => o.OptionName));
-                                        col.Item().Text($"+ {optString}").FontSize(7).FontColor(Colors.Blue.Medium);
+                                        // Using a high-readability Red (Red.Darken2) for contrast on white background
+                                        col.Item().Text($"+ {optString}").FontSize(8).Bold().FontColor(Colors.Red.Darken2);
                                     }
                                     
                                     col.Item().AlignBottom().Row(row => {
