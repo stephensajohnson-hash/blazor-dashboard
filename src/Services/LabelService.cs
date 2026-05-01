@@ -52,8 +52,9 @@ namespace Dashboard.Services
 
                             if (printSummary)
                             {
-                                var itemCount = orderGroup.Count();
-                                var itemText = itemCount == 1 ? "1 Item in Order" : $"{itemCount} Items in Order";
+                                // Calculate total servings for the summary label
+                                var totalServings = orderGroup.Sum(i => i.Servings.Count);
+                                var itemText = totalServings == 1 ? "1 Item in Order" : $"{totalServings} Items in Order";
 
                                 table.Cell().Height(2, Unit.Inch).Padding(10).Column(col =>
                                 {
@@ -80,25 +81,32 @@ namespace Dashboard.Services
                             {
                                 foreach (var lineItem in orderGroup)
                                 {
-                                    table.Cell().Height(2, Unit.Inch).Padding(10).Column(col =>
+                                    // NEW: Loop through Servings instead of Items
+                                    foreach (var serving in lineItem.Servings)
                                     {
-                                        col.Item().Row(row => {
-                                            row.RelativeItem().Text($"ORDER #{lineItem.OrderId}").FontSize(10).ExtraBold();
-                                            if (!string.IsNullOrEmpty(lineItem.LabelName))
-                                                row.RelativeItem().AlignRight().Text($"FOR: {lineItem.LabelName}").FontSize(9).Bold();
-                                        });
+                                        table.Cell().Height(2, Unit.Inch).Padding(10).Column(col =>
+                                        {
+                                            col.Item().Row(row => {
+                                                row.RelativeItem().Text($"ORDER #{lineItem.OrderId}").FontSize(10).ExtraBold();
+                                                if (!string.IsNullOrEmpty(serving.LabelName))
+                                                    row.RelativeItem().AlignRight().Text($"FOR: {serving.LabelName}").FontSize(9).Bold();
+                                            });
 
-                                        col.Item().PaddingTop(4).Text(lineItem.RecipeName.ToUpper()).FontSize(11).Bold();
-                                        col.Item().Text(lineItem.SizeName).FontSize(8);
+                                            col.Item().PaddingTop(4).Text(lineItem.RecipeName.ToUpper()).FontSize(11).Bold();
+                                            col.Item().Text(lineItem.SizeName).FontSize(8);
 
-                                        if (lineItem.SelectedOptions != null && lineItem.SelectedOptions.Any())
-                                            col.Item().Text($"+ {string.Join(", ", lineItem.SelectedOptions.Select(o => o.OptionName))}").FontSize(8).Bold().FontColor(Colors.Red.Darken2);
-                                        
-                                        col.Item().AlignBottom().Row(row => {
-                                            row.RelativeItem().Text("Prep Date: " + lineItem.ScheduledDate.ToString("MM/dd/yy")).FontSize(7).FontColor(Colors.Grey.Medium);
-                                            row.RelativeItem().AlignRight().Text(displayName).FontSize(7).FontColor(Colors.Grey.Darken1);
+                                            if (serving.SelectedOptions != null && serving.SelectedOptions.Any())
+                                            {
+                                                var optString = string.Join(", ", serving.SelectedOptions.Select(o => o.OptionName));
+                                                col.Item().Text($"+ {optString}").FontSize(8).Bold().FontColor(Colors.Red.Darken2);
+                                            }
+                                            
+                                            col.Item().AlignBottom().Row(row => {
+                                                row.RelativeItem().Text("Prep Date: " + lineItem.ScheduledDate.ToString("MM/dd/yy")).FontSize(7).FontColor(Colors.Grey.Medium);
+                                                row.RelativeItem().AlignRight().Text(displayName).FontSize(7).FontColor(Colors.Grey.Darken1);
+                                            });
                                         });
-                                    });
+                                    }
                                 }
                             }
                         }

@@ -100,7 +100,6 @@
     @* Cart Detail Overlay *@
     @if (showCart && cart != null)
     {
-        @* FIX: Changed @onclick to @onmousedown to prevent accidental highlights from closing modal *@
         <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[600] flex items-end justify-center" @onmousedown="SaveCartNotes">
             <div @onmousedown:stopPropagation="true" class="bg-[#0f0f0f] w-full max-w-2xl rounded-t-[3rem] border-t border-slate-800 p-10 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[92vh] flex flex-col">
                 <div class="flex justify-between items-start mb-8 shrink-0">
@@ -118,14 +117,21 @@
                                 <span class="text-[9px] font-black text-emerald-500 uppercase">@item.ScheduledDate.ToString("ddd, MMM d") — @item.TimeframeName</span>
                                 <button @onclick="() => RemoveFromCart(item.Id)" class="text-slate-600 hover:text-red-500 text-xs">✕</button>
                             </div>
-                            <h4 class="text-lg font-black text-white uppercase italic">
-                                @item.RecipeName 
-                                @if(!string.IsNullOrEmpty(item.LabelName)) { <span class="text-emerald-400 text-sm ml-2">(@item.LabelName)</span> }
-                            </h4>
+                            <h4 class="text-lg font-black text-white uppercase italic">@item.RecipeName</h4>
                             <div class="flex justify-between items-center mt-2">
                                 <span class="text-[9px] text-slate-400 font-bold uppercase">@item.SizeName (@item.FulfillmentMethod)</span>
                                 <span class="text-xs font-mono">$@GetItemTotal(item).ToString("N2")</span>
                             </div>
+                            @* NEW: Display Servings in Cart *@
+                            @if (item.Servings != null && item.Servings.Any())
+                            {
+                                <div class="mt-2 border-t border-white/5 pt-2 space-y-1">
+                                    @foreach (var s in item.Servings)
+                                    {
+                                        <p class="text-[9px] text-slate-500 italic uppercase">Serving @s.ServingNumber: @(string.IsNullOrEmpty(s.LabelName) ? "Guest" : s.LabelName)</p>
+                                    }
+                                </div>
+                            }
                         </div>
                     }
 
@@ -153,25 +159,50 @@
     @* Configuration Modal *@
     @if (selectedItem != null && currentSize != null)
     {
-        @* FIX: Changed @onclick to @onmousedown to prevent accidental highlights from closing modal *@
         <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[400] flex items-end justify-center" @onmousedown="() => selectedItem = null">
             <div @onmousedown:stopPropagation="true" class="bg-[#0f0f0f] w-full max-w-2xl rounded-t-[3rem] border-t border-slate-800 p-10 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[95vh] overflow-y-auto">
                 <div class="flex justify-between items-start mb-8">
                     <div>
                         <h2 class="text-3xl font-black text-white uppercase italic tracking-tighter">@selectedItem.Recipe?.Name</h2>
-                        <p class="text-[10px] text-emerald-500 font-black uppercase mt-1">Configure Delivery & Options</p>
+                        <p class="text-[10px] text-emerald-500 font-black uppercase mt-1">Configure your @currentSize.ServingsPerUnit Servings</p>
                     </div>
                     <button @onclick="() => selectedItem = null" class="bg-white/5 w-12 h-12 rounded-2xl text-slate-400 flex items-center justify-center text-2xl transition-all">&times;</button>
                 </div>
 
                 <div class="space-y-10">
-                    @* Name Label Section *@
+                    @* NEW: Multi-Serving Input Section *@
                     <section>
-                        <h5 class="text-[10px] font-black uppercase text-emerald-500 mb-4 tracking-widest">Who is this for?</h5>
-                        <input value="@selLabelName" 
-                               @oninput="HandleLabelInput"
-                               placeholder="Optional: e.g. Bob, Lisa, Leigh..." 
-                               class="w-full bg-black border border-slate-800 rounded-2xl p-4 text-sm text-white outline-none focus:border-emerald-500 transition-all font-bold italic" />
+                        <h5 class="text-[10px] font-black uppercase text-emerald-500 mb-4 tracking-widest">Customize Each Serving</h5>
+                        <div class="space-y-6">
+                            @for (int i = 0; i < currentSize.ServingsPerUnit; i++)
+                            {
+                                var index = i;
+                                <div class="bg-black/40 border border-slate-800 rounded-3xl p-6">
+                                    <div class="flex items-center gap-3 mb-4">
+                                        <span class="w-6 h-6 rounded-full bg-emerald-600 text-white text-[10px] font-black flex items-center justify-center">@(index + 1)</span>
+                                        <span class="text-[10px] font-black uppercase text-slate-400">Recipient Name</span>
+                                    </div>
+                                    <input @bind="tempServingConfigs[index].LabelName" 
+                                           placeholder="e.g. Dad, Sarah, etc." 
+                                           class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500 transition-all font-bold italic mb-4" />
+                                    
+                                    @if (currentSize.Options != null && currentSize.Options.Any())
+                                    {
+                                        <p class="text-[9px] font-black uppercase text-slate-600 mb-3 ml-1">Options for Serving @(index + 1)</p>
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                            @foreach (var opt in currentSize.Options)
+                                            {
+                                                <div @onclick="() => ToggleServingOption(index, opt.Id)" 
+                                                     class="p-3 rounded-xl border text-[9px] font-black uppercase transition-all cursor-pointer flex justify-between items-center @(tempServingConfigs[index].OptionIds.Contains(opt.Id) ? "bg-emerald-600/10 border-emerald-500 text-emerald-400" : "bg-white/[0.02] border-white/5 text-slate-500")">
+                                                    <span>@opt.Name</span>
+                                                    <span class="opacity-60 font-mono">+$@opt.AddOnPrice.ToString("N2")</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
                     </section>
 
                     @* 1. Time Slot *@
@@ -181,7 +212,7 @@
                             @foreach (var tf in selectedItem.Timeframes)
                             {
                                 <button @onclick="() => selTimeframe = tf.Name" 
-                                        class="px-5 py-2.5 rounded-xl border text-[10px] font-black uppercase transition-all @(selTimeframe == tf.Name ? "bg-emerald-600 border-emerald-600 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)]" : "border-slate-800 text-slate-500 hover:border-slate-600")">
+                                        class="px-5 py-2.5 rounded-xl border text-[10px] font-black uppercase transition-all @(selTimeframe == tf.Name ? "bg-emerald-600 border-emerald-600 text-white shadow-lg" : "border-slate-800 text-slate-500 hover:border-slate-600")">
                                     @tf.Name
                                 </button>
                             }
@@ -213,57 +244,29 @@
                                        class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm font-mono text-white outline-none focus:border-blue-500" />
                                 @if (isLookupLoading) { <div class="absolute right-3 top-4 scale-75 border-2 border-emerald-500 border-t-transparent rounded-full w-4 h-4 animate-spin"></div> }
                             </div>
-                            @if(!string.IsNullOrEmpty(selZip)) {
-                                var fee = GetDeliveryFee(selZip);
-                                <p class="text-[10px] mt-2 font-black uppercase @(fee >= 0 ? "text-blue-400" : "text-red-500")">
-                                    @(fee >= 0 ? $"✓ Delivery Fee: ${fee:N2}" : "✕ No delivery to " + selZip)
-                                </p>
-                            }
                         }
                     </section>
 
                     @* 3. Size Selection *@
                     <section>
-                        <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4">Size</h5>
+                        <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4">Size Bundle</h5>
                         <div class="space-y-2">
                             @foreach (var sz in selectedItem.Sizes)
                             {
                                 <div @onclick="() => SetSize(sz)" class="p-4 rounded-2xl border transition-all cursor-pointer @(currentSize?.Id == sz.Id ? "border-emerald-500 bg-emerald-500/5" : "border-slate-800 bg-black/40") flex justify-between items-center">
-                                    <span class="font-black text-xs uppercase @(currentSize?.Id == sz.Id ? "text-emerald-400" : "text-slate-300")">@sz.Name</span>
+                                    <span class="font-black text-xs uppercase @(currentSize?.Id == sz.Id ? "text-emerald-400" : "text-slate-300")">@sz.Name (@sz.ServingsPerUnit Servings)</span>
                                     <span class="font-mono text-xs">$@sz.BasePrice.ToString("N2")</span>
                                 </div>
                             }
                         </div>
                     </section>
-
-                    @* 4. Add-ons / Options *@
-                    @if (currentSize?.Options != null && currentSize.Options.Any())
-                    {
-                        <section>
-                            <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4">Add-ons</h5>
-                            <div class="space-y-2">
-                                @foreach (var opt in currentSize.Options)
-                                {
-                                    <div @onclick="() => ToggleOption(opt)" class="p-4 bg-black/40 border @(selectedOptionIds.Contains(opt.Id) ? "border-emerald-500/50" : "border-slate-800") rounded-2xl cursor-pointer flex justify-between items-center transition-all">
-                                        <div class="flex items-center gap-3">
-                                            <div class="w-5 h-5 rounded border border-slate-700 flex items-center justify-center @(selectedOptionIds.Contains(opt.Id) ? "bg-emerald-500 border-emerald-500" : "")">
-                                                @if(selectedOptionIds.Contains(opt.Id)) { <span class="text-white text-[10px]">✓</span> }
-                                            </div>
-                                            <span class="text-xs font-bold uppercase @(selectedOptionIds.Contains(opt.Id) ? "text-white" : "text-slate-500")">@opt.Name</span>
-                                        </div>
-                                        <span class="text-[10px] font-mono">+$@opt.AddOnPrice.ToString("N2")</span>
-                                    </div>
-                                }
-                            </div>
-                        </section>
-                    }
                 </div>
 
                 <div class="mt-12 pt-8 border-t border-white/5">
                     <button @onclick="AddToCart" 
                             disabled="@(!IsConfigValid())"
                             class="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-20 text-white py-6 rounded-3xl font-black text-xs uppercase tracking-[0.4em] transition-all shadow-xl flex justify-between items-center px-10">
-                        <span>Add to Cart</span>
+                        <span>Add Bundle to Cart</span>
                         <span class="font-mono">$@GetConfigTotal().ToString("N2")</span>
                     </button>
                 </div>
@@ -366,11 +369,17 @@
     private string selFulfillment = "Pickup";
     private int selPickupId = 0;
     private string selZip = "";
-    private string selLabelName = "";
-    private bool isLabelUserEdited = false; 
     private PPP_MenuItem? selectedItem;
     private PPP_MenuItemSize? currentSize;
-    private HashSet<int> selectedOptionIds = new();
+
+    // Multi-Serving Configuration Classes
+    private class ServingConfig 
+    { 
+        public int ServingNumber { get; set; } 
+        public string LabelName { get; set; } = ""; 
+        public HashSet<int> OptionIds { get; set; } = new(); 
+    }
+    private List<ServingConfig> tempServingConfigs = new();
 
     private List<PPP_PickupLocation> pickupLocations = new();
     private List<PPP_DeliveryZipCode> ownerZips = new();
@@ -414,8 +423,6 @@
                 await JS.InvokeVoidAsync("localStorage.setItem", "ppp_customer_id", customerId);
             }
 
-            await ShowToast("Auth: Checking for session...");
-            
             var token = await JS.InvokeAsync<string>("eval", @"
                 (function() {
                     var name = 'ppp_token=';
@@ -436,18 +443,11 @@
 
                 if (currentUser != null) 
                 {
-                    await ShowToast($"Auth Success: {currentUser.FirstName}");
-                    
                     tempUser.FirstName = currentUser.FirstName;
                     tempUser.LastName = currentUser.LastName;
                     tempUser.Email = currentUser.Email;
                     tempUser.Phone = currentUser.Phone;
                     
-                    if (selectedItem != null && !isLabelUserEdited)
-                    {
-                        selLabelName = currentUser.FirstName;
-                    }
-
                     var addr = currentUser.Addresses.FirstOrDefault(a => a.IsDefault) ?? currentUser.Addresses.FirstOrDefault();
                     if (addr != null)
                     {
@@ -469,28 +469,19 @@
 
     private void HandleLabelInput(ChangeEventArgs e)
     {
-        selLabelName = e.Value?.ToString() ?? "";
-        isLabelUserEdited = true;
+        // Handled via ServingConfig now
     }
 
     private void SelectSavedAddress(ChangeEventArgs e)
     {
         int id = int.Parse(e.Value?.ToString() ?? "0");
-        if (id == -1) 
-        { 
-            tempAddress = new PPP_Address { Label = "Home" }; 
-            return; 
-        }
+        if (id == -1) { tempAddress = new PPP_Address { Label = "Home" }; return; }
 
         var addr = currentUser?.Addresses.FirstOrDefault(a => a.Id == id);
         if (addr != null)
         {
-            tempAddress.Id = addr.Id;
-            tempAddress.Label = addr.Label;
-            tempAddress.Street = addr.Street;
-            tempAddress.City = addr.City;
-            tempAddress.State = addr.State;
-            tempAddress.ZipCode = addr.ZipCode;
+            tempAddress.Id = addr.Id; tempAddress.Label = addr.Label; tempAddress.Street = addr.Street;
+            tempAddress.City = addr.City; tempAddress.State = addr.State; tempAddress.ZipCode = addr.ZipCode;
             StateHasChanged();
         }
     }
@@ -498,84 +489,71 @@
     private async Task HandleFeeZipInput(ChangeEventArgs e)
     {
         var zip = e.Value?.ToString() ?? "";
-        selZip = zip;
-        tempAddress.ZipCode = zip; 
-        if (zip.Length == 5) 
-        {
-            await LookupZip(zip, true);
-        }
+        selZip = zip; tempAddress.ZipCode = zip; 
+        if (zip.Length == 5) await LookupZip(zip, true);
     }
 
     private async Task HandleCheckoutZipLookup(ChangeEventArgs e)
     {
         var zip = e.Value?.ToString() ?? "";
         tempAddress.ZipCode = zip;
-        if (zip.Length == 5) 
-        {
-            await LookupZip(zip, false);
-        }
+        if (zip.Length == 5) await LookupZip(zip, false);
     }
 
     private async Task LookupZip(string zip, bool isFeeCheck)
     {
         isLookupLoading = true;
-        try 
-        {
+        try {
             using var http = new HttpClient();
             var res = await http.GetFromJsonAsync<ZipResponse>($"https://api.zippopotam.us/us/{zip}");
-            if (res?.Places != null && res.Places.Any())
-            {
+            if (res?.Places != null && res.Places.Any()) {
                 var p = res.Places.First();
-                tempAddress.City = p.PlaceName;
-                tempAddress.State = p.StateAbbreviation;
-                if (!isFeeCheck) 
-                {
-                    await ShowToast($"Located: {p.PlaceName}, {p.StateAbbreviation}");
-                }
+                tempAddress.City = p.PlaceName; tempAddress.State = p.StateAbbreviation;
+                if (!isFeeCheck) await ShowToast($"Located: {p.PlaceName}, {p.StateAbbreviation}");
             }
-        }
-        catch { }
-        finally 
-        { 
-            isLookupLoading = false; 
-            StateHasChanged(); 
-        }
+        } catch { }
+        finally { isLookupLoading = false; StateHasChanged(); }
     }
 
     private void SelectItem(PPP_MenuItem item)
     {
         selectedItem = item;
-        currentSize = item.Sizes?.OrderBy(s => s.BasePrice).FirstOrDefault();
         selTimeframe = item.Timeframes?.FirstOrDefault()?.Name ?? "Standard";
-        selectedOptionIds.Clear();
-        
-        isLabelUserEdited = false; 
-
-        if (currentUser != null && !string.IsNullOrEmpty(currentUser.FirstName))
-        {
-            selLabelName = currentUser.FirstName;
-        }
-        else
-        {
-            selLabelName = "";
-        }
-        
         selZip = tempAddress.ZipCode;
 
-        if (owner != null) 
-        {
-            selFulfillment = owner.OffersPickup ? "Pickup" : "Delivery";
-        }
+        if (owner != null) selFulfillment = owner.OffersPickup ? "Pickup" : "Delivery";
         selPickupId = pickupLocations.FirstOrDefault()?.Id ?? 0;
 
+        SetSize(item.Sizes?.OrderBy(s => s.BasePrice).FirstOrDefault());
         StateHasChanged();
+    }
+
+    private void SetSize(PPP_MenuItemSize? sz)
+    {
+        currentSize = sz;
+        tempServingConfigs.Clear();
+        if (currentSize != null)
+        {
+            for (int i = 0; i < currentSize.ServingsPerUnit; i++)
+            {
+                var initialName = (i == 0 && currentUser != null) ? currentUser.FirstName : "";
+                tempServingConfigs.Add(new ServingConfig { ServingNumber = i + 1, LabelName = initialName });
+            }
+        }
+    }
+
+    private void ToggleServingOption(int index, int optionId)
+    {
+        if (tempServingConfigs[index].OptionIds.Contains(optionId))
+            tempServingConfigs[index].OptionIds.Remove(optionId);
+        else
+            tempServingConfigs[index].OptionIds.Add(optionId);
     }
 
     private double GetDeliveryFee(string zip)
     {
         var match = ownerZips.FirstOrDefault(z => z.ZipCode == zip.Trim());
-        if (match == null) return -1;
-        return match.Fee;
+        return match?.Fee ?? -1;
     }
 
     private bool IsConfigValid()
@@ -590,12 +568,16 @@
     {
         if (currentSize == null) return 0;
         double fee = selFulfillment == "Delivery" ? Math.Max(0, GetDeliveryFee(selZip)) : 0;
-        var addons = currentSize.Options.Where(o => selectedOptionIds.Contains(o.Id)).Sum(o => o.AddOnPrice);
-        return currentSize.BasePrice + fee + addons;
+        double addonTotal = 0;
+        foreach (var cfg in tempServingConfigs)
+        {
+            addonTotal += currentSize.Options.Where(o => cfg.OptionIds.Contains(o.Id)).Sum(o => o.AddOnPrice);
+        }
+        return currentSize.BasePrice + fee + addonTotal;
     }
 
-    private double GetCartTotal() => cart?.Items.Sum(i => i.BasePrice + i.DeliveryFee + i.SelectedOptions.Sum(o => o.AddOnPrice)) ?? 0;
-    private double GetItemTotal(PPP_OrderItem item) => item.BasePrice + item.DeliveryFee + item.SelectedOptions.Sum(o => o.AddOnPrice);
+    private double GetCartTotal() => cart?.Items.Sum(i => i.BasePrice + i.DeliveryFee + i.Servings.Sum(s => s.SelectedOptions.Sum(o => o.AddOnPrice))) ?? 0;
+    private double GetItemTotal(PPP_OrderItem item) => item.BasePrice + item.DeliveryFee + item.Servings.Sum(s => s.SelectedOptions.Sum(o => o.AddOnPrice));
 
     private async Task AddToCart()
     {
@@ -615,144 +597,96 @@
                 TimeframeName = selTimeframe,
                 FulfillmentMethod = selFulfillment,
                 PickupLocationId = selFulfillment == "Pickup" ? selPickupId : null,
-                DeliveryFee = selFulfillment == "Delivery" ? Math.Max(0, GetDeliveryFee(selZip)) : 0,
-                LabelName = selLabelName,
-                SelectedOptions = currentSize?.Options
-                    .Where(o => selectedOptionIds.Contains(o.Id))
-                    .Select(o => new PPP_OrderItemOption { OptionName = o.Name, AddOnPrice = o.AddOnPrice })
-                    .ToList() ?? new List<PPP_OrderItemOption>()
+                DeliveryFee = selFulfillment == "Delivery" ? Math.Max(0, GetDeliveryFee(selZip)) : 0
             };
 
-            db.Add(newEntry);
-            await db.SaveChangesAsync();
+            db.PPP_OrderItems.Add(newEntry);
+            await db.SaveChangesAsync(); // Save to get the OrderItem Id for serving links
             
+            // Map the Serving configurations
+            foreach (var cfg in tempServingConfigs)
+            {
+                var serving = new PPP_OrderItemServing
+                {
+                    OrderItemId = newEntry.Id,
+                    ServingNumber = cfg.ServingNumber,
+                    LabelName = cfg.LabelName,
+                    SelectedOptions = currentSize.Options
+                        .Where(o => cfg.OptionIds.Contains(o.Id))
+                        .Select(o => new PPP_OrderItemOption { OptionName = o.Name, AddOnPrice = o.AddOnPrice })
+                        .ToList()
+                };
+                db.PPP_OrderItemServings.Add(serving);
+            }
+
+            await db.SaveChangesAsync();
             await LoadCart(); 
             selectedItem = null;
-            selectedOptionIds.Clear();
-            await ShowToast("Added to cart!");
+            await ShowToast("Bundle added to cart!");
         }
-        catch (Exception ex) 
-        { 
-            await ShowToast("Error: " + ex.Message, true); 
-        }
+        catch (Exception ex) { await ShowToast("Error: " + ex.Message, true); }
     }
 
-    private async Task ProcessCheckout()
-    {
-        showContactForm = true;
-    }
+    private async Task ProcessCheckout() => showContactForm = true;
 
     private async Task FinalizeOrder()
     {
         if (string.IsNullOrWhiteSpace(tempUser.Email) || string.IsNullOrWhiteSpace(tempUser.FirstName))
-        {
-            await ShowToast("Email and Name are required", true);
-            return;
-        }
+        { await ShowToast("Email and Name are required", true); return; }
 
         await using var db = await DbFactory.CreateDbContextAsync();
-        var user = await db.PPP_Users
-            .Include(u => u.Addresses)
-            .FirstOrDefaultAsync(u => u.Email.ToLower() == tempUser.Email.ToLower());
+        var user = await db.PPP_Users.Include(u => u.Addresses).FirstOrDefaultAsync(u => u.Email.ToLower() == tempUser.Email.ToLower());
         
         if (user == null)
         {
-            user = new PPP_User 
-            { 
-                Email = tempUser.Email.ToLower(), 
-                FirstName = tempUser.FirstName, 
-                LastName = tempUser.LastName, 
-                Phone = tempUser.Phone,
-                MagicToken = Guid.NewGuid().ToString("N"), 
-                TokenExpiresAt = DateTime.UtcNow.AddMonths(6)
-            };
-            db.PPP_Users.Add(user);
-            await db.SaveChangesAsync();
+            user = new PPP_User { Email = tempUser.Email.ToLower(), FirstName = tempUser.FirstName, LastName = tempUser.LastName, Phone = tempUser.Phone, MagicToken = Guid.NewGuid().ToString("N"), TokenExpiresAt = DateTime.UtcNow.AddMonths(6) };
+            db.PPP_Users.Add(user); await db.SaveChangesAsync();
         }
         else
         {
-            user.FirstName = tempUser.FirstName; 
-            user.LastName = tempUser.LastName; 
-            user.Phone = tempUser.Phone;
+            user.FirstName = tempUser.FirstName; user.LastName = tempUser.LastName; user.Phone = tempUser.Phone;
             if (string.IsNullOrEmpty(user.MagicToken)) user.MagicToken = Guid.NewGuid().ToString("N");
             user.TokenExpiresAt = DateTime.UtcNow.AddMonths(6);
         }
 
         int chosenAddressId = 0;
-        if (cart.Items.Any(i => i.FulfillmentMethod == "Delivery") && !string.IsNullOrEmpty(tempAddress.Street))
+        if (cart!.Items.Any(i => i.FulfillmentMethod == "Delivery") && !string.IsNullOrEmpty(tempAddress.Street))
         {
             var existing = user.Addresses.FirstOrDefault(a => a.Street.ToLower() == tempAddress.Street.ToLower());
-            if (existing == null)
-            {
-                var n = new PPP_Address 
-                { 
-                    UserId = user.Id, 
-                    Label = tempAddress.Label, 
-                    Street = tempAddress.Street, 
-                    City = tempAddress.City, 
-                    State = tempAddress.State, 
-                    ZipCode = tempAddress.ZipCode,
-                    IsDefault = true
-                };
-                db.Set<PPP_Address>().Add(n);
-                await db.SaveChangesAsync();
-                chosenAddressId = n.Id;
+            if (existing == null) {
+                var n = new PPP_Address { UserId = user.Id, Label = tempAddress.Label, Street = tempAddress.Street, City = tempAddress.City, State = tempAddress.State, ZipCode = tempAddress.ZipCode, IsDefault = true };
+                db.Set<PPP_Address>().Add(n); await db.SaveChangesAsync(); chosenAddressId = n.Id;
             }
-            else
-            {
-                chosenAddressId = existing.Id;
-            }
+            else chosenAddressId = existing.Id;
         }
 
         var dbOrder = await db.PPP_Orders.FirstOrDefaultAsync(o => o.Id == cart.Id);
         if (dbOrder != null) 
         {
             dbOrder.AddressId = chosenAddressId > 0 ? chosenAddressId : null;
-            dbOrder.IsCheckedOut = true; 
-            dbOrder.CheckedOutAt = DateTime.UtcNow;
-            dbOrder.CustomerIdentifier = user.Email;
-            dbOrder.Notes = cart.Notes;
+            dbOrder.IsCheckedOut = true; dbOrder.CheckedOutAt = DateTime.UtcNow;
+            dbOrder.CustomerIdentifier = user.Email; dbOrder.Notes = cart.Notes;
             await db.SaveChangesAsync();
-            
-            await JS.InvokeVoidAsync("eval", $@"
-                document.cookie = 'ppp_token={user.MagicToken}; max-age={60*60*24*180}; path=/; SameSite=Lax';
-            ");
-            
+            await JS.InvokeVoidAsync("eval", $"document.cookie = 'ppp_token={user.MagicToken}; max-age={60*60*24*180}; path=/; SameSite=Lax';");
             await ShowToast("Order placed successfully!");
-            cart = null; 
-            showCart = false; 
-            showContactForm = false;
-            await LoadCart();
+            cart = null; showCart = showContactForm = false; await LoadCart();
         }
     }
 
     private async Task LoadCart()
     {
-        try 
-        {
+        try {
             await using var db = await DbFactory.CreateDbContextAsync();
             var identifier = currentUser?.Email ?? customerId;
-
             var existingOrder = await db.Set<PPP_Order>()
-                .FirstOrDefaultAsync(o => o.OwnerId == OwnerId && 
-                                         o.CustomerIdentifier == identifier && 
-                                         !o.IsCheckedOut);
-            if (existingOrder == null)
-            {
-                existingOrder = new PPP_Order { OwnerId = OwnerId, CustomerIdentifier = identifier, CreatedAt = DateTime.UtcNow };
-                db.Add(existingOrder);
-                await db.SaveChangesAsync();
+                .Include(o => o.Items).ThenInclude(i => i.Servings).ThenInclude(s => s.SelectedOptions)
+                .FirstOrDefaultAsync(o => o.OwnerId == OwnerId && o.CustomerIdentifier == identifier && !o.IsCheckedOut);
+            if (existingOrder == null) {
+                existingOrder = new PPP_Order { OwnerId = OwnerId, CustomerIdentifier = identifier!, CreatedAt = DateTime.UtcNow };
+                db.Add(existingOrder); await db.SaveChangesAsync();
             }
-            existingOrder.Items = await db.Set<PPP_OrderItem>()
-                .Where(i => i.OrderId == existingOrder.Id)
-                .Include(i => i.SelectedOptions)
-                .ToListAsync();
             cart = existingOrder;
-        }
-        catch (Exception ex) 
-        { 
-            Console.WriteLine($"Cart Load Error: {ex.Message}"); 
-        }
+        } catch (Exception ex) { Console.WriteLine($"Cart Load Error: {ex.Message}"); }
     }
 
     private async Task SaveCartNotes() => showCart = false;
@@ -761,30 +695,7 @@
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         var item = await db.PPP_OrderItems.FindAsync(id);
-        if (item != null) 
-        { 
-            db.Remove(item); 
-            await db.SaveChangesAsync(); 
-            await LoadCart(); 
-        }
-    }
-
-    private void SetSize(PPP_MenuItemSize sz)
-    {
-        currentSize = sz; 
-        selectedOptionIds.Clear();
-    }
-
-    private void ToggleOption(PPP_MenuItemOption opt)
-    {
-        if (selectedOptionIds.Contains(opt.Id)) 
-        {
-            selectedOptionIds.Remove(opt.Id);
-        }
-        else 
-        {
-            selectedOptionIds.Add(opt.Id);
-        }
+        if (item != null) { db.Remove(item); await db.SaveChangesAsync(); await LoadCart(); }
     }
 
     private bool IsPastCutoff(PPP_MenuItem i) => DateTime.Now > i.StartDate.Date.AddDays(-1).Add(i.CutoffTime.ToTimeSpan());
@@ -793,11 +704,7 @@
     private async Task ShowToast(string msg, bool err = false) 
     { 
         var t = new ToastItem { Message = msg, IsError = err };
-        toasts.Add(t); 
-        StateHasChanged(); 
-        await Task.Delay(3000); 
-        toasts.Remove(t); 
-        StateHasChanged(); 
+        toasts.Add(t); StateHasChanged(); await Task.Delay(3000); toasts.Remove(t); StateHasChanged(); 
     }
 
     private class ToastItem { public string Message { get; set; } = ""; public bool IsError { get; set; } }

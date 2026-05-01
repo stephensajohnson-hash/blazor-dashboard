@@ -92,39 +92,23 @@
                                                 <div class="flex items-center gap-3 mb-1">
                                                     <p class="text-white font-black uppercase text-base @(lineItem.IsReady ? "line-through opacity-40" : "")">@lineItem.RecipeName</p>
                                                     
-                                                    @if (!string.IsNullOrEmpty(lineItem.LabelName))
-                                                    {
-                                                        <span class="bg-emerald-500 text-black text-[9px] px-3 py-0.5 rounded-full font-black uppercase tracking-tighter">
-                                                            FOR: @lineItem.LabelName
-                                                        </span>
-                                                    }
-                                                    
                                                     <span class="text-[9px] font-mono text-slate-600">ID: @lineItem.Id</span>
                                                     @if (lineItem.IsReady)
                                                     {
                                                         <span class="bg-blue-500/20 text-blue-400 text-[8px] px-2 py-0.5 rounded font-black uppercase tracking-tighter">Ready</span>
                                                     }
                                                 </div>
-                                                <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
-                                                    @lineItem.SizeName 
-                                                    @if (lineItem.SelectedOptions != null && lineItem.SelectedOptions.Any())
-                                                    {
-                                                        <span class="text-blue-400"> + @GetOptionString(lineItem)</span>
-                                                    }
-                                                </p>
+                                                <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">@lineItem.SizeName</p>
                                                 
-                                                <div class="mt-2 flex flex-col gap-1">
-                                                    @if (lineItem.FulfillmentMethod == "Pickup")
+                                                <div class="mt-2 space-y-1">
+                                                    @foreach(var serving in lineItem.Servings)
                                                     {
-                                                        <span class="text-[10px] font-black uppercase text-emerald-500/80 italic">Spot: @GetSpotName(lineItem.PickupLocationId)</span>
-                                                    }
-                                                    else
-                                                    {
-                                                        <div class="flex flex-col">
-                                                            <span class="text-[10px] font-black uppercase text-blue-500/80 italic">Delivery: @GetAddressInfo(lineItem)</span>
-                                                            @if (lineItem.ParentOrderContainer?.Address != null && !string.IsNullOrEmpty(lineItem.ParentOrderContainer.Address.DeliveryInstructions))
+                                                        <div class="flex items-center gap-2">
+                                                            <span class="text-[9px] text-emerald-500 font-black uppercase">Serving @serving.ServingNumber:</span>
+                                                            <span class="text-xs text-white italic">@(string.IsNullOrEmpty(serving.LabelName) ? "No Name" : serving.LabelName)</span>
+                                                            @if(serving.SelectedOptions != null && serving.SelectedOptions.Any())
                                                             {
-                                                                <span class="text-[9px] text-amber-500 font-bold uppercase mt-1 italic">Note: @lineItem.ParentOrderContainer.Address.DeliveryInstructions</span>
+                                                                <span class="text-[9px] text-blue-400 font-bold">+ @string.Join(", ", serving.SelectedOptions.Select(o => o.OptionName))</span>
                                                             }
                                                         </div>
                                                     }
@@ -145,8 +129,7 @@
                                                 </button>
 
                                                 <button @onclick="() => DeleteOrderItem(lineItem.Id)" 
-                                                        class="bg-red-500/10 hover:bg-red-600 text-red-500 hover:text-white w-12 h-12 rounded-xl flex items-center justify-center transition-all border border-red-500/20 active:scale-90"
-                                                        title="Delete Order Item">
+                                                        class="bg-red-500/10 hover:bg-red-600 text-red-500 hover:text-white w-12 h-12 rounded-xl flex items-center justify-center transition-all border border-red-500/20 active:scale-90">
                                                     <span class="text-xl font-bold">✕</span>
                                                 </button>
 
@@ -166,7 +149,7 @@
         }
     </div>
 
-    @* Avery Start Position & Filter Selection Modal *@
+    @* Avery Start Position & Workflow Selection Modal *@
     @if (showLabelDialog)
     {
         <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[800] flex items-center justify-center p-4" @onmousedown="() => showLabelDialog = false">
@@ -242,11 +225,6 @@
 
                 <div class="space-y-6">
                     <div>
-                        <label class="text-[9px] font-black uppercase text-slate-500 mb-2 block">Item Label (For Whom?)</label>
-                        <input type="text" @bind="editingItem.LabelName" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-xs text-white outline-none focus:border-emerald-500" />
-                    </div>
-
-                    <div>
                         <label class="text-[9px] font-black uppercase text-slate-500 mb-2 block">Production Date</label>
                         <input type="date" @bind="editingItem.ScheduledDate" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-xs text-white outline-none focus:border-emerald-500" />
                     </div>
@@ -289,25 +267,17 @@
     private int labelStartPos = 1;
     private List<PPP_OrderItem> itemsToPrint = new();
 
-    protected override async Task OnInitializedAsync()
-    {
-        await LoadData();
-    }
+    protected override async Task OnInitializedAsync() => await LoadData();
 
-    private async Task SetFilter(string filter)
-    {
-        activeFilter = filter;
-        await LoadData();
-    }
+    private async Task SetFilter(string filter) { activeFilter = filter; await LoadData(); }
 
     private async Task LoadData()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
-        
         var query = db.Set<PPP_OrderItem>()
             .Include(i => i.ParentOrderContainer).ThenInclude(o => o.Address) 
-            .Include(i => i.SelectedOptions)
             .Include(i => i.MenuItem).ThenInclude(m => m.Recipe)
+            .Include(i => i.Servings).ThenInclude(s => s.SelectedOptions)
             .Where(i => i.ParentOrderContainer != null && i.ParentOrderContainer.OwnerId == OwnerId && i.ParentOrderContainer.IsCheckedOut);
 
         if (activeFilter == "pending") query = query.Where(i => !i.IsReady);
@@ -320,11 +290,7 @@
     private string GetAddressInfo(PPP_OrderItem item)
     {
         var addr = item.ParentOrderContainer?.Address;
-        if (addr != null)
-        {
-            return $"[{addr.Label}] {addr.Street}, {addr.City}";
-        }
-        return "No Physical Address Found";
+        return addr != null ? $"[{addr.Label}] {addr.Street}, {addr.City}" : "No Physical Address Found";
     }
 
     private void OpenLabelDialog(List<PPP_OrderItem> bucketItems)
@@ -336,12 +302,13 @@
 
     private int CalculateTotalLabels()
     {
+        if (!printOrderLabels && !printContainerLabels) return 0;
         int total = 0;
         var orders = itemsToPrint.GroupBy(x => x.OrderId);
         foreach (var group in orders)
         {
             if (printOrderLabels) total++;
-            if (printContainerLabels) total += group.Count();
+            if (printContainerLabels) total += group.Sum(i => i.Servings.Count);
         }
         return total;
     }
@@ -351,7 +318,6 @@
         int totalNeeded = CalculateTotalLabels();
         if (totalNeeded == 0) return "0 Pages";
         
-        // Avery 5163 has 10 slots.
         int firstPageCapacity = 10 - (labelStartPos - 1);
         int remaining = Math.Max(0, totalNeeded - firstPageCapacity);
         int totalPages = 1 + (int)Math.Ceiling(remaining / 10.0);
@@ -427,19 +393,7 @@
 
     private void StartEdit(PPP_OrderItem item)
     {
-        editingItem = new PPP_OrderItem
-        {
-            Id = item.Id,
-            OrderId = item.OrderId,
-            LabelName = item.LabelName,
-            ScheduledDate = item.ScheduledDate,
-            TimeframeName = item.TimeframeName,
-            FulfillmentMethod = item.FulfillmentMethod,
-            PickupLocationId = item.PickupLocationId,
-            DeliveryFee = item.DeliveryFee,
-            RecipeName = item.RecipeName,
-            SizeName = item.SizeName
-        };
+        editingItem = item;
     }
 
     private async Task SaveEdit()
@@ -450,7 +404,6 @@
 
         if (dbItem != null)
         {
-            dbItem.LabelName = editingItem.LabelName;
             dbItem.ScheduledDate = editingItem.ScheduledDate.ToUniversalTime();
             dbItem.TimeframeName = editingItem.TimeframeName;
             dbItem.FulfillmentMethod = editingItem.FulfillmentMethod;
@@ -475,7 +428,7 @@
         }
     }
 
-    private string GetOptionString(PPP_OrderItem item) => (item.SelectedOptions == null) ? "" : string.Join(", ", item.SelectedOptions.Select(o => o.OptionName));
+    private string GetOptionString(PPP_OrderItem item) => ""; // Logic moved to Servings list in UI
     private string GetSpotName(int? id) => id.HasValue ? (LocationsLookup.FirstOrDefault(l => l.Id == id.Value)?.Name ?? "Main Location") : "Main Location";
 
     private string GetSafeCustId(PPP_OrderItem item)
