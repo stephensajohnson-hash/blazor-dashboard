@@ -209,7 +209,7 @@
                         </div>
                     </section>
 
-                    @* 1. Time Slot *@
+                    @* Arrival Window *@
                     <section>
                         <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest">Arrival Window</h5>
                         <div class="flex flex-wrap gap-2">
@@ -223,7 +223,7 @@
                         </div>
                     </section>
 
-                    @* 2. Logistics Selection *@
+                    @* Fulfillment Logistics *@
                     <section class="p-6 bg-white/[0.02] border border-white/5 rounded-[2rem]">
                         <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest">Fulfillment</h5>
                         @if (owner.OffersPickup && owner.OffersDelivery)
@@ -257,7 +257,7 @@
                         }
                     </section>
 
-                    @* 3. Size Selection *@
+                    @* Size Selection *@
                     <section>
                         <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest">Select Plan Size</h5>
                         <div class="space-y-2">
@@ -323,7 +323,7 @@
                     {
                         <div class="pt-6 border-t border-white/5 space-y-4">
                             <div class="flex justify-between items-end">
-                                <label class="text-[9px] font-black uppercase text-emerald-500">Delivery Location</label>
+                                <label class="text-[9px] font-black uppercase text-emerald-500">Delivery Address</label>
                                 @if (currentUser?.Addresses != null && currentUser.Addresses.Any())
                                 {
                                     <select @onchange="SelectSavedAddress" class="bg-emerald-950/40 text-[9px] text-emerald-400 font-black uppercase border border-emerald-500/20 rounded px-2 py-1 outline-none">
@@ -382,7 +382,7 @@
     private PPP_MenuItem? selectedItem;
     private PPP_MenuItemSize? currentSize;
 
-    // Multi-Serving Configuration Container
+    // Multi-Serving Configuration Classes
     private class ServingConfig 
     { 
         public int ServingNumber { get; set; } 
@@ -433,6 +433,8 @@
                 await JS.InvokeVoidAsync("localStorage.setItem", "ppp_customer_id", customerId);
             }
 
+            await ShowToast("Auth: Checking for session...");
+            
             var token = await JS.InvokeAsync<string>("eval", @"
                 (function() {
                     var name = 'ppp_token=';
@@ -453,6 +455,8 @@
 
                 if (currentUser != null) 
                 {
+                    await ShowToast($"Auth Success: {currentUser.FirstName}");
+                    
                     tempUser.FirstName = currentUser.FirstName;
                     tempUser.LastName = currentUser.LastName;
                     tempUser.Email = currentUser.Email;
@@ -467,7 +471,9 @@
                         tempAddress.City = addr.City;
                         tempAddress.State = addr.State;
                         tempAddress.ZipCode = addr.ZipCode;
-                        selZip = addr.ZipCode; // RESTORED DEFAULTING
+                        
+                        // RESTORED: Auto-load Zip
+                        selZip = addr.ZipCode; 
                     }
                 }
             }
@@ -487,6 +493,7 @@
         {
             tempAddress.Id = addr.Id; tempAddress.Label = addr.Label; tempAddress.Street = addr.Street;
             tempAddress.City = addr.City; tempAddress.State = addr.State; tempAddress.ZipCode = addr.ZipCode;
+            selZip = addr.ZipCode;
             StateHasChanged();
         }
     }
@@ -524,8 +531,9 @@
     {
         selectedItem = item;
         selTimeframe = item.Timeframes?.FirstOrDefault()?.Name ?? "Standard";
-        selZip = tempAddress.ZipCode; // SYNC ZIP ON SELECT
-
+        
+        // Ensure logistics are synced to latest identity data
+        selZip = tempAddress.ZipCode;
         if (owner != null) selFulfillment = owner.OffersPickup ? "Pickup" : "Delivery";
         selPickupId = pickupLocations.FirstOrDefault()?.Id ?? 0;
 
@@ -541,7 +549,7 @@
         {
             for (int i = 0; i < currentSize.ServingsPerUnit; i++)
             {
-                // Default box 1 to user's name if authenticated
+                // RESTORED: Auto-load Name for Serving 1
                 var initialName = (i == 0 && currentUser != null) ? currentUser.FirstName : "";
                 tempServingConfigs.Add(new ServingConfig { ServingNumber = i + 1, LabelName = initialName });
             }
@@ -607,7 +615,7 @@
             };
 
             db.PPP_OrderItems.Add(newEntry);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(); 
             
             foreach (var cfg in tempServingConfigs)
             {
@@ -711,8 +719,6 @@
         var t = new ToastItem { Message = msg, IsError = err };
         toasts.Add(t); StateHasChanged(); await Task.Delay(3000); toasts.Remove(t); StateHasChanged(); 
     }
-
-    private async Task HandleLabelInput(ChangeEventArgs e) { /* Placeholder for base alignment */ }
 
     private class ToastItem { public string Message { get; set; } = ""; public bool IsError { get; set; } }
     public class ZipResponse { [System.Text.Json.Serialization.JsonPropertyName("places")] public List<ZipPlace> Places { get; set; } = new(); }
