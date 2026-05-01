@@ -10,7 +10,7 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
-@* Fixed double scrollbar: main container is screen-height, only inner content scrolls *@
+@* Main Container with single scrollbar fix *@
 <div class="h-screen w-full bg-[#050505] text-slate-200 font-sans antialiased overflow-hidden flex flex-col">
     
     @* Notification Stack *@
@@ -173,14 +173,78 @@
                 <div class="flex justify-between items-start mb-8">
                     <div>
                         <h2 class="text-3xl font-black text-white uppercase italic tracking-tighter">@selectedItem.Recipe?.Name</h2>
-                        <p class="text-[10px] text-emerald-500 font-black uppercase mt-1">Configure your @currentSize.ServingsPerUnit Servings</p>
+                        <p class="text-[10px] text-emerald-500 font-black uppercase mt-1">Design Your Meal Bundle</p>
                     </div>
                     <button @onclick="() => selectedItem = null" class="bg-white/5 w-12 h-12 rounded-2xl text-slate-400 flex items-center justify-center text-2xl transition-all">&times;</button>
                 </div>
 
                 <div class="space-y-10">
+                    @* 1. Logistics Selection (Time & Fulfillment) *@
+                    <section class="p-6 bg-white/[0.02] border border-white/5 rounded-[2rem] space-y-6">
+                        <div>
+                            <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest">Arrival Window</h5>
+                            <div class="flex flex-wrap gap-2">
+                                @foreach (var tf in selectedItem.Timeframes)
+                                {
+                                    <button @onclick="() => selTimeframe = tf.Name" 
+                                            class="px-5 py-2.5 rounded-xl border text-[10px] font-black uppercase transition-all @(selTimeframe == tf.Name ? "bg-emerald-600 border-emerald-600 text-white shadow-lg" : "border-slate-800 text-slate-500 hover:border-slate-600")">
+                                        @tf.Name
+                                    </button>
+                                }
+                            </div>
+                        </div>
+
+                        <div>
+                            <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest">Fulfillment</h5>
+                            @if (owner.OffersPickup && owner.OffersDelivery)
+                            {
+                                <div class="flex gap-2 mb-4 bg-black p-1 rounded-2xl border border-slate-800">
+                                    <button @onclick='() => selFulfillment = "Pickup"' class="flex-1 py-3 rounded-xl text-[10px] font-black uppercase @(selFulfillment == "Pickup" ? "bg-white text-black" : "text-slate-500")">Pickup</button>
+                                    <button @onclick='() => selFulfillment = "Delivery"' class="flex-1 py-3 rounded-xl text-[10px] font-black uppercase @(selFulfillment == "Delivery" ? "bg-blue-600 text-white" : "text-slate-500")">Delivery</button>
+                                </div>
+                            }
+
+                            @if (selFulfillment == "Pickup")
+                            {
+                                <select @bind="selPickupId" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-xs text-white outline-none">
+                                    <option value="0">-- Select Pickup Location --</option>
+                                    @foreach (var loc in pickupLocations) { <option value="@loc.Id">@loc.Name (@loc.Address)</option> }
+                                </select>
+                            }
+                            else
+                            {
+                                <div class="relative">
+                                    <input @bind="selZip" @oninput="HandleFeeZipInput" maxlength="5" placeholder="Zip Code for Delivery" 
+                                           class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm font-mono text-white outline-none focus:border-blue-500" />
+                                    @if (isLookupLoading) { <div class="absolute right-3 top-4 scale-75 border-2 border-emerald-500 border-t-transparent rounded-full w-4 h-4 animate-spin"></div> }
+                                </div>
+                                @if(!string.IsNullOrEmpty(selZip)) {
+                                    var fee = GetDeliveryFee(selZip);
+                                    <p class="text-[9px] mt-2 font-black uppercase @(fee >= 0 ? "text-blue-400" : "text-red-500")">
+                                        @(fee >= 0 ? $"✓ Coverage Available: ${fee:N2} Fee" : "✕ No delivery service to " + selZip)
+                                    </p>
+                                }
+                            }
+                        </div>
+                    </section>
+
+                    @* 2. Size Selection (This drives the count of boxes below) *@
                     <section>
-                        <h5 class="text-[10px] font-black uppercase text-emerald-500 mb-4 tracking-widest text-center italic">Personalize Your Bundle</h5>
+                        <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest">Select Plan Size</h5>
+                        <div class="space-y-2">
+                            @foreach (var sz in selectedItem.Sizes)
+                            {
+                                <div @onclick="() => SetSize(sz)" class="p-4 rounded-2xl border transition-all cursor-pointer @(currentSize?.Id == sz.Id ? "border-emerald-500 bg-emerald-500/5" : "border-slate-800 bg-black/40") flex justify-between items-center">
+                                    <span class="font-black text-xs uppercase @(currentSize?.Id == sz.Id ? "text-emerald-400" : "text-slate-300")">@sz.Name (@sz.ServingsPerUnit Servings)</span>
+                                    <span class="font-mono text-xs">$@sz.BasePrice.ToString("N2")</span>
+                                </div>
+                            }
+                        </div>
+                    </section>
+
+                    @* 3. Multi-Serving Personalization (Now at the bottom) *@
+                    <section class="animate-in slide-in-from-top duration-500">
+                        <h5 class="text-[10px] font-black uppercase text-emerald-500 mb-6 tracking-widest text-center italic">Personalize Your @currentSize.ServingsPerUnit Servings</h5>
                         <div class="space-y-6">
                             @for (int i = 0; i < currentSize.ServingsPerUnit; i++)
                             {
@@ -188,7 +252,7 @@
                                 <div class="bg-black border border-slate-800 rounded-[2rem] p-6 shadow-inner">
                                     <div class="flex items-center gap-3 mb-4">
                                         <span class="w-6 h-6 rounded-full bg-emerald-600 text-white text-[10px] font-black flex items-center justify-center">@(index + 1)</span>
-                                        <span class="text-[10px] font-black uppercase text-slate-300 tracking-widest">Recipient for Serving @(index + 1)</span>
+                                        <span class="text-[10px] font-black uppercase text-slate-300 tracking-widest">Recipient Name</span>
                                     </div>
                                     <input @bind="tempServingConfigs[index].LabelName" 
                                            placeholder="e.g. Dad, Sarah, etc." 
@@ -212,65 +276,6 @@
                             }
                         </div>
                     </section>
-
-                    <section>
-                        <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest">Arrival Window</h5>
-                        <div class="flex flex-wrap gap-2">
-                            @foreach (var tf in selectedItem.Timeframes)
-                            {
-                                <button @onclick="() => selTimeframe = tf.Name" 
-                                        class="px-5 py-2.5 rounded-xl border text-[10px] font-black uppercase transition-all @(selTimeframe == tf.Name ? "bg-emerald-600 border-emerald-600 text-white shadow-lg" : "border-slate-800 text-slate-500 hover:border-slate-600")">
-                                    @tf.Name
-                                </button>
-                            }
-                        </div>
-                    </section>
-
-                    <section class="p-6 bg-white/[0.02] border border-white/5 rounded-[2rem]">
-                        <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest">Fulfillment</h5>
-                        @if (owner.OffersPickup && owner.OffersDelivery)
-                        {
-                            <div class="flex gap-2 mb-4 bg-black p-1 rounded-2xl border border-slate-800">
-                                <button @onclick='() => selFulfillment = "Pickup"' class="flex-1 py-3 rounded-xl text-[10px] font-black uppercase @(selFulfillment == "Pickup" ? "bg-white text-black" : "text-slate-500")">Pickup</button>
-                                <button @onclick='() => selFulfillment = "Delivery"' class="flex-1 py-3 rounded-xl text-[10px] font-black uppercase @(selFulfillment == "Delivery" ? "bg-blue-600 text-white" : "text-slate-500")">Delivery</button>
-                            </div>
-                        }
-
-                        @if (selFulfillment == "Pickup")
-                        {
-                            <select @bind="selPickupId" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-xs text-white">
-                                <option value="0">-- Select Pickup Location --</option>
-                                @foreach (var loc in pickupLocations) { <option value="@loc.Id">@loc.Name (@loc.Address)</option> }
-                            </select>
-                        }
-                        else
-                        {
-                            <div class="relative">
-                                <input @bind="selZip" @oninput="HandleFeeZipInput" maxlength="5" placeholder="Zip Code for Delivery" 
-                                       class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm font-mono text-white outline-none focus:border-blue-500" />
-                                @if (isLookupLoading) { <div class="absolute right-3 top-4 scale-75 border-2 border-emerald-500 border-t-transparent rounded-full w-4 h-4 animate-spin"></div> }
-                            </div>
-                            @if(!string.IsNullOrEmpty(selZip)) {
-                                var fee = GetDeliveryFee(selZip);
-                                <p class="text-[9px] mt-2 font-black uppercase @(fee >= 0 ? "text-blue-400" : "text-red-500")">
-                                    @(fee >= 0 ? $"✓ Coverage Available: ${fee:N2} Fee" : "✕ No delivery service to " + selZip)
-                                </p>
-                            }
-                        }
-                    </section>
-
-                    <section>
-                        <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest">Select Plan Size</h5>
-                        <div class="space-y-2">
-                            @foreach (var sz in selectedItem.Sizes)
-                            {
-                                <div @onclick="() => SetSize(sz)" class="p-4 rounded-2xl border transition-all cursor-pointer @(currentSize?.Id == sz.Id ? "border-emerald-500 bg-emerald-500/5" : "border-slate-800 bg-black/40") flex justify-between items-center">
-                                    <span class="font-black text-xs uppercase @(currentSize?.Id == sz.Id ? "text-emerald-400" : "text-slate-300")">@sz.Name (@sz.ServingsPerUnit Servings)</span>
-                                    <span class="font-mono text-xs">$@sz.BasePrice.ToString("N2")</span>
-                                </div>
-                            }
-                        </div>
-                    </section>
                 </div>
 
                 <div class="mt-12 pt-8 border-t border-white/5">
@@ -285,14 +290,14 @@
         </div>
     }
 
-    @* Identity & Checkout Review Modal *@
+    @* Checkout Flow Modal *@
     @if (showContactForm)
     {
         <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[800] flex items-center justify-center p-4">
             <div class="bg-[#0f0f0f] w-full max-w-lg rounded-[3rem] border border-slate-800 p-10 shadow-2xl animate-in zoom-in-95 duration-200">
                 <div class="flex justify-between items-start mb-6">
                     <div>
-                        <h2 class="text-2xl font-black text-white uppercase italic tracking-tighter mb-2">Final Review</h2>
+                        <h2 class="text-2xl font-black text-white uppercase italic tracking-tighter mb-2">Checkout Details</h2>
                         <p class="text-[10px] text-slate-500 font-black uppercase">Confirm details for order completion</p>
                     </div>
                     <button @onclick="() => showContactForm = false" class="text-slate-600 hover:text-white text-2xl">&times;</button>
@@ -312,7 +317,7 @@
 
                     <div>
                         <label class="text-[8px] uppercase text-emerald-500 font-black mb-1 block">Email Address</label>
-                        <input @bind="tempUser.Email" type="email" placeholder="Required for magic link" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500 transition-all" />
+                        <input @bind="tempUser.Email" type="email" placeholder="Required" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500 transition-all" />
                     </div>
 
                     <div>
@@ -450,14 +455,12 @@
 
                 if (currentUser != null) 
                 {
-                    await ShowToast($"Auth Success: {currentUser.FirstName}");
-                    
+                    await ShowToast($"Auth Success: Welcome back, {currentUser.FirstName}!");
                     ApplyIdentityToUI();
-                    await InvokeAsync(StateHasChanged);
                 }
                 else 
                 {
-                    await ShowToast("Auth: Session expired or invalid.");
+                    await ShowToast("Auth: Session not found.");
                 }
             }
 
@@ -614,8 +617,8 @@
                 OrderId = cart.Id,
                 MenuItemId = selectedItem.Id,
                 RecipeName = selectedItem.Recipe?.Name ?? "Selected Item",
-                SizeName = currentSize?.Name ?? "Standard",
-                BasePrice = currentSize?.BasePrice ?? 0,
+                SizeName = currentSize.Name,
+                BasePrice = currentSize.BasePrice,
                 ScheduledDate = selectedItem.StartDate.ToUniversalTime(),
                 TimeframeName = selTimeframe,
                 FulfillmentMethod = selFulfillment,
@@ -728,8 +731,6 @@
         var t = new ToastItem { Message = msg, IsError = err };
         toasts.Add(t); StateHasChanged(); await Task.Delay(3000); toasts.Remove(t); StateHasChanged(); 
     }
-
-    private async Task HandleLabelInput(ChangeEventArgs e) { }
 
     private class ToastItem { public string Message { get; set; } = ""; public bool IsError { get; set; } }
     public class ZipResponse { [System.Text.Json.Serialization.JsonPropertyName("places")] public List<ZipPlace> Places { get; set; } = new(); }
