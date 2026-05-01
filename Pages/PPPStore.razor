@@ -10,7 +10,7 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
-@* Fixed double scrollbar: main container is screen-height, only inner content scrolls *@
+@* Main Container with single scrollbar fix *@
 <div class="h-screen w-full bg-[#050505] text-slate-200 font-sans antialiased overflow-hidden flex flex-col">
     
     @* Notification Stack *@
@@ -181,7 +181,7 @@
                 <div class="flex flex-col md:flex-row items-start gap-8 mb-8 border-b border-white/5 pb-8">
                     @if (selectedItem.Recipe?.ImageId != null)
                     {
-                        @* 2"x2" Image (w-48 h-48) *@
+                        @* 2"x2" Image *@
                         <div class="w-48 h-48 rounded-[2.5rem] overflow-hidden border border-slate-800 shadow-2xl shrink-0">
                             <img src="/db-images-ppp/@selectedItem.Recipe.ImageId" class="w-full h-full object-cover" />
                         </div>
@@ -281,7 +281,7 @@
                         </div>
                     </section>
 
-                    @* 3. Personalization (At bottom) *@
+                    @* 3. Personalization (All servings now default to user name) *@
                     <section class="animate-in slide-in-from-top duration-500">
                         <h5 class="text-[10px] font-black uppercase text-emerald-500 mb-6 tracking-widest text-center italic">Personalize Your @currentSize.ServingsPerUnit Servings</h5>
                         <div class="space-y-6">
@@ -329,7 +329,7 @@
         </div>
     }
 
-    @* Checkout Review Modal *@
+    @* Identity & Checkout Review Modal *@
     @if (showContactForm)
     {
         <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[800] flex items-center justify-center p-4">
@@ -458,10 +458,7 @@
         pickupLocations = await db.Set<PPP_PickupLocation>().Where(l => l.OwnerId == OwnerId).ToListAsync();
         ownerZips = await db.Set<PPP_DeliveryZipCode>().Where(z => z.OwnerId == OwnerId).ToListAsync();
 
-        if (owner != null) 
-        {
-            selFulfillment = owner.OffersPickup ? "Pickup" : "Delivery";
-        }
+        if (owner != null) selFulfillment = owner.OffersPickup ? "Pickup" : "Delivery";
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -532,11 +529,12 @@
             selZip = addr.ZipCode; 
         }
 
-        if (tempServingConfigs.Any())
+        // Apply name to ANY serving boxes that are currently empty
+        foreach (var config in tempServingConfigs)
         {
-            if (string.IsNullOrEmpty(tempServingConfigs[0].LabelName))
+            if (string.IsNullOrEmpty(config.LabelName))
             {
-                tempServingConfigs[0].LabelName = currentUser.FirstName;
+                config.LabelName = currentUser.FirstName;
             }
         }
     }
@@ -593,7 +591,8 @@
         {
             for (int i = 0; i < currentSize.ServingsPerUnit; i++)
             {
-                var initialName = (i == 0 && currentUser != null) ? currentUser.FirstName : "";
+                // UPDATED: Default ALL boxes to user's name if authenticated
+                var initialName = (currentUser != null) ? currentUser.FirstName : "";
                 tempServingConfigs.Add(new ServingConfig { ServingNumber = i + 1, LabelName = initialName });
             }
         }
@@ -733,7 +732,7 @@
             if (existing == null) 
             {
                 var n = new PPP_Address { UserId = user.Id, Label = tempAddress.Label, Street = tempAddress.Street, City = tempAddress.City, State = tempAddress.State, ZipCode = tempAddress.ZipCode, IsDefault = true };
-                db.Set<PPP_Address>().Add(n); 
+                db.PPP_Addresses.Add(n); 
                 await db.SaveChangesAsync(); 
                 chosenAddressId = n.Id;
             }
