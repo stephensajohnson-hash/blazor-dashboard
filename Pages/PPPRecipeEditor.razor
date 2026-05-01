@@ -71,9 +71,9 @@
 
     @* Tab Navigation *@
     <div class="max-w-7xl mx-auto mb-8 flex gap-1 bg-[#111] p-1.5 rounded-2xl w-fit border border-slate-800/50 shadow-inner">
-        <button @onclick='() => currentTab = "Details"' class="px-8 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all @(currentTab == "Details" ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-300")">Details</button>
-        <button @onclick='() => currentTab = "Ingredients"' class="px-8 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all @(currentTab == "Ingredients" ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-300")">Ingredients</button>
-        <button @onclick='() => currentTab = "Instructions"' class="px-8 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all @(currentTab == "Instructions" ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-300")">Instructions</button>
+        <button @onclick='() => SetTab("Details")' class="px-8 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all @(currentTab == "Details" ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-300")">Details</button>
+        <button @onclick='() => SetTab("Ingredients")' class="px-8 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all @(currentTab == "Ingredients" ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-300")">Ingredients</button>
+        <button @onclick='() => SetTab("Instructions")' class="px-8 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all @(currentTab == "Instructions" ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-300")">Instructions</button>
     </div>
 
     <div class="max-w-7xl mx-auto">
@@ -99,6 +99,20 @@
                             <label class="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-2 block">Recipe Title</label>
                             <input @bind="recipe.Name" class="w-full bg-black border border-slate-800 rounded-2xl p-4 text-sm focus:border-emerald-500 outline-none transition-colors" />
                         </div>
+
+                        @* NEW: Long Marketing Description *@
+                        <div>
+                            <label class="text-[10px] text-emerald-500 uppercase font-black tracking-widest mb-2 block">Long Marketing Description (Shows on Marketplace)</label>
+                            <textarea @bind="recipe.LongDescription" rows="4" 
+                                      placeholder="Describe the flavors, the texture, and why customers will love this meal..."
+                                      class="w-full bg-black border border-slate-800 rounded-2xl p-4 text-sm focus:border-emerald-500 outline-none transition-all resize-none"></textarea>
+                        </div>
+
+                        <div>
+                            <label class="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-2 block">Short Note (Internal/Footer)</label>
+                            <input @bind="recipe.Description" placeholder="Quick blurb..." class="w-full bg-black border border-slate-800 rounded-2xl p-4 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                        </div>
+
                         <div class="grid grid-cols-2 gap-4">
                             <div>
                                 <label class="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-2 block">Servings</label>
@@ -232,23 +246,48 @@
     private List<ToastItem> toasts = new();
     private List<PPP_RecipeInstructionGroup> instructionGroups = new();
 
-    protected override async Task OnInitializedAsync() {
+    protected override async Task OnInitializedAsync() 
+    {
         recipe = new PPP_Recipe { Servings = 1, Name = "", ServingSize = "" };
         owners = await Db.PPP_Owners.AsNoTracking().OrderBy(o => o.BusinessName).ToListAsync();
         masterIngs = await Db.PPP_Ingredients.AsNoTracking().ToListAsync();
         
-        if (RecipeId.HasValue) await LoadRecipe(RecipeId.Value);
-        else { 
+        if (RecipeId.HasValue) 
+        {
+            await LoadRecipe(RecipeId.Value);
+        }
+        else 
+        { 
             AddGroup(); 
             if (ownerId.HasValue) recipe.OwnerId = ownerId.Value;
             AddInstructionGroup(); 
         }
     }
 
-    private void AddInstructionGroup() => instructionGroups.Add(new PPP_RecipeInstructionGroup { GroupName = "Instructions", DisplayOrder = instructionGroups.Count });
-    private void AddStep(PPP_RecipeInstructionGroup g) => g.Instructions.Add(new PPP_RecipeInstruction { DisplayOrder = g.Instructions.Count });
+    private void SetTab(string tab)
+    {
+        currentTab = tab;
+    }
 
-    private void MoveIngredient(PPP_RecipeIngredientGroup group, IngredientUIModel item, int direction) {
+    private void AddInstructionGroup() 
+    {
+        instructionGroups.Add(new PPP_RecipeInstructionGroup 
+        { 
+            GroupName = "Instructions", 
+            DisplayOrder = instructionGroups.Count 
+        });
+    }
+
+    private void AddStep(PPP_RecipeInstructionGroup g) 
+    {
+        g.Instructions.Add(new PPP_RecipeInstruction 
+        { 
+            DisplayOrder = g.Instructions.Count 
+        });
+    }
+
+    private void MoveIngredient(PPP_RecipeIngredientGroup group, IngredientUIModel item, int direction) 
+    {
         var list = group.Ingredients.OfType<IngredientUIModel>().OrderBy(i => i.DisplayOrder).ToList();
         int idx = list.IndexOf(item);
         int newIdx = idx + direction;
@@ -259,7 +298,8 @@
         swap.DisplayOrder = oldOrder;
     }
 
-    private void MoveInstruction(PPP_RecipeInstructionGroup group, PPP_RecipeInstruction step, int direction) {
+    private void MoveInstruction(PPP_RecipeInstructionGroup group, PPP_RecipeInstruction step, int direction) 
+    {
         var list = group.Instructions.OrderBy(i => i.DisplayOrder).ToList();
         int idx = list.IndexOf(step);
         int newIdx = idx + direction;
@@ -270,18 +310,24 @@
         swap.DisplayOrder = oldOrder;
     }
 
-    private async Task SaveRecipe() {
+    private async Task SaveRecipe() 
+    {
         if (recipe.OwnerId == 0) { await ShowToast("Select an Owner", true); return; }
         
-        try {
+        try 
+        {
             await using var db = await DbFactory.CreateDbContextAsync();
 
-            // STAGE 1: ORPHANED INGREDIENT COMMIT
-            foreach(var group in recipe.IngredientGroups) {
-                foreach(var obj in group.Ingredients) {
-                    if (obj is IngredientUIModel m && m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) {
+            // STAGE 1: commiting local temporary ingredients
+            foreach(var group in recipe.IngredientGroups) 
+            {
+                foreach(var obj in group.Ingredients) 
+                {
+                    if (obj is IngredientUIModel m && m.IngredientId == 0 && !string.IsNullOrWhiteSpace(m.IngredientName)) 
+                    {
                         double qty = Math.Max(0.001, m.Quantity);
-                        var newIng = new PPP_Ingredient { 
+                        var newIng = new PPP_Ingredient 
+                        { 
                             Name = m.IngredientName.Trim(), 
                             Unit = m.Unit ?? "", 
                             Calories = m.ScaledCals / qty, 
@@ -308,14 +354,17 @@
             await db.SaveChangesAsync();
 
             // STAGE 3: INGREDIENT HIERARCHY
-            foreach (var group in recipe.IngredientGroups) {
+            foreach (var group in recipe.IngredientGroups) 
+            {
                 group.RecipeId = recipe.Id;
                 if (group.Id == 0) db.PPP_RecipeIngredientGroups.Add(group);
                 else db.Entry(group).State = EntityState.Modified;
                 await db.SaveChangesAsync();
 
-                foreach (var obj in group.Ingredients) {
-                    if (obj is IngredientUIModel m) {
+                foreach (var obj in group.Ingredients) 
+                {
+                    if (obj is IngredientUIModel m) 
+                    {
                         var mapping = (PPP_RecipeIngredientMapping)m;
                         mapping.IngredientGroupId = group.Id;
                         mapping.Unit = mapping.Unit ?? "";
@@ -330,13 +379,15 @@
             }
 
             // STAGE 4: INSTRUCTION HIERARCHY
-            foreach (var insGroup in instructionGroups) {
+            foreach (var insGroup in instructionGroups) 
+            {
                 insGroup.RecipeId = recipe.Id;
                 if (insGroup.Id == 0) db.Set<PPP_RecipeInstructionGroup>().Add(insGroup);
                 else db.Entry(insGroup).State = EntityState.Modified;
                 await db.SaveChangesAsync();
 
-                foreach (var step in insGroup.Instructions) {
+                foreach (var step in insGroup.Instructions) 
+                {
                     step.InstructionGroupId = insGroup.Id;
                     step.StepDescription = step.StepDescription ?? "";
                     if (step.Id == 0) db.Set<PPP_RecipeInstruction>().Add(step);
@@ -349,30 +400,44 @@
             await Task.Delay(800);
             Nav.NavigateTo($"/ppp-recipe-manager/{recipe.OwnerId}", forceLoad: true);
 
-        } catch (Exception ex) {
+        } 
+        catch (Exception ex) 
+        {
             Console.WriteLine(ex.ToString());
             await ShowToast("Save Error: " + (ex.InnerException?.Message ?? ex.Message), true);
         }
     }
 
-    private async Task HandleImageUpload(InputFileChangeEventArgs e) {
-        try {
+    private async Task HandleImageUpload(InputFileChangeEventArgs e) 
+    {
+        try 
+        {
             var file = e.File;
             using var ms = new System.IO.MemoryStream();
             await file.OpenReadStream(5120 * 1024).CopyToAsync(ms);
             var img = new PPP_StoredImage { Data = ms.ToArray(), ContentType = file.ContentType, FileName = file.Name, UploadedAt = DateTime.UtcNow };
-            Db.PPP_StoredImages.Add(img); await Db.SaveChangesAsync();
-            recipe.ImageId = img.Id; await ShowToast("Image Loaded");
-        } catch (Exception ex) { await ShowToast(ex.Message, true); }
+            Db.PPP_StoredImages.Add(img); 
+            await Db.SaveChangesAsync();
+            recipe.ImageId = img.Id; 
+            await ShowToast("Image Loaded");
+        } 
+        catch (Exception ex) 
+        { 
+            await ShowToast(ex.Message, true); 
+        }
     }
 
-    private async Task LoadRecipe(int id) {
+    private async Task LoadRecipe(int id) 
+    {
         var existing = await Db.PPP_Recipes.Include(r => r.IngredientGroups).ThenInclude(ig => ig.Ingredients).FirstOrDefaultAsync(r => r.Id == id);
-        if (existing != null) {
+        if (existing != null) 
+        {
             recipe = existing;
-            foreach(var group in recipe.IngredientGroups) {
+            foreach(var group in recipe.IngredientGroups) 
+            {
                 var uiItems = new List<IngredientUIModel>();
-                foreach(var mapping in group.Ingredients.OrderBy(m => m.DisplayOrder)) {
+                foreach(var mapping in group.Ingredients.OrderBy(m => m.DisplayOrder)) 
+                {
                     var ui = new IngredientUIModel { Id = mapping.Id, IngredientGroupId = mapping.IngredientGroupId, IngredientId = mapping.IngredientId, Quantity = mapping.Quantity, Unit = mapping.Unit, Notes = mapping.Notes, DisplayOrder = mapping.DisplayOrder, BaseIngredient = masterIngs.FirstOrDefault(i => i.Id == mapping.IngredientId) };
                     ui.IngredientName = ui.BaseIngredient?.Name ?? "Manual"; ui.Scale(); uiItems.Add(ui);
                 }
@@ -385,7 +450,8 @@
     private void AddGroup() => recipe.IngredientGroups.Add(new PPP_RecipeIngredientGroup { GroupName = "Section", DisplayOrder = recipe.IngredientGroups.Count });
     private void AddIngredient(PPP_RecipeIngredientGroup g) => g.Ingredients.Add(new IngredientUIModel { DisplayOrder = g.Ingredients.Count, Unit = "oz" });
     
-    private void SearchIng(ChangeEventArgs e, IngredientUIModel m) {
+    private void SearchIng(ChangeEventArgs e, IngredientUIModel m) 
+    {
         activeMapping = m;
         var q = e.Value?.ToString()?.Trim() ?? "";
         m.IngredientName = q;
@@ -393,22 +459,39 @@
         searchResults = masterIngs.Where(i => i.Name.ToLower().Contains(q.ToLower())).Take(5).ToList();
     }
 
-    private async Task HandleBlur(IngredientUIModel m) {
+    private async Task HandleBlur(IngredientUIModel m) 
+    {
         await Task.Delay(200); 
         var q = m.IngredientName?.Trim() ?? "";
         if (string.IsNullOrEmpty(q)) return;
         var match = masterIngs.FirstOrDefault(i => i.Name.Equals(q, StringComparison.OrdinalIgnoreCase));
-        if (match != null) {
+        if (match != null) 
+        {
             if (m.IngredientId != match.Id) { m.IngredientId = match.Id; m.BaseIngredient = match; m.Unit = match.Unit ?? ""; m.Scale(); }
-        } else if (m.IngredientId != 0) {
+        } 
+        else if (m.IngredientId != 0) 
+        {
             m.IngredientId = 0; m.BaseIngredient = null;
         }
         searchResults.Clear(); activeMapping = null;
     }
 
-    private void SelectIng(PPP_Ingredient master, IngredientUIModel mapping) { mapping.IngredientId = master.Id; mapping.IngredientName = master.Name; mapping.Unit = master.Unit ?? ""; mapping.BaseIngredient = master; mapping.Quantity = 1; mapping.Scale(); searchResults.Clear(); activeMapping = null; }
-    private void UpdateQty(ChangeEventArgs e, IngredientUIModel m) { if (double.TryParse(e.Value?.ToString(), out var v)) { m.Quantity = v; m.Scale(); } }
-    private void UpdateUnit(ChangeEventArgs e, IngredientUIModel m) { m.Unit = e.Value?.ToString() ?? ""; m.Scale(); }
+    private void SelectIng(PPP_Ingredient master, IngredientUIModel mapping) 
+    { 
+        mapping.IngredientId = master.Id; 
+        mapping.IngredientName = master.Name; 
+        mapping.Unit = master.Unit ?? ""; 
+        mapping.BaseIngredient = master; 
+        mapping.Quantity = 1; 
+        mapping.Scale(); 
+        searchResults.Clear(); 
+        activeMapping = null; 
+    }
+
+    private void UpdateQty(ChangeEventArgs e, IngredientUIModel m) 
+    { 
+        if (double.TryParse(e.Value?.ToString(), out var v)) { m.Quantity = v; m.Scale(); } 
+    }
 
     private double TotalCals => recipe.IngredientGroups.SelectMany(g => g.Ingredients).OfType<IngredientUIModel>().Sum(i => i.ScaledCals);
     private double TotalProt => recipe.IngredientGroups.SelectMany(g => g.Ingredients).OfType<IngredientUIModel>().Sum(i => i.ScaledProt);
@@ -417,9 +500,18 @@
     private double TotalFiber => recipe.IngredientGroups.SelectMany(g => g.Ingredients).OfType<IngredientUIModel>().Sum(i => i.ScaledFiber);
     private double TotalNet => TotalCarb - TotalFiber;
 
-    private async Task ShowToast(string msg, bool isError = false) { var toast = new ToastItem { Message = msg, IsError = isError }; toasts.Add(toast); StateHasChanged(); await Task.Delay(4000); toasts.Remove(toast); StateHasChanged(); }
+    private async Task ShowToast(string msg, bool isError = false) 
+    { 
+        var toast = new ToastItem { Message = msg, IsError = isError }; 
+        toasts.Add(toast); 
+        StateHasChanged(); 
+        await Task.Delay(4000); 
+        toasts.Remove(toast); 
+        StateHasChanged(); 
+    }
 
-    public class IngredientUIModel : PPP_RecipeIngredientMapping {
+    public class IngredientUIModel : PPP_RecipeIngredientMapping 
+    {
         public string? IngredientName { get; set; } = "";
         public PPP_Ingredient? BaseIngredient { get; set; }
         public double ScaledCals { get; set; }
@@ -428,10 +520,12 @@
         public double ScaledCarb { get; set; }
         public double ScaledFiber { get; set; }
 
-        public void Scale() { 
+        public void Scale() 
+        { 
             if (BaseIngredient == null || IngredientId == 0) return; 
             double calcQty = Quantity;
-            if (!string.Equals(Unit, BaseIngredient.Unit, StringComparison.OrdinalIgnoreCase)) {
+            if (!string.Equals(Unit, BaseIngredient.Unit, StringComparison.OrdinalIgnoreCase)) 
+            {
                 if (PPPUnitConverter.TryConvert(Quantity, Unit ?? "", BaseIngredient.Unit ?? "", out double normalized)) calcQty = Math.Round(normalized, 6);
             }
             ScaledCals = Math.Round(BaseIngredient.Calories * calcQty, 2); 

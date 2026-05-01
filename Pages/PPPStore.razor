@@ -10,7 +10,7 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
-@* Fixed double scrollbar: main container is screen-height, only inner content scrolls *@
+@* Main Container with single scrollbar fix *@
 <div class="h-screen w-full bg-[#050505] text-slate-200 font-sans antialiased overflow-hidden flex flex-col">
     
     @* Notification Stack *@
@@ -76,9 +76,13 @@
                                             <div class="flex justify-between items-start mb-2">
                                                 <h4 class="text-xl font-black text-white uppercase italic tracking-tight">@item.Recipe?.Name</h4>
                                             </div>
-                                            <p class="text-xs text-slate-500 leading-relaxed line-clamp-2 mb-4">@item.Recipe?.Description</p>
                                             
-                                            @* Unified Macro Display on Card *@
+                                            @if (!string.IsNullOrEmpty(item.Recipe?.LongDescription))
+                                            {
+                                                <p class="text-xs text-slate-300 leading-relaxed line-clamp-3 mb-2 font-medium">@item.Recipe.LongDescription</p>
+                                            }
+                                            <p class="text-[10px] text-slate-500 leading-relaxed line-clamp-1 mb-4 italic">@item.Recipe?.Description</p>
+                                            
                                             <div class="mt-auto pt-4 border-t border-white/5 flex flex-wrap gap-2 items-center">
                                                 @{ var m = GetMacros(item.Recipe); }
                                                 <span class="bg-white/5 border border-white/10 px-2 py-1 rounded-lg text-[10px] font-bold text-slate-300">🔥 @m.Cals cal</span>
@@ -183,7 +187,6 @@
                 <div class="flex flex-col md:flex-row items-start gap-8 mb-8 border-b border-white/5 pb-8">
                     @if (selectedItem.Recipe?.ImageId != null)
                     {
-                        @* 2"x2" Image (w-48 h-48) *@
                         <div class="w-48 h-48 rounded-[2.5rem] overflow-hidden border border-slate-800 shadow-2xl shrink-0">
                             <img src="/db-images-ppp/@selectedItem.Recipe.ImageId" class="w-full h-full object-cover" />
                         </div>
@@ -193,25 +196,29 @@
                         <div class="flex justify-between items-start">
                             <div>
                                 <h2 class="text-3xl font-black text-white uppercase italic tracking-tighter">@selectedItem.Recipe?.Name</h2>
-                                
-                                @* Unified Macro Display in Modal *@
                                 @{ var m = GetMacros(selectedItem.Recipe); }
                                 <div class="flex flex-wrap gap-2 mt-4 items-center">
                                     <span class="bg-white/5 border border-white/10 px-2 py-1 rounded-lg text-[10px] font-bold text-slate-300">🔥 @m.Cals cal</span>
                                     <span class="bg-blue-500/10 border border-blue-500/20 px-2 py-1 rounded-lg text-[10px] font-bold text-blue-400">🥩 @m.Prot pro</span>
                                     <span class="bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-lg text-[10px] font-bold text-amber-400">🥑 @m.Fat fat</span>
                                     <span class="bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-400">🥦 @m.Net net carbs</span>
-                                    <span class="text-[8px] text-slate-600 uppercase font-black tracking-tighter ml-1">Per Serving</span>
                                 </div>
                             </div>
                             <button @onclick="() => selectedItem = null" class="bg-white/5 w-10 h-10 rounded-xl text-slate-400 flex items-center justify-center text-xl hover:text-white transition-all">&times;</button>
                         </div>
-                        <p class="text-xs text-slate-500 mt-4 leading-relaxed italic">@selectedItem.Recipe?.Description</p>
+                        
+                        @* Long Description (Modal Deep Dive) *@
+                        @if (!string.IsNullOrEmpty(selectedItem.Recipe?.LongDescription))
+                        {
+                            <div class="mt-6 p-4 bg-emerald-500/5 border border-emerald-500/10 rounded-2xl">
+                                <p class="text-sm text-slate-200 leading-relaxed font-medium">@selectedItem.Recipe.LongDescription</p>
+                            </div>
+                        }
+                        <p class="text-[10px] text-slate-500 mt-3 leading-relaxed italic">@selectedItem.Recipe?.Description</p>
                     </div>
                 </div>
 
                 <div class="space-y-10">
-                    @* 1. Logistics Selection (Time & Fulfillment) *@
                     <section class="p-6 bg-white/[0.02] border border-white/5 rounded-[2rem] space-y-6 shadow-inner">
                         <div>
                             <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest">Arrival Window</h5>
@@ -260,7 +267,6 @@
                         </div>
                     </section>
 
-                    @* 2. Size Selection *@
                     <section>
                         <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest">Select Plan Size</h5>
                         <div class="space-y-2">
@@ -274,7 +280,6 @@
                         </div>
                     </section>
 
-                    @* 3. Personalization *@
                     <section class="animate-in slide-in-from-top duration-500">
                         <h5 class="text-[10px] font-black uppercase text-emerald-500 mb-6 tracking-widest text-center italic">Personalize Your @currentSize.ServingsPerUnit Servings</h5>
                         <div class="space-y-6">
@@ -451,10 +456,7 @@
         pickupLocations = await db.Set<PPP_PickupLocation>().Where(l => l.OwnerId == OwnerId).ToListAsync();
         ownerZips = await db.Set<PPP_DeliveryZipCode>().Where(z => z.OwnerId == OwnerId).ToListAsync();
 
-        if (owner != null) 
-        {
-            selFulfillment = owner.OffersPickup ? "Pickup" : "Delivery";
-        }
+        if (owner != null) selFulfillment = owner.OffersPickup ? "Pickup" : "Delivery";
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

@@ -842,6 +842,7 @@ public class PPP_Recipe
     public int Id { get; set; }
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
+    public string? LongDescription { get; set; } // Detailed marketing text
     public int Servings { get; set; } = 1;
     
     // NEW PROPERTY
