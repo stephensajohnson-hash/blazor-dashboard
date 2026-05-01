@@ -13,6 +13,7 @@
 <div class="min-h-screen bg-[#050505] text-slate-200 p-4 md:p-8 font-sans antialiased pb-40">
     <PPPAdminNav CurrentPage="Menu Architect" />
 
+    @* Notification Stack *@
     <div class="fixed top-24 right-6 z-[300] flex flex-col gap-3">
         @foreach (var toast in toasts)
         {
@@ -144,6 +145,7 @@
     }
 </div>
 
+@* Configuration Modal *@
 @if (activeItem != null)
 {
     <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[400] flex items-center justify-center p-4">
@@ -176,13 +178,11 @@
                         </div>
                     </div>
 
-                    @* Ordering Rules Section *@
                     <div class="pt-6 border-t border-white/5 space-y-4">
                         <p class="text-xs text-emerald-500 font-black uppercase tracking-[0.2em]">Ordering Rules</p>
                         
                         <div>
                             <label class="text-[9px] text-slate-500 uppercase font-black block mb-2">Daily Cutoff Time</label>
-                            @* Use a local property or format string to ensure the binding works *@
                             <input type="time" value="@activeItem.CutoffTime.ToString("HH:mm")" 
                                 @onchange="@(e => { if(TimeOnly.TryParse(e.Value?.ToString(), out var t)) activeItem.CutoffTime = t; })"
                                 class="w-full bg-black border border-slate-800 rounded-2xl p-4 text-sm text-white" />
@@ -232,13 +232,35 @@
                     <div class="space-y-4">
                         @foreach(var size in activeItem.Sizes) {
                             <div class="bg-[#111] p-6 rounded-3xl border border-slate-800">
-                                <div class="flex gap-3 mb-4">
-                                    <input @bind="size.Name" placeholder="Size Name" class="flex-1 bg-black border border-slate-800 rounded-xl p-3 text-xs font-black uppercase text-white" />
-                                    <div class="relative w-28">
-                                        <span class="absolute left-3 top-3.5 text-slate-500 text-xs">$</span>
-                                        <input type="number" @bind="size.BasePrice" class="w-full bg-black border border-slate-800 rounded-xl p-3 pl-7 text-xs font-mono text-emerald-400" />
+                                <div class="grid grid-cols-12 gap-3 mb-4">
+                                    @* Size Name *@
+                                    <div class="col-span-4">
+                                        <label class="text-[8px] text-slate-500 uppercase font-black mb-1 block">Size Name</label>
+                                        <input @bind="size.Name" placeholder="e.g. Med Dinner" class="w-full bg-black border border-slate-800 rounded-xl p-3 text-xs font-black uppercase text-white" />
                                     </div>
-                                    <button @onclick="() => activeItem.Sizes.Remove(size)" class="text-slate-700 hover:text-red-500">✕</button>
+                                    
+                                    @* Base Price *@
+                                    <div class="col-span-3">
+                                        <label class="text-[8px] text-slate-500 uppercase font-black mb-1 block">Base Price</label>
+                                        <div class="relative">
+                                            <span class="absolute left-3 top-3.5 text-slate-500 text-xs">$</span>
+                                            <input type="number" @bind="size.BasePrice" class="w-full bg-black border border-slate-800 rounded-xl p-3 pl-7 text-xs font-mono text-emerald-400" />
+                                        </div>
+                                    </div>
+
+                                    @* Serving Count (New Multi-Serving Support) *@
+                                    <div class="col-span-4">
+                                        <label class="text-[8px] text-emerald-500 uppercase font-black mb-1 block">Serving Count</label>
+                                        <div class="flex items-center gap-2 bg-black border border-slate-800 rounded-xl p-1 px-3 h-[46px]">
+                                            <button @onclick="() => size.ServingsPerUnit = Math.Max(1, size.ServingsPerUnit - 1)" class="text-slate-500 hover:text-white">-</button>
+                                            <input type="number" @bind="size.ServingsPerUnit" class="w-full bg-transparent border-none text-center text-xs text-white outline-none font-bold" />
+                                            <button @onclick="() => size.ServingsPerUnit++" class="text-slate-500 hover:text-white">+</button>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-span-1 flex items-center justify-end">
+                                        <button @onclick="() => activeItem.Sizes.Remove(size)" class="text-slate-700 hover:text-red-500">✕</button>
+                                    </div>
                                 </div>
 
                                 <div class="pl-4 border-l-2 border-white/5 space-y-2">
@@ -327,7 +349,10 @@
             MaxQuantity = original.MaxQuantity,
             IsUnlimited = original.IsUnlimited,
             Timeframes = original.Timeframes.Select(t => new PPP_MenuItemTimeframe { Name = t.Name }).ToList(),
-            Sizes = original.Sizes.Select(s => new PPP_MenuItemSize { Name = s.Name, BasePrice = s.BasePrice,
+            Sizes = original.Sizes.Select(s => new PPP_MenuItemSize { 
+                Name = s.Name, 
+                BasePrice = s.BasePrice,
+                ServingsPerUnit = s.ServingsPerUnit,
                 Options = s.Options.Select(o => new PPP_MenuItemOption { Name = o.Name, AddOnPrice = o.AddOnPrice }).ToList()
             }).ToList()
         };
@@ -364,7 +389,7 @@
     private void OpenConfig(PPP_MenuItem item) => activeItem = item;
     private void AddTimeframe(PPP_MenuItem item) => item.Timeframes.Add(new PPP_MenuItemTimeframe { Name = "Lunch" });
     private void AddSize(PPP_MenuItem item) {
-        var newSize = new PPP_MenuItemSize { Name = "Standard", BasePrice = 10.00 };
+        var newSize = new PPP_MenuItemSize { Name = "Standard", BasePrice = 10.00, ServingsPerUnit = 1 };
         var existing = item.Sizes.SelectMany(s => s.Options).GroupBy(o => o.Name).Select(g => g.First());
         foreach(var opt in existing) newSize.Options.Add(new PPP_MenuItemOption { Name = opt.Name, AddOnPrice = opt.AddOnPrice });
         item.Sizes.Add(newSize);
