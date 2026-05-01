@@ -10,7 +10,7 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
-@* Fixed double scrollbar by locking the main container to screen height *@
+@* Fixed double scrollbar: main container is screen-height, only inner content scrolls *@
 <div class="h-screen w-full bg-[#050505] text-slate-200 font-sans antialiased overflow-hidden flex flex-col">
     
     @* Notification Stack *@
@@ -312,7 +312,7 @@
 
                     <div>
                         <label class="text-[8px] uppercase text-emerald-500 font-black mb-1 block">Email Address</label>
-                        <input @bind="tempUser.Email" type="email" placeholder="Required" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500 transition-all" />
+                        <input @bind="tempUser.Email" type="email" placeholder="Required for magic link" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500 transition-all" />
                     </div>
 
                     <div>
@@ -324,7 +324,7 @@
                     {
                         <div class="pt-6 border-t border-white/5 space-y-4">
                             <div class="flex justify-between items-end">
-                                <label class="text-[9px] font-black uppercase text-emerald-500">Delivery Location</label>
+                                <label class="text-[9px] font-black uppercase text-emerald-500">Delivery Address</label>
                                 @if (currentUser?.Addresses != null && currentUser.Addresses.Any())
                                 {
                                     <select @onchange="SelectSavedAddress" class="bg-emerald-950/40 text-[9px] text-emerald-400 font-black uppercase border border-emerald-500/20 rounded px-2 py-1 outline-none">
@@ -452,37 +452,45 @@
                 {
                     await ShowToast($"Auth Success: {currentUser.FirstName}");
                     
-                    tempUser.FirstName = currentUser.FirstName;
-                    tempUser.LastName = currentUser.LastName;
-                    tempUser.Email = currentUser.Email;
-                    tempUser.Phone = currentUser.Phone;
-                    
-                    var addr = currentUser.Addresses.FirstOrDefault(a => a.IsDefault) ?? currentUser.Addresses.FirstOrDefault();
-                    if (addr != null)
-                    {
-                        tempAddress.Id = addr.Id;
-                        tempAddress.Label = addr.Label;
-                        tempAddress.Street = addr.Street;
-                        tempAddress.City = addr.City;
-                        tempAddress.State = addr.State;
-                        tempAddress.ZipCode = addr.ZipCode;
-                        
-                        selZip = addr.ZipCode; 
-                    }
-                    
-                    // CRITICAL FIX: If a modal is currently open, push the identity into the serving list
-                    if (selectedItem != null && tempServingConfigs.Any())
-                    {
-                        if (string.IsNullOrEmpty(tempServingConfigs[0].LabelName))
-                        {
-                            tempServingConfigs[0].LabelName = currentUser.FirstName;
-                        }
-                    }
+                    ApplyIdentityToUI();
+                    await InvokeAsync(StateHasChanged);
+                }
+                else 
+                {
+                    await ShowToast("Auth: Session expired or invalid.");
                 }
             }
 
             await LoadCart();
             await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void ApplyIdentityToUI()
+    {
+        if (currentUser == null) return;
+
+        tempUser.FirstName = currentUser.FirstName;
+        tempUser.LastName = currentUser.LastName;
+        tempUser.Email = currentUser.Email;
+        tempUser.Phone = currentUser.Phone;
+        
+        var addr = currentUser.Addresses.FirstOrDefault(a => a.IsDefault) ?? currentUser.Addresses.FirstOrDefault();
+        if (addr != null)
+        {
+            tempAddress.Id = addr.Id;
+            tempAddress.Label = addr.Label;
+            tempAddress.Street = addr.Street;
+            tempAddress.City = addr.City;
+            tempAddress.State = addr.State;
+            tempAddress.ZipCode = addr.ZipCode;
+            selZip = addr.ZipCode; 
+        }
+
+        if (tempServingConfigs.Any())
+        {
+            if (string.IsNullOrEmpty(tempServingConfigs[0].LabelName))
+                tempServingConfigs[0].LabelName = currentUser.FirstName;
         }
     }
 
@@ -535,7 +543,6 @@
         selectedItem = item;
         selTimeframe = item.Timeframes?.FirstOrDefault()?.Name ?? "Standard";
         
-        // Ensure logistics are synced to latest identity data
         selZip = tempAddress.ZipCode;
         if (owner != null) selFulfillment = owner.OffersPickup ? "Pickup" : "Delivery";
         selPickupId = pickupLocations.FirstOrDefault()?.Id ?? 0;
@@ -552,7 +559,6 @@
         {
             for (int i = 0; i < currentSize.ServingsPerUnit; i++)
             {
-                // Push the identity into the first config box if we have it
                 var initialName = (i == 0 && currentUser != null) ? currentUser.FirstName : "";
                 tempServingConfigs.Add(new ServingConfig { ServingNumber = i + 1, LabelName = initialName });
             }
@@ -722,6 +728,8 @@
         var t = new ToastItem { Message = msg, IsError = err };
         toasts.Add(t); StateHasChanged(); await Task.Delay(3000); toasts.Remove(t); StateHasChanged(); 
     }
+
+    private async Task HandleLabelInput(ChangeEventArgs e) { }
 
     private class ToastItem { public string Message { get; set; } = ""; public bool IsError { get; set; } }
     public class ZipResponse { [System.Text.Json.Serialization.JsonPropertyName("places")] public List<ZipPlace> Places { get; set; } = new(); }
