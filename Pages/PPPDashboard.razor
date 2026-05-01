@@ -189,11 +189,9 @@ private async Task InitializePPP()
         await db.Database.ExecuteSqlRawAsync(@"
             DO $$ 
             BEGIN 
-                -- Add the Serving link column
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_OrderItemOptions' AND column_name='OrderItemServingId') THEN
                     ALTER TABLE ""PPP_OrderItemOptions"" ADD COLUMN ""OrderItemServingId"" integer NULL;
                     
-                    -- Add the Foreign Key Constraint
                     ALTER TABLE ""PPP_OrderItemOptions"" 
                     ADD CONSTRAINT ""FK_OrderItemOptions_OrderItemServings"" 
                     FOREIGN KEY (""OrderItemServingId"") REFERENCES ""PPP_OrderItemServings"" (""Id"") ON DELETE CASCADE;
@@ -201,8 +199,15 @@ private async Task InitializePPP()
             END $$;
         ");
 
-        // 4. Ensure PPP_OrderItem has the proper FK to PPP_MenuItem 
-        // (Matching your new [ForeignKey(""MenuItemId"")] in Data.cs)
+        // 4. DATA CLEANUP: Remove orphaned order data to prevent FK violations
+        // We do this because the old data model is incompatible with the new strict relationships
+        await db.Database.ExecuteSqlRawAsync(@"
+            DELETE FROM ""PPP_OrderItemOptions"";
+            DELETE FROM ""PPP_OrderItems"";
+            DELETE FROM ""PPP_Orders"";
+        ");
+
+        // 5. Ensure PPP_OrderItem has the proper FK to PPP_MenuItem
         await db.Database.ExecuteSqlRawAsync(@"
             DO $$ 
             BEGIN 
@@ -218,7 +223,7 @@ private async Task InitializePPP()
         ");
 
         await LoadSystemStats();
-        await ShowToast("Multi-Serving Schema Sync Successful");
+        await ShowToast("Multi-Serving Schema Sync Successful (Orders Cleared)");
     }
     catch (Exception ex)
     {
