@@ -4,6 +4,7 @@
 @using Dashboard.Components
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.JSInterop
+@using Microsoft.AspNetCore.Components.Web
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject NavigationManager Nav
@@ -113,7 +114,6 @@
 
     private async Task CheckAdminAuth()
     {
-        // Lookup the token from the cookie
         var token = await JS.InvokeAsync<string>("eval", @"
             (function() {
                 var name = 'ppp_token=';
@@ -130,7 +130,6 @@
             await using var db = await DbFactory.CreateDbContextAsync();
             var user = await db.PPP_Users.FirstOrDefaultAsync(u => u.MagicToken == token);
             
-            // Checking your "Role" property
             if (user != null && user.Role == "Admin")
             {
                 currentAdmin = user;
@@ -139,7 +138,6 @@
             }
             else
             {
-                // Not an admin, redirect home for safety
                 Nav.NavigateTo("/");
             }
         }
@@ -171,7 +169,6 @@
 
     private async Task Impersonate(PPP_User target)
     {
-        // 1. Ensure target user has a token to swap into
         if (string.IsNullOrEmpty(target.MagicToken))
         {
             target.MagicToken = Guid.NewGuid().ToString("N");
@@ -182,17 +179,12 @@
             await db.SaveChangesAsync();
         }
 
-        // 2. Overwrite the cookie with the target user's token
         await JS.InvokeVoidAsync("eval", $"document.cookie = 'ppp_token={target.MagicToken}; max-age={60*60*24*180}; path=/; SameSite=Lax';");
-        
-        // 3. Force refresh to the store page (or a specific owner's store)
-        // Adjust the OwnerId (1) if you want to go to a specific store
         Nav.NavigateTo($"/ppp-store/1", forceLoad: true);
     }
 
     private async Task ClearIdentity()
     {
-        // Wipes the cookie
         await JS.InvokeVoidAsync("eval", "document.cookie = 'ppp_token=; max-age=0; path=/;';");
         Nav.NavigateTo("/", forceLoad: true);
     }
