@@ -813,6 +813,10 @@ public class PPP_Owner
     // ADD THESE TWO LINES:
     public bool OffersPickup { get; set; } = true;
     public bool OffersDelivery { get; set; } = false;
+
+    // NEW: Batch Display Preferences
+    public bool ShowMacrosToCustomer { get; set; } = true;
+    public bool ShowIngredientsToCustomer { get; set; } = true;
 }
 
 public class PPP_Ingredient

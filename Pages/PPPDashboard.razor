@@ -163,71 +163,15 @@ private async Task InitializePPP()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
 
-        // Add LongDescription to Recipes
+        // Add Display Preferences to Owners
         await db.Database.ExecuteSqlRawAsync(@"
             DO $$ 
             BEGIN 
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Recipes' AND column_name='LongDescription') THEN
-                    ALTER TABLE ""PPP_Recipes"" ADD COLUMN ""LongDescription"" text NULL;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Owners' AND column_name='ShowMacrosToCustomer') THEN
+                    ALTER TABLE ""PPP_Owners"" ADD COLUMN ""ShowMacrosToCustomer"" boolean NOT NULL DEFAULT true;
                 END IF;
-            END $$;
-        ");
-
-        // 1. Update Menu Item Sizes to support serving counts
-        await db.Database.ExecuteSqlRawAsync(@"
-            DO $$ 
-            BEGIN 
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_MenuItemSizes' AND column_name='ServingsPerUnit') THEN
-                    ALTER TABLE ""PPP_MenuItemSizes"" ADD COLUMN ""ServingsPerUnit"" integer NOT NULL DEFAULT 1;
-                END IF;
-            END $$;
-        ");
-
-        // 2. Create the Order Item Servings table (The individual containers)
-        await db.Database.ExecuteSqlRawAsync(@"
-            CREATE TABLE IF NOT EXISTS ""PPP_OrderItemServings"" (
-                ""Id"" SERIAL PRIMARY KEY,
-                ""OrderItemId"" integer NOT NULL,
-                ""ServingNumber"" integer NOT NULL,
-                ""LabelName"" text NULL,
-                ""IsReady"" boolean NOT NULL DEFAULT false,
-                CONSTRAINT ""FK_OrderItemServings_OrderItems"" FOREIGN KEY (""OrderItemId"") REFERENCES ""PPP_OrderItems"" (""Id"") ON DELETE CASCADE
-            );
-        ");
-
-        // 3. Update Order Item Options to link to specific servings
-        await db.Database.ExecuteSqlRawAsync(@"
-            DO $$ 
-            BEGIN 
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_OrderItemOptions' AND column_name='OrderItemServingId') THEN
-                    ALTER TABLE ""PPP_OrderItemOptions"" ADD COLUMN ""OrderItemServingId"" integer NULL;
-                    
-                    ALTER TABLE ""PPP_OrderItemOptions"" 
-                    ADD CONSTRAINT ""FK_OrderItemOptions_OrderItemServings"" 
-                    FOREIGN KEY (""OrderItemServingId"") REFERENCES ""PPP_OrderItemServings"" (""Id"") ON DELETE CASCADE;
-                END IF;
-            END $$;
-        ");
-
-        // 4. DATA CLEANUP: Remove orphaned order data to prevent FK violations
-        // We do this because the old data model is incompatible with the new strict relationships
-        await db.Database.ExecuteSqlRawAsync(@"
-            DELETE FROM ""PPP_OrderItemOptions"";
-            DELETE FROM ""PPP_OrderItems"";
-            DELETE FROM ""PPP_Orders"";
-        ");
-
-        // 5. Ensure PPP_OrderItem has the proper FK to PPP_MenuItem
-        await db.Database.ExecuteSqlRawAsync(@"
-            DO $$ 
-            BEGIN 
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.table_constraints 
-                    WHERE constraint_name='FK_OrderItems_MenuItems'
-                ) THEN
-                    ALTER TABLE ""PPP_OrderItems"" 
-                    ADD CONSTRAINT ""FK_OrderItems_MenuItems"" 
-                    FOREIGN KEY (""MenuItemId"") REFERENCES ""PPP_MenuItems"" (""Id"") ON DELETE CASCADE;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Owners' AND column_name='ShowIngredientsToCustomer') THEN
+                    ALTER TABLE ""PPP_Owners"" ADD COLUMN ""ShowIngredientsToCustomer"" boolean NOT NULL DEFAULT true;
                 END IF;
             END $$;
         ");
