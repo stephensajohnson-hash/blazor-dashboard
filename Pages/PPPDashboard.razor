@@ -129,54 +129,49 @@
         }
     }
 
-    private async Task InitializePPP()
+private async Task InitializePPP()
+{
+    logs.Add("Starting infrastructure initialization...");
+    try 
     {
-        logs.Add("Starting infrastructure initialization...");
-        try 
+        await using var db = await DbFactory.CreateDbContextAsync();
+        
+        // 2. ADMIN RESCUE BLOCK
+        var adminEmail = "stephensallenjohnson@gmail.com"; 
+        var adminUser = await db.PPP_Users.FirstOrDefaultAsync(u => u.Email.ToLower() == adminEmail.ToLower());
+        
+        if (adminUser != null)
         {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            
-            // 1. Ensure columns exist for Owner Preferences
-            await db.Database.ExecuteSqlRawAsync(@"
-                DO $$ 
-                BEGIN 
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Owners' AND column_name='ShowMacrosToCustomer') THEN
-                        ALTER TABLE ""PPP_Owners"" ADD COLUMN ""ShowMacrosToCustomer"" boolean NOT NULL DEFAULT true;
-                    END IF;
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Owners' AND column_name='ShowIngredientsToCustomer') THEN
-                        ALTER TABLE ""PPP_Owners"" ADD COLUMN ""ShowIngredientsToCustomer"" boolean NOT NULL DEFAULT true;
-                    END IF;
-                END $$;
-            ");
-            logs.Add("Owner display preferences verified.");
+            adminUser.Role = "Admin";
+            adminUser.MagicToken = "RESCUE_ADMIN_2026";
+            adminUser.TokenExpiresAt = DateTime.UtcNow.AddYears(1);
+            db.Update(adminUser);
+            await db.SaveChangesAsync();
+            logs.Add($"CRITICAL: Admin rights restored in DB for {adminEmail}.");
 
-            // 2. ADMIN RESCUE BLOCK
-            var adminEmail = "stephensallenjohnson@gmail.com"; 
-            var adminUser = await db.PPP_Users.FirstOrDefaultAsync(u => u.Email.ToLower() == adminEmail.ToLower());
-            
-            if (adminUser != null)
-            {
-                adminUser.Role = "Admin";
-                adminUser.MagicToken = "RESCUE_ADMIN_2026";
-                adminUser.TokenExpiresAt = DateTime.UtcNow.AddYears(1);
-                db.Update(adminUser);
-                await db.SaveChangesAsync();
-                logs.Add($"CRITICAL: Admin rights restored for {adminEmail}. Token set to 'RESCUE_ADMIN_2026'.");
-            }
-            else 
-            {
-                logs.Add($"WARNING: User {adminEmail} not found. Could not perform rescue.");
-            }
-
-            await ShowToast("Database Updated & Admin Rescued");
-            await LoadStats();
+            // --- NEW: FORCED BROWSER LOGIN ---
+            // This tells your browser to actually USE the token we just created
+            await JS.InvokeVoidAsync("eval", "document.cookie = 'ppp_token=RESCUE_ADMIN_2026; max-age=15552000; path=/; SameSite=Lax';");
+            await JS.InvokeVoidAsync("eval", "document.cookie = 'ppp_admin_backdoor=; max-age=0; path=/;';");
+            logs.Add("Browser identity cookies synchronized.");
+            // ---------------------------------
         }
-        catch (Exception ex)
+        else 
         {
-            logs.Add($"Initialization Failed: {ex.Message}");
-            await ShowToast("Initialization Failed", true);
+            logs.Add($"WARNING: User {adminEmail} not found. Could not perform rescue.");
         }
+
+        await ShowToast("Database Updated & Identity Restored");
+        
+        // Force a reload to show the Admin Nav header immediately
+        Nav.NavigateTo(Nav.Uri, forceLoad: true);
     }
+    catch (Exception ex)
+    {
+        logs.Add($"Initialization Failed: {ex.Message}");
+        await ShowToast("Initialization Failed", true);
+    }
+}
 
     private async Task ShowToast(string msg, bool isError = false)
     {
