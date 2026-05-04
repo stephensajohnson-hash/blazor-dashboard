@@ -11,11 +11,11 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
-@* Fixed double scrollbar: main container is h-screen/overflow-hidden, child is overflow-y-auto *@
+@* Fixed double scrollbar: main container is screen-height, only inner content scrolls *@
 <div class="h-screen w-full bg-[#050505] text-slate-200 font-sans antialiased overflow-hidden flex flex-col">
     
     <div class="p-8">
-        <PPPAdminNav CurrentPage="Orders" />
+        <+PPPAdminNav CurrentPage="Orders" />
     </div>
 
     @* Scrollable Content Area *@
@@ -183,7 +183,7 @@
                         <div class="w-4 h-4 rounded-full border border-white/20 @(printContainerLabels ? "bg-emerald-500" : "")"></div>
                     </div>
 
-                    @* Global Macro Toggle for this Batch *@
+                    @* Global Macro Toggle *@
                     <div @onclick="() => { includeMacros = !includeMacros; StateHasChanged(); }" 
                          class="cursor-pointer flex items-center justify-between p-4 rounded-2xl border-2 transition-all @(includeMacros ? "border-blue-500 bg-blue-500/5" : "border-slate-800 opacity-50")">
                         <div class="flex items-center gap-3">
@@ -194,25 +194,14 @@
                     </div>
                 </div>
 
-                @if (!printOrderLabels && !printContainerLabels)
-                {
-                    <div class="bg-red-900/20 border border-red-500/50 p-4 rounded-xl mb-6 animate-pulse text-center">
-                        <p class="text-[10px] text-red-400 font-black uppercase">⚠️ No labels selected</p>
-                    </div>
-                }
-
                 <div class="text-center mb-6">
                     <p class="text-[10px] text-slate-500 font-black uppercase tracking-widest">
                         Printing <span class="text-emerald-500">@CalculateTotalLabels()</span> labels
-                    </p>
-                    <p class="text-[10px] text-slate-500 font-black uppercase tracking-widest mt-1">
-                        Across <span class="text-emerald-500">@GetPageString()</span>
                     </p>
                 </div>
 
                 <p class="text-[9px] text-slate-400 font-black uppercase mb-4 text-center">Select Avery Start Position</p>
                 
-                @* Grid: 2 columns, 5 rows to match Avery 5163 sheet *@
                 <div class="grid grid-cols-2 gap-3 mb-10 max-w-[200px] mx-auto">
                     @for (int i = 1; i <= 10; i++)
                     {
@@ -286,15 +275,17 @@
     private PPP_OrderItem? editingItem;
     private string activeFilter = "pending";
     
-    // Label Generation State
     private bool showLabelDialog = false;
     private bool printOrderLabels = true;
     private bool printContainerLabels = true;
-    private bool includeMacros = true; // DEFAULT TO ON
+    private bool includeMacros = true; 
     private int labelStartPos = 1;
     private List<PPP_OrderItem> itemsToPrint = new();
 
-    protected override async Task OnInitializedAsync() => await LoadData();
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
 
     private async Task SetFilter(string filter) 
     { 
@@ -305,9 +296,15 @@
     private async Task LoadData()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
+        
+        // RESTORED DEEP INCLUDE: Critical for macro data
         var query = db.Set<PPP_OrderItem>()
             .Include(i => i.ParentOrderContainer).ThenInclude(o => o.Address) 
-            .Include(i => i.MenuItem).ThenInclude(m => m.Recipe)
+            .Include(i => i.MenuItem)
+                .ThenInclude(m => m.Recipe)
+                    .ThenInclude(r => r.IngredientGroups)
+                        .ThenInclude(g => g.Ingredients)
+                            .ThenInclude(mapping => mapping.Ingredient) 
             .Include(i => i.Servings).ThenInclude(s => s.SelectedOptions)
             .Where(i => i.ParentOrderContainer != null && i.ParentOrderContainer.OwnerId == OwnerId && i.ParentOrderContainer.IsCheckedOut);
 
@@ -342,11 +339,9 @@
     {
         int totalNeeded = CalculateTotalLabels();
         if (totalNeeded == 0) return "0 Pages";
-        
         int firstPageCapacity = 10 - (labelStartPos - 1);
         int remaining = Math.Max(0, totalNeeded - firstPageCapacity);
         int totalPages = 1 + (int)Math.Ceiling(remaining / 10.0);
-        
         return totalPages == 1 ? "1 Page" : $"{totalPages} Pages";
     }
 
@@ -376,17 +371,7 @@
             customerData[email] = user != null ? ($"{user.FirstName} {user.LastName}", FormatPhoneNumber(user.Phone)) : (email, "");
         }
 
-        // Updated service call to pass the macro preference
-        var pdfBytes = await LabelService.CreateAveryLabels(
-            owner, 
-            logoBytes, 
-            itemsToPrint, 
-            startPos, 
-            customerData, 
-            printOrderLabels, 
-            printContainerLabels,
-            includeMacros // PASSING CHOICE
-        );
+        var pdfBytes = await LabelService.CreateAveryLabels(owner, logoBytes, itemsToPrint, startPos, customerData, printOrderLabels, printContainerLabels, includeMacros);
         
         var fileName = $"Kitchen_Labels_{DateTime.Now:yyyyMMdd_HHmm}.pdf";
         var base64 = Convert.ToBase64String(pdfBytes);
@@ -407,10 +392,8 @@
     {
         if (string.IsNullOrWhiteSpace(phone)) return "";
         var digits = new string(phone.Where(char.IsDigit).ToArray());
-        if (digits.Length == 10)
-            return $"({digits.Substring(0, 3)}) {digits.Substring(3, 3)}-{digits.Substring(6)}";
-        if (digits.Length == 11 && digits.StartsWith("1"))
-            return $"({digits.Substring(1, 3)}) {digits.Substring(4, 3)}-{digits.Substring(7)}";
+        if (digits.Length == 10) return $"({digits.Substring(0, 3)}) {digits.Substring(3, 3)}-{digits.Substring(6)}";
+        if (digits.Length == 11 && digits.StartsWith("1")) return $"({digits.Substring(1, 3)}) {digits.Substring(4, 3)}-{digits.Substring(7)}";
         return phone;
     }
 
@@ -436,9 +419,9 @@
         if (editingItem == null) return;
         await using var db = await DbFactory.CreateDbContextAsync();
         var dbItem = await db.Set<PPP_OrderItem>().FindAsync(editingItem.Id);
-
         if (dbItem != null)
         {
+            // RESTORED: These assignments were dropped in the previous refactor
             dbItem.ScheduledDate = editingItem.ScheduledDate.ToUniversalTime();
             dbItem.TimeframeName = editingItem.TimeframeName;
             dbItem.FulfillmentMethod = editingItem.FulfillmentMethod;
