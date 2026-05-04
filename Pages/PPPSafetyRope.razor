@@ -1,0 +1,68 @@
+@using Microsoft.JSInterop
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@if (hasBackdoor)
+{
+    <div class="fixed bottom-6 left-6 z-[9999] animate-bounce">
+        <button @onclick="RestoreAdmin" 
+                class="bg-amber-600 hover:bg-amber-500 text-white px-4 py-3 rounded-2xl shadow-2xl border-2 border-white/20 flex items-center gap-3 transition-all active:scale-95 group">
+            <span class="text-lg">🔙</span>
+            <div class="text-left">
+                <p class="text-[8px] font-black uppercase tracking-widest leading-none opacity-70">Testing Mode</p>
+                <p class="text-[10px] font-black uppercase leading-tight">Exit Impersonation</p>
+            </div>
+        </button>
+    </div>
+}
+
+@code {
+    private bool hasBackdoor = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var backdoor = await JS.InvokeAsync<string>("eval", @"
+                (function() {
+                    var name = 'ppp_admin_backdoor=';
+                    var ca = document.cookie.split(';');
+                    for(var i = 0; i < ca.length; i++) {
+                        var c = ca[i].trim();
+                        if (c.indexOf(name) == 0) return c.substring(name.length, c.length);
+                    }
+                    return null;
+                })()");
+
+            hasBackdoor = !string.IsNullOrEmpty(backdoor);
+            if (hasBackdoor) StateHasChanged();
+        }
+    }
+
+    private async Task RestoreAdmin()
+    {
+        // 1. Get the admin token back from the backdoor cookie
+        var token = await JS.InvokeAsync<string>("eval", @"
+            (function() {
+                var name = 'ppp_admin_backdoor=';
+                var ca = document.cookie.split(';');
+                for(var i = 0; i < ca.length; i++) {
+                    var c = ca[i].trim();
+                    if (c.indexOf(name) == 0) return c.substring(name.length, c.length);
+                }
+                return null;
+            })()");
+
+        if (!string.IsNullOrEmpty(token))
+        {
+            // 2. Put the admin token back in the primary slot
+            await JS.InvokeVoidAsync("eval", $"document.cookie = 'ppp_token={token}; max-age={60*60*24*180}; path=/; SameSite=Lax';");
+            
+            // 3. Kill the backdoor cookie
+            await JS.InvokeVoidAsync("eval", "document.cookie = 'ppp_admin_backdoor=; max-age=0; path=/;';");
+
+            // 4. Return to the Admin Identity Lab
+            Nav.NavigateTo("/ppp-admin/impersonator", forceLoad: true);
+        }
+    }
+}

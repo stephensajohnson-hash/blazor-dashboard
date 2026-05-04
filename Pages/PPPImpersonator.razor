@@ -167,21 +167,29 @@
             .ToListAsync();
     }
 
-    private async Task Impersonate(PPP_User target)
+// Locate the Impersonate method in your PPPImpersonator.razor and update it:
+private async Task Impersonate(PPP_User target)
+{
+    if (string.IsNullOrEmpty(target.MagicToken))
     {
-        if (string.IsNullOrEmpty(target.MagicToken))
-        {
-            target.MagicToken = Guid.NewGuid().ToString("N");
-            target.TokenExpiresAt = DateTime.UtcNow.AddMonths(6);
-            
-            await using var db = await DbFactory.CreateDbContextAsync();
-            db.Entry(target).State = EntityState.Modified;
-            await db.SaveChangesAsync();
-        }
-
-        await JS.InvokeVoidAsync("eval", $"document.cookie = 'ppp_token={target.MagicToken}; max-age={60*60*24*180}; path=/; SameSite=Lax';");
-        Nav.NavigateTo($"/ppp-store/1", forceLoad: true);
+        target.MagicToken = Guid.NewGuid().ToString("N");
+        target.TokenExpiresAt = DateTime.UtcNow.AddMonths(6);
+        
+        await using var db = await DbFactory.CreateDbContextAsync();
+        db.Entry(target).State = EntityState.Modified;
+        await db.SaveChangesAsync();
     }
+
+    // 1. SAVE YOUR ADMIN TOKEN TO A BACKUP COOKIE (The Safety Rope)
+    // We'll call it 'ppp_admin_backdoor'
+    await JS.InvokeVoidAsync("eval", $"document.cookie = 'ppp_admin_backdoor={originalAdminToken}; max-age={60*60*2}; path=/; SameSite=Lax';");
+
+    // 2. Overwrite the main token to become the user
+    await JS.InvokeVoidAsync("eval", $"document.cookie = 'ppp_token={target.MagicToken}; max-age={60*60*24*180}; path=/; SameSite=Lax';");
+    
+    // 3. Go to the store as the new user
+    Nav.NavigateTo($"/ppp-store/1", forceLoad: true);
+}
 
     private async Task ClearIdentity()
     {
