@@ -4,9 +4,22 @@
 
 @if (hasBackdoor)
 {
-    <div class="fixed bottom-10 left-10 z-[9999]">
+    <div class="fixed bottom-10 left-10 z-[9999] flex flex-col gap-4 items-start">
+        @* The Toast Notification *@
+        @if (!string.IsNullOrEmpty(statusMessage))
+        {
+            <div class="bg-emerald-600 text-white px-6 py-3 rounded-2xl shadow-2xl border border-emerald-400/30 animate-in slide-in-from-left duration-300">
+                <div class="flex items-center gap-3">
+                    <span class="animate-spin">🔄</span>
+                    <span class="text-[10px] font-black uppercase tracking-widest">@statusMessage</span>
+                </div>
+            </div>
+        }
+
+        @* The Button *@
         <button @onclick="RestoreAdmin" 
-                class="bg-rose-600 hover:bg-rose-500 text-white px-6 py-4 rounded-2xl shadow-[0_0_30px_rgba(225,29,72,0.4)] border-2 border-white/20 flex items-center gap-4 transition-all active:scale-95 group">
+                disabled="@isProcessing"
+                class="bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white px-6 py-4 rounded-2xl shadow-[0_0_40px_rgba(225,29,72,0.4)] border-2 border-white/20 flex items-center gap-4 transition-all active:scale-95 group">
             <span class="text-2xl group-hover:rotate-[-15deg] transition-transform">🔙</span>
             <div class="text-left">
                 <p class="text-[9px] font-black uppercase tracking-[0.2em] leading-none opacity-60 mb-1">Testing Mode</p>
@@ -18,12 +31,14 @@
 
 @code {
     private bool hasBackdoor = false;
+    private bool isProcessing = false;
+    private string statusMessage = "";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            // Check for EITHER the backdoor cookie OR if the current user IS the demo/impersonated one
+            // Check for the backdoor cookie
             var backdoor = await JS.InvokeAsync<string>("eval", @"
                 (function() {
                     var name = 'ppp_admin_backdoor=';
@@ -36,13 +51,18 @@
                 })()");
 
             hasBackdoor = !string.IsNullOrEmpty(backdoor);
-            if (hasBackdoor) StateHasChanged();
+            if (hasBackdoor) await InvokeAsync(StateHasChanged);
         }
     }
 
     private async Task RestoreAdmin()
     {
-        // 1. Try to get the saved admin token
+        if (isProcessing) return;
+        isProcessing = true;
+        statusMessage = "Restoring Primary Admin Identity...";
+        StateHasChanged();
+
+        // 1. Get the saved admin token from the backdoor
         var backdoorToken = await JS.InvokeAsync<string>("eval", @"
             (function() {
                 var name = 'ppp_admin_backdoor=';
@@ -54,18 +74,20 @@
                 return null;
             })()");
 
-        // 2. If no backdoor token found, fallback to the hardcoded rescue token
+        // 2. Fallback to the rescue token if the backdoor was lost
         var tokenToRestore = !string.IsNullOrEmpty(backdoorToken) ? backdoorToken : "RESCUE_ADMIN_2026";
 
-        // 3. NUCLEAR WIPE: Clear both cookies explicitly
+        // 3. WIPE cookies with explicit paths
         await JS.InvokeVoidAsync("eval", "document.cookie = 'ppp_token=; max-age=0; path=/;';");
         await JS.InvokeVoidAsync("eval", "document.cookie = 'ppp_admin_backdoor=; max-age=0; path=/;';");
 
-        // 4. RE-INJECT ADMIN IDENTITY
+        // 4. RE-INJECT Stephens/Admin identity
         await JS.InvokeVoidAsync("eval", $"document.cookie = 'ppp_token={tokenToRestore}; max-age={60*60*24*180}; path=/; SameSite=Lax';");
         
-        // 5. REDIRECT HOME
-        await Task.Delay(200);
+        // 5. GIVE THE BROWSER TIME TO BREATHE (Wait 500ms so you can see the toast)
+        await Task.Delay(500);
+        
+        // 6. REDIRECT HOME
         Nav.NavigateTo("/ppp-dashboard", forceLoad: true);
     }
 }
