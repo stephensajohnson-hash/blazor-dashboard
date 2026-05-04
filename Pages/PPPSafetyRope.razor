@@ -5,7 +5,7 @@
 @if (hasBackdoor)
 {
     <div class="fixed bottom-10 left-10 z-[9999] flex flex-col gap-4 items-start">
-        @* The Toast Notification *@
+        @* Toast Message *@
         @if (!string.IsNullOrEmpty(statusMessage))
         {
             <div class="bg-emerald-600 text-white px-6 py-3 rounded-2xl shadow-2xl border border-emerald-400/30 animate-in slide-in-from-left duration-300">
@@ -16,7 +16,7 @@
             </div>
         }
 
-        @* The Button *@
+        @* The Exit Button *@
         <button @onclick="RestoreAdmin" 
                 disabled="@isProcessing"
                 class="bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white px-6 py-4 rounded-2xl shadow-[0_0_40px_rgba(225,29,72,0.4)] border-2 border-white/20 flex items-center gap-4 transition-all active:scale-95 group">
@@ -38,9 +38,10 @@
     {
         if (firstRender)
         {
-            // Check for the backdoor cookie
+            // Aggressive cookie check
             var backdoor = await JS.InvokeAsync<string>("eval", @"
                 (function() {
+                    console.log('SafetyRope: Checking for backdoor identity...');
                     var name = 'ppp_admin_backdoor=';
                     var ca = document.cookie.split(';');
                     for(var i = 0; i < ca.length; i++) {
@@ -59,10 +60,10 @@
     {
         if (isProcessing) return;
         isProcessing = true;
-        statusMessage = "Restoring Primary Admin Identity...";
+        statusMessage = "Restoring Stephens...";
         StateHasChanged();
 
-        // 1. Get the saved admin token from the backdoor
+        // 1. Get the admin token
         var backdoorToken = await JS.InvokeAsync<string>("eval", @"
             (function() {
                 var name = 'ppp_admin_backdoor=';
@@ -74,20 +75,29 @@
                 return null;
             })()");
 
-        // 2. Fallback to the rescue token if the backdoor was lost
         var tokenToRestore = !string.IsNullOrEmpty(backdoorToken) ? backdoorToken : "RESCUE_ADMIN_2026";
 
-        // 3. WIPE cookies with explicit paths
-        await JS.InvokeVoidAsync("eval", "document.cookie = 'ppp_token=; max-age=0; path=/;';");
-        await JS.InvokeVoidAsync("eval", "document.cookie = 'ppp_admin_backdoor=; max-age=0; path=/;';");
+        // 2. NUCLEAR CLEARANCE: Wipe cookies on root AND sub-paths
+        await JS.InvokeVoidAsync("eval", @"
+            (function(token) {
+                console.log('SafetyRope: Wiping demo identities...');
+                // Clear ppp_token from all potential paths
+                document.cookie = 'ppp_token=; max-age=0; path=/;';
+                document.cookie = 'ppp_token=; max-age=0; path=' + window.location.pathname + ';';
+                
+                // Clear backdoor from all potential paths
+                document.cookie = 'ppp_admin_backdoor=; max-age=0; path=/;';
+                document.cookie = 'ppp_admin_backdoor=; max-age=0; path=' + window.location.pathname + ';';
 
-        // 4. RE-INJECT Stephens/Admin identity
-        await JS.InvokeVoidAsync("eval", $"document.cookie = 'ppp_token={tokenToRestore}; max-age={60*60*24*180}; path=/; SameSite=Lax';");
+                console.log('SafetyRope: Injecting Admin token at root...');
+                // Set Stephens Identity strictly at root
+                document.cookie = 'ppp_token=' + token + '; max-age=15552000; path=/; SameSite=Lax';
+            })('" + tokenToRestore + "')");
         
-        // 5. GIVE THE BROWSER TIME TO BREATHE (Wait 500ms so you can see the toast)
-        await Task.Delay(500);
+        // 3. WAIT LONG ENOUGH FOR STORAGE & VISUAL
+        await Task.Delay(800);
         
-        // 6. REDIRECT HOME
+        // 4. REDIRECT HOME
         Nav.NavigateTo("/ppp-dashboard", forceLoad: true);
     }
 }
