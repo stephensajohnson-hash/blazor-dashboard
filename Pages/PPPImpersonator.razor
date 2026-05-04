@@ -58,7 +58,7 @@
                             <div class="flex items-center justify-between p-6 bg-black/40 rounded-3xl border border-white/5 hover:border-emerald-500/30 transition-all group">
                                 <div class="flex items-center gap-4">
                                     <div class="w-10 h-10 rounded-full bg-emerald-900/20 border border-emerald-500/20 flex items-center justify-center text-xs font-black text-emerald-500">
-                                        @user.FirstName[0]@user.LastName[0]
+                                        @(user.FirstName?.Length > 0 ? user.FirstName[0] : '?')@(user.LastName?.Length > 0 ? user.LastName[0] : '?')
                                     </div>
                                     <div>
                                         <span class="text-sm font-black uppercase text-white block">@user.FirstName @user.LastName</span>
@@ -103,6 +103,7 @@
     private List<PPP_User> foundUsers = new();
     private bool isAuthorized = false;
     private PPP_User? currentAdmin;
+    private string? originalAdminToken; // DECLARED TO FIX CS0103
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -133,8 +134,9 @@
             if (user != null && user.Role == "Admin")
             {
                 currentAdmin = user;
+                originalAdminToken = token; // SAVED TO FIX CS0103
                 isAuthorized = true;
-                StateHasChanged();
+                await InvokeAsync(StateHasChanged);
             }
             else
             {
@@ -167,33 +169,32 @@
             .ToListAsync();
     }
 
-// Locate the Impersonate method in your PPPImpersonator.razor and update it:
-private async Task Impersonate(PPP_User target)
-{
-    if (string.IsNullOrEmpty(target.MagicToken))
+    private async Task Impersonate(PPP_User target)
     {
-        target.MagicToken = Guid.NewGuid().ToString("N");
-        target.TokenExpiresAt = DateTime.UtcNow.AddMonths(6);
+        if (string.IsNullOrEmpty(target.MagicToken))
+        {
+            target.MagicToken = Guid.NewGuid().ToString("N");
+            target.TokenExpiresAt = DateTime.UtcNow.AddMonths(6);
+            
+            await using var db = await DbFactory.CreateDbContextAsync();
+            db.Entry(target).State = EntityState.Modified;
+            await db.SaveChangesAsync();
+        }
+
+        // 1. SAVE YOUR ADMIN TOKEN TO A BACKUP COOKIE (The Safety Rope)
+        await JS.InvokeVoidAsync("eval", $"document.cookie = 'ppp_admin_backdoor={originalAdminToken}; max-age={60*60*2}; path=/; SameSite=Lax';");
+
+        // 2. Overwrite the main token to become the user
+        await JS.InvokeVoidAsync("eval", $"document.cookie = 'ppp_token={target.MagicToken}; max-age={60*60*24*180}; path=/; SameSite=Lax';");
         
-        await using var db = await DbFactory.CreateDbContextAsync();
-        db.Entry(target).State = EntityState.Modified;
-        await db.SaveChangesAsync();
+        // 3. Go to the store as the new user
+        Nav.NavigateTo($"/ppp-store/1", forceLoad: true);
     }
-
-    // 1. SAVE YOUR ADMIN TOKEN TO A BACKUP COOKIE (The Safety Rope)
-    // We'll call it 'ppp_admin_backdoor'
-    await JS.InvokeVoidAsync("eval", $"document.cookie = 'ppp_admin_backdoor={originalAdminToken}; max-age={60*60*2}; path=/; SameSite=Lax';");
-
-    // 2. Overwrite the main token to become the user
-    await JS.InvokeVoidAsync("eval", $"document.cookie = 'ppp_token={target.MagicToken}; max-age={60*60*24*180}; path=/; SameSite=Lax';");
-    
-    // 3. Go to the store as the new user
-    Nav.NavigateTo($"/ppp-store/1", forceLoad: true);
-}
 
     private async Task ClearIdentity()
     {
         await JS.InvokeVoidAsync("eval", "document.cookie = 'ppp_token=; max-age=0; path=/;';");
+        await JS.InvokeVoidAsync("eval", "document.cookie = 'ppp_admin_backdoor=; max-age=0; path=/;';");
         Nav.NavigateTo("/", forceLoad: true);
     }
 }

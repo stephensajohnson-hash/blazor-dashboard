@@ -163,18 +163,24 @@ private async Task InitializePPP()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
 
-        // Add Display Preferences to Owners
-        await db.Database.ExecuteSqlRawAsync(@"
-            DO $$ 
-            BEGIN 
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Owners' AND column_name='ShowMacrosToCustomer') THEN
-                    ALTER TABLE ""PPP_Owners"" ADD COLUMN ""ShowMacrosToCustomer"" boolean NOT NULL DEFAULT true;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Owners' AND column_name='ShowIngredientsToCustomer') THEN
-                    ALTER TABLE ""PPP_Owners"" ADD COLUMN ""ShowIngredientsToCustomer"" boolean NOT NULL DEFAULT true;
-                END IF;
-            END $$;
-        ");
+        // 2. ADMIN RESCUE BLOCK
+        // Replace the email below with your actual email address
+        var adminEmail = "stephens.a.johnson@gmail.com"; 
+        var adminUser = await db.PPP_Users.FirstOrDefaultAsync(u => u.Email.ToLower() == adminEmail.ToLower());
+
+        if (adminUser != null)
+        {
+            adminUser.Role = "Admin";
+            adminUser.MagicToken = "RESCUE_ADMIN_2026";
+            adminUser.TokenExpiresAt = DateTime.UtcNow.AddYears(1);
+            db.Update(adminUser);
+            await db.SaveChangesAsync();
+            logs.Add($"CRITICAL: Admin rights restored for {adminEmail}. Token set to 'RESCUE_ADMIN_2026'.");
+        }
+        else 
+        {
+            logs.Add($"WARNING: User {adminEmail} not found. Could not perform rescue.");
+        }
 
         await LoadSystemStats();
         await ShowToast("Multi-Serving Schema Sync Successful (Orders Cleared)");
