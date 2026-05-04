@@ -1,20 +1,21 @@
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
-using Dashboard; 
+using Dashboard;
 
 namespace Dashboard.Services
 {
     public class LabelService
     {
         public static async Task<byte[]> CreateAveryLabels(
-            PPP_Owner owner, 
-            byte[]? logoBytes, 
-            List<PPP_OrderItem> items, 
+            PPP_Owner owner,
+            byte[]? logoBytes,
+            List<PPP_OrderItem> items,
             int startPos,
             Dictionary<string, (string Name, string Phone)> customerData,
             bool printSummary,
-            bool printContainers)
+            bool printContainers,
+            bool includeMacros) // NEW: 8th parameter
         {
             var document = Document.Create(container =>
             {
@@ -34,6 +35,7 @@ namespace Dashboard.Services
                             columns.RelativeColumn();
                         });
 
+                        // Handle Avery Start Position Offset
                         for (int i = 1; i < startPos; i++)
                         {
                             table.Cell().Height(2, Unit.Inch).Text("");
@@ -50,9 +52,9 @@ namespace Dashboard.Services
                             var displayName = customerData.ContainsKey(email) ? customerData[email].Name : email;
                             var displayPhone = customerData.ContainsKey(email) ? customerData[email].Phone : "";
 
+                            // 1. BAG / ORDER SUMMARY LABELS
                             if (printSummary)
                             {
-                                // Calculate total servings for the summary label
                                 var totalServings = orderGroup.Sum(i => i.Servings.Count);
                                 var itemText = totalServings == 1 ? "1 Item in Order" : $"{totalServings} Items in Order";
 
@@ -77,11 +79,11 @@ namespace Dashboard.Services
                                 });
                             }
 
+                            // 2. INDIVIDUAL CONTAINER LABELS
                             if (printContainers)
                             {
                                 foreach (var lineItem in orderGroup)
                                 {
-                                    // NEW: Loop through Servings instead of Items
                                     foreach (var serving in lineItem.Servings)
                                     {
                                         table.Cell().Height(2, Unit.Inch).Padding(10).Column(col =>
@@ -92,13 +94,38 @@ namespace Dashboard.Services
                                                     row.RelativeItem().AlignRight().Text($"FOR: {serving.LabelName}").FontSize(9).Bold();
                                             });
 
-                                            col.Item().PaddingTop(4).Text(lineItem.RecipeName.ToUpper()).FontSize(11).Bold();
-                                            col.Item().Text(lineItem.SizeName).FontSize(8);
+                                            col.Item().PaddingTop(2).Text(lineItem.RecipeName.ToUpper()).FontSize(11).Bold();
+                                            col.Item().Text(lineItem.SizeName).FontSize(8).FontColor(Colors.Grey.Darken2);
 
                                             if (serving.SelectedOptions != null && serving.SelectedOptions.Any())
                                             {
                                                 var optString = string.Join(", ", serving.SelectedOptions.Select(o => o.OptionName));
                                                 col.Item().Text($"+ {optString}").FontSize(8).Bold().FontColor(Colors.Red.Darken2);
+                                            }
+
+                                            // NEW: NUTRITION SECTION
+                                            if (includeMacros && lineItem.MenuItem?.Recipe != null)
+                                            {
+                                                var m = GetMacros(lineItem.MenuItem.Recipe);
+                                                col.Item().PaddingTop(4).BorderTop(1).BorderColor(Colors.Grey.Lighten3).Row(row =>
+                                                {
+                                                    row.RelativeItem().Column(c => {
+                                                        c.Item().Text("CALS").FontSize(6).Bold().FontColor(Colors.Grey.Medium);
+                                                        c.Item().Text($"{m.Cals}").FontSize(8).Bold();
+                                                    });
+                                                    row.RelativeItem().Column(c => {
+                                                        c.Item().Text("PRO").FontSize(6).Bold().FontColor(Colors.Grey.Medium);
+                                                        c.Item().Text($"{m.Prot}g").FontSize(8).Bold();
+                                                    });
+                                                    row.RelativeItem().Column(c => {
+                                                        c.Item().Text("FAT").FontSize(6).Bold().FontColor(Colors.Grey.Medium);
+                                                        c.Item().Text($"{m.Fat}g").FontSize(8).Bold();
+                                                    });
+                                                    row.RelativeItem().Column(c => {
+                                                        c.Item().Text("NETC").FontSize(6).Bold().FontColor(Colors.Grey.Medium);
+                                                        c.Item().Text($"{m.Net}g").FontSize(8).Bold();
+                                                    });
+                                                });
                                             }
                                             
                                             col.Item().AlignBottom().Row(row => {
@@ -115,6 +142,34 @@ namespace Dashboard.Services
             });
 
             return document.GeneratePdf();
+        }
+
+        private static (double Cals, double Prot, double Fat, double Net) GetMacros(PPP_Recipe r)
+        {
+            if (r == null || r.Servings <= 0) return (0, 0, 0, 0);
+
+            double cals = 0, prot = 0, fat = 0, net = 0;
+
+            foreach (var group in r.IngredientGroups)
+            {
+                foreach (var mapping in group.Ingredients)
+                {
+                    if (mapping.Ingredient != null)
+                    {
+                        cals += mapping.Ingredient.Calories * mapping.Quantity;
+                        prot += mapping.Ingredient.Protein * mapping.Quantity;
+                        fat += mapping.Ingredient.Fat * mapping.Quantity;
+                        net += (mapping.Ingredient.Carbs - mapping.Ingredient.Fiber) * mapping.Quantity;
+                    }
+                }
+            }
+
+            return (
+                Math.Round(cals / r.Servings, 0),
+                Math.Round(prot / r.Servings, 1),
+                Math.Round(fat / r.Servings, 1),
+                Math.Round(net / r.Servings, 1)
+            );
         }
     }
 }
