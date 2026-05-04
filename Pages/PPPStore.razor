@@ -10,7 +10,7 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
-@* Main Container with single scrollbar fix *@
+@* Main Container: Locked to screen height to prevent double scrollbars *@
 <div class="h-screen w-full bg-[#050505] text-slate-200 font-sans antialiased overflow-hidden flex flex-col">
     
     @* Notification Stack *@
@@ -202,6 +202,7 @@
                                     <span class="bg-blue-500/10 border border-blue-500/20 px-2 py-1 rounded-lg text-[10px] font-bold text-blue-400">🥩 @m.Prot pro</span>
                                     <span class="bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-lg text-[10px] font-bold text-amber-400">🥑 @m.Fat fat</span>
                                     <span class="bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-400">🥦 @m.Net net carbs</span>
+                                    <span class="text-[8px] text-slate-600 uppercase font-black tracking-tighter ml-1">Per Serving</span>
                                 </div>
                             </div>
                             <button @onclick="() => selectedItem = null" class="bg-white/5 w-10 h-10 rounded-xl text-slate-400 flex items-center justify-center text-xl hover:text-white transition-all">&times;</button>
@@ -447,8 +448,14 @@
         owner = await db.PPP_Owners.AsNoTracking().FirstOrDefaultAsync(o => o.Id == OwnerId);
         
         var today = DateTime.Today.ToUniversalTime();
+        
+        @* UPDATED: Unified Navigation Path to ensure all ingredient data is loaded in a single join path *@
         activeMenus = await db.Set<PPP_Menu>().AsNoTracking()
-            .Include(m => m.Items).ThenInclude(i => i.Recipe).ThenInclude(r => r.IngredientGroups).ThenInclude(g => g.Ingredients).ThenInclude(i => i.Ingredient)
+            .Include(m => m.Items)
+                .ThenInclude(i => i.Recipe)
+                    .ThenInclude(r => r.IngredientGroups)
+                        .ThenInclude(g => g.Ingredients)
+                            .ThenInclude(ing => ing.Ingredient) // This leaf node is critical
             .Include(m => m.Items).ThenInclude(i => i.Timeframes)
             .Include(m => m.Items).ThenInclude(i => i.Sizes).ThenInclude(s => s.Options)
             .Where(m => m.OwnerId == OwnerId && m.IsPublished && m.EndDate >= today)
@@ -548,6 +555,7 @@
         {
             foreach(var mapping in group.Ingredients)
             {
+                @* UPDATED: Direct check for the navigation property *@
                 if (mapping.Ingredient != null)
                 {
                     cals += mapping.Ingredient.Calories * mapping.Quantity;
