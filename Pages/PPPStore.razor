@@ -449,6 +449,8 @@
     private PPP_MenuItem? selectedItem;
     private PPP_MenuItemSize? currentSize;
 
+    private PPP_User? sessionUser;
+
     private class ServingConfig 
     { 
         public int ServingNumber { get; set; } 
@@ -492,16 +494,11 @@
         }
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+   protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            customerId = await JS.InvokeAsync<string>("localStorage.getItem", "ppp_customer_id");
-            if (string.IsNullOrEmpty(customerId))
-            {
-                customerId = Guid.NewGuid().ToString();
-                await JS.InvokeVoidAsync("localStorage.setItem", "ppp_customer_id", customerId);
-            }
+            // ... (keep the customerId localstorage stuff as is) ...
             
             var token = await JS.InvokeAsync<string>("eval", "document.cookie.split('; ').find(row => row.startsWith('ppp_token='))?.split('=')[1]");
 
@@ -514,6 +511,8 @@
 
                 if (loggedInUser != null) 
                 {
+                    sessionUser = loggedInUser; // Track who is ACTUALLY logged in
+
                     // === DATABASE IMPERSONATION LENS ===
                     if (loggedInUser.Role == "Admin" && !string.IsNullOrEmpty(loggedInUser.ImpersonatingEmail))
                     {
@@ -819,14 +818,22 @@
             dbOrder.Notes = cart.Notes;
             await db.SaveChangesAsync();
             
-            await JS.InvokeVoidAsync("eval", $"document.cookie = 'ppp_token={user.MagicToken}; max-age={60*60*24*180}; path=/; SameSite=Lax';");
+            // SECURITY FIX: Only update the browser cookie if an actual customer is checking out.
+            // If an Admin is impersonating someone, DO NOT overwrite their Admin token.
+            bool isTesting = sessionUser?.Role == "Admin" && !string.IsNullOrEmpty(sessionUser?.ImpersonatingEmail);
+            
+            if (!isTesting)
+            {
+                await JS.InvokeVoidAsync("eval", $"document.cookie = 'ppp_token={user.MagicToken}; max-age={60*60*24*180}; path=/; SameSite=Lax';");
+            }
+            
             await ShowToast("Order placed successfully!");
             
             cart = null; 
             showCart = false;
             showContactForm = false; 
             await LoadCart();
-        }
+        }   
     }
 
     private async Task LoadCart()
