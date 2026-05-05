@@ -12,8 +12,19 @@
 
 <div class="h-screen w-full bg-[#050505] text-slate-200 font-sans antialiased overflow-hidden flex flex-col">
     
-    @* SAFETY ROPE FOR ADMIN IMPERSONATION *@
-    <PPPSafetyRope />
+    @* IN-PAGE ADMIN SAFETY ROPE *@
+    @if (sessionUser?.Role == "Admin" && !string.IsNullOrEmpty(sessionUser.ImpersonatingEmail))
+    {
+        <div class="fixed bottom-10 left-10 z-[9999] flex flex-col gap-4 items-start">
+            <button type="button" @onclick="EndImpersonation" class="bg-rose-600 hover:bg-rose-500 text-white px-6 py-4 rounded-2xl shadow-[0_0_40px_rgba(225,29,72,0.4)] border-2 border-white/20 flex items-center gap-4 transition-all active:scale-95 group">
+                <span class="text-2xl group-hover:rotate-[-15deg] transition-transform">🔙</span>
+                <div class="text-left">
+                    <p class="text-[9px] font-black uppercase tracking-[0.2em] leading-none opacity-60 mb-1">Testing Mode</p>
+                    <p class="text-xs font-black uppercase leading-tight">Exit Impersonation</p>
+                </div>
+            </button>
+        </div>
+    }
 
     @* Notification Stack *@
     <div class="fixed top-6 right-6 z-[900] flex flex-col gap-3">
@@ -449,8 +460,6 @@
     private PPP_MenuItem? selectedItem;
     private PPP_MenuItemSize? currentSize;
 
-    private PPP_User? sessionUser;
-
     private class ServingConfig 
     { 
         public int ServingNumber { get; set; } 
@@ -462,7 +471,8 @@
     private List<PPP_PickupLocation> pickupLocations = new();
     private List<PPP_DeliveryZipCode> ownerZips = new();
 
-    private PPP_User? currentUser;
+    private PPP_User? sessionUser; // The real user holding the cookie
+    private PPP_User? currentUser; // The user data being displayed
     private PPP_User tempUser = new();
     private PPP_Address tempAddress = new() { Label = "Home" };
 
@@ -494,11 +504,16 @@
         }
     }
 
-   protected override async Task OnAfterRenderAsync(bool firstRender)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            // ... (keep the customerId localstorage stuff as is) ...
+            customerId = await JS.InvokeAsync<string>("localStorage.getItem", "ppp_customer_id");
+            if (string.IsNullOrEmpty(customerId))
+            {
+                customerId = Guid.NewGuid().ToString();
+                await JS.InvokeVoidAsync("localStorage.setItem", "ppp_customer_id", customerId);
+            }
             
             var token = await JS.InvokeAsync<string>("eval", "document.cookie.split('; ').find(row => row.startsWith('ppp_token='))?.split('=')[1]");
 
@@ -511,7 +526,7 @@
 
                 if (loggedInUser != null) 
                 {
-                    sessionUser = loggedInUser; // Track who is ACTUALLY logged in
+                    sessionUser = loggedInUser;
 
                     // === DATABASE IMPERSONATION LENS ===
                     if (loggedInUser.Role == "Admin" && !string.IsNullOrEmpty(loggedInUser.ImpersonatingEmail))
@@ -818,8 +833,7 @@
             dbOrder.Notes = cart.Notes;
             await db.SaveChangesAsync();
             
-            // SECURITY FIX: Only update the browser cookie if an actual customer is checking out.
-            // If an Admin is impersonating someone, DO NOT overwrite their Admin token.
+            // SECURITY CHECK: DO NOT overwrite Admin cookie while testing
             bool isTesting = sessionUser?.Role == "Admin" && !string.IsNullOrEmpty(sessionUser?.ImpersonatingEmail);
             
             if (!isTesting)
@@ -833,7 +847,7 @@
             showCart = false;
             showContactForm = false; 
             await LoadCart();
-        }   
+        }
     }
 
     private async Task LoadCart()
@@ -985,6 +999,35 @@
             await db.SaveChangesAsync(); 
             await LoadCart(); 
         } 
+    }
+
+    private async Task EndImpersonation()
+    {
+        try 
+        {
+            // Re-fetch the token directly from the browser so we don't rely on Blazor's memory state
+            var token = await JS.InvokeAsync<string>("eval", "document.cookie.split('; ').find(row => row.startsWith('ppp_token='))?.split('=')[1]");
+
+            if (!string.IsNullOrEmpty(token))
+            {
+                await using var db = await DbFactory.CreateDbContextAsync();
+                var admin = await db.PPP_Users.FirstOrDefaultAsync(u => u.MagicToken == token);
+                
+                if (admin != null)
+                {
+                    admin.ImpersonatingEmail = null; // Take off the mask
+                    await db.SaveChangesAsync();
+                }
+            }
+            
+            // Redirect back to ID Lab
+            Nav.NavigateTo("/ppp-admin/impersonator", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error ending impersonation: {ex.Message}");
+            Nav.NavigateTo("/ppp-admin/impersonator", forceLoad: true); // fallback redirect
+        }
     }
 
     private class ToastItem 
