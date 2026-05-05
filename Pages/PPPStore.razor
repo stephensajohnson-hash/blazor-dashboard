@@ -55,7 +55,7 @@
         <PPPStoreCartButton 
             ItemCount="cart.Items.Count" 
             CartTotal="GetCartTotal()" 
-            OnOpenCart="OpenCart" />
+            OnOpenCart="OpenCart" />  @* <-- Changed this line *@
     }
 
     @* Cart Detail Overlay *@
@@ -391,10 +391,10 @@
     private PPP_User tempUser = new();
     private PPP_Address tempAddress = new() { Label = "Home" };
 
-    private void OpenCart() 
-    { 
-        showCart = true; 
-        StateHasChanged(); 
+private async Task OpenCart()
+    {
+        showCart = true;
+        await InvokeAsync(StateHasChanged);
     }
 
     protected override async Task OnInitializedAsync()
@@ -545,7 +545,7 @@
         return (Math.Round(cals/r.Servings, 0), Math.Round(prot/r.Servings, 1), Math.Round(fat/r.Servings, 1), Math.Round(net/r.Servings, 1));
     }
 
-    private void SelectItem(PPP_MenuItem item)
+private async Task SelectItem(PPP_MenuItem item)
     {
         selectedItem = item;
         selTimeframe = item.Timeframes?.FirstOrDefault()?.Name ?? "Standard";
@@ -557,8 +557,20 @@
         }
         
         selPickupId = pickupLocations.FirstOrDefault()?.Id ?? 0;
-        SetSize(item.Sizes?.OrderBy(s => s.BasePrice).FirstOrDefault());
-        StateHasChanged();
+        
+        // Grab the first size configuration
+        var firstSize = item.Sizes?.OrderBy(s => s.BasePrice).FirstOrDefault();
+        SetSize(firstSize);
+
+        // Safeguard: If the item has no sizes configured in the DB, it can't be ordered
+        if (firstSize == null)
+        {
+            await ShowToast("Error: This item is missing size/pricing configurations.", true);
+            selectedItem = null;
+        }
+
+        // Force Blazor to update the screen
+        await InvokeAsync(StateHasChanged);
     }
 
     private void SetSize(PPP_MenuItemSize? sz)
