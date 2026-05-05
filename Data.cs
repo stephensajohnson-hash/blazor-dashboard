@@ -795,6 +795,8 @@ public class PPP_User
     // Auth & Persistence
     public string? MagicToken { get; set; }
     public DateTime? TokenExpiresAt { get; set; }
+
+    public string? ImpersonatingEmail { get; set; }
 }
 
 public class PPP_Owner
