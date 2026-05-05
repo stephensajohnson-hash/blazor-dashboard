@@ -1,0 +1,127 @@
+@using Dashboard 
+
+<div class="max-w-3xl mx-auto px-4 mt-12">
+    @foreach (var menu in ActiveMenus)
+    {
+        @foreach (var dayGroup in menu.Items.OrderBy(i => i.StartDate).GroupBy(i => i.StartDate.Date))
+        {
+            <div class="mb-12">
+                <h3 class="text-[10px] font-black uppercase tracking-[0.4em] text-slate-500 mb-6 flex items-center gap-4">
+                    @dayGroup.Key.ToString("dddd, MMM d") 
+                    <span class="h-[1px] flex-1 bg-white/5"></span>
+                </h3>
+
+                <div class="grid grid-cols-1 gap-4">
+                    @foreach (var item in dayGroup)
+                    {
+                        bool soldOut = IsItemSoldOut(item);
+                        bool pastCutoff = IsPastCutoff(item);
+
+                        <div @onclick="() => HandleItemClick(item)" class="bg-[#111] border border-slate-800 rounded-[2.5rem] overflow-hidden flex flex-col md:flex-row cursor-pointer transition-all group shadow-xl @(soldOut || pastCutoff ? "opacity-50 grayscale pointer-events-none" : "hover:border-emerald-500/40")">
+                            @if (item.Recipe?.ImageId != null)
+                            {
+                                <div class="w-full md:w-44 aspect-square bg-black overflow-hidden shrink-0">
+                                    <img src="/db-images-ppp/@item.Recipe.ImageId" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                                </div>
+                            }
+                            <div class="p-6 flex-1 flex flex-col">
+                                <div class="flex justify-between items-start mb-2">
+                                    <h4 class="text-xl font-black text-white uppercase italic tracking-tight">@item.Recipe?.Name</h4>
+                                </div>
+                                
+                                @if (!string.IsNullOrEmpty(item.Recipe?.LongDescription))
+                                {
+                                    <p class="text-xs text-slate-300 leading-relaxed line-clamp-3 mb-2 font-medium">@item.Recipe.LongDescription</p>
+                                }
+                                
+                                @if (Owner.ShowIngredientsToCustomer && item.Recipe != null)
+                                {
+                                    <p class="text-[10px] text-slate-500 leading-relaxed line-clamp-2 mb-4 italic">
+                                        <span class="font-black uppercase text-[8px] text-slate-600 not-italic mr-1">Ingredients:</span>
+                                        @GetSimplifiedIngredients(item.Recipe)
+                                    </p>
+                                }
+                                
+                                <div class="mt-auto pt-4 border-t border-white/5 flex flex-wrap gap-2 items-center">
+                                    @if (Owner.ShowMacrosToCustomer)
+                                    {
+                                        var m = GetMacros(item.Recipe);
+                                        <span class="bg-white/5 border border-white/10 px-2 py-1 rounded-lg text-[10px] font-bold text-slate-300">🔥 @m.Cals cal</span>
+                                        <span class="bg-blue-500/10 border border-blue-500/20 px-2 py-1 rounded-lg text-[10px] font-bold text-blue-400">🥩 @m.Prot pro</span>
+                                        <span class="bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-lg text-[10px] font-bold text-amber-400">🥑 @m.Fat fat</span>
+                                        <span class="bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-400">🥦 @m.Net net carbs</span>
+                                        <span class="text-[8px] text-slate-600 uppercase font-black tracking-tighter ml-1">Per Serving</span>
+                                    }
+                                    else 
+                                    {
+                                        <span class="text-[8px] text-slate-600 uppercase font-black tracking-widest">Handcrafted Fresh Daily</span>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<PPP_Menu> ActiveMenus { get; set; } = new();
+    [Parameter, EditorRequired] public PPP_Owner Owner { get; set; } = default!;
+    [Parameter] public EventCallback<PPP_MenuItem> OnItemSelected { get; set; }
+
+    private async Task HandleItemClick(PPP_MenuItem item)
+    {
+        if (OnItemSelected.HasDelegate)
+        {
+            await OnItemSelected.InvokeAsync(item);
+        }
+    }
+
+    private bool IsPastCutoff(PPP_MenuItem i) 
+    {
+        return DateTime.Now > i.StartDate.Date.AddDays(-1).Add(i.CutoffTime.ToTimeSpan());
+    }
+
+    private bool IsItemSoldOut(PPP_MenuItem i) 
+    {
+        return false;
+    }
+
+    private string GetSimplifiedIngredients(PPP_Recipe? r)
+    {
+        if (r == null) return "";
+
+        var names = r.IngredientGroups
+            .SelectMany(g => g.Ingredients)
+            .Where(m => m.Ingredient != null)
+            .Select(m => m.Ingredient.Name.ToLower().Trim())
+            .Distinct()
+            .ToList();
+
+        return string.Join(", ", names);
+    }
+
+    private (double Cals, double Prot, double Fat, double Net) GetMacros(PPP_Recipe? r)
+    {
+        if (r == null || r.Servings <= 0) return (0,0,0,0);
+
+        double cals = 0, prot = 0, fat = 0, net = 0;
+        
+        foreach(var group in r.IngredientGroups)
+        {
+            foreach(var mapping in group.Ingredients)
+            {
+                if (mapping.Ingredient != null)
+                {
+                    cals += mapping.Ingredient.Calories * mapping.Quantity;
+                    prot += mapping.Ingredient.Protein * mapping.Quantity;
+                    fat += mapping.Ingredient.Fat * mapping.Quantity;
+                    net += (mapping.Ingredient.Carbs - mapping.Ingredient.Fiber) * mapping.Quantity;
+                }
+            }
+        }
+        return (Math.Round(cals/r.Servings, 0), Math.Round(prot/r.Servings, 1), Math.Round(fat/r.Servings, 1), Math.Round(net/r.Servings, 1));
+    }
+}
