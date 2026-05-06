@@ -155,7 +155,6 @@
                         <div>
                             <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest">Arrival Window</h5>
                             <div class="flex flex-wrap gap-2">
-                                @* HARDENED: ?? new List<PPP_MenuItemTimeframe>() prevents crash if Timeframes is null *@
                                 @foreach (var tf in selectedItem.Timeframes ?? new List<PPP_MenuItemTimeframe>())
                                 {
                                     <button @onclick="() => selTimeframe = tf.Name" 
@@ -371,25 +370,33 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        owner = await db.PPP_Owners.AsNoTracking().FirstOrDefaultAsync(o => o.Id == OwnerId);
-        
-        var today = DateTime.Today.ToUniversalTime();
-        
-        activeMenus = await db.Set<PPP_Menu>().AsNoTracking()
-            .Include(m => m.Items).ThenInclude(i => i.Recipe).ThenInclude(r => r.IngredientGroups).ThenInclude(g => g.Ingredients).ThenInclude(ing => ing.Ingredient) 
-            .Include(m => m.Items).ThenInclude(i => i.Timeframes)
-            .Include(m => m.Items).ThenInclude(i => i.Sizes).ThenInclude(s => s.Options)
-            .Where(m => m.OwnerId == OwnerId && m.IsPublished && m.EndDate >= today)
-            .OrderBy(m => m.StartDate)
-            .ToListAsync();
-
-        pickupLocations = await db.Set<PPP_PickupLocation>().Where(l => l.OwnerId == OwnerId).ToListAsync();
-        ownerZips = await db.Set<PPP_DeliveryZipCode>().Where(z => z.OwnerId == OwnerId).ToListAsync();
-
-        if (owner != null)
+        try
         {
-            selFulfillment = owner.OffersPickup ? "Pickup" : "Delivery";
+            Console.WriteLine("[DEBUG] OnInitializedAsync started");
+            await using var db = await DbFactory.CreateDbContextAsync();
+            owner = await db.PPP_Owners.AsNoTracking().FirstOrDefaultAsync(o => o.Id == OwnerId);
+            
+            var today = DateTime.Today.ToUniversalTime();
+            
+            activeMenus = await db.Set<PPP_Menu>().AsNoTracking()
+                .Include(m => m.Items).ThenInclude(i => i.Recipe).ThenInclude(r => r.IngredientGroups).ThenInclude(g => g.Ingredients).ThenInclude(ing => ing.Ingredient) 
+                .Include(m => m.Items).ThenInclude(i => i.Timeframes)
+                .Include(m => m.Items).ThenInclude(i => i.Sizes).ThenInclude(s => s.Options)
+                .Where(m => m.OwnerId == OwnerId && m.IsPublished && m.EndDate >= today)
+                .OrderBy(m => m.StartDate)
+                .ToListAsync();
+
+            pickupLocations = await db.Set<PPP_PickupLocation>().Where(l => l.OwnerId == OwnerId).ToListAsync();
+            ownerZips = await db.Set<PPP_DeliveryZipCode>().Where(z => z.OwnerId == OwnerId).ToListAsync();
+
+            if (owner != null)
+            {
+                selFulfillment = owner.OffersPickup ? "Pickup" : "Delivery";
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[CRITICAL] Init Error: {ex.Message}");
         }
     }
 
@@ -397,47 +404,56 @@
     {
         if (firstRender)
         {
-            customerId = await JS.InvokeAsync<string>("localStorage.getItem", "ppp_customer_id");
-            if (string.IsNullOrEmpty(customerId))
+            try
             {
-                customerId = Guid.NewGuid().ToString();
-                await JS.InvokeVoidAsync("localStorage.setItem", "ppp_customer_id", customerId);
-            }
-            
-            var token = await JS.InvokeAsync<string>("eval", "document.cookie.split('; ').find(row => row.startsWith('ppp_token='))?.split('=')[1]");
-
-            if (!string.IsNullOrEmpty(token))
-            {
-                await using var db = await DbFactory.CreateDbContextAsync();
-                var loggedInUser = await db.PPP_Users
-                    .Include(u => u.Addresses)
-                    .FirstOrDefaultAsync(u => u.MagicToken == token && u.TokenExpiresAt > DateTime.UtcNow);
-
-                if (loggedInUser != null) 
+                Console.WriteLine("[DEBUG] OnAfterRenderAsync started");
+                customerId = await JS.InvokeAsync<string>("localStorage.getItem", "ppp_customer_id");
+                if (string.IsNullOrEmpty(customerId))
                 {
-                    sessionUser = loggedInUser;
-
-                    if (loggedInUser.Role == "Admin" && !string.IsNullOrEmpty(loggedInUser.ImpersonatingEmail))
-                    {
-                        currentUser = await db.PPP_Users.Include(u => u.Addresses).FirstOrDefaultAsync(u => u.Email == loggedInUser.ImpersonatingEmail);
-                        if (currentUser != null) await ShowToast($"Testing Mode: Viewing as {currentUser.FirstName}");
-                    }
-                    else
-                    {
-                        currentUser = loggedInUser;
-                    }
-
-                    if (currentUser != null) ApplyIdentityToUI();
+                    customerId = Guid.NewGuid().ToString();
+                    await JS.InvokeVoidAsync("localStorage.setItem", "ppp_customer_id", customerId);
                 }
-            }
+                
+                var token = await JS.InvokeAsync<string>("eval", "document.cookie.split('; ').find(row => row.startsWith('ppp_token='))?.split('=')[1]");
 
-            await LoadCart();
-            await InvokeAsync(StateHasChanged);
+                if (!string.IsNullOrEmpty(token))
+                {
+                    await using var db = await DbFactory.CreateDbContextAsync();
+                    var loggedInUser = await db.PPP_Users
+                        .Include(u => u.Addresses)
+                        .FirstOrDefaultAsync(u => u.MagicToken == token && u.TokenExpiresAt > DateTime.UtcNow);
+
+                    if (loggedInUser != null) 
+                    {
+                        sessionUser = loggedInUser;
+
+                        if (loggedInUser.Role == "Admin" && !string.IsNullOrEmpty(loggedInUser.ImpersonatingEmail))
+                        {
+                            currentUser = await db.PPP_Users.Include(u => u.Addresses).FirstOrDefaultAsync(u => u.Email == loggedInUser.ImpersonatingEmail);
+                            if (currentUser != null) await ShowToast($"Testing Mode: Viewing as {currentUser.FirstName}");
+                        }
+                        else
+                        {
+                            currentUser = loggedInUser;
+                        }
+
+                        if (currentUser != null) ApplyIdentityToUI();
+                    }
+                }
+
+                await LoadCart();
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CRITICAL] Render Error: {ex.Message}");
+            }
         }
     }
 
     private void ApplyIdentityToUI()
     {
+        Console.WriteLine("[DEBUG] Applying Identity to UI");
         if (currentUser == null) return;
 
         tempUser.FirstName = currentUser.FirstName;
@@ -445,7 +461,7 @@
         tempUser.Email = currentUser.Email;
         tempUser.Phone = currentUser.Phone;
         
-        var addr = currentUser.Addresses.FirstOrDefault(a => a.IsDefault) ?? currentUser.Addresses.FirstOrDefault();
+        var addr = currentUser.Addresses?.FirstOrDefault(a => a.IsDefault) ?? currentUser.Addresses?.FirstOrDefault();
         if (addr != null)
         {
             tempAddress.Id = addr.Id;
@@ -468,30 +484,50 @@
 
     private async Task OpenCart()
     {
-        showCart = true;
-        await InvokeAsync(StateHasChanged);
+        try
+        {
+            Console.WriteLine("[DEBUG] OpenCart called");
+            showCart = true;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[CRITICAL] Cart Open Error: {ex.Message}");
+        }
     }
 
     private async Task SelectItem(PPP_MenuItem item)
     {
-        selectedItem = item;
-        selTimeframe = item.Timeframes?.FirstOrDefault()?.Name ?? "Standard";
-        selZip = tempAddress?.ZipCode ?? "";
-        
-        if (owner != null) selFulfillment = owner.OffersPickup ? "Pickup" : "Delivery";
-        
-        selPickupId = pickupLocations?.FirstOrDefault()?.Id ?? 0;
-        
-        var firstSize = item.Sizes?.OrderBy(s => s.BasePrice).FirstOrDefault();
-        SetSize(firstSize);
-
-        if (firstSize == null)
+        try
         {
-            await ShowToast("Error: Missing size/price configurations.", true);
-            selectedItem = null;
-        }
+            Console.WriteLine($"[DEBUG] SelectItem called for ID: {item?.Id}");
+            if (item == null) return;
 
-        await InvokeAsync(StateHasChanged);
+            selectedItem = item;
+            selTimeframe = item.Timeframes?.FirstOrDefault()?.Name ?? "Standard";
+            selZip = tempAddress?.ZipCode ?? "";
+            
+            if (owner != null) selFulfillment = owner.OffersPickup ? "Pickup" : "Delivery";
+            
+            selPickupId = pickupLocations?.FirstOrDefault()?.Id ?? 0;
+            
+            var firstSize = item.Sizes?.OrderBy(s => s.BasePrice).FirstOrDefault();
+            Console.WriteLine($"[DEBUG] First size evaluated: {firstSize?.Name ?? "NULL"}");
+            SetSize(firstSize);
+
+            if (firstSize == null)
+            {
+                await ShowToast("Error: Missing size/price configurations.", true);
+                selectedItem = null;
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[CRITICAL] SelectItem Error: {ex.Message}\n{ex.StackTrace}");
+            await ShowToast("System error selecting item.", true);
+        }
     }
 
     private void SetSize(PPP_MenuItemSize? sz)
@@ -503,7 +539,7 @@
             for (int i = 0; i < currentSize.ServingsPerUnit; i++)
             {
                 var initialName = (currentUser != null) ? currentUser.FirstName : "";
-                tempServingConfigs.Add(new ServingConfig { ServingNumber = i + 1, LabelName = initialName });
+                tempServingConfigs.Add(new ServingConfig { ServingNumber = i + 1, LabelName = initialName ?? "" });
             }
         }
     }
@@ -560,6 +596,7 @@
         
         try 
         {
+            Console.WriteLine("[DEBUG] AddToCart starting...");
             await using var db = await DbFactory.CreateDbContextAsync();
             var newEntry = new PPP_OrderItem
             {
@@ -597,61 +634,74 @@
             await LoadCart(); 
             selectedItem = null;
             await ShowToast("Bundle added to cart!");
+            Console.WriteLine("[DEBUG] AddToCart success.");
         }
-        catch (Exception ex) { await ShowToast("Error: " + ex.Message, true); }
+        catch (Exception ex) 
+        { 
+            Console.WriteLine($"[CRITICAL] AddToCart Error: {ex.Message}");
+            await ShowToast("Error: " + ex.Message, true); 
+        }
     }
 
     private async Task ProcessCheckout() => showContactForm = true;
 
     private async Task FinalizeOrder()
     {
-        if (string.IsNullOrWhiteSpace(tempUser.Email) || string.IsNullOrWhiteSpace(tempUser.FirstName))
-        { 
-            await ShowToast("Email and Name are required", true); 
-            return; 
-        }
-
-        await using var db = await DbFactory.CreateDbContextAsync();
-        var user = await db.PPP_Users.Include(u => u.Addresses).FirstOrDefaultAsync(u => u.Email.ToLower() == tempUser.Email.ToLower());
-        
-        if (user == null)
+        try
         {
-            user = new PPP_User { Email = tempUser.Email.ToLower(), FirstName = tempUser.FirstName, LastName = tempUser.LastName, Phone = tempUser.Phone, MagicToken = Guid.NewGuid().ToString("N"), TokenExpiresAt = DateTime.UtcNow.AddMonths(6) };
-            db.PPP_Users.Add(user); 
-            await db.SaveChangesAsync();
-        }
-        else
-        {
-            user.FirstName = tempUser.FirstName; user.LastName = tempUser.LastName; user.Phone = tempUser.Phone;
-            if (string.IsNullOrEmpty(user.MagicToken)) user.MagicToken = Guid.NewGuid().ToString("N");
-            user.TokenExpiresAt = DateTime.UtcNow.AddMonths(6);
-        }
-
-        int chosenAddressId = 0;
-        if (cart!.Items.Any(i => i.FulfillmentMethod == "Delivery") && !string.IsNullOrEmpty(tempAddress.Street))
-        {
-            var existing = user.Addresses.FirstOrDefault(a => a.Street.ToLower() == tempAddress.Street.ToLower());
-            if (existing == null) 
-            {
-                var n = new PPP_Address { UserId = user.Id, Label = tempAddress.Label, Street = tempAddress.Street, City = tempAddress.City, State = tempAddress.State, ZipCode = tempAddress.ZipCode, IsDefault = true };
-                db.Set<PPP_Address>().Add(n); await db.SaveChangesAsync(); chosenAddressId = n.Id;
+            if (string.IsNullOrWhiteSpace(tempUser.Email) || string.IsNullOrWhiteSpace(tempUser.FirstName))
+            { 
+                await ShowToast("Email and Name are required", true); 
+                return; 
             }
-            else chosenAddressId = existing.Id;
-        }
 
-        var dbOrder = await db.PPP_Orders.FirstOrDefaultAsync(o => o.Id == cart.Id);
-        if (dbOrder != null) 
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var user = await db.PPP_Users.Include(u => u.Addresses).FirstOrDefaultAsync(u => u.Email.ToLower() == tempUser.Email.ToLower());
+            
+            if (user == null)
+            {
+                user = new PPP_User { Email = tempUser.Email.ToLower(), FirstName = tempUser.FirstName, LastName = tempUser.LastName, Phone = tempUser.Phone, MagicToken = Guid.NewGuid().ToString("N"), TokenExpiresAt = DateTime.UtcNow.AddMonths(6) };
+                db.PPP_Users.Add(user); 
+                await db.SaveChangesAsync();
+            }
+            else
+            {
+                user.FirstName = tempUser.FirstName; user.LastName = tempUser.LastName; user.Phone = tempUser.Phone;
+                if (string.IsNullOrEmpty(user.MagicToken)) user.MagicToken = Guid.NewGuid().ToString("N");
+                user.TokenExpiresAt = DateTime.UtcNow.AddMonths(6);
+            }
+
+            int chosenAddressId = 0;
+            if (cart!.Items != null && cart.Items.Any(i => i.FulfillmentMethod == "Delivery") && !string.IsNullOrEmpty(tempAddress.Street))
+            {
+                var existing = user.Addresses?.FirstOrDefault(a => a.Street.ToLower() == tempAddress.Street.ToLower());
+                if (existing == null) 
+                {
+                    var n = new PPP_Address { UserId = user.Id, Label = tempAddress.Label, Street = tempAddress.Street, City = tempAddress.City, State = tempAddress.State, ZipCode = tempAddress.ZipCode, IsDefault = true };
+                    db.Set<PPP_Address>().Add(n); await db.SaveChangesAsync(); chosenAddressId = n.Id;
+                }
+                else chosenAddressId = existing.Id;
+            }
+
+            var dbOrder = await db.PPP_Orders.FirstOrDefaultAsync(o => o.Id == cart.Id);
+            if (dbOrder != null) 
+            {
+                dbOrder.AddressId = chosenAddressId > 0 ? chosenAddressId : null;
+                dbOrder.IsCheckedOut = true; dbOrder.CheckedOutAt = DateTime.UtcNow;
+                dbOrder.CustomerIdentifier = user.Email; dbOrder.Notes = cart.Notes;
+                await db.SaveChangesAsync();
+                
+                bool isTesting = sessionUser?.Role == "Admin" && !string.IsNullOrEmpty(sessionUser?.ImpersonatingEmail);
+                if (!isTesting) await JS.InvokeVoidAsync("eval", $"document.cookie = 'ppp_token={user.MagicToken}; max-age={60*60*24*180}; path=/; SameSite=Lax';");
+                
+                await ShowToast("Order placed successfully!");
+                cart = null; showCart = false; showContactForm = false; await LoadCart();
+            }
+        }
+        catch (Exception ex)
         {
-            dbOrder.AddressId = chosenAddressId > 0 ? chosenAddressId : null;
-            dbOrder.IsCheckedOut = true; dbOrder.CheckedOutAt = DateTime.UtcNow;
-            dbOrder.CustomerIdentifier = user.Email; dbOrder.Notes = cart.Notes;
-            await db.SaveChangesAsync();
-            
-            bool isTesting = sessionUser?.Role == "Admin" && !string.IsNullOrEmpty(sessionUser?.ImpersonatingEmail);
-            if (!isTesting) await JS.InvokeVoidAsync("eval", $"document.cookie = 'ppp_token={user.MagicToken}; max-age={60*60*24*180}; path=/; SameSite=Lax';");
-            
-            await ShowToast("Order placed successfully!");
-            cart = null; showCart = false; showContactForm = false; await LoadCart();
+            Console.WriteLine($"[CRITICAL] Checkout Error: {ex.Message}");
+            await ShowToast("Checkout Error: " + ex.Message, true);
         }
     }
 
@@ -659,6 +709,7 @@
     {
         try 
         {
+            Console.WriteLine("[DEBUG] LoadCart started");
             await using var db = await DbFactory.CreateDbContextAsync();
             var identifier = currentUser?.Email ?? customerId;
             
@@ -668,19 +719,20 @@
             
             if (existingOrder == null) 
             {
-                existingOrder = new PPP_Order { OwnerId = OwnerId, CustomerIdentifier = identifier!, CreatedAt = DateTime.UtcNow };
+                existingOrder = new PPP_Order { OwnerId = OwnerId, CustomerIdentifier = identifier ?? "Guest", CreatedAt = DateTime.UtcNow };
                 db.Add(existingOrder); await db.SaveChangesAsync();
             }
             cart = existingOrder;
+            Console.WriteLine($"[DEBUG] LoadCart finished. Cart ID: {cart.Id}");
         } 
-        catch (Exception ex) { Console.WriteLine($"Cart Load Error: {ex.Message}"); }
+        catch (Exception ex) { Console.WriteLine($"[CRITICAL] Cart Load Error: {ex.Message}"); }
     }
 
     private void SelectSavedAddress(ChangeEventArgs e)
     {
         int id = int.Parse(e.Value?.ToString() ?? "0");
         if (id == -1) { tempAddress = new PPP_Address { Label = "Home" }; return; }
-        var addr = currentUser?.Addresses.FirstOrDefault(a => a.Id == id);
+        var addr = currentUser?.Addresses?.FirstOrDefault(a => a.Id == id);
         if (addr != null) 
         { 
             tempAddress.Id = addr.Id; tempAddress.Label = addr.Label; tempAddress.Street = addr.Street; 
@@ -724,6 +776,7 @@
     {
         try 
         {
+            Console.WriteLine("[DEBUG] EndImpersonation called");
             var token = await JS.InvokeAsync<string>("eval", "document.cookie.split('; ').find(row => row.startsWith('ppp_token='))?.split('=')[1]");
             if (!string.IsNullOrEmpty(token))
             {
@@ -740,7 +793,7 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error ending impersonation: {ex.Message}");
+            Console.WriteLine($"[CRITICAL] Error ending impersonation: {ex.Message}");
             Nav.NavigateTo("/ppp-admin/impersonator", forceLoad: true); 
         }
     }

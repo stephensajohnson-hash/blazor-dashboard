@@ -73,9 +73,17 @@
 
     private async Task HandleItemClick(PPP_MenuItem item)
     {
-        if (OnItemSelected.HasDelegate)
+        try
         {
-            await OnItemSelected.InvokeAsync(item);
+            Console.WriteLine($"[DEBUG] MenuGrid Item Clicked: {item?.Recipe?.Name ?? "Unknown"}");
+            if (OnItemSelected.HasDelegate)
+            {
+                await OnItemSelected.InvokeAsync(item);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[CRITICAL] MenuGrid Click Error: {ex.Message}\n{ex.StackTrace}");
         }
     }
 
@@ -91,27 +99,24 @@
 
     private string GetSimplifiedIngredients(PPP_Recipe? r)
     {
-        if (r == null) return "";
-
+        if (r == null || r.IngredientGroups == null) return "";
         var names = r.IngredientGroups
-            .SelectMany(g => g.Ingredients)
+            .SelectMany(g => g.Ingredients ?? new List<Dashboard.PPP_RecipeIngredient>())
             .Where(m => m.Ingredient != null)
-            .Select(m => m.Ingredient.Name.ToLower().Trim())
+            .Select(m => m.Ingredient!.Name.ToLower().Trim())
             .Distinct()
             .ToList();
-
         return string.Join(", ", names);
     }
 
     private (double Cals, double Prot, double Fat, double Net) GetMacros(PPP_Recipe? r)
     {
-        if (r == null || r.Servings <= 0) return (0,0,0,0);
-
+        if (r == null || r.Servings <= 0 || r.IngredientGroups == null) return (0,0,0,0);
         double cals = 0, prot = 0, fat = 0, net = 0;
         
         foreach(var group in r.IngredientGroups)
         {
-            foreach(var mapping in group.Ingredients)
+            foreach(var mapping in group.Ingredients ?? new List<Dashboard.PPP_RecipeIngredient>())
             {
                 if (mapping.Ingredient != null)
                 {
