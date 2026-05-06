@@ -9,6 +9,7 @@
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject GeocodingService GeoService
 
 <div class="h-screen w-full bg-[#050505] text-slate-200 font-sans antialiased overflow-hidden flex flex-col">
     
@@ -253,11 +254,24 @@
                                     <input @bind="selZip" @oninput="HandleFeeZipInput" maxlength="5" placeholder="Zip Code for Delivery" 
                                            class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm font-mono text-white outline-none focus:border-blue-500" />
                                 </div>
-                                @if(!string.IsNullOrEmpty(selZip)) {
-                                    var fee = GetDeliveryFee(selZip);
-                                    <p class="text-[9px] mt-2 font-black uppercase @(fee >= 0 ? "text-blue-400" : "text-red-500")">
-                                        @(fee >= 0 ? $"✓ Coverage Available: ${fee:N2} Fee" : "✕ No delivery service to " + selZip)
-                                    </p>
+                                
+                                var feeResult = GetDeliveryFeeInfo(selZip);
+                                <p class="text-[9px] mt-2 font-black uppercase @(feeResult.IsOutOfArea ? "text-amber-500" : "text-blue-400")">
+                                    @(feeResult.Label): $@feeResult.Fee.ToString("N2")
+                                </p>
+
+                                @if (feeResult.IsOutOfArea)
+                                {
+                                    <div class="mt-4 p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex gap-4 items-center animate-in slide-in-from-top duration-300">
+                                        <span class="text-xl">📍</span>
+                                        <div class="flex-1">
+                                            <p class="text-[10px] font-black uppercase text-amber-500 tracking-widest">Out of Standard Delivery Area</p>
+                                            <p class="text-[9px] text-amber-200/60 leading-tight">
+                                                You are outside our standard delivery radius. You may still place the order, 
+                                                but Mikki may cancel if she cannot fulfill this distance.
+                                            </p>
+                                        </div>
+                                    </div>
                                 }
                             }
                         </div>
@@ -377,7 +391,7 @@
                             </div>
 
                             <input @bind="tempAddress.Label" placeholder="Address Nickname" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-xs text-white outline-none focus:border-emerald-500" />
-                            <input @bind="tempAddress.Street" placeholder="Street Address" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500" />
+                            <input @bind="tempAddress.Street" @onblur="UpdateCustomerCoords" placeholder="Street Address" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500" />
                             
                             <div class="grid grid-cols-3 gap-3">
                                 <input @bind="tempAddress.City" placeholder="City" class="bg-black border border-slate-800 rounded-xl p-4 text-xs text-white outline-none" />
@@ -417,6 +431,10 @@
     private PPP_MenuItem? selectedItem;
     private PPP_MenuItemSize? currentSize;
 
+    private (double Lat, double Lon)? ownerCoords;
+    private (double Lat, double Lon)? customerCoords;
+    private double currentDistance = 0;
+
     private class ServingConfig 
     { 
         public int ServingNumber { get; set; } 
@@ -439,7 +457,7 @@
         {
             Console.WriteLine("[DEBUG] OnInitializedAsync started");
             await using var db = await DbFactory.CreateDbContextAsync();
-            owner = await db.PPP_Owners.AsNoTracking().FirstOrDefaultAsync(o => o.Id == OwnerId);
+            owner = await db.PPP_Owners.Include(o => o.Address).AsNoTracking().FirstOrDefaultAsync(o => o.Id == OwnerId);
             
             var today = DateTime.Today.ToUniversalTime();
             
@@ -457,6 +475,13 @@
             if (owner != null)
             {
                 selFulfillment = owner.OffersPickup ? "Pickup" : "Delivery";
+                
+                // Get Owner Coords once on init
+                if (owner.Address != null)
+                {
+                    ownerCoords = await GeoService.GetCoordinatesAsync(owner.Address.Street, owner.Address.City, owner.Address.State, owner.Address.ZipCode);
+                    Console.WriteLine($"[DEBUG] Owner Coords: {ownerCoords?.Lat}, {ownerCoords?.Lon}");
+                }
             }
         }
         catch (Exception ex)
@@ -516,6 +541,19 @@
         }
     }
 
+    private async Task UpdateCustomerCoords()
+    {
+        if (!string.IsNullOrEmpty(tempAddress.Street) && !string.IsNullOrEmpty(tempAddress.ZipCode))
+        {
+            customerCoords = await GeoService.GetCoordinatesAsync(tempAddress.Street, tempAddress.City, tempAddress.State, tempAddress.ZipCode);
+            if (ownerCoords.HasValue && customerCoords.HasValue)
+            {
+                currentDistance = GeoService.CalculateDistance(ownerCoords.Value.Lat, ownerCoords.Value.Lon, customerCoords.Value.Lat, customerCoords.Value.Lon);
+                Console.WriteLine($"[DEBUG] Calculated Distance: {currentDistance} miles");
+            }
+        }
+    }
+
     private void ApplyIdentityToUI()
     {
         Console.WriteLine("[DEBUG] Applying Identity to UI");
@@ -571,6 +609,29 @@
         return (Math.Round(cals/r.Servings, 0), Math.Round(prot/r.Servings, 1), Math.Round(fat/r.Servings, 1), Math.Round(net/r.Servings, 1));
     }
 
+    private (double Fee, bool IsOutOfArea, string Label) GetDeliveryFeeInfo(string zip)
+    {
+        if (string.IsNullOrWhiteSpace(zip)) return (0, false, "Enter Zip");
+        
+        // 1. Check explicit list first (Fixed Zips override Radius)
+        var match = ownerZips.FirstOrDefault(z => z.ZipCode == zip.Trim());
+        if (match != null) return (match.Fee, false, "Included Zip Code");
+
+        // 2. Check Radius based on precision geocoding
+        if (ownerCoords.HasValue && customerCoords.HasValue)
+        {
+            if (currentDistance <= (owner?.DeliveryRadiusMiles ?? 10))
+            {
+                return (5.00, false, "Within 10-Mile Radius");
+            }
+        }
+
+        // 3. Fallback: Out of area but allowed with warning
+        return (15.00, true, "Outside Standard Delivery Area");
+    }
+
+    private double GetDeliveryFee(string zip) => GetDeliveryFeeInfo(zip).Fee;
+
     private async Task OpenCart()
     {
         try
@@ -610,6 +671,9 @@
                 selectedItem = null;
             }
 
+            // Trigger distance check when opening config modal
+            await UpdateCustomerCoords();
+
             await InvokeAsync(StateHasChanged);
         }
         catch (Exception ex)
@@ -641,25 +705,20 @@
             tempServingConfigs[index].OptionIds.Add(optionId);
     }
 
-    private double GetDeliveryFee(string? zip)
-    {
-        if (string.IsNullOrWhiteSpace(zip)) return -1;
-        var match = ownerZips.FirstOrDefault(z => z.ZipCode == zip.Trim());
-        return match?.Fee ?? -1;
-    }
-
     private bool IsConfigValid()
     {
         if (string.IsNullOrEmpty(selTimeframe)) return false;
         if (selFulfillment == "Pickup" && selPickupId == 0) return false;
-        if (selFulfillment == "Delivery" && GetDeliveryFee(selZip) < 0) return false;
+        if (selFulfillment == "Delivery" && string.IsNullOrEmpty(selZip)) return false;
+        
+        // We removed the hard block for Out of Delivery Area
         return true;
     }
 
     private double GetConfigTotal()
     {
         if (currentSize == null) return 0;
-        double fee = selFulfillment == "Delivery" ? Math.Max(0, GetDeliveryFee(selZip)) : 0;
+        double fee = selFulfillment == "Delivery" ? GetDeliveryFee(selZip) : 0;
         double addonTotal = 0;
         
         foreach (var cfg in tempServingConfigs)
@@ -698,7 +757,7 @@
                 TimeframeName = selTimeframe,
                 FulfillmentMethod = selFulfillment,
                 PickupLocationId = selFulfillment == "Pickup" ? selPickupId : null,
-                DeliveryFee = selFulfillment == "Delivery" ? Math.Max(0, GetDeliveryFee(selZip)) : 0
+                DeliveryFee = selFulfillment == "Delivery" ? GetDeliveryFee(selZip) : 0
             };
 
             db.PPP_OrderItems.Add(newEntry);
@@ -732,11 +791,7 @@
         }
     }
 
-    private async Task ProcessCheckout()
-    {
-        showContactForm = true;
-        await InvokeAsync(StateHasChanged);
-    }
+    private async Task ProcessCheckout() => showContactForm = true;
 
     private async Task FinalizeOrder()
     {
@@ -853,14 +908,23 @@
 
     private async Task HandleFeeZipInput(ChangeEventArgs e) 
     { 
-        var zip = e.Value?.ToString() ?? ""; selZip = zip; tempAddress.ZipCode = zip; 
-        if (zip.Length == 5) await LookupZip(zip, true); 
+        var zip = e.Value?.ToString() ?? ""; 
+        selZip = zip; 
+        tempAddress.ZipCode = zip; 
+        if (zip.Length == 5) {
+            await LookupZip(zip, true); 
+            await UpdateCustomerCoords();
+        }
     }
     
     private async Task HandleCheckoutZipLookup(ChangeEventArgs e) 
     { 
-        var zip = e.Value?.ToString() ?? ""; tempAddress.ZipCode = zip; 
-        if (zip.Length == 5) await LookupZip(zip, false); 
+        var zip = e.Value?.ToString() ?? ""; 
+        tempAddress.ZipCode = zip; 
+        if (zip.Length == 5) {
+            await LookupZip(zip, false); 
+            await UpdateCustomerCoords();
+        }
     }
 
     private async Task SaveCartNotes() => showCart = false;

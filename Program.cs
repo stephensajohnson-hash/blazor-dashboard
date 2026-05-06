@@ -31,6 +31,8 @@ builder.Services.AddRazorComponents()
 builder.Services.AddControllers(); 
 builder.Services.AddHttpClient();
 
+builder.Services.AddHttpClient<GeocodingService>();
+
 // Self-Referencing HttpClient
 builder.Services.AddScoped(sp => 
 {
