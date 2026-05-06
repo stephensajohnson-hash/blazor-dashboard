@@ -265,10 +265,9 @@
                                     <div class="mt-4 p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex gap-4 items-center animate-in slide-in-from-top duration-300">
                                         <span class="text-xl">📍</span>
                                         <div class="flex-1">
-                                            <p class="text-[10px] font-black uppercase text-amber-500 tracking-widest">Out of Standard Delivery Area</p>
+                                            <p class="text-[10px] font-black uppercase text-amber-500 tracking-widest">Distance Warning</p>
                                             <p class="text-[9px] text-amber-200/60 leading-tight">
-                                                You are outside our standard delivery radius. You may still place the order, 
-                                                but Mikki may cancel if she cannot fulfill this distance.
+                                                You are @currentDistance.ToString("N1") miles away. Standard delivery is within 10 miles. Mikki may cancel if she cannot fulfill this distance.
                                             </p>
                                         </div>
                                     </div>
@@ -445,6 +444,7 @@
 
     private List<PPP_PickupLocation> pickupLocations = new();
     private List<PPP_DeliveryZipCode> ownerZips = new();
+    private List<PPP_DeliveryRadiusRule> ownerRadiusRules = new();
 
     private PPP_User? sessionUser; 
     private PPP_User? currentUser; 
@@ -457,7 +457,12 @@
         {
             Console.WriteLine("[DEBUG] OnInitializedAsync started");
             await using var db = await DbFactory.CreateDbContextAsync();
-            owner = await db.PPP_Owners.Include(o => o.Address).AsNoTracking().FirstOrDefaultAsync(o => o.Id == OwnerId);
+            
+            // Explicitly load the address to ensure coordinates are available
+            owner = await db.PPP_Owners
+                .Include(o => o.Address)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(o => o.Id == OwnerId);
             
             var today = DateTime.Today.ToUniversalTime();
             
@@ -469,18 +474,31 @@
                 .OrderBy(m => m.StartDate)
                 .ToListAsync();
 
-            pickupLocations = await db.Set<PPP_PickupLocation>().Where(l => l.OwnerId == OwnerId).ToListAsync();
-            ownerZips = await db.Set<PPP_DeliveryZipCode>().Where(z => z.OwnerId == OwnerId).ToListAsync();
+            pickupLocations = await db.Set<PPP_PickupLocation>()
+                .Where(l => l.OwnerId == OwnerId)
+                .ToListAsync();
+
+            ownerZips = await db.Set<PPP_DeliveryZipCode>()
+                .Where(z => z.OwnerId == OwnerId)
+                .ToListAsync();
+
+            ownerRadiusRules = await db.Set<PPP_DeliveryRadiusRule>()
+                .Where(r => r.OwnerId == OwnerId && r.Enabled)
+                .OrderBy(r => r.MaxMiles)
+                .ToListAsync();
 
             if (owner != null)
             {
                 selFulfillment = owner.OffersPickup ? "Pickup" : "Delivery";
                 
-                // Get Owner Coords once on init
+                // Fetch Owner coordinates once on load
                 if (owner.Address != null)
                 {
-                    ownerCoords = await GeoService.GetCoordinatesAsync(owner.Address.Street, owner.Address.City, owner.Address.State, owner.Address.ZipCode);
-                    Console.WriteLine($"[DEBUG] Owner Coords: {ownerCoords?.Lat}, {ownerCoords?.Lon}");
+                    ownerCoords = await GeoService.GetCoordinatesAsync(
+                        owner.Address.Street, 
+                        owner.Address.City, 
+                        owner.Address.State, 
+                        owner.Address.ZipCode);
                 }
             }
         }
@@ -519,7 +537,9 @@
 
                         if (loggedInUser.Role == "Admin" && !string.IsNullOrEmpty(loggedInUser.ImpersonatingEmail))
                         {
-                            currentUser = await db.PPP_Users.Include(u => u.Addresses).FirstOrDefaultAsync(u => u.Email == loggedInUser.ImpersonatingEmail);
+                            currentUser = await db.PPP_Users
+                                .Include(u => u.Addresses)
+                                .FirstOrDefaultAsync(u => u.Email == loggedInUser.ImpersonatingEmail);
                             if (currentUser != null) await ShowToast($"Testing Mode: Viewing as {currentUser.FirstName}");
                         }
                         else
@@ -532,6 +552,13 @@
                 }
 
                 await LoadCart();
+                
+                // If a logged in user has an address, calculate distance immediately
+                if (!string.IsNullOrEmpty(tempAddress.Street))
+                {
+                    await UpdateCustomerCoords();
+                }
+
                 await InvokeAsync(StateHasChanged);
             }
             catch (Exception ex)
@@ -545,11 +572,17 @@
     {
         if (!string.IsNullOrEmpty(tempAddress.Street) && !string.IsNullOrEmpty(tempAddress.ZipCode))
         {
-            customerCoords = await GeoService.GetCoordinatesAsync(tempAddress.Street, tempAddress.City, tempAddress.State, tempAddress.ZipCode);
+            customerCoords = await GeoService.GetCoordinatesAsync(
+                tempAddress.Street, 
+                tempAddress.City, 
+                tempAddress.State, 
+                tempAddress.ZipCode);
+
             if (ownerCoords.HasValue && customerCoords.HasValue)
             {
-                currentDistance = GeoService.CalculateDistance(ownerCoords.Value.Lat, ownerCoords.Value.Lon, customerCoords.Value.Lat, customerCoords.Value.Lon);
-                Console.WriteLine($"[DEBUG] Calculated Distance: {currentDistance} miles");
+                currentDistance = GeoService.CalculateDistance(
+                    ownerCoords.Value.Lat, ownerCoords.Value.Lon, 
+                    customerCoords.Value.Lat, customerCoords.Value.Lon);
             }
         }
     }
@@ -588,7 +621,12 @@
     private string GetSimplifiedIngredients(PPP_Recipe? r)
     {
         if (r == null || r.IngredientGroups == null) return "";
-        var names = r.IngredientGroups.SelectMany(g => g.Ingredients ?? new()).Where(m => m.Ingredient != null).Select(m => m.Ingredient!.Name.ToLower().Trim()).Distinct();
+        var names = r.IngredientGroups
+            .SelectMany(g => g.Ingredients ?? new List<Dashboard.PPP_RecipeIngredientMapping>())
+            .Where(m => m.Ingredient != null)
+            .Select(m => m.Ingredient!.Name.ToLower().Trim())
+            .Distinct();
+            
         return string.Join(", ", names);
     }
 
@@ -596,9 +634,13 @@
     {
         if (r == null || r.Servings <= 0 || r.IngredientGroups == null) return (0,0,0,0);
         double cals = 0, prot = 0, fat = 0, net = 0;
-        foreach(var group in r.IngredientGroups) {
-            foreach(var mapping in group.Ingredients ?? new()) {
-                if (mapping.Ingredient != null) {
+        
+        foreach(var group in r.IngredientGroups) 
+        {
+            foreach(var mapping in group.Ingredients ?? new List<Dashboard.PPP_RecipeIngredientMapping>()) 
+            {
+                if (mapping.Ingredient != null) 
+                {
                     cals += mapping.Ingredient.Calories * mapping.Quantity;
                     prot += mapping.Ingredient.Protein * mapping.Quantity;
                     fat += mapping.Ingredient.Fat * mapping.Quantity;
@@ -611,23 +653,25 @@
 
     private (double Fee, bool IsOutOfArea, string Label) GetDeliveryFeeInfo(string zip)
     {
-        if (string.IsNullOrWhiteSpace(zip)) return (0, false, "Enter Zip");
+        if (string.IsNullOrWhiteSpace(zip)) return (0, false, "Enter Zip Code");
         
-        // 1. Check explicit list first (Fixed Zips override Radius)
+        // 1. Check explicit Zip list first (Tier 1 Priority)
         var match = ownerZips.FirstOrDefault(z => z.ZipCode == zip.Trim());
         if (match != null) return (match.Fee, false, "Included Zip Code");
 
-        // 2. Check Radius based on precision geocoding
+        // 2. Check Radius Rules (Tier 2)
         if (ownerCoords.HasValue && customerCoords.HasValue)
         {
-            if (currentDistance <= (owner?.DeliveryRadiusMiles ?? 10))
+            // Find the first rule where current distance is less than MaxMiles
+            var rule = ownerRadiusRules.FirstOrDefault(r => currentDistance <= r.MaxMiles);
+            if (rule != null)
             {
-                return (5.00, false, "Within 10-Mile Radius");
+                return (rule.Fee, false, $"Within {rule.MaxMiles} Mile Radius");
             }
         }
 
-        // 3. Fallback: Out of area but allowed with warning
-        return (15.00, true, "Outside Standard Delivery Area");
+        // 3. Tier 3: Outside area (Fallback fee)
+        return (15.00, true, "Outside Standard Area");
     }
 
     private double GetDeliveryFee(string zip) => GetDeliveryFeeInfo(zip).Fee;
@@ -671,9 +715,7 @@
                 selectedItem = null;
             }
 
-            // Trigger distance check when opening config modal
             await UpdateCustomerCoords();
-
             await InvokeAsync(StateHasChanged);
         }
         catch (Exception ex)
@@ -711,7 +753,7 @@
         if (selFulfillment == "Pickup" && selPickupId == 0) return false;
         if (selFulfillment == "Delivery" && string.IsNullOrEmpty(selZip)) return false;
         
-        // We removed the hard block for Out of Delivery Area
+        // Soft Gate: We now return true even if they are out of the radius
         return true;
     }
 
@@ -942,8 +984,6 @@
                 if (admin != null)
                 {
                     admin.ImpersonatingEmail = null; await db.SaveChangesAsync();
-                    await ShowToast("Identity restored. Returning to lab...");
-                    await Task.Delay(1000); 
                 }
             }
             Nav.NavigateTo("/ppp-admin/impersonator", forceLoad: true);
