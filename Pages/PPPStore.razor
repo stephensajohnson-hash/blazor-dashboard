@@ -232,46 +232,64 @@
                         </div>
 
                         <div>
-                            <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest">Fulfillment</h5>
-                            @if (owner!.OffersPickup && owner.OffersDelivery)
-                            {
-                                <div class="flex gap-2 mb-4 bg-black p-1 rounded-2xl border border-slate-800">
-                                    <button @onclick='() => selFulfillment = "Pickup"' class="flex-1 py-3 rounded-xl text-[10px] font-black uppercase @(selFulfillment == "Pickup" ? "bg-white text-black" : "text-slate-500")">Pickup</button>
-                                    <button @onclick='() => selFulfillment = "Delivery"' class="flex-1 py-3 rounded-xl text-[10px] font-black uppercase @(selFulfillment == "Delivery" ? "bg-blue-600 text-white" : "text-slate-500")">Delivery</button>
-                                </div>
-                            }
+                            <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest mt-6">Fulfillment Method</h5>
+                            <div class="flex gap-2 mb-6 bg-black p-1 rounded-2xl border border-slate-800">
+                                <button @onclick='() => selFulfillment = "Pickup"' class="flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all @(selFulfillment == "Pickup" ? "bg-white text-black shadow-lg" : "text-slate-500")">Pickup</button>
+                                <button @onclick='() => selFulfillment = "Delivery"' class="flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all @(selFulfillment == "Delivery" ? "bg-blue-600 text-white shadow-lg" : "text-slate-500")">Delivery</button>
+                            </div>
 
                             @if (selFulfillment == "Pickup")
                             {
-                                <select @bind="selPickupId" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-xs text-white outline-none">
-                                    <option value="0">-- Select Pickup Location --</option>
-                                    @foreach (var loc in pickupLocations ?? new List<PPP_PickupLocation>()) { <option value="@loc.Id">@loc.Name (@loc.Address)</option> }
-                                </select>
+                                <div class="animate-in fade-in duration-300">
+                                    <h5 class="text-[8px] font-black uppercase text-slate-600 mb-2 ml-1">Select Pickup Location</h5>
+                                    <select @bind="selPickupId" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-xs text-white outline-none focus:border-emerald-500">
+                                        <option value="0">-- Select Pickup Location --</option>
+                                        @foreach (var loc in pickupLocations) { <option value="@loc.Id">@loc.Name (@loc.Address)</option> }
+                                    </select>
+                                </div>
                             }
                             else
                             {
-                                <div class="relative">
-                                    <input @bind="selZip" @oninput="HandleFeeZipInput" maxlength="5" placeholder="Zip Code for Delivery" 
-                                           class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm font-mono text-white outline-none focus:border-blue-500" />
-                                </div>
-                                
-                                var feeResult = GetDeliveryFeeInfo(selZip);
-                                <p class="text-[9px] mt-2 font-black uppercase @(feeResult.IsOutOfArea ? "text-amber-500" : "text-blue-400")">
-                                    @(feeResult.Label): $@feeResult.Fee.ToString("N2")
-                                </p>
+                                <div class="space-y-4 animate-in fade-in duration-300">
+                                    @if (currentUser?.Addresses != null && currentUser.Addresses.Any())
+                                    {
+                                        <h5 class="text-[8px] font-black uppercase text-slate-600 mb-2 ml-1">Saved Delivery Address</h5>
+                                        <select @onchange="SelectSavedAddress" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-xs text-white outline-none focus:border-emerald-500">
+                                            <option value="0">Use a custom address...</option>
+                                            @foreach(var a in currentUser.Addresses) { <option value="@a.Id">@a.Label (@a.Street)</option> }
+                                        </select>
+                                    }
 
-                                @if (feeResult.IsOutOfArea)
-                                {
-                                    <div class="mt-4 p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex gap-4 items-center animate-in slide-in-from-top duration-300">
-                                        <span class="text-xl">📍</span>
-                                        <div class="flex-1">
-                                            <p class="text-[10px] font-black uppercase text-amber-500 tracking-widest">Distance Warning</p>
-                                            <p class="text-[9px] text-amber-200/60 leading-tight">
-                                                You are @currentDistance.ToString("N1") miles away. Standard delivery is within 10 miles. Mikki may cancel if she cannot fulfill this distance.
-                                            </p>
+                                    <div class="bg-black/40 border border-white/5 rounded-2xl p-4 space-y-3">
+                                        <input @bind="tempAddress.Street" @onblur="UpdateCustomerCoords" placeholder="Street Address" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500" />
+                                        <div class="grid grid-cols-3 gap-3">
+                                            <input @bind="tempAddress.City" placeholder="City" class="bg-black border border-slate-800 rounded-xl p-4 text-xs text-white outline-none" />
+                                            <input @bind="tempAddress.State" maxlength="2" placeholder="ST" class="bg-black border border-slate-800 rounded-xl p-4 text-xs text-white text-center outline-none" />
+                                            <input @bind="tempAddress.ZipCode" @oninput="HandleFeeZipInput" maxlength="5" placeholder="Zip" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-xs text-white outline-none font-mono focus:border-emerald-500" />
                                         </div>
                                     </div>
-                                }
+
+                                    @{ var feeResult = GetDeliveryFeeInfo(tempAddress.ZipCode); }
+                                    <div class="flex justify-between items-center px-1">
+                                        <span class="text-[10px] font-black uppercase text-slate-500">Delivery Status</span>
+                                        <span class="text-[10px] font-black uppercase @(feeResult.IsOutOfArea ? "text-amber-500" : "text-blue-400")">
+                                            @(feeResult.Label): $@feeResult.Fee.ToString("N2")
+                                        </span>
+                                    </div>
+
+                                    @if (feeResult.IsOutOfArea && !string.IsNullOrEmpty(tempAddress.ZipCode))
+                                    {
+                                        <div class="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex gap-4 items-center">
+                                            <span class="text-xl">📍</span>
+                                            <div class="flex-1">
+                                                <p class="text-[10px] font-black uppercase text-amber-500">Distance Warning</p>
+                                                <p class="text-[9px] text-amber-200/60 leading-tight">
+                                                    You are @currentDistance.ToString("N1") miles away. Standard delivery is typically within 10 miles. Mikki may cancel if she cannot fulfill this distance.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
                             }
                         </div>
                     </section>
@@ -499,6 +517,7 @@
                         owner.Address.City, 
                         owner.Address.State, 
                         owner.Address.ZipCode);
+                    Console.WriteLine($"[DEBUG] Owner Coords: {ownerCoords?.Lat}, {ownerCoords?.Lon}");
                 }
             }
         }
@@ -583,6 +602,7 @@
                 currentDistance = GeoService.CalculateDistance(
                     ownerCoords.Value.Lat, ownerCoords.Value.Lon, 
                     customerCoords.Value.Lat, customerCoords.Value.Lon);
+                Console.WriteLine($"[DEBUG] Calculated Distance: {currentDistance} miles");
             }
         }
     }
@@ -671,7 +691,7 @@
         }
 
         // 3. Tier 3: Outside area (Fallback fee)
-        return (15.00, true, "Outside Standard Area");
+        return (15.00, true, "Outside Standard Delivery Area");
     }
 
     private double GetDeliveryFee(string zip) => GetDeliveryFeeInfo(zip).Fee;
@@ -751,20 +771,26 @@
     {
         if (string.IsNullOrEmpty(selTimeframe)) return false;
         if (selFulfillment == "Pickup" && selPickupId == 0) return false;
-        if (selFulfillment == "Delivery" && string.IsNullOrEmpty(selZip)) return false;
+        if (selFulfillment == "Delivery" && string.IsNullOrEmpty(tempAddress.ZipCode)) return false;
         
-        // Soft Gate: We now return true even if they are out of the radius
         return true;
     }
 
     private double GetConfigTotal()
     {
         if (currentSize == null) return 0;
-        double fee = selFulfillment == "Delivery" ? GetDeliveryFee(selZip) : 0;
+        double fee = selFulfillment == "Delivery" ? GetDeliveryFee(tempAddress.ZipCode) : 0;
         double addonTotal = 0;
         
         foreach (var cfg in tempServingConfigs)
-            addonTotal += currentSize.Options?.Where(o => cfg.OptionIds.Contains(o.Id)).Sum(o => o.AddOnPrice) ?? 0;
+        {
+            if (currentSize.Options != null)
+            {
+                addonTotal += currentSize.Options
+                    .Where(o => cfg.OptionIds.Contains(o.Id))
+                    .Sum(o => o.AddOnPrice);
+            }
+        }
         
         return currentSize.BasePrice + fee + addonTotal;
     }
@@ -799,7 +825,7 @@
                 TimeframeName = selTimeframe,
                 FulfillmentMethod = selFulfillment,
                 PickupLocationId = selFulfillment == "Pickup" ? selPickupId : null,
-                DeliveryFee = selFulfillment == "Delivery" ? GetDeliveryFee(selZip) : 0
+                DeliveryFee = selFulfillment == "Delivery" ? GetDeliveryFee(tempAddress.ZipCode) : 0
             };
 
             db.PPP_OrderItems.Add(newEntry);
@@ -850,13 +876,23 @@
             
             if (user == null)
             {
-                user = new PPP_User { Email = tempUser.Email.ToLower(), FirstName = tempUser.FirstName, LastName = tempUser.LastName, Phone = tempUser.Phone, MagicToken = Guid.NewGuid().ToString("N"), TokenExpiresAt = DateTime.UtcNow.AddMonths(6) };
+                user = new PPP_User 
+                { 
+                    Email = tempUser.Email.ToLower(), 
+                    FirstName = tempUser.FirstName, 
+                    LastName = tempUser.LastName, 
+                    Phone = tempUser.Phone, 
+                    MagicToken = Guid.NewGuid().ToString("N"), 
+                    TokenExpiresAt = DateTime.UtcNow.AddMonths(6) 
+                };
                 db.PPP_Users.Add(user); 
                 await db.SaveChangesAsync();
             }
             else
             {
-                user.FirstName = tempUser.FirstName; user.LastName = tempUser.LastName; user.Phone = tempUser.Phone;
+                user.FirstName = tempUser.FirstName; 
+                user.LastName = tempUser.LastName; 
+                user.Phone = tempUser.Phone;
                 if (string.IsNullOrEmpty(user.MagicToken)) user.MagicToken = Guid.NewGuid().ToString("N");
                 user.TokenExpiresAt = DateTime.UtcNow.AddMonths(6);
             }
@@ -867,8 +903,19 @@
                 var existing = user.Addresses?.FirstOrDefault(a => a.Street.ToLower() == tempAddress.Street.ToLower());
                 if (existing == null) 
                 {
-                    var n = new PPP_Address { UserId = user.Id, Label = tempAddress.Label, Street = tempAddress.Street, City = tempAddress.City, State = tempAddress.State, ZipCode = tempAddress.ZipCode, IsDefault = true };
-                    db.Set<PPP_Address>().Add(n); await db.SaveChangesAsync(); chosenAddressId = n.Id;
+                    var n = new PPP_Address 
+                    { 
+                        UserId = user.Id, 
+                        Label = tempAddress.Label, 
+                        Street = tempAddress.Street, 
+                        City = tempAddress.City, 
+                        State = tempAddress.State, 
+                        ZipCode = tempAddress.ZipCode, 
+                        IsDefault = true 
+                    };
+                    db.Set<PPP_Address>().Add(n); 
+                    await db.SaveChangesAsync(); 
+                    chosenAddressId = n.Id;
                 }
                 else chosenAddressId = existing.Id;
             }
@@ -877,8 +924,10 @@
             if (dbOrder != null) 
             {
                 dbOrder.AddressId = chosenAddressId > 0 ? chosenAddressId : null;
-                dbOrder.IsCheckedOut = true; dbOrder.CheckedOutAt = DateTime.UtcNow;
-                dbOrder.CustomerIdentifier = user.Email; dbOrder.Notes = cart.Notes;
+                dbOrder.IsCheckedOut = true; 
+                dbOrder.CheckedOutAt = DateTime.UtcNow;
+                dbOrder.CustomerIdentifier = user.Email; 
+                dbOrder.Notes = cart.Notes;
                 await db.SaveChangesAsync();
                 
                 bool isTesting = sessionUser?.Role == "Admin" && !string.IsNullOrEmpty(sessionUser?.ImpersonatingEmail);
@@ -909,8 +958,14 @@
             
             if (existingOrder == null) 
             {
-                existingOrder = new PPP_Order { OwnerId = OwnerId, CustomerIdentifier = identifier ?? "Guest", CreatedAt = DateTime.UtcNow };
-                db.Add(existingOrder); await db.SaveChangesAsync();
+                existingOrder = new PPP_Order 
+                { 
+                    OwnerId = OwnerId, 
+                    CustomerIdentifier = identifier ?? "Guest", 
+                    CreatedAt = DateTime.UtcNow 
+                };
+                db.Add(existingOrder); 
+                await db.SaveChangesAsync();
             }
             cart = existingOrder;
             Console.WriteLine($"[DEBUG] LoadCart finished. Cart ID: {cart.Id}");
@@ -921,13 +976,25 @@
     private void SelectSavedAddress(ChangeEventArgs e)
     {
         int id = int.Parse(e.Value?.ToString() ?? "0");
-        if (id == -1) { tempAddress = new PPP_Address { Label = "Home" }; return; }
+        if (id == -1) 
+        { 
+            tempAddress = new PPP_Address { Label = "Home" }; 
+            return; 
+        }
         var addr = currentUser?.Addresses?.FirstOrDefault(a => a.Id == id);
         if (addr != null) 
         { 
-            tempAddress.Id = addr.Id; tempAddress.Label = addr.Label; tempAddress.Street = addr.Street; 
-            tempAddress.City = addr.City; tempAddress.State = addr.State; tempAddress.ZipCode = addr.ZipCode; 
-            selZip = addr.ZipCode; StateHasChanged(); 
+            tempAddress.Id = addr.Id; 
+            tempAddress.Label = addr.Label; 
+            tempAddress.Street = addr.Street; 
+            tempAddress.City = addr.City; 
+            tempAddress.State = addr.State; 
+            tempAddress.ZipCode = addr.ZipCode; 
+            selZip = addr.ZipCode; 
+            
+            // Re-calculate coordinates for the newly selected saved address
+            UpdateCustomerCoords().Wait();
+            StateHasChanged(); 
         }
     }
 
@@ -940,7 +1007,8 @@
             if (res?.Places != null && res.Places.Any()) 
             {
                 var p = res.Places.First();
-                tempAddress.City = p.PlaceName; tempAddress.State = p.StateAbbreviation;
+                tempAddress.City = p.PlaceName; 
+                tempAddress.State = p.StateAbbreviation;
                 if (!isFeeCheck) await ShowToast($"Located: {p.PlaceName}, {p.StateAbbreviation}");
             }
         } 
@@ -953,7 +1021,8 @@
         var zip = e.Value?.ToString() ?? ""; 
         selZip = zip; 
         tempAddress.ZipCode = zip; 
-        if (zip.Length == 5) {
+        if (zip.Length == 5) 
+        {
             await LookupZip(zip, true); 
             await UpdateCustomerCoords();
         }
@@ -963,7 +1032,8 @@
     { 
         var zip = e.Value?.ToString() ?? ""; 
         tempAddress.ZipCode = zip; 
-        if (zip.Length == 5) {
+        if (zip.Length == 5) 
+        {
             await LookupZip(zip, false); 
             await UpdateCustomerCoords();
         }
@@ -983,7 +1053,8 @@
                 var admin = await db.PPP_Users.FirstOrDefaultAsync(u => u.MagicToken == token);
                 if (admin != null)
                 {
-                    admin.ImpersonatingEmail = null; await db.SaveChangesAsync();
+                    admin.ImpersonatingEmail = null; 
+                    await db.SaveChangesAsync();
                 }
             }
             Nav.NavigateTo("/ppp-admin/impersonator", forceLoad: true);
@@ -1011,7 +1082,12 @@
     { 
         await using var db = await DbFactory.CreateDbContextAsync(); 
         var item = await db.PPP_OrderItems.FindAsync(id); 
-        if (item != null) { db.Remove(item); await db.SaveChangesAsync(); await LoadCart(); } 
+        if (item != null) 
+        { 
+            db.Remove(item); 
+            await db.SaveChangesAsync(); 
+            await LoadCart(); 
+        } 
     }
 
     private bool IsPastCutoff(PPP_MenuItem i) => DateTime.Now > i.StartDate.Date.AddDays(-1).Add(i.CutoffTime.ToTimeSpan());
