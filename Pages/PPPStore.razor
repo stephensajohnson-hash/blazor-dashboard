@@ -114,13 +114,18 @@
         }
     </div>
 
-    @* Persistent Cart Floating Bar *@
+    @* Persistent Cart Floating Bar (RESTORED TO MAIN FILE) *@
     @if (cart != null && cart.Items != null && cart.Items.Any())
     {
-        <PPPStoreCartButton 
-            ItemCount="cart.Items.Count" 
-            CartTotal="GetCartTotal()" 
-            OnOpenCart="OpenCart" />
+        <div class="fixed bottom-8 left-1/2 -translate-x-1/2 z-[150] w-full max-w-lg px-4">
+            <button @onclick="OpenCart" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white p-6 rounded-[2rem] flex justify-between items-center shadow-2xl transition-all active:scale-95 border border-emerald-400/20">
+                <div class="flex items-center gap-4">
+                    <span class="bg-white/20 px-3 py-1 rounded-lg font-black text-xs">@cart.Items.Count</span>
+                    <span class="text-xs font-black uppercase tracking-widest">Review & Checkout</span>
+                </div>
+                <span class="font-mono font-bold">$@GetCartTotal().ToString("N2")</span>
+            </button>
+        </div>
     }
 
     @* Cart Detail Overlay *@
@@ -357,7 +362,7 @@
         </div>
     }
 
-    @* Identity & Checkout Review Modal *@
+    @* Identity Review Modal *@
     @if (showContactForm)
     {
         <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[800] flex items-center justify-center p-4">
@@ -611,12 +616,7 @@
     private string GetSimplifiedIngredients(PPP_Recipe? r)
     {
         if (r == null || r.IngredientGroups == null) return "";
-        var names = r.IngredientGroups
-            .SelectMany(g => g.Ingredients ?? new List<Dashboard.PPP_RecipeIngredientMapping>())
-            .Where(m => m.Ingredient != null)
-            .Select(m => m.Ingredient!.Name.ToLower().Trim())
-            .Distinct();
-            
+        var names = r.IngredientGroups.SelectMany(g => g.Ingredients ?? new List<PPP_RecipeIngredientMapping>()).Where(m => m.Ingredient != null).Select(m => m.Ingredient!.Name.ToLower().Trim()).Distinct();
         return string.Join(", ", names);
     }
 
@@ -624,13 +624,9 @@
     {
         if (r == null || r.Servings <= 0 || r.IngredientGroups == null) return (0,0,0,0);
         double cals = 0, prot = 0, fat = 0, net = 0;
-        
-        foreach(var group in r.IngredientGroups) 
-        {
-            foreach(var mapping in group.Ingredients ?? new List<Dashboard.PPP_RecipeIngredientMapping>()) 
-            {
-                if (mapping.Ingredient != null) 
-                {
+        foreach(var group in r.IngredientGroups) {
+            foreach(var mapping in group.Ingredients ?? new List<PPP_RecipeIngredientMapping>()) {
+                if (mapping.Ingredient != null) {
                     cals += mapping.Ingredient.Calories * mapping.Quantity;
                     prot += mapping.Ingredient.Protein * mapping.Quantity;
                     fat += mapping.Ingredient.Fat * mapping.Quantity;
@@ -644,7 +640,6 @@
     private (double Fee, bool IsOutOfArea, string Label) GetDeliveryFeeInfo(string zip)
     {
         if (string.IsNullOrWhiteSpace(zip)) return (0, false, "Enter Zip Code");
-        
         var match = ownerZips.FirstOrDefault(z => z.ZipCode == zip.Trim());
         if (match != null) return (match.Fee, false, "Included Zip Code");
 
@@ -678,7 +673,6 @@
         try
         {
             if (item == null) return;
-
             selectedItem = item;
             selTimeframe = item.Timeframes?.FirstOrDefault()?.Name ?? "Standard";
             selZip = tempAddress?.ZipCode ?? "";
@@ -689,19 +683,10 @@
             var firstSize = item.Sizes?.OrderBy(s => s.BasePrice).FirstOrDefault();
             SetSize(firstSize);
 
-            if (firstSize == null)
-            {
-                await ShowToast("Error: Missing size/price configurations.", true);
-                selectedItem = null;
-            }
-
             await UpdateCustomerCoords();
             await InvokeAsync(StateHasChanged);
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[CRITICAL] SelectItem Error: {ex.Message}");
-        }
+        catch (Exception ex) { Console.WriteLine($"[CRITICAL] SelectItem Error: {ex.Message}"); }
     }
 
     private void SetSize(PPP_MenuItemSize? sz)
@@ -739,15 +724,10 @@
         if (currentSize == null) return 0;
         double fee = selFulfillment == "Delivery" ? GetDeliveryFee(tempAddress.ZipCode) : 0;
         double addonTotal = 0;
-        
         foreach (var cfg in tempServingConfigs)
         {
-            if (currentSize.Options != null)
-            {
-                addonTotal += currentSize.Options.Where(o => cfg.OptionIds.Contains(o.Id)).Sum(o => o.AddOnPrice);
-            }
+            if (currentSize.Options != null) addonTotal += currentSize.Options.Where(o => cfg.OptionIds.Contains(o.Id)).Sum(o => o.AddOnPrice);
         }
-        
         return currentSize.BasePrice + fee + addonTotal;
     }
 
@@ -765,7 +745,6 @@
     private async Task AddToCart()
     {
         if (selectedItem == null || currentSize == null || cart == null || selectedItem.Recipe == null) return;
-        
         try 
         {
             Console.WriteLine("[DEBUG] AddToCart starting...");
@@ -783,34 +762,19 @@
                 PickupLocationId = selFulfillment == "Pickup" ? selPickupId : null,
                 DeliveryFee = selFulfillment == "Delivery" ? GetDeliveryFee(tempAddress.ZipCode) : 0
             };
-
             db.PPP_OrderItems.Add(newEntry);
             await db.SaveChangesAsync(); 
-            
             foreach (var cfg in tempServingConfigs)
             {
-                var serving = new PPP_OrderItemServing
-                {
-                    OrderItemId = newEntry.Id,
-                    ServingNumber = cfg.ServingNumber,
-                    LabelName = cfg.LabelName,
-                    SelectedOptions = currentSize.Options?
-                        .Where(o => cfg.OptionIds.Contains(o.Id))
-                        .Select(o => new PPP_OrderItemOption { OptionName = o.Name, AddOnPrice = o.AddOnPrice })
-                        .ToList() ?? new List<PPP_OrderItemOption>()
-                };
+                var serving = new PPP_OrderItemServing { OrderItemId = newEntry.Id, ServingNumber = cfg.ServingNumber, LabelName = cfg.LabelName, SelectedOptions = currentSize.Options?.Where(o => cfg.OptionIds.Contains(o.Id)).Select(o => new PPP_OrderItemOption { OptionName = o.Name, AddOnPrice = o.AddOnPrice }).ToList() ?? new List<PPP_OrderItemOption>() };
                 db.PPP_OrderItemServings.Add(serving);
             }
-
             await db.SaveChangesAsync();
             await LoadCart(); 
             selectedItem = null;
             await ShowToast("Bundle added to cart!");
         }
-        catch (Exception ex) 
-        { 
-            await ShowToast("Error: " + ex.Message, true); 
-        }
+        catch (Exception ex) { await ShowToast("Error: " + ex.Message, true); }
     }
 
     private async Task ProcessCheckout()
@@ -829,10 +793,8 @@
                 await ShowToast("Email and Name are required", true); 
                 return; 
             }
-
             await using var db = await DbFactory.CreateDbContextAsync();
             var user = await db.PPP_Users.Include(u => u.Addresses).FirstOrDefaultAsync(u => u.Email.ToLower() == tempUser.Email.ToLower());
-            
             if (user == null)
             {
                 user = new PPP_User { Email = tempUser.Email.ToLower(), FirstName = tempUser.FirstName, LastName = tempUser.LastName, Phone = tempUser.Phone, MagicToken = Guid.NewGuid().ToString("N"), TokenExpiresAt = DateTime.UtcNow.AddMonths(6) };
@@ -845,7 +807,6 @@
                 if (string.IsNullOrEmpty(user.MagicToken)) user.MagicToken = Guid.NewGuid().ToString("N");
                 user.TokenExpiresAt = DateTime.UtcNow.AddMonths(6);
             }
-
             int chosenAddressId = 0;
             if (cart!.Items != null && cart.Items.Any(i => i.FulfillmentMethod == "Delivery") && !string.IsNullOrEmpty(tempAddress.Street))
             {
@@ -857,7 +818,6 @@
                 }
                 else chosenAddressId = existing.Id;
             }
-
             var dbOrder = await db.PPP_Orders.FirstOrDefaultAsync(o => o.Id == cart.Id);
             if (dbOrder != null) 
             {
@@ -865,17 +825,12 @@
                 dbOrder.IsCheckedOut = true; dbOrder.CheckedOutAt = DateTime.UtcNow;
                 dbOrder.CustomerIdentifier = user.Email; dbOrder.Notes = cart.Notes;
                 await db.SaveChangesAsync();
-                
                 if (sessionUser?.Role != "Admin") await JS.InvokeVoidAsync("eval", $"document.cookie = 'ppp_token={user.MagicToken}; max-age={60*60*24*180}; path=/; SameSite=Lax';");
-                
                 await ShowToast("Order placed successfully!");
                 cart = null; showCart = false; showContactForm = false; await LoadCart();
             }
         }
-        catch (Exception ex)
-        {
-            await ShowToast("Checkout Error: " + ex.Message, true);
-        }
+        catch (Exception ex) { await ShowToast("Checkout Error: " + ex.Message, true); }
     }
 
     private async Task LoadCart()
@@ -884,11 +839,7 @@
         {
             await using var db = await DbFactory.CreateDbContextAsync();
             var identifier = currentUser?.Email ?? customerId;
-            
-            var existingOrder = await db.Set<PPP_Order>()
-                .Include(o => o.Items).ThenInclude(i => i.Servings).ThenInclude(s => s.SelectedOptions)
-                .FirstOrDefaultAsync(o => o.OwnerId == OwnerId && o.CustomerIdentifier == identifier && !o.IsCheckedOut);
-            
+            var existingOrder = await db.Set<PPP_Order>().Include(o => o.Items).ThenInclude(i => i.Servings).ThenInclude(s => s.SelectedOptions).FirstOrDefaultAsync(o => o.OwnerId == OwnerId && o.CustomerIdentifier == identifier && !o.IsCheckedOut);
             if (existingOrder == null) 
             {
                 existingOrder = new PPP_Order { OwnerId = OwnerId, CustomerIdentifier = identifier ?? "Guest", CreatedAt = DateTime.UtcNow };
@@ -908,73 +859,59 @@
         { 
             tempAddress.Id = addr.Id; tempAddress.Label = addr.Label; tempAddress.Street = addr.Street; 
             tempAddress.City = addr.City; tempAddress.State = addr.State; tempAddress.ZipCode = addr.ZipCode; 
-            selZip = addr.ZipCode; 
-            UpdateCustomerCoords().Wait();
-            StateHasChanged(); 
+            selZip = addr.ZipCode; UpdateCustomerCoords().Wait(); StateHasChanged(); 
         }
     }
 
     private async Task LookupZip(string zip, bool isFeeCheck)
     {
-        try 
-        {
+        try {
             using var http = new HttpClient();
             var res = await http.GetFromJsonAsync<ZipResponse>($"https://api.zippopotam.us/us/{zip}");
-            if (res?.Places != null && res.Places.Any()) 
-            {
+            if (res?.Places != null && res.Places.Any()) {
                 var p = res.Places.First();
                 tempAddress.City = p.PlaceName; tempAddress.State = p.StateAbbreviation;
                 if (!isFeeCheck) await ShowToast($"Located: {p.PlaceName}, {p.StateAbbreviation}");
             }
-        } 
-        catch { }
-        finally { await InvokeAsync(StateHasChanged); }
+        } catch { } finally { await InvokeAsync(StateHasChanged); }
     }
 
-    private async Task HandleFeeZipInput(ChangeEventArgs e) 
-    { 
+    private async Task HandleFeeZipInput(ChangeEventArgs e) { 
         var zip = e.Value?.ToString() ?? ""; 
         selZip = zip; tempAddress.ZipCode = zip; 
         if (zip.Length == 5) { await LookupZip(zip, true); await UpdateCustomerCoords(); }
     }
     
-    private async Task HandleCheckoutZipLookup(ChangeEventArgs e) 
-    { 
-        var zip = e.Value?.ToString() ?? ""; tempAddress.ZipCode = zip; 
+    private async Task HandleCheckoutZipLookup(ChangeEventArgs e) { 
+        var zip = e.Value?.ToString() ?? ""; 
+        tempAddress.ZipCode = zip; 
         if (zip.Length == 5) { await LookupZip(zip, false); await UpdateCustomerCoords(); }
     }
 
     private async Task SaveCartNotes() => showCart = false;
+    private async Task RemoveFromCart(int id) { 
+        await using var db = await DbFactory.CreateDbContextAsync(); 
+        var item = await db.PPP_OrderItems.FindAsync(id); 
+        if (item != null) { db.Remove(item); await db.SaveChangesAsync(); await LoadCart(); } 
+    }
     
     private async Task EndImpersonation()
     {
-        try 
-        {
+        try {
             var token = await JS.InvokeAsync<string>("eval", "document.cookie.split('; ').find(row => row.startsWith('ppp_token='))?.split('=')[1]");
-            if (!string.IsNullOrEmpty(token))
-            {
+            if (!string.IsNullOrEmpty(token)) {
                 await using var db = await DbFactory.CreateDbContextAsync();
                 var admin = await db.PPP_Users.FirstOrDefaultAsync(u => u.MagicToken == token);
                 if (admin != null) { admin.ImpersonatingEmail = null; await db.SaveChangesAsync(); }
             }
             Nav.NavigateTo("/ppp-admin/impersonator", forceLoad: true);
-        }
-        catch { Nav.NavigateTo("/ppp-admin/impersonator", forceLoad: true); }
+        } catch { Nav.NavigateTo("/ppp-admin/impersonator", forceLoad: true); }
     }
 
-    private async Task ShowToast(string msg, bool err = false) 
-    { 
+    private async Task ShowToast(string msg, bool err = false) { 
         var t = new ToastItem { Message = msg, IsError = err }; 
         toasts.Add(t); await InvokeAsync(StateHasChanged); 
-        await Task.Delay(3000); 
-        toasts.Remove(t); await InvokeAsync(StateHasChanged); 
-    }
-
-    private async Task RemoveFromCart(int id) 
-    { 
-        await using var db = await DbFactory.CreateDbContextAsync(); 
-        var item = await db.PPP_OrderItems.FindAsync(id); 
-        if (item != null) { db.Remove(item); await db.SaveChangesAsync(); await LoadCart(); } 
+        await Task.Delay(3000); toasts.Remove(t); await InvokeAsync(StateHasChanged); 
     }
 
     private bool IsPastCutoff(PPP_MenuItem i) => DateTime.Now > i.StartDate.Date.AddDays(-1).Add(i.CutoffTime.ToTimeSpan());
