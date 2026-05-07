@@ -275,18 +275,18 @@
                                     @if (currentUser?.Addresses != null && currentUser.Addresses.Any())
                                     {
                                         <h5 class="text-[8px] font-black uppercase text-slate-600 mb-2 ml-1">Saved Delivery Address</h5>
-                                        <select @onchange="SelectSavedAddress" class="w-full bg-[#0a0a0a] border border-slate-800 rounded-xl p-4 text-xs text-white outline-none focus:border-emerald-500">
+                                        <select @onchange="HandleSavedAddressChange" class="w-full bg-[#0a0a0a] border border-slate-800 rounded-xl p-4 text-xs text-white outline-none focus:border-blue-500">
                                             <option value="0">Use a custom address...</option>
                                             @foreach(var a in currentUser.Addresses) { <option value="@a.Id">@a.Label (@a.Street)</option> }
                                         </select>
                                     }
 
                                     <div class="bg-black/40 border border-white/5 rounded-2xl p-4 space-y-3 shadow-inner">
-                                        <input @bind="tempAddress.Street" @onblur="UpdateCustomerCoords" placeholder="Street Address" class="w-full bg-[#0a0a0a] border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500" />
+                                        <input @bind="tempAddress.Street" @bind:event="oninput" @onblur="UpdateCustomerCoords" placeholder="Street Address" class="w-full bg-[#0a0a0a] border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500" />
                                         <div class="grid grid-cols-3 gap-3">
-                                            <input @bind="tempAddress.City" placeholder="City" class="bg-[#0a0a0a] border border-slate-800 rounded-xl p-4 text-xs text-white outline-none" />
-                                            <input @bind="tempAddress.State" maxlength="2" placeholder="ST" class="bg-[#0a0a0a] border border-slate-800 rounded-xl p-4 text-xs text-white text-center outline-none" />
-                                            <input @bind="tempAddress.ZipCode" @oninput="HandleFeeZipInput" maxlength="5" placeholder="Zip" class="bg-[#0a0a0a] border border-slate-800 rounded-xl p-4 text-xs text-white outline-none font-mono focus:border-emerald-500" />
+                                            <input @bind="tempAddress.City" @bind:event="oninput" placeholder="City" class="bg-[#0a0a0a] border border-slate-800 rounded-xl p-4 text-xs text-white outline-none" />
+                                            <input @bind="tempAddress.State" @bind:event="oninput" maxlength="2" placeholder="ST" class="bg-[#0a0a0a] border border-slate-800 rounded-xl p-4 text-xs text-white text-center outline-none" />
+                                            <input @bind="tempAddress.ZipCode" @bind:event="oninput" @onblur="UpdateCustomerCoords" maxlength="5" placeholder="Zip" class="bg-[#0a0a0a] border border-slate-800 rounded-xl p-4 text-xs text-white outline-none font-mono focus:border-emerald-500" />
                                         </div>
                                     </div>
 
@@ -323,7 +323,7 @@
                     <section>
                         <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest">Select Plan Size</h5>
                         <div class="space-y-2">
-                            @foreach (var sz in selectedItem.Sizes ?? new List<PPP_MenuItemSize>())
+                            @foreach (var sz in selectedItem.Sizes ?? new List<Dashboard.PPP_MenuItemSize>())
                             {
                                 <div @onclick="() => SetSize(sz)" class="p-4 rounded-2xl border transition-all cursor-pointer @(currentSize?.Id == sz.Id ? "border-emerald-500 bg-emerald-500/5" : "border-slate-800 bg-black/40") flex justify-between items-center">
                                     <span class="font-black text-xs uppercase @(currentSize?.Id == sz.Id ? "text-emerald-400" : "text-slate-300")">@sz.Name (@sz.ServingsPerUnit Servings)</span>
@@ -456,10 +456,13 @@
     private List<ToastItem> toasts = new();
     private PPP_Order? cart;
     private string? customerId;
-    private bool showCart = false, showContactForm = false;
+    private bool showCart = false;
+    private bool showContactForm = false;
 
-    private string selTimeframe = "", selFulfillment = "Pickup", selZip = "";
+    private string selTimeframe = "";
+    private string selFulfillment = "Pickup";
     private int selPickupId = 0;
+    private string selZip = "";
     private PPP_MenuItem? selectedItem;
     private PPP_MenuItemSize? currentSize;
 
@@ -467,14 +470,20 @@
     private (double Lat, double Lon)? customerCoords;
     private double currentDistance = 0;
 
-    private class ServingConfig { public int ServingNumber { get; set; } public string LabelName { get; set; } = ""; public HashSet<int> OptionIds { get; set; } = new(); }
+    private class ServingConfig 
+    { 
+        public int ServingNumber { get; set; } 
+        public string LabelName { get; set; } = ""; 
+        public HashSet<int> OptionIds { get; set; } = new(); 
+    }
     private List<ServingConfig> tempServingConfigs = new();
 
     private List<PPP_PickupLocation> pickupLocations = new();
     private List<PPP_DeliveryZipCode> ownerZips = new();
     private List<PPP_DeliveryRadiusRule> ownerRadiusRules = new();
 
-    private PPP_User? sessionUser, currentUser;
+    private PPP_User? sessionUser; 
+    private PPP_User? currentUser; 
     private PPP_User tempUser = new();
     private PPP_Address tempAddress = new() { Label = "Home" };
 
@@ -512,7 +521,8 @@
                 
                 if (owner.Address != null)
                 {
-                    ownerCoords = await GeoService.GetCoordinatesAsync(owner.Address.Street, owner.Address.City, owner.Address.State, owner.Address.ZipCode);
+                    ownerCoords = await GeoService.GetCoordinatesAsync(
+                        owner.Address.Street, owner.Address.City, owner.Address.State, owner.Address.ZipCode);
                 }
             }
         }
@@ -577,22 +587,44 @@
     {
         if (!string.IsNullOrEmpty(tempAddress.Street) && !string.IsNullOrEmpty(tempAddress.ZipCode))
         {
-            customerCoords = await GeoService.GetCoordinatesAsync(tempAddress.Street, tempAddress.City, tempAddress.State, tempAddress.ZipCode);
+            customerCoords = await GeoService.GetCoordinatesAsync(
+                tempAddress.Street, tempAddress.City, tempAddress.State, tempAddress.ZipCode);
+
             if (ownerCoords.HasValue && customerCoords.HasValue)
             {
-                currentDistance = GeoService.CalculateDistance(ownerCoords.Value.Lat, ownerCoords.Value.Lon, customerCoords.Value.Lat, customerCoords.Value.Lon);
+                currentDistance = GeoService.CalculateDistance(
+                    ownerCoords.Value.Lat, ownerCoords.Value.Lon, 
+                    customerCoords.Value.Lat, customerCoords.Value.Lon);
             }
         }
+        await InvokeAsync(StateHasChanged);
     }
 
     private void ApplyIdentityToUI()
     {
         if (currentUser == null) return;
-        tempUser.FirstName = currentUser.FirstName; tempUser.LastName = currentUser.LastName;
-        tempUser.Email = currentUser.Email; tempUser.Phone = currentUser.Phone;
+
+        tempUser.FirstName = currentUser.FirstName;
+        tempUser.LastName = currentUser.LastName;
+        tempUser.Email = currentUser.Email;
+        tempUser.Phone = currentUser.Phone;
+        
         var addr = currentUser.Addresses?.FirstOrDefault(a => a.IsDefault) ?? currentUser.Addresses?.FirstOrDefault();
-        if (addr != null) { tempAddress.Id = addr.Id; tempAddress.Label = addr.Label; tempAddress.Street = addr.Street; tempAddress.City = addr.City; tempAddress.State = addr.State; tempAddress.ZipCode = addr.ZipCode; selZip = addr.ZipCode; }
-        foreach (var config in tempServingConfigs) { if (string.IsNullOrEmpty(config.LabelName)) config.LabelName = currentUser.FirstName; }
+        if (addr != null)
+        {
+            tempAddress.Id = addr.Id;
+            tempAddress.Label = addr.Label;
+            tempAddress.Street = addr.Street;
+            tempAddress.City = addr.City;
+            tempAddress.State = addr.State;
+            tempAddress.ZipCode = addr.ZipCode;
+            selZip = addr.ZipCode; 
+        }
+
+        foreach (var config in tempServingConfigs)
+        {
+            if (string.IsNullOrEmpty(config.LabelName)) config.LabelName = currentUser.FirstName;
+        }
     }
 
     private string GetSimplifiedIngredients(PPP_Recipe? r)
@@ -650,7 +682,6 @@
         {
             if (item == null) return;
             selectedItem = item;
-            selTimeframe = item.Timeframes?.FirstOrDefault()?.Name ?? "Standard";
             selZip = tempAddress?.ZipCode ?? "";
             
             if (owner != null)
@@ -726,8 +757,21 @@
         if (selectedItem == null || currentSize == null || cart == null || selectedItem.Recipe == null) return;
         try 
         {
+            Console.WriteLine("[DEBUG] AddToCart starting...");
             await using var db = await DbFactory.CreateDbContextAsync();
-            var newEntry = new PPP_OrderItem { OrderId = cart.Id, MenuItemId = selectedItem.Id, RecipeName = selectedItem.Recipe?.Name ?? "Selected Item", SizeName = currentSize.Name, BasePrice = currentSize.BasePrice, ScheduledDate = selectedItem.StartDate.ToUniversalTime(), TimeframeName = selTimeframe, FulfillmentMethod = selFulfillment, PickupLocationId = selFulfillment == "Pickup" ? selPickupId : null, DeliveryFee = selFulfillment == "Delivery" ? GetDeliveryFee(tempAddress.ZipCode) : 0 };
+            var newEntry = new PPP_OrderItem
+            {
+                OrderId = cart.Id,
+                MenuItemId = selectedItem.Id,
+                RecipeName = selectedItem.Recipe?.Name ?? "Selected Item",
+                SizeName = currentSize.Name,
+                BasePrice = currentSize.BasePrice,
+                ScheduledDate = selectedItem.StartDate.ToUniversalTime(),
+                TimeframeName = selTimeframe,
+                FulfillmentMethod = selFulfillment,
+                PickupLocationId = selFulfillment == "Pickup" ? selPickupId : null,
+                DeliveryFee = selFulfillment == "Delivery" ? GetDeliveryFee(tempAddress.ZipCode) : 0
+            };
             db.PPP_OrderItems.Add(newEntry);
             await db.SaveChangesAsync(); 
             foreach (var cfg in tempServingConfigs)
@@ -800,7 +844,9 @@
         {
             await using var db = await DbFactory.CreateDbContextAsync();
             var identifier = currentUser?.Email ?? customerId;
-            var existingOrder = await db.Set<PPP_Order>().Include(o => o.Items).ThenInclude(i => i.Servings).ThenInclude(s => s.SelectedOptions).FirstOrDefaultAsync(o => o.OwnerId == OwnerId && o.CustomerIdentifier == identifier && !o.IsCheckedOut);
+            var existingOrder = await db.Set<PPP_Order>()
+                .Include(o => o.Items).ThenInclude(i => i.Servings).ThenInclude(s => s.SelectedOptions)
+                .FirstOrDefaultAsync(o => o.OwnerId == OwnerId && o.CustomerIdentifier == identifier && !o.IsCheckedOut);
             if (existingOrder == null) 
             {
                 existingOrder = new PPP_Order { OwnerId = OwnerId, CustomerIdentifier = identifier ?? "Guest", CreatedAt = DateTime.UtcNow };
@@ -811,18 +857,32 @@
         catch (Exception ex) { Console.WriteLine($"[CRITICAL] Cart Load Error: {ex.Message}"); }
     }
 
-    private void SelectSavedAddress(ChangeEventArgs e)
+    private async Task HandleSavedAddressChange(ChangeEventArgs e)
     {
         int id = int.Parse(e.Value?.ToString() ?? "0");
-        if (id == -1) { tempAddress = new PPP_Address { Label = "Home" }; return; }
-        var addr = currentUser?.Addresses?.FirstOrDefault(a => a.Id == id);
-        if (addr != null) 
-        { 
-            tempAddress.Id = addr.Id; tempAddress.Label = addr.Label; tempAddress.Street = addr.Street; 
-            tempAddress.City = addr.City; tempAddress.State = addr.State; tempAddress.ZipCode = addr.ZipCode; 
-            selZip = addr.ZipCode; UpdateCustomerCoords().Wait(); StateHasChanged(); 
+        if (id == 0)
+        {
+            tempAddress = new PPP_Address { Label = "Home" };
         }
+        else
+        {
+            var addr = currentUser?.Addresses?.FirstOrDefault(a => a.Id == id);
+            if (addr != null)
+            {
+                tempAddress.Id = addr.Id;
+                tempAddress.Label = addr.Label;
+                tempAddress.Street = addr.Street;
+                tempAddress.City = addr.City;
+                tempAddress.State = addr.State;
+                tempAddress.ZipCode = addr.ZipCode;
+                selZip = addr.ZipCode;
+                await UpdateCustomerCoords();
+            }
+        }
+        await InvokeAsync(StateHasChanged);
     }
+
+    private void SelectSavedAddress(ChangeEventArgs e) { /* Placeholder for obsolete reference */ }
 
     private async Task LookupZip(string zip, bool isFeeCheck)
     {
@@ -855,15 +915,38 @@
     }
 
     private async Task SaveCartNotes() => showCart = false;
-    private async Task RemoveFromCart(int id) { await using var db = await DbFactory.CreateDbContextAsync(); var item = await db.PPP_OrderItems.FindAsync(id); if (item != null) { db.Remove(item); await db.SaveChangesAsync(); await LoadCart(); } }
     
     private async Task EndImpersonation()
     {
-        try { var token = await JS.InvokeAsync<string>("eval", "document.cookie.split('; ').find(row => row.startsWith('ppp_token='))?.split('=')[1]"); if (!string.IsNullOrEmpty(token)) { await using var db = await DbFactory.CreateDbContextAsync(); var admin = await db.PPP_Users.FirstOrDefaultAsync(u => u.MagicToken == token); if (admin != null) { admin.ImpersonatingEmail = null; await db.SaveChangesAsync(); } } Nav.NavigateTo("/ppp-admin/impersonator", forceLoad: true); }
+        try 
+        {
+            var token = await JS.InvokeAsync<string>("eval", "document.cookie.split('; ').find(row => row.startsWith('ppp_token='))?.split('=')[1]");
+            if (!string.IsNullOrEmpty(token))
+            {
+                await using var db = await DbFactory.CreateDbContextAsync();
+                var admin = await db.PPP_Users.FirstOrDefaultAsync(u => u.MagicToken == token);
+                if (admin != null) { admin.ImpersonatingEmail = null; await db.SaveChangesAsync(); }
+            }
+            Nav.NavigateTo("/ppp-admin/impersonator", forceLoad: true);
+        }
         catch { Nav.NavigateTo("/ppp-admin/impersonator", forceLoad: true); }
     }
 
-    private async Task ShowToast(string msg, bool err = false) { var t = new ToastItem { Message = msg, IsError = err }; toasts.Add(t); await InvokeAsync(StateHasChanged); await Task.Delay(3000); toasts.Remove(t); await InvokeAsync(StateHasChanged); }
+    private async Task ShowToast(string msg, bool err = false) 
+    { 
+        var t = new ToastItem { Message = msg, IsError = err }; 
+        toasts.Add(t); await InvokeAsync(StateHasChanged); 
+        await Task.Delay(3000); 
+        toasts.Remove(t); await InvokeAsync(StateHasChanged); 
+    }
+
+    private async Task RemoveFromCart(int id) 
+    { 
+        await using var db = await DbFactory.CreateDbContextAsync(); 
+        var item = await db.PPP_OrderItems.FindAsync(id); 
+        if (item != null) { db.Remove(item); await db.SaveChangesAsync(); await LoadCart(); } 
+    }
+
     private bool IsPastCutoff(PPP_MenuItem i) => DateTime.Now > i.StartDate.Date.AddDays(-1).Add(i.CutoffTime.ToTimeSpan());
     private bool IsItemSoldOut(PPP_MenuItem i) => false;
 
