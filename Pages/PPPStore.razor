@@ -96,6 +96,11 @@
                                                     <span class="bg-blue-500/10 border border-blue-500/20 px-2 py-1 rounded-lg text-[10px] font-bold text-blue-400">🥩 @m.Prot pro</span>
                                                     <span class="bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-lg text-[10px] font-bold text-amber-400">🥑 @m.Fat fat</span>
                                                     <span class="bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-400">🥦 @m.Net net carbs</span>
+                                                    <span class="text-[8px] text-slate-600 uppercase font-black tracking-tighter ml-1">Per Serving</span>
+                                                }
+                                                else 
+                                                {
+                                                    <span class="text-[8px] text-slate-600 uppercase font-black tracking-widest">Handcrafted Fresh Daily</span>
                                                 }
                                             </div>
                                         </div>
@@ -151,7 +156,6 @@
                                     <span class="text-xs font-mono">$@item.BasePrice.ToString("N2")</span>
                                 </div>
 
-                                @* Explicit Address Display in Cart *@
                                 <div class="mt-2 flex gap-2 items-center opacity-60">
                                     <span class="text-[10px]">@(item.FulfillmentMethod == "Delivery" ? "🚚" : "🏢")</span>
                                     <span class="text-[8px] font-black uppercase tracking-widest">
@@ -241,7 +245,7 @@
                         <div>
                             <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest">Arrival Window</h5>
                             <div class="flex flex-wrap gap-2">
-                                @foreach (var tf in selectedItem.Timeframes ?? new List<PPP_MenuItemTimeframe>())
+                                @foreach (var tf in selectedItem.Timeframes ?? new List<Dashboard.PPP_MenuItemTimeframe>())
                                 {
                                     <button @onclick="() => selTimeframe = tf.Name" 
                                             class="px-5 py-2.5 rounded-xl border text-[10px] font-black uppercase transition-all @(selTimeframe == tf.Name ? "bg-emerald-600 border-emerald-600 text-white shadow-lg" : "border-slate-800 text-slate-500 hover:border-slate-600")">
@@ -623,7 +627,10 @@
 
         foreach (var config in tempServingConfigs)
         {
-            if (string.IsNullOrEmpty(config.LabelName)) config.LabelName = currentUser.FirstName;
+            if (string.IsNullOrEmpty(config.LabelName))
+            {
+                config.LabelName = currentUser.FirstName;
+            }
         }
     }
 
@@ -773,10 +780,10 @@
                 PickupLocationId = selFulfillment == "Pickup" ? selPickupId : null,
                 DeliveryFee = selFulfillment == "Delivery" ? GetDeliveryFee(tempAddress.ZipCode) : 0,
                 
-                @* PER ITEM LOGISTICS (Now using the DB properties) *@
+                @* DB MAPPING - Ensure these exist in your PPP_OrderItem model! *@
                 DeliveryAddressSummary = selFulfillment == "Delivery" ? $"{tempAddress.Street}, {tempAddress.City}" : "",
-                Latitude = selFulfillment == "Delivery" ? customerCoords?.Lat : null,
-                Longitude = selFulfillment == "Delivery" ? customerCoords?.Lon : null,
+                Latitude = selFulfillment == "Delivery" ? (customerCoords?.Lat ?? 0) : 0,
+                Longitude = selFulfillment == "Delivery" ? (customerCoords?.Lon ?? 0) : 0,
                 CalculatedDistanceMiles = selFulfillment == "Delivery" ? currentDistance : 0
             };
 
@@ -825,10 +832,21 @@
                 if (string.IsNullOrEmpty(user.MagicToken)) user.MagicToken = Guid.NewGuid().ToString("N");
                 user.TokenExpiresAt = DateTime.UtcNow.AddMonths(6);
             }
-            
-            var dbOrder = await db.PPP_Orders.FirstOrDefaultAsync(o => o.Id == cart!.Id);
+            int chosenAddressId = 0;
+            if (cart!.Items != null && cart.Items.Any(i => i.FulfillmentMethod == "Delivery") && !string.IsNullOrEmpty(tempAddress.Street))
+            {
+                var existing = user.Addresses?.FirstOrDefault(a => a.Street.ToLower() == tempAddress.Street.ToLower());
+                if (existing == null) 
+                {
+                    var n = new PPP_Address { UserId = user.Id, Label = tempAddress.Label, Street = tempAddress.Street, City = tempAddress.City, State = tempAddress.State, ZipCode = tempAddress.ZipCode, IsDefault = true };
+                    db.Set<PPP_Address>().Add(n); await db.SaveChangesAsync(); chosenAddressId = n.Id;
+                }
+                else chosenAddressId = existing.Id;
+            }
+            var dbOrder = await db.PPP_Orders.FirstOrDefaultAsync(o => o.Id == cart.Id);
             if (dbOrder != null) 
             {
+                dbOrder.AddressId = chosenAddressId > 0 ? chosenAddressId : null;
                 dbOrder.IsCheckedOut = true; dbOrder.CheckedOutAt = DateTime.UtcNow;
                 dbOrder.CustomerIdentifier = user.Email; dbOrder.Notes = cart.Notes;
                 await db.SaveChangesAsync();
