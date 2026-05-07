@@ -1,38 +1,30 @@
 @page "/ppp-store/{OwnerId:int}"
+@using Dashboard
 @using Dashboard.Services
+@using Dashboard.Components
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
-@inject PPPStoreService StoreService
+@inject IDbContextFactory<AppDbContext> DbFactory
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject GeocodingService GeoService
+@inject PPPStoreService StoreService
 
 <div class="h-screen w-full bg-[#050505] text-slate-200 font-sans antialiased overflow-hidden flex flex-col">
     
-    @* Admin Impersonation Bar *@
-    @if (sessionUser?.Role == "Admin" && !string.IsNullOrEmpty(sessionUser.ImpersonatingEmail))
-    {
-        <div class="fixed bottom-10 left-10 z-[9999]">
-            <button @onclick="EndImpersonation" class="bg-rose-600 text-white px-6 py-4 rounded-2xl border-2 border-white/20 shadow-2xl flex items-center gap-4">
-                <span class="text-2xl">🔙</span>
-                <div class="text-left">
-                    <p class="text-[9px] font-black uppercase opacity-60">Admin Mode</p>
-                    <p class="text-xs font-black uppercase">Exit Impersonation</p>
-                </div>
-            </button>
-        </div>
-    }
-
-    @* Toast Container *@
+    @* Notification Stack *@
     <div class="fixed top-6 right-6 z-[900] flex flex-col gap-3">
         @foreach (var toast in toasts)
         {
-            <div class="p-4 rounded-2xl border shadow-2xl animate-in slide-in-from-right @(toast.IsError ? "bg-red-950 border-red-500" : "bg-emerald-950 border-emerald-500")">
+            <div class="p-4 rounded-2xl border shadow-2xl animate-in slide-in-from-right @(toast.IsError ? "bg-red-950 border-red-500" : "bg-emerald-950 border-emerald-500") backdrop-blur-md">
                 <span class="text-[10px] font-black uppercase tracking-widest text-white">@toast.Message</span>
             </div>
         }
     </div>
 
+    @* Menu Grid *@
     <div class="flex-1 overflow-y-auto pb-40">
         @if (owner != null)
         {
@@ -52,12 +44,12 @@
                             <div class="grid grid-cols-1 gap-4">
                                 @foreach (var item in dayGroup)
                                 {
-                                    bool pastCutoff = DateTime.Now > item.StartDate.Date.AddDays(-1).Add(item.CutoffTime.ToTimeSpan());
+                                    bool pastCutoff = IsPastCutoff(item);
 
-                                    <div @onclick="() => SelectItem(item)" class="bg-[#111] border border-slate-800 rounded-[2.5rem] overflow-hidden flex flex-col md:flex-row cursor-pointer group @(pastCutoff ? "opacity-50 grayscale pointer-events-none" : "hover:border-emerald-500/40")">
+                                    <div @onclick="() => SelectItem(item)" class="bg-[#111] border border-slate-800 rounded-[2.5rem] overflow-hidden flex flex-col md:flex-row cursor-pointer transition-all group shadow-xl @(pastCutoff ? "opacity-50 grayscale pointer-events-none" : "hover:border-emerald-500/40")">
                                         @if (item.Recipe?.ImageId != null)
                                         {
-                                            <div class="w-full md:w-44 aspect-square bg-black shrink-0">
+                                            <div class="w-full md:w-44 aspect-square bg-black overflow-hidden shrink-0">
                                                 <img src="/db-images-ppp/@item.Recipe.ImageId" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
                                             </div>
                                         }
@@ -65,8 +57,7 @@
                                             <div class="flex justify-between items-start mb-2">
                                                 <h4 class="text-xl font-black text-white uppercase italic tracking-tight">@item.Recipe?.Name</h4>
                                             </div>
-                                            <p class="text-xs text-slate-300 leading-relaxed line-clamp-3 mb-2">@item.Recipe?.LongDescription</p>
-                                            
+                                            <p class="text-xs text-slate-300 leading-relaxed line-clamp-3 mb-2 font-medium">@item.Recipe?.LongDescription</p>
                                             <div class="mt-auto pt-4 border-t border-white/5 flex flex-wrap gap-2 items-center">
                                                 @{ var m = StoreService.GetMacros(item.Recipe); }
                                                 <span class="bg-white/5 px-2 py-1 rounded-lg text-[10px] font-bold">🔥 @m.Cals cal</span>
@@ -83,9 +74,104 @@
             </div>
         }
     </div>
-</div>
 
-@* Persistent Cart Floating Bar *@
+    @* Cart Overlay (HTML part) *@
+    @if (showCart && cart != null)
+    {
+        <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[600] flex items-end justify-center" @onmousedown="SaveCartNotes">
+            <div @onmousedown:stopPropagation="true" class="bg-[#0f0f0f] w-full max-w-2xl rounded-t-[3rem] border-t border-slate-800 p-10 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[92vh] flex flex-col">
+                <div class="flex justify-between items-start mb-8 shrink-0">
+                    <h2 class="text-3xl font-black text-white uppercase italic tracking-tighter">Your Cart</h2>
+                    <button @onclick="SaveCartNotes" class="bg-white/5 w-12 h-12 rounded-2xl text-slate-400 hover:text-white flex items-center justify-center text-2xl transition-all">&times;</button>
+                </div>
+                <div class="flex-1 overflow-y-auto space-y-4 pr-2">
+                    @foreach (var item in cart.Items.OrderBy(i => i.ScheduledDate))
+                    {
+                        <div class="bg-white/5 border border-white/5 rounded-3xl p-6 relative group">
+                            <div class="flex justify-between items-start mb-2">
+                                <span class="text-[9px] font-black text-emerald-500 uppercase">@item.ScheduledDate.ToString("ddd, MMM d") — @item.TimeframeName</span>
+                                <button @onclick="() => RemoveFromCart(item.Id)" class="text-slate-600 hover:text-red-500 text-xs">✕</button>
+                            </div>
+                            <h4 class="text-lg font-black text-white uppercase italic">@item.RecipeName</h4>
+                            <div class="mt-2 flex gap-2 items-center opacity-60">
+                                <span class="text-[10px]">@(item.FulfillmentMethod == "Delivery" ? "🚚" : "🏢")</span>
+                                <span class="text-[8px] font-black uppercase tracking-widest">
+                                    @(item.FulfillmentMethod == "Delivery" ? item.DeliveryAddressSummary : GetPickupLocationName(item.PickupLocationId))
+                                </span>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="mt-8 pt-8 border-t border-white/10 shrink-0">
+                    <div class="flex justify-between items-end mb-8">
+                        <span class="text-[10px] font-black uppercase text-slate-500">Order Total</span>
+                        <span class="text-3xl font-black text-white italic font-mono">$@GetCartTotal().ToString("N2")</span>
+                    </div>
+                    <button @onclick="ProcessCheckout" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-6 rounded-3xl font-black text-xs uppercase tracking-[0.5em] transition-all shadow-xl active:scale-95">Place Order</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* Selection Modal (HTML part) *@
+    @if (selectedItem != null && currentSize != null)
+    {
+        <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[400] flex flex-col items-center justify-end" @onmousedown="() => selectedItem = null">
+            <div @onmousedown:stopPropagation="true" class="bg-[#0f0f0f] w-full max-w-2xl rounded-t-[3rem] border-t border-slate-800 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[95vh] flex flex-col relative">
+                <div class="flex-1 overflow-y-auto px-10 space-y-10 py-10">
+                    <section class="p-6 bg-white/[0.02] border border-white/5 rounded-[2rem] space-y-6 shadow-inner">
+                        <div>
+                            <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest">Arrival Window</h5>
+                            <div class="flex flex-wrap gap-2">
+                                @foreach (var tf in selectedItem.Timeframes ?? new List<PPP_MenuItemTimeframe>())
+                                {
+                                    <button @onclick="() => selTimeframe = tf.Name" class="px-5 py-2.5 rounded-xl border text-[10px] font-black uppercase transition-all @(selTimeframe == tf.Name ? "bg-emerald-600 border-emerald-600 text-white" : "border-slate-800 text-slate-500")">@tf.Name</button>
+                                }
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="animate-in slide-in-from-top duration-500">
+                        <h5 class="text-[10px] font-black uppercase text-emerald-500 mb-6 tracking-widest text-center italic">Personalize Your @currentSize.ServingsPerUnit Servings</h5>
+                        @for (int i = 0; i < currentSize.ServingsPerUnit; i++)
+                        {
+                            var index = i;
+                            <div class="bg-black border border-slate-800 rounded-[2rem] p-6 shadow-inner mb-4">
+                                <input @bind="tempServingConfigs[index].LabelName" placeholder="Recipient Name" class="w-full bg-[#0a0a0a] border border-slate-800 rounded-xl p-4 text-sm text-white font-bold italic" />
+                            </div>
+                        }
+                    </section>
+                </div>
+                <div class="p-10 shrink-0 border-t border-white/5 bg-[#0f0f0f] z-[500]">
+                    <button @onclick="AddToCart" disabled="@(!IsConfigValid())" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-6 rounded-3xl font-black text-xs uppercase tracking-[0.4em] transition-all shadow-xl flex justify-between items-center px-10">
+                        <span>Add Bundle to Cart</span>
+                        <span class="font-mono">$@GetConfigTotal().ToString("N2")</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* Final Manifest (HTML part) *@
+    @if (showContactForm)
+    {
+        <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[800] flex items-center justify-center p-4">
+            <div class="bg-[#0f0f0f] w-full max-w-lg rounded-[3rem] border border-slate-800 p-10 shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+                <div class="space-y-6 overflow-y-auto pr-2 flex-1">
+                    <div class="grid grid-cols-2 gap-4">
+                        <input @bind="tempUser.FirstName" placeholder="First Name" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500" />
+                        <input @bind="tempUser.LastName" placeholder="Last Name" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500" />
+                    </div>
+                </div>
+                <div class="mt-10 pt-8 border-t border-white/5 flex gap-4 shrink-0">
+                    <button @onclick="() => showContactForm = false" class="flex-1 bg-white/5 hover:bg-white/10 text-slate-500 py-5 rounded-3xl text-[10px] font-black uppercase tracking-widest transition-all">Back</button>
+                    <button @onclick="FinalizeOrder" class="flex-[2] bg-emerald-600 hover:bg-emerald-500 text-white py-5 rounded-3xl text-[10px] font-black uppercase tracking-[0.3em] shadow-xl transition-all active:scale-95">Complete Order</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* Floating Cart Bar *@
     @if (cart != null && cart.Items != null && cart.Items.Any())
     {
         <div class="fixed bottom-8 left-1/2 -translate-x-1/2 z-[150] w-full max-w-lg px-4">
@@ -98,322 +184,4 @@
             </button>
         </div>
     }
-
-    @* Cart Detail Overlay *@
-    @if (showCart && cart != null)
-    {
-        <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[600] flex items-end justify-center" @onmousedown="() => showCart = false">
-            <div @onmousedown:stopPropagation="true" class="bg-[#0f0f0f] w-full max-w-2xl rounded-t-[3rem] border-t border-slate-800 p-10 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[92vh] flex flex-col">
-                <div class="flex justify-between items-start mb-8 shrink-0">
-                    <h2 class="text-3xl font-black text-white uppercase italic tracking-tighter">Your Cart</h2>
-                    <button @onclick="() => showCart = false" class="bg-white/5 w-12 h-12 rounded-2xl text-slate-400 flex items-center justify-center text-2xl transition-all">&times;</button>
-                </div>
-
-                <div class="flex-1 overflow-y-auto space-y-4 pr-2">
-                    @foreach (var item in cart.Items.OrderBy(i => i.ScheduledDate))
-                    {
-                        <div class="bg-white/5 border border-white/5 rounded-3xl p-6 relative group">
-                            <div class="flex justify-between items-start mb-2">
-                                <span class="text-[9px] font-black text-emerald-500 uppercase">@item.ScheduledDate.ToString("ddd, MMM d") — @item.TimeframeName</span>
-                                <button @onclick="() => RemoveFromCart(item.Id)" class="text-slate-600 hover:text-red-500 text-xs">✕</button>
-                            </div>
-                            <h4 class="text-lg font-black text-white uppercase italic">@item.RecipeName</h4>
-                            
-                            @* Address Snapshot for this specific item *@
-                            <div class="mt-2 flex gap-2 items-center opacity-60">
-                                <span class="text-[10px]">@(item.FulfillmentMethod == "Delivery" ? "🚚" : "🏢")</span>
-                                <span class="text-[8px] font-black uppercase tracking-widest">
-                                    @(item.FulfillmentMethod == "Delivery" ? item.DeliveryAddressSummary : GetPickupLocationName(item.PickupLocationId))
-                                </span>
-                            </div>
-
-                            <div class="flex justify-between items-center mt-2">
-                                <span class="text-[9px] text-slate-400 font-bold uppercase">@item.SizeName</span>
-                                <span class="text-xs font-mono">$@item.BasePrice.ToString("N2")</span>
-                            </div>
-
-                            @if (item.FulfillmentMethod == "Delivery" && item.DeliveryFee > 0)
-                            {
-                                <div class="flex justify-between items-center mt-2 p-3 bg-blue-500/10 rounded-2xl border border-blue-500/20 text-blue-400 font-bold text-[10px]">
-                                    <span>Delivery Service Fee</span>
-                                    <span>+$@item.DeliveryFee.ToString("N2")</span>
-                                </div>
-                            }
-                        </div>
-                    }
-                    <textarea @bind="cart.Notes" placeholder="General notes for owner..." class="w-full bg-black border border-slate-800 rounded-2xl p-4 text-sm text-slate-300 mt-6 min-h-[100px] outline-none focus:border-emerald-500 transition-all"></textarea>
-                </div>
-
-                <div class="mt-8 pt-8 border-t border-white/10 shrink-0">
-                    <div class="flex justify-between items-end mb-8">
-                        <span class="text-[10px] font-black uppercase text-slate-500">Order Total</span>
-                        <span class="text-3xl font-black text-white italic font-mono">$@GetCartTotal().ToString("N2")</span>
-                    </div>
-                    <button @onclick="ProcessCheckout" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-6 rounded-3xl font-black text-xs uppercase tracking-[0.5em] transition-all shadow-xl active:scale-95">Place Order</button>
-                </div>
-            </div>
-        </div>
-    }
-
-    @* Configuration Modal (Selection logic) *@
-    @if (selectedItem != null && currentSize != null)
-    {
-        <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[400] flex flex-col items-center justify-end" @onmousedown="() => selectedItem = null">
-            <div @onmousedown:stopPropagation="true" class="bg-[#0f0f0f] w-full max-w-2xl rounded-t-[3rem] border-t border-slate-800 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[95vh] flex flex-col relative">
-                
-                <div class="flex-1 overflow-y-auto px-10 space-y-10 py-10">
-                    <section class="p-6 bg-white/[0.02] border border-white/5 rounded-[2rem] space-y-6 shadow-inner">
-                        <div>
-                            <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest">Arrival Window</h5>
-                            <div class="flex flex-wrap gap-2">
-                                @foreach (var tf in selectedItem.Timeframes ?? new List<PPP_MenuItemTimeframe>())
-                                {
-                                    <button @onclick="() => selTimeframe = tf.Name" class="px-5 py-2.5 rounded-xl border text-[10px] font-black uppercase transition-all @(selTimeframe == tf.Name ? "bg-emerald-600 border-emerald-600 text-white" : "border-slate-800 text-slate-500")">@tf.Name</button>
-                                }
-                            </div>
-                        </div>
-
-                        <div>
-                            <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest mt-6">Fulfillment Method</h5>
-                            @if (owner!.OffersPickup && owner.OffersDelivery)
-                            {
-                                <div class="flex gap-2 mb-6 bg-black p-1 rounded-2xl border border-slate-800">
-                                    <button @onclick='() => selFulfillment = "Pickup"' class="flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all @(selFulfillment == "Pickup" ? "bg-white text-black shadow-lg" : "text-slate-500")">Pickup</button>
-                                    <button @onclick='() => selFulfillment = "Delivery"' class="flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all @(selFulfillment == "Delivery" ? "bg-blue-600 text-white shadow-lg" : "text-slate-500")">Delivery</button>
-                                </div>
-                            }
-
-                            @if (selFulfillment == "Delivery")
-                            {
-                                <div class="space-y-4 animate-in fade-in duration-300">
-                                    <div class="bg-black/40 border border-white/5 rounded-2xl p-4 space-y-3 shadow-inner">
-                                        <input @bind="tempAddress.Street" @onblur="UpdateCustomerCoords" placeholder="Street Address" class="w-full bg-[#0a0a0a] border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500" />
-                                        <div class="grid grid-cols-3 gap-3">
-                                            <input @bind="tempAddress.City" placeholder="City" class="bg-[#0a0a0a] border border-slate-800 rounded-xl p-4 text-xs text-white outline-none" />
-                                            <input @bind="tempAddress.State" maxlength="2" placeholder="ST" class="bg-[#0a0a0a] border border-slate-800 rounded-xl p-4 text-xs text-white text-center outline-none" />
-                                            <input @bind="tempAddress.ZipCode" @oninput="HandleFeeZipInput" maxlength="5" placeholder="Zip" class="bg-[#0a0a0a] border border-slate-800 rounded-xl p-4 text-xs text-white outline-none focus:border-emerald-500" />
-                                        </div>
-                                    </div>
-                                    @{ var feeInfo = GetDeliveryFeeInfo(tempAddress.ZipCode); }
-                                    @if (feeInfo.Fee > 0)
-                                    {
-                                        <div class="bg-blue-600 text-white px-6 py-4 rounded-3xl flex justify-between items-center animate-in zoom-in">
-                                            <span class="text-xs font-black uppercase">@feeInfo.Label</span>
-                                            <span class="text-2xl font-black font-mono">$@feeInfo.Fee.ToString("N2")</span>
-                                        </div>
-                                    }
-                                </div>
-                            }
-                        </div>
-                    </section>
-
-                    @* Personalized Servings *@
-                    <section class="animate-in slide-in-from-top duration-500">
-                        <h5 class="text-[10px] font-black uppercase text-emerald-500 mb-6 tracking-widest text-center italic">Personalize Your @currentSize.ServingsPerUnit Servings</h5>
-                        <div class="space-y-6">
-                            @for (int i = 0; i < currentSize.ServingsPerUnit; i++)
-                            {
-                                var index = i;
-                                <div class="bg-black border border-slate-800 rounded-[2rem] p-6 shadow-inner">
-                                    <div class="flex items-center gap-3 mb-4">
-                                        <span class="w-6 h-6 rounded-full bg-emerald-600 text-white text-[10px] font-black flex items-center justify-center">@(index + 1)</span>
-                                        <span class="text-[10px] font-black uppercase text-slate-300 tracking-widest">Recipient Name</span>
-                                    </div>
-                                    <input @bind="tempServingConfigs[index].LabelName" placeholder="e.g. Dad, Sarah, etc." class="w-full bg-[#0a0a0a] border border-slate-800 rounded-xl p-4 text-sm text-white font-bold italic outline-none focus:border-emerald-500" />
-                                </div>
-                            }
-                        </div>
-                    </section>
-                </div>
-
-                <div class="p-10 shrink-0 border-t border-white/5 bg-[#0f0f0f] z-[500]">
-                    <button @onclick="AddToCart" disabled="@(!IsConfigValid())" class="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-20 text-white py-6 rounded-3xl font-black text-xs uppercase tracking-[0.4em] transition-all shadow-xl flex justify-between items-center px-10 active:scale-95">
-                        <span>Add Bundle to Cart</span>
-                        <span class="font-mono">$@GetConfigTotal().ToString("N2")</span>
-                    </button>
-                </div>
-            </div>
-        </div>
-    }
-
-    @* Identity & Read-Only Manifest Modal *@
-    @if (showContactForm)
-    {
-        <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[800] flex items-center justify-center p-4">
-            <div class="bg-[#0f0f0f] w-full max-w-lg rounded-[3rem] border border-slate-800 p-10 shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
-                <div class="flex justify-between items-start mb-6 shrink-0">
-                    <div>
-                        <h2 class="text-2xl font-black text-white uppercase italic tracking-tighter mb-2">Final Review</h2>
-                        <p class="text-[10px] text-slate-500 font-black uppercase tracking-widest">Verify logistics manifest below</p>
-                    </div>
-                    <button @onclick="() => showContactForm = false" class="text-slate-600 hover:text-white text-2xl">&times;</button>
-                </div>
-                
-                <div class="space-y-6 overflow-y-auto pr-2 flex-1">
-                    <div class="grid grid-cols-2 gap-4">
-                        <input @bind="tempUser.FirstName" placeholder="First Name" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500" />
-                        <input @bind="tempUser.LastName" placeholder="Last Name" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500" />
-                    </div>
-                    <input @bind="tempUser.Email" type="email" placeholder="Email Address" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500" />
-                    <input @bind="tempUser.Phone" type="tel" placeholder="Phone Number" class="w-full bg-black border border-slate-800 rounded-xl p-4 text-sm text-white outline-none focus:border-emerald-500" />
-                    
-                    @if (cart?.Items != null)
-                    {
-                        <div class="pt-6 border-t border-white/5 space-y-4">
-                            <label class="text-[9px] font-black uppercase text-emerald-500 tracking-widest">Fulfillment Logistics</label>
-                            <div class="space-y-3">
-                                @foreach (var item in cart.Items.OrderBy(i => i.ScheduledDate))
-                                {
-                                    <div class="bg-black/60 border border-white/5 rounded-2xl p-4 flex gap-4 items-center shadow-inner">
-                                        <div class="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-xs shrink-0">@if(item.FulfillmentMethod == "Delivery") { <span>🚚</span> } else { <span>🏢</span> }</div>
-                                        <div class="flex-1 min-w-0">
-                                            <p class="text-[9px] font-black text-emerald-500 uppercase truncate">@item.RecipeName</p>
-                                            <p class="text-[10px] text-white font-bold truncate">@(item.FulfillmentMethod == "Delivery" ? item.DeliveryAddressSummary : GetPickupLocationName(item.PickupLocationId))</p>
-                                        </div>
-                                    </div>
-                                }
-                            </div>
-                        </div>
-                    }
-                </div>
-
-                <div class="mt-10 pt-8 border-t border-white/5 flex gap-4 shrink-0">
-                    <button @onclick="() => showContactForm = false" class="flex-1 bg-white/5 hover:bg-white/10 text-slate-500 py-5 rounded-3xl text-[10px] font-black uppercase tracking-widest transition-all">Back</button>
-                    <button @onclick="FinalizeOrder" class="flex-[2] bg-emerald-600 hover:bg-emerald-500 text-white py-5 rounded-3xl text-[10px] font-black uppercase tracking-[0.3em] shadow-xl transition-all active:scale-95">Complete Order</button>
-                </div>
-            </div>
-        </div>
-    }
-
-    @code {
-    [Parameter] public int OwnerId { get; set; }
-    private PPP_Owner? owner;
-    private List<PPP_Menu> activeMenus = new();
-    private List<ToastItem> toasts = new();
-    private PPP_Order? cart;
-    private string? customerId;
-    private bool showCart = false, showContactForm = false;
-    private string selTimeframe = "", selFulfillment = "Pickup", selZip = "";
-    private int selPickupId = 0;
-    private PPP_MenuItem? selectedItem;
-    private PPP_MenuItemSize? currentSize;
-    private (double Lat, double Lon)? ownerCoords, customerCoords;
-    private double currentDistance = 0;
-
-    private class ServingConfig { public int ServingNumber { get; set; } public string LabelName { get; set; } = ""; public HashSet<int> OptionIds { get; set; } = new(); }
-    private List<ServingConfig> tempServingConfigs = new();
-    private List<PPP_PickupLocation> pickupLocations = new();
-    private List<PPP_DeliveryZipCode> ownerZips = new();
-    private List<PPP_DeliveryRadiusRule> ownerRadiusRules = new();
-    private PPP_User? sessionUser, currentUser;
-    private PPP_User tempUser = new();
-    private PPP_Address tempAddress = new() { Label = "Home" };
-
-    protected override async Task OnInitializedAsync() {
-        try {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            owner = await StoreService.GetOwnerAsync(OwnerId);
-            activeMenus = await StoreService.GetActiveMenusAsync(OwnerId);
-            pickupLocations = await db.Set<PPP_PickupLocation>().Where(l => l.OwnerId == OwnerId).ToListAsync();
-            ownerZips = await db.Set<PPP_DeliveryZipCode>().Where(z => z.OwnerId == OwnerId).ToListAsync();
-            ownerRadiusRules = await db.Set<PPP_DeliveryRadiusRule>().Where(r => r.OwnerId == OwnerId && r.Enabled).OrderBy(r => r.MaxMiles).ToListAsync();
-            if (owner?.Address != null) ownerCoords = await GeoService.GetCoordinatesAsync(owner.Address.Street, owner.Address.City, owner.Address.State, owner.Address.ZipCode);
-        } catch (Exception ex) { Console.WriteLine(ex.Message); }
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender) {
-        if (firstRender) {
-            try {
-                customerId = await JS.InvokeAsync<string>("localStorage.getItem", "ppp_customer_id") ?? Guid.NewGuid().ToString();
-                await JS.InvokeVoidAsync("localStorage.setItem", "ppp_customer_id", customerId);
-                var token = await JS.InvokeAsync<string>("eval", "document.cookie.split('; ').find(row => row.startsWith('ppp_token='))?.split('=')[1]");
-                if (!string.IsNullOrEmpty(token)) {
-                    await using var db = await DbFactory.CreateDbContextAsync();
-                    sessionUser = await db.PPP_Users.Include(u => u.Addresses).FirstOrDefaultAsync(u => u.MagicToken == token && u.TokenExpiresAt > DateTime.UtcNow);
-                    if (sessionUser != null) {
-                        currentUser = !string.IsNullOrEmpty(sessionUser.ImpersonatingEmail) ? await db.PPP_Users.Include(u => u.Addresses).FirstOrDefaultAsync(u => u.Email == sessionUser.ImpersonatingEmail) : sessionUser;
-                        if (currentUser != null) ApplyIdentityToUI();
-                    }
-                }
-                await LoadCart();
-                if (!string.IsNullOrEmpty(tempAddress.Street)) await UpdateCustomerCoords();
-                await InvokeAsync(StateHasChanged);
-            } catch (Exception ex) { Console.WriteLine(ex.Message); }
-        }
-    }
-
-    private async Task AddToCart() {
-        if (selectedItem == null || currentSize == null || cart == null || selectedItem.Recipe == null) return;
-        try {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            var newEntry = new PPP_OrderItem { OrderId = cart.Id, MenuItemId = selectedItem.Id, RecipeName = selectedItem.Recipe.Name, SizeName = currentSize.Name, BasePrice = currentSize.BasePrice, ScheduledDate = selectedItem.StartDate.ToUniversalTime(), TimeframeName = selTimeframe, FulfillmentMethod = selFulfillment, PickupLocationId = selFulfillment == "Pickup" ? selPickupId : null, DeliveryFee = selFulfillment == "Delivery" ? GetDeliveryFee(tempAddress.ZipCode) : 0, DeliveryAddressSummary = selFulfillment == "Delivery" ? $"{tempAddress.Street}, {tempAddress.City}" : "", Latitude = customerCoords?.Lat, Longitude = customerCoords?.Lon, CalculatedDistanceMiles = currentDistance };
-            db.PPP_OrderItems.Add(newEntry); await db.SaveChangesAsync(); 
-            foreach (var cfg in tempServingConfigs) {
-                var serving = new PPP_OrderItemServing { OrderItemId = newEntry.Id, ServingNumber = cfg.ServingNumber, LabelName = cfg.LabelName, SelectedOptions = currentSize.Options?.Where(o => cfg.OptionIds.Contains(o.Id)).Select(o => new PPP_OrderItemOption { OptionName = o.Name, AddOnPrice = o.AddOnPrice }).ToList() ?? new List<PPP_OrderItemOption>() };
-                db.PPP_OrderItemServings.Add(serving);
-            }
-            await db.SaveChangesAsync(); await LoadCart(); selectedItem = null; await ShowToast("Bundle added to cart!");
-        } catch (Exception ex) { await ShowToast("Error: " + ex.Message, true); }
-    }
-
-    private void ApplyIdentityToUI() {
-        if (currentUser == null) return;
-        tempUser.FirstName = currentUser.FirstName; tempUser.LastName = currentUser.LastName; tempUser.Email = currentUser.Email; tempUser.Phone = currentUser.Phone;
-        var addr = currentUser.Addresses?.FirstOrDefault(a => a.IsDefault) ?? currentUser.Addresses?.FirstOrDefault();
-        if (addr != null) { tempAddress.Id = addr.Id; tempAddress.Label = addr.Label; tempAddress.Street = addr.Street; tempAddress.City = addr.City; tempAddress.State = addr.State; tempAddress.ZipCode = addr.ZipCode; selZip = addr.ZipCode; }
-        foreach (var config in tempServingConfigs) { if (string.IsNullOrEmpty(config.LabelName)) config.LabelName = currentUser.FirstName; }
-    }
-
-    private async Task UpdateCustomerCoords() {
-        await Task.Yield();
-        if (!string.IsNullOrEmpty(tempAddress.Street) && !string.IsNullOrEmpty(tempAddress.ZipCode)) {
-            customerCoords = await GeoService.GetCoordinatesAsync(tempAddress.Street, tempAddress.City, tempAddress.State, tempAddress.ZipCode);
-            if (ownerCoords.HasValue && customerCoords.HasValue) currentDistance = GeoService.CalculateDistance(ownerCoords.Value.Lat, ownerCoords.Value.Lon, customerCoords.Value.Lat, customerCoords.Value.Lon);
-        }
-        await InvokeAsync(StateHasChanged);
-    }
-
-    private (double Fee, bool IsOutOfArea, string Label) GetDeliveryFeeInfo(string zip) {
-        if (string.IsNullOrWhiteSpace(zip)) return (0, false, "Enter Zip Code");
-        var match = ownerZips.FirstOrDefault(z => z.ZipCode == zip.Trim());
-        if (match != null) return (match.Fee, false, "Included Zip Code");
-        if (ownerCoords.HasValue && customerCoords.HasValue) {
-            var rule = ownerRadiusRules.FirstOrDefault(r => currentDistance <= r.MaxMiles);
-            if (rule != null) return (rule.Fee, false, $"Within {rule.MaxMiles} Mile Radius");
-        }
-        return (ownerRadiusRules.FirstOrDefault()?.Fee ?? 5.00, true, "Outside Standard Area");
-    }
-
-    private async Task FinalizeOrder() {
-        try {
-            if (string.IsNullOrWhiteSpace(tempUser.Email) || string.IsNullOrWhiteSpace(tempUser.FirstName)) { await ShowToast("Email and Name are required", true); return; }
-            await using var db = await DbFactory.CreateDbContextAsync();
-            var user = await db.PPP_Users.Include(u => u.Addresses).FirstOrDefaultAsync(u => u.Email.ToLower() == tempUser.Email.ToLower());
-            if (user == null) { user = new PPP_User { Email = tempUser.Email.ToLower(), FirstName = tempUser.FirstName, LastName = tempUser.LastName, Phone = tempUser.Phone, MagicToken = Guid.NewGuid().ToString("N"), TokenExpiresAt = DateTime.UtcNow.AddMonths(6) }; db.PPP_Users.Add(user); await db.SaveChangesAsync(); }
-            else { user.FirstName = tempUser.FirstName; user.LastName = tempUser.LastName; user.Phone = tempUser.Phone; if (string.IsNullOrEmpty(user.MagicToken)) user.MagicToken = Guid.NewGuid().ToString("N"); user.TokenExpiresAt = DateTime.UtcNow.AddMonths(6); }
-            var dbOrder = await db.PPP_Orders.FirstOrDefaultAsync(o => o.Id == cart!.Id);
-            if (dbOrder != null) { dbOrder.IsCheckedOut = true; dbOrder.CheckedOutAt = DateTime.UtcNow; dbOrder.CustomerIdentifier = user.Email; dbOrder.Notes = cart.Notes; await db.SaveChangesAsync(); if (sessionUser?.Role != "Admin") await JS.InvokeVoidAsync("eval", $"document.cookie = 'ppp_token={user.MagicToken}; max-age={15552000}; path=/; SameSite=Lax';"); await ShowToast("Order placed successfully!"); cart = null; showCart = false; showContactForm = false; await LoadCart(); }
-        } catch (Exception ex) { await ShowToast("Checkout Error: " + ex.Message, true); }
-    }
-
-    private async Task LoadCart() { try { await using var db = await DbFactory.CreateDbContextAsync(); var identifier = currentUser?.Email ?? customerId; var existingOrder = await db.Set<PPP_Order>().Include(o => o.Items).ThenInclude(i => i.Servings).ThenInclude(s => s.SelectedOptions).FirstOrDefaultAsync(o => o.OwnerId == OwnerId && o.CustomerIdentifier == identifier && !o.IsCheckedOut); if (existingOrder == null) { existingOrder = new PPP_Order { OwnerId = OwnerId, CustomerIdentifier = identifier ?? "Guest", CreatedAt = DateTime.UtcNow }; db.Add(existingOrder); await db.SaveChangesAsync(); } cart = existingOrder; } catch (Exception ex) { Console.WriteLine(ex.Message); } }
-    private async Task SelectItem(PPP_MenuItem item) { if (item == null) return; selectedItem = item; SetSize(item.Sizes?.OrderBy(s => s.BasePrice).FirstOrDefault()); await UpdateCustomerCoords(); }
-    private void SetSize(PPP_MenuItemSize? sz) { currentSize = sz; tempServingConfigs.Clear(); if (currentSize != null) for (int i = 0; i < currentSize.ServingsPerUnit; i++) tempServingConfigs.Add(new ServingConfig { ServingNumber = i + 1, LabelName = currentUser?.FirstName ?? "" }); }
-    private void ToggleServingOption(int index, int optionId) { if (tempServingConfigs[index].OptionIds.Contains(optionId)) tempServingConfigs[index].OptionIds.Remove(optionId); else tempServingConfigs[index].OptionIds.Add(optionId); }
-    private bool IsConfigValid() => !string.IsNullOrEmpty(selTimeframe) && (selFulfillment != "Pickup" || (selPickupId != 0)) && (selFulfillment != "Delivery" || !string.IsNullOrEmpty(tempAddress.ZipCode));
-    private double GetConfigTotal() { if (currentSize == null) return 0; double fee = selFulfillment == "Delivery" ? GetDeliveryFee(tempAddress.ZipCode) : 0; double addonTotal = 0; foreach (var cfg in tempServingConfigs) { addonTotal += currentSize.Options?.Where(o => cfg.OptionIds.Contains(o.Id)).Sum(o => o.AddOnPrice) ?? 0; } return currentSize.BasePrice + fee + addonTotal; }
-    private async Task HandleSavedAddressChange(ChangeEventArgs e) { int id = int.Parse(e.Value?.ToString() ?? "0"); if (id == 0) tempAddress = new PPP_Address { Label = "Home" }; else { var addr = currentUser?.Addresses?.FirstOrDefault(a => a.Id == id); if (addr != null) { tempAddress.Id = addr.Id; tempAddress.Label = addr.Label; tempAddress.Street = addr.Street; tempAddress.City = addr.City; tempAddress.State = addr.State; tempAddress.ZipCode = addr.ZipCode; selZip = addr.ZipCode; await UpdateCustomerCoords(); } } }
-    private async Task HandleFeeZipInput(ChangeEventArgs e) { var zip = e.Value?.ToString() ?? ""; tempAddress.ZipCode = zip; if (zip.Length == 5) await UpdateCustomerCoords(); }
-    private async Task RemoveFromCart(int id) { await using var db = await DbFactory.CreateDbContextAsync(); var item = await db.PPP_OrderItems.FindAsync(id); if (item != null) { db.Remove(item); await db.SaveChangesAsync(); await LoadCart(); } }
-    private async Task SaveCartNotes() => showCart = false;
-    private async Task EndImpersonation() { Nav.NavigateTo("/ppp-admin/impersonator", forceLoad: true); }
-    private double GetDeliveryFee(string zip) => GetDeliveryFeeInfo(zip).Fee;
-    private string GetPickupLocationName(int? id) => pickupLocations.FirstOrDefault(l => l.Id == id)?.Name ?? "Pickup";
-    private double GetCartTotal() => cart?.Items?.Sum(i => i.BasePrice + i.DeliveryFee + (i.Servings?.Sum(s => s.SelectedOptions?.Sum(o => o.AddOnPrice) ?? 0) ?? 0)) ?? 0;
-    private string GetSimplifiedIngredients(PPP_Recipe? r) => StoreService.GetSimplifiedIngredients(r);
-    private (double Cals, double Prot, double Fat, double Net) GetMacros(PPP_Recipe? r) => StoreService.GetMacros(r);
-    private bool IsItemSoldOut(PPP_MenuItem i) => false;
-    private class ToastItem { public string Message { get; set; } = ""; public bool IsError { get; set; } }
-    public class ZipResponse { [System.Text.Json.Serialization.JsonPropertyName("places")] public List<ZipPlace> Places { get; set; } = new(); }
-    public class ZipPlace { [System.Text.Json.Serialization.JsonPropertyName("place name")] public string PlaceName { get; set; } = ""; [System.Text.Json.Serialization.JsonPropertyName("state abbreviation")] public string StateAbbreviation { get; set; } = ""; }
-}
+</div>
