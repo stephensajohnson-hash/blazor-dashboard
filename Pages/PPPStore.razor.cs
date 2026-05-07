@@ -4,11 +4,12 @@ using Microsoft.JSInterop;
 using Dashboard.Services;
 using Microsoft.AspNetCore.Components.Web;
 using System.Net.Http.Json;
-using Dashboard; // This is the crucial missing link for your models
+using Dashboard;
 
 namespace Dashboard.Pages
 {
-    public partial class PPPStore
+    // Adding ': ComponentBase' fixes the 'no suitable method to override' error
+    public partial class PPPStore : ComponentBase
     {
         private PPP_Owner? owner;
         private List<PPP_Menu> activeMenus = new();
@@ -52,26 +53,20 @@ namespace Dashboard.Pages
             {
                 await using var db = await DbFactory.CreateDbContextAsync();
                 owner = await StoreService.GetOwnerAsync(OwnerId);
-                
                 activeMenus = await StoreService.GetActiveMenusAsync(OwnerId);
 
                 pickupLocations = await db.Set<PPP_PickupLocation>().Where(l => l.OwnerId == OwnerId).ToListAsync();
                 ownerZips = await db.Set<PPP_DeliveryZipCode>().Where(z => z.OwnerId == OwnerId).ToListAsync();
                 ownerRadiusRules = await db.Set<PPP_DeliveryRadiusRule>().Where(r => r.OwnerId == OwnerId && r.Enabled).OrderBy(r => r.MaxMiles).ToListAsync();
 
-                if (owner != null)
+                if (owner?.Address != null)
                 {
+                    ownerCoords = await GeoService.GetCoordinatesAsync(owner.Address.Street, owner.Address.City, owner.Address.State, owner.Address.ZipCode);
                     if (owner.OffersPickup && !owner.OffersDelivery) selFulfillment = "Pickup";
                     else if (owner.OffersDelivery && !owner.OffersPickup) selFulfillment = "Delivery";
-                    else selFulfillment = "Delivery"; 
-                    
-                    if (owner.Address != null)
-                    {
-                        ownerCoords = await GeoService.GetCoordinatesAsync(owner.Address.Street, owner.Address.City, owner.Address.State, owner.Address.ZipCode);
-                    }
                 }
             }
-            catch (Exception ex) { Console.WriteLine($"[CRITICAL] Init Error: {ex.Message}"); }
+            catch (Exception ex) { Console.WriteLine($"Init Error: {ex.Message}"); }
         }
 
         protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -103,7 +98,7 @@ namespace Dashboard.Pages
                     if (!string.IsNullOrEmpty(tempAddress.Street)) await UpdateCustomerCoords();
                     await InvokeAsync(StateHasChanged);
                 }
-                catch (Exception ex) { Console.WriteLine($"[CRITICAL] Render Error: {ex.Message}"); }
+                catch (Exception ex) { Console.WriteLine($"Render Error: {ex.Message}"); }
             }
         }
 
@@ -175,7 +170,7 @@ namespace Dashboard.Pages
                 var rule = ownerRadiusRules.FirstOrDefault(r => currentDistance <= r.MaxMiles);
                 if (rule != null) return (rule.Fee, false, $"Within {rule.MaxMiles} Mile Radius");
             }
-            return (ownerRadiusRules.FirstOrDefault()?.Fee ?? 5.00, true, "Outside Standard Area");
+            return (ownerRadiusRules.FirstOrDefault()?.Fee ?? 5.00, true, "Outside Area");
         }
 
         private double GetDeliveryFee(string zip) => GetDeliveryFeeInfo(zip).Fee;
@@ -214,7 +209,6 @@ namespace Dashboard.Pages
         }
 
         private async Task ShowToast(string msg, bool err = false) { var t = new ToastItem { Message = msg, IsError = err }; toasts.Add(t); await InvokeAsync(StateHasChanged); await Task.Delay(3000); toasts.Remove(t); await InvokeAsync(StateHasChanged); }
-        private async Task SelectItem(PPP_MenuItem item) { if (item == null) return; selectedItem = item; SetSize(item.Sizes?.OrderBy(s => s.BasePrice).FirstOrDefault()); await UpdateCustomerCoords(); }
         private void SetSize(PPP_MenuItemSize? sz) { currentSize = sz; tempServingConfigs.Clear(); if (currentSize != null) for (int i = 0; i < currentSize.ServingsPerUnit; i++) tempServingConfigs.Add(new ServingConfig { ServingNumber = i + 1, LabelName = currentUser?.FirstName ?? "" }); }
         private void ToggleServingOption(int index, int optionId) { if (tempServingConfigs[index].OptionIds.Contains(optionId)) tempServingConfigs[index].OptionIds.Remove(optionId); else tempServingConfigs[index].OptionIds.Add(optionId); }
         private bool IsConfigValid() => !string.IsNullOrEmpty(selTimeframe) && (selFulfillment != "Pickup" || (selPickupId != 0)) && (selFulfillment != "Delivery" || !string.IsNullOrEmpty(tempAddress.ZipCode));
@@ -222,8 +216,7 @@ namespace Dashboard.Pages
         private async Task OpenCart() => showCart = true;
         private async Task ProcessCheckout() { showCart = false; showContactForm = true; }
         private async Task HandleSavedAddressChange(ChangeEventArgs e) { int id = int.Parse(e.Value?.ToString() ?? "0"); if (id == 0) tempAddress = new PPP_Address { Label = "Home" }; else { var addr = currentUser?.Addresses?.FirstOrDefault(a => a.Id == id); if (addr != null) { tempAddress.Id = addr.Id; tempAddress.Label = addr.Label; tempAddress.Street = addr.Street; tempAddress.City = addr.City; tempAddress.State = addr.State; tempAddress.ZipCode = addr.ZipCode; selZip = addr.ZipCode; await UpdateCustomerCoords(); } } }
-        private async Task HandleFeeZipInput(ChangeEventArgs e) { var zip = e.Value?.ToString() ?? ""; tempAddress.ZipCode = zip; if (zip.Length == 5) { await LookupZip(zip, true); await UpdateCustomerCoords(); } }
-        private async Task LookupZip(string zip, bool isFeeCheck) { try { using var http = new HttpClient(); var res = await http.GetFromJsonAsync<ZipResponse>($"https://api.zippopotam.us/us/{zip}"); if (res?.Places != null && res.Places.Any()) { var p = res.Places.First(); tempAddress.City = p.PlaceName; tempAddress.State = p.StateAbbreviation; } } catch { } finally { await InvokeAsync(StateHasChanged); } }
+        private async Task HandleFeeZipInput(ChangeEventArgs e) { var zip = e.Value?.ToString() ?? ""; tempAddress.ZipCode = zip; if (zip.Length == 5) await UpdateCustomerCoords(); }
         private async Task RemoveFromCart(int id) { await using var db = await DbFactory.CreateDbContextAsync(); var item = await db.PPP_OrderItems.FindAsync(id); if (item != null) { db.Remove(item); await db.SaveChangesAsync(); await LoadCart(); } }
         private async Task SaveCartNotes() => showCart = false;
         private async Task EndImpersonation() { Nav.NavigateTo("/ppp-admin/impersonator", forceLoad: true); }
