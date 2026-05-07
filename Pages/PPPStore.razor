@@ -96,6 +96,11 @@
                                                     <span class="bg-blue-500/10 border border-blue-500/20 px-2 py-1 rounded-lg text-[10px] font-bold text-blue-400">🥩 @m.Prot pro</span>
                                                     <span class="bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-lg text-[10px] font-bold text-amber-400">🥑 @m.Fat fat</span>
                                                     <span class="bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-400">🥦 @m.Net net carbs</span>
+                                                    <span class="text-[8px] text-slate-600 uppercase font-black tracking-tighter ml-1">Per Serving</span>
+                                                }
+                                                else 
+                                                {
+                                                    <span class="text-[8px] text-slate-600 uppercase font-black tracking-widest">Handcrafted Fresh Daily</span>
                                                 }
                                             </div>
                                         </div>
@@ -149,6 +154,14 @@
                                 <div class="flex justify-between items-center mt-2">
                                     <span class="text-[9px] text-slate-400 font-bold uppercase">@item.SizeName</span>
                                     <span class="text-xs font-mono">$@item.BasePrice.ToString("N2")</span>
+                                </div>
+
+                                @* NEW: Address Display in Cart *@
+                                <div class="mt-2 flex gap-2 items-center opacity-60">
+                                    <span class="text-[10px]">@(item.FulfillmentMethod == "Delivery" ? "🚚" : "🏢")</span>
+                                    <span class="text-[8px] font-black uppercase tracking-widest">
+                                        @(item.FulfillmentMethod == "Delivery" ? item.DeliveryAddressSummary : GetPickupLocationName(item.PickupLocationId))
+                                    </span>
                                 </div>
 
                                 @if (item.FulfillmentMethod == "Delivery" && item.DeliveryFee > 0)
@@ -233,7 +246,7 @@
                         <div>
                             <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest">Arrival Window</h5>
                             <div class="flex flex-wrap gap-2">
-                                @foreach (var tf in selectedItem.Timeframes ?? new List<Dashboard.PPP_MenuItemTimeframe>())
+                                @foreach (var tf in selectedItem.Timeframes ?? new List<PPP_MenuItemTimeframe>())
                                 {
                                     <button @onclick="() => selTimeframe = tf.Name" 
                                             class="px-5 py-2.5 rounded-xl border text-[10px] font-black uppercase transition-all @(selTimeframe == tf.Name ? "bg-emerald-600 border-emerald-600 text-white shadow-lg" : "border-slate-800 text-slate-500 hover:border-slate-600")">
@@ -323,7 +336,7 @@
                     <section>
                         <h5 class="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest">Select Plan Size</h5>
                         <div class="space-y-2">
-                            @foreach (var sz in selectedItem.Sizes ?? new List<Dashboard.PPP_MenuItemSize>())
+                            @foreach (var sz in selectedItem.Sizes ?? new List<PPP_MenuItemSize>())
                             {
                                 <div @onclick="() => SetSize(sz)" class="p-4 rounded-2xl border transition-all cursor-pointer @(currentSize?.Id == sz.Id ? "border-emerald-500 bg-emerald-500/5" : "border-slate-800 bg-black/40") flex justify-between items-center">
                                     <span class="font-black text-xs uppercase @(currentSize?.Id == sz.Id ? "text-emerald-400" : "text-slate-300")">@sz.Name (@sz.ServingsPerUnit Servings)</span>
@@ -407,7 +420,7 @@
                         <div class="pt-6 border-t border-white/5 space-y-4">
                             <div class="flex justify-between items-center px-1">
                                 <label class="text-[9px] font-black uppercase text-emerald-500 tracking-widest">Fulfillment Logistics</label>
-                                <button type="button" @onclick='() => ShowToast("Locations are set per item. If incorrect, clear your order and restart.", true)' class="bg-white/5 w-6 h-6 rounded-full text-[10px] font-bold text-slate-500 flex items-center justify-center hover:text-white transition-all">i</button>
+                                <button type="button" @onclick='() => ShowToast("Address policy: Each meal is locked to the location selected when added. Clear cart to restart.", true)' class="bg-white/5 w-6 h-6 rounded-full text-[10px] font-bold text-slate-500 flex items-center justify-center hover:text-white transition-all">i</button>
                             </div>
 
                             <div class="space-y-3">
@@ -419,17 +432,9 @@
                                         </div>
                                         <div class="flex-1 min-w-0">
                                             <p class="text-[9px] font-black text-emerald-500 uppercase truncate">@item.RecipeName</p>
-                                            @if(item.FulfillmentMethod == "Delivery")
-                                            {
-                                                <p class="text-[10px] text-white font-bold truncate">@tempAddress.Street</p>
-                                                <p class="text-[8px] text-slate-500 uppercase tracking-tighter">@tempAddress.City, @tempAddress.State</p>
-                                            }
-                                            else
-                                            {
-                                                var loc = pickupLocations.FirstOrDefault(l => l.Id == item.PickupLocationId);
-                                                <p class="text-[10px] text-white font-bold truncate">@(loc?.Name ?? "Pickup")</p>
-                                                <p class="text-[8px] text-slate-500 uppercase tracking-tighter">@(loc?.Address ?? "See Location Details")</p>
-                                            }
+                                            <p class="text-[10px] text-white font-bold truncate">
+                                                @(item.FulfillmentMethod == "Delivery" ? item.DeliveryAddressSummary : GetPickupLocationName(item.PickupLocationId))
+                                            </p>
                                         </div>
                                     </div>
                                 }
@@ -669,6 +674,7 @@
     }
 
     private double GetDeliveryFee(string zip) => GetDeliveryFeeInfo(zip).Fee;
+    private string GetPickupLocationName(int? id) => pickupLocations.FirstOrDefault(l => l.Id == id)?.Name ?? "Pickup";
 
     private async Task OpenCart()
     {
@@ -770,7 +776,8 @@
                 TimeframeName = selTimeframe,
                 FulfillmentMethod = selFulfillment,
                 PickupLocationId = selFulfillment == "Pickup" ? selPickupId : null,
-                DeliveryFee = selFulfillment == "Delivery" ? GetDeliveryFee(tempAddress.ZipCode) : 0
+                DeliveryFee = selFulfillment == "Delivery" ? GetDeliveryFee(tempAddress.ZipCode) : 0,
+                DeliveryAddressSummary = selFulfillment == "Delivery" ? $"{tempAddress.Street}, {tempAddress.City}" : ""
             };
             db.PPP_OrderItems.Add(newEntry);
             await db.SaveChangesAsync(); 
@@ -787,7 +794,12 @@
         catch (Exception ex) { await ShowToast("Error: " + ex.Message, true); }
     }
 
-    private async Task ProcessCheckout() { showCart = false; showContactForm = true; await InvokeAsync(StateHasChanged); }
+    private async Task ProcessCheckout()
+    {
+        showCart = false;
+        showContactForm = true;
+        await InvokeAsync(StateHasChanged);
+    }
 
     private async Task FinalizeOrder()
     {
@@ -881,8 +893,6 @@
         }
         await InvokeAsync(StateHasChanged);
     }
-
-    private void SelectSavedAddress(ChangeEventArgs e) { /* Placeholder for obsolete reference */ }
 
     private async Task LookupZip(string zip, bool isFeeCheck)
     {
