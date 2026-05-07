@@ -1041,8 +1041,12 @@ public class PPP_OrderItem
     // NEW: Navigation property to the servings
     public virtual List<PPP_OrderItemServing> Servings { get; set; } = new();
 
-    // REMOVE: SelectedOptions and LabelName from here 
-    // (They are now inside the Servings list)
+    public string? DeliveryAddressSummary { get; set; }
+    public double? Latitude { get; set; }
+    public double? Longitude { get; set; }
+    
+    // We should also store the distance for Mikki's records
+    public double CalculatedDistanceMiles { get; set; }
 }
 
 public class PPP_OrderItemOption

@@ -96,11 +96,6 @@
                                                     <span class="bg-blue-500/10 border border-blue-500/20 px-2 py-1 rounded-lg text-[10px] font-bold text-blue-400">🥩 @m.Prot pro</span>
                                                     <span class="bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-lg text-[10px] font-bold text-amber-400">🥑 @m.Fat fat</span>
                                                     <span class="bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-400">🥦 @m.Net net carbs</span>
-                                                    <span class="text-[8px] text-slate-600 uppercase font-black tracking-tighter ml-1">Per Serving</span>
-                                                }
-                                                else 
-                                                {
-                                                    <span class="text-[8px] text-slate-600 uppercase font-black tracking-widest">Handcrafted Fresh Daily</span>
                                                 }
                                             </div>
                                         </div>
@@ -156,7 +151,7 @@
                                     <span class="text-xs font-mono">$@item.BasePrice.ToString("N2")</span>
                                 </div>
 
-                                @* NEW: Address Display in Cart *@
+                                @* Explicit Address Display in Cart *@
                                 <div class="mt-2 flex gap-2 items-center opacity-60">
                                     <span class="text-[10px]">@(item.FulfillmentMethod == "Delivery" ? "🚚" : "🏢")</span>
                                     <span class="text-[8px] font-black uppercase tracking-widest">
@@ -777,8 +772,14 @@
                 FulfillmentMethod = selFulfillment,
                 PickupLocationId = selFulfillment == "Pickup" ? selPickupId : null,
                 DeliveryFee = selFulfillment == "Delivery" ? GetDeliveryFee(tempAddress.ZipCode) : 0,
-                DeliveryAddressSummary = selFulfillment == "Delivery" ? $"{tempAddress.Street}, {tempAddress.City}" : ""
+                
+                @* PER ITEM LOGISTICS (Now using the DB properties) *@
+                DeliveryAddressSummary = selFulfillment == "Delivery" ? $"{tempAddress.Street}, {tempAddress.City}" : "",
+                Latitude = selFulfillment == "Delivery" ? customerCoords?.Lat : null,
+                Longitude = selFulfillment == "Delivery" ? customerCoords?.Lon : null,
+                CalculatedDistanceMiles = selFulfillment == "Delivery" ? currentDistance : 0
             };
+
             db.PPP_OrderItems.Add(newEntry);
             await db.SaveChangesAsync(); 
             foreach (var cfg in tempServingConfigs)
@@ -824,21 +825,10 @@
                 if (string.IsNullOrEmpty(user.MagicToken)) user.MagicToken = Guid.NewGuid().ToString("N");
                 user.TokenExpiresAt = DateTime.UtcNow.AddMonths(6);
             }
-            int chosenAddressId = 0;
-            if (cart!.Items != null && cart.Items.Any(i => i.FulfillmentMethod == "Delivery") && !string.IsNullOrEmpty(tempAddress.Street))
-            {
-                var existing = user.Addresses?.FirstOrDefault(a => a.Street.ToLower() == tempAddress.Street.ToLower());
-                if (existing == null) 
-                {
-                    var n = new PPP_Address { UserId = user.Id, Label = tempAddress.Label, Street = tempAddress.Street, City = tempAddress.City, State = tempAddress.State, ZipCode = tempAddress.ZipCode, IsDefault = true };
-                    db.Set<PPP_Address>().Add(n); await db.SaveChangesAsync(); chosenAddressId = n.Id;
-                }
-                else chosenAddressId = existing.Id;
-            }
-            var dbOrder = await db.PPP_Orders.FirstOrDefaultAsync(o => o.Id == cart.Id);
+            
+            var dbOrder = await db.PPP_Orders.FirstOrDefaultAsync(o => o.Id == cart!.Id);
             if (dbOrder != null) 
             {
-                dbOrder.AddressId = chosenAddressId > 0 ? chosenAddressId : null;
                 dbOrder.IsCheckedOut = true; dbOrder.CheckedOutAt = DateTime.UtcNow;
                 dbOrder.CustomerIdentifier = user.Email; dbOrder.Notes = cart.Notes;
                 await db.SaveChangesAsync();
@@ -872,25 +862,8 @@
     private async Task HandleSavedAddressChange(ChangeEventArgs e)
     {
         int id = int.Parse(e.Value?.ToString() ?? "0");
-        if (id == 0)
-        {
-            tempAddress = new PPP_Address { Label = "Home" };
-        }
-        else
-        {
-            var addr = currentUser?.Addresses?.FirstOrDefault(a => a.Id == id);
-            if (addr != null)
-            {
-                tempAddress.Id = addr.Id;
-                tempAddress.Label = addr.Label;
-                tempAddress.Street = addr.Street;
-                tempAddress.City = addr.City;
-                tempAddress.State = addr.State;
-                tempAddress.ZipCode = addr.ZipCode;
-                selZip = addr.ZipCode;
-                await UpdateCustomerCoords();
-            }
-        }
+        if (id == 0) tempAddress = new PPP_Address { Label = "Home" };
+        else { var addr = currentUser?.Addresses?.FirstOrDefault(a => a.Id == id); if (addr != null) { tempAddress.Id = addr.Id; tempAddress.Label = addr.Label; tempAddress.Street = addr.Street; tempAddress.City = addr.City; tempAddress.State = addr.State; tempAddress.ZipCode = addr.ZipCode; selZip = addr.ZipCode; await UpdateCustomerCoords(); } }
         await InvokeAsync(StateHasChanged);
     }
 
