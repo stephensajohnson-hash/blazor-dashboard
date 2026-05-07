@@ -74,6 +74,8 @@ builder.Services.AddScoped<PtoService>();
 // NETH Services
 builder.Services.AddScoped<NETHStateService>();
 
+builder.Services.AddScoped<PPPStoreService>();
+
 // --- DATABASE REGISTRATION ---
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
