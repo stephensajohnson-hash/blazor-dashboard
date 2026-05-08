@@ -1,11 +1,8 @@
 @page "/ppp-store/{OwnerId:int}"
 @using Dashboard
-@using Dashboard.Services
-@using Dashboard.Components
 @using Microsoft.EntityFrameworkCore
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject IDbContextFactory<AppDbContext> DbFactory
-@inject PPPStoreService StoreService
 
 <div class="min-h-screen w-full bg-[#050505] text-slate-200 p-8">
     @if (owner != null)
@@ -16,45 +13,55 @@
         </header>
 
         <div class="max-w-4xl mx-auto space-y-12">
-            @foreach (var dayGroup in activeMenus.SelectMany(m => m.Items).OrderBy(i => i.StartDate).GroupBy(i => i.StartDate.Date))
+            @if (activeMenus == null || !activeMenus.Any())
             {
-                <section>
-                    <h3 class="text-emerald-500 font-black uppercase tracking-[0.3em] text-xs mb-6 flex items-center gap-4">
-                        @dayGroup.Key.ToString("dddd, MMM d")
-                        <span class="h-px flex-1 bg-white/5"></span>
-                    </h3>
+                <div class="text-center py-20 border-2 border-dashed border-white/5 rounded-[3rem]">
+                    <p class="text-slate-500 uppercase font-black text-xs tracking-widest">No active menus found for this location.</p>
+                </div>
+            }
+            else
+            {
+                @foreach (var dayGroup in activeMenus.SelectMany(m => m.Items).OrderBy(i => i.StartDate).GroupBy(i => i.StartDate.Date))
+                {
+                    <section>
+                        <h3 class="text-emerald-500 font-black uppercase tracking-[0.3em] text-xs mb-6 flex items-center gap-4">
+                            @dayGroup.Key.ToString("dddd, MMM d")
+                            <span class="h-px flex-1 bg-white/5"></span>
+                        </h3>
 
-                    <div class="grid grid-cols-1 gap-6">
-                        @foreach (var item in dayGroup)
-                        {
-                            <div class="bg-[#111] border border-slate-800 p-6 rounded-[2rem] flex items-center gap-6 group hover:border-emerald-500/50 transition-all">
-                                @if (item.Recipe?.ImageId != null)
-                                {
-                                    <div class="w-24 h-24 rounded-2xl overflow-hidden shrink-0 bg-black">
-                                        <img src="/db-images-ppp/@item.Recipe.ImageId" class="w-full h-full object-cover" />
-                                    </div>
-                                }
-                                <div class="flex-1">
-                                    <h4 class="text-xl font-bold text-white uppercase italic">@item.Recipe?.Name</h4>
-                                    <p class="text-slate-400 text-xs line-clamp-2 mt-1">@item.Recipe?.LongDescription</p>
-                                    
-                                    <div class="mt-4 flex gap-3">
-                                        @{ var m = StoreService.GetMacros(item.Recipe); }
-                                        <span class="text-[10px] font-bold text-slate-500 uppercase">🔥 @m.Cals Cal</span>
-                                        <span class="text-[10px] font-bold text-slate-500 uppercase">🥩 @m.Prot P</span>
-                                        <span class="text-[10px] font-bold text-slate-500 uppercase">🥦 @m.Net C</span>
+                        <div class="grid grid-cols-1 gap-6">
+                            @foreach (var item in dayGroup)
+                            {
+                                <div class="bg-[#111] border border-slate-800 p-6 rounded-[2rem] flex items-center gap-6 group hover:border-emerald-500/50 transition-all">
+                                    @if (item.Recipe?.ImageId != null)
+                                    {
+                                        <div class="w-24 h-24 rounded-2xl overflow-hidden shrink-0 bg-black">
+                                            <img src="/db-images-ppp/@item.Recipe.ImageId" class="w-full h-full object-cover" />
+                                        </div>
+                                    }
+                                    <div class="flex-1">
+                                        <h4 class="text-xl font-bold text-white uppercase italic">@item.Recipe?.Name</h4>
+                                        <p class="text-slate-400 text-xs line-clamp-2 mt-1">@item.Recipe?.LongDescription</p>
+                                        
+                                        <div class="mt-4 flex gap-3">
+                                            @{ var m = CalculateMacros(item.Recipe); }
+                                            <span class="text-[10px] font-bold text-slate-500 uppercase bg-white/5 px-2 py-1 rounded">🔥 @m.Cals Cal</span>
+                                            <span class="text-[10px] font-bold text-slate-500 uppercase bg-white/5 px-2 py-1 rounded">🥩 @m.Prot P</span>
+                                            <span class="text-[10px] font-bold text-slate-500 uppercase bg-white/5 px-2 py-1 rounded">🥦 @m.Net C</span>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        }
-                    </div>
-                </section>
+                            }
+                        </div>
+                    </section>
+                }
             }
         </div>
     }
     else
     {
-        <div class="flex items-center justify-center h-64 text-slate-500 uppercase font-black text-xs tracking-[0.5em]">
+        <div class="flex flex-col items-center justify-center h-64 text-slate-500 uppercase font-black text-xs tracking-[0.5em] gap-4">
+            <div class="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
             Loading Storefront...
         </div>
     }
@@ -71,13 +78,11 @@
         {
             await using var db = await DbFactory.CreateDbContextAsync();
             
-            // Get Owner
             owner = await db.PPP_Owners
                 .Include(o => o.Address)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(o => o.Id == OwnerId);
 
-            // Get Active Menus & Items
             var today = DateTime.Today.ToUniversalTime();
             activeMenus = await db.Set<PPP_Menu>()
                 .Include(m => m.Items).ThenInclude(i => i.Recipe).ThenInclude(r => r.IngredientGroups).ThenInclude(g => g.Ingredients).ThenInclude(ing => ing.Ingredient)
@@ -91,5 +96,25 @@
         {
             Console.WriteLine($"Shell Load Error: {ex.Message}");
         }
+    }
+
+    private (double Cals, double Prot, double Fat, double Net) CalculateMacros(PPP_Recipe? r)
+    {
+        if (r == null || r.Servings <= 0 || r.IngredientGroups == null) return (0, 0, 0, 0);
+        double cals = 0, prot = 0, fat = 0, net = 0;
+        foreach (var group in r.IngredientGroups)
+        {
+            foreach (var mapping in group.Ingredients ?? new List<PPP_RecipeIngredientMapping>())
+            {
+                if (mapping.Ingredient != null)
+                {
+                    cals += mapping.Ingredient.Calories * mapping.Quantity;
+                    prot += mapping.Ingredient.Protein * mapping.Quantity;
+                    fat += mapping.Ingredient.Fat * mapping.Quantity;
+                    net += (mapping.Ingredient.Carbs - mapping.Ingredient.Fiber) * mapping.Quantity;
+                }
+            }
+        }
+        return (Math.Round(cals / r.Servings, 0), Math.Round(prot / r.Servings, 1), Math.Round(fat / r.Servings, 1), Math.Round(net / r.Servings, 1));
     }
 }
