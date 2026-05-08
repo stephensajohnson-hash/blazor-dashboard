@@ -27,9 +27,12 @@
                     <div class="grid grid-cols-1 gap-8">
                         @foreach (var item in dayGroup)
                         {
+                            @* DYNAMIC TIMEZONE LOGIC *@
+                            var businessTimeNow = GetLocalTime(owner.TimeZoneId);
                             var cutoff = item.StartDate.Date.AddDays(-1).Add(item.CutoffTime.ToTimeSpan());
-                            bool pastCutoff = DateTime.Now > cutoff;
-                            var timeRemaining = cutoff - DateTime.Now;
+                            var timeRemaining = cutoff - businessTimeNow;
+                            
+                            bool pastCutoff = businessTimeNow > cutoff;
                             bool showUrgencyBadge = !pastCutoff && timeRemaining.TotalHours < 24;
 
                             <div class="bg-[#111] border border-slate-800 p-8 rounded-[2.5rem] flex flex-col md:flex-row gap-8 transition-all @(pastCutoff ? "opacity-40 grayscale pointer-events-none" : "hover:border-emerald-500/50 cursor-pointer")">
@@ -111,6 +114,11 @@
         {
             await using var db = await DbFactory.CreateDbContextAsync();
             owner = await db.PPP_Owners.Include(o => o.Address).AsNoTracking().FirstOrDefaultAsync(o => o.Id == OwnerId);
+            
+            // For now, if TimeZoneId is null in DB, we default to CST for you
+            if (owner != null && string.IsNullOrEmpty(owner.TimeZoneId)) 
+                owner.TimeZoneId = "Central Standard Time";
+
             var today = DateTime.Today.ToUniversalTime();
             activeMenus = await db.Set<PPP_Menu>()
                 .Include(m => m.Items).ThenInclude(i => i.Recipe).ThenInclude(r => r.IngredientGroups).ThenInclude(g => g.Ingredients).ThenInclude(ing => ing.Ingredient)
@@ -120,13 +128,26 @@
                 .AsNoTracking()
                 .ToListAsync();
 
-            // Start the countdown timer
             timer = new Timer(1000);
             timer.Elapsed += async (s, e) => await InvokeAsync(StateHasChanged);
             timer.AutoReset = true;
             timer.Enabled = true;
         }
         catch (Exception ex) { Console.WriteLine(ex.Message); }
+    }
+
+    private DateTime GetLocalTime(string? timeZoneId)
+    {
+        try 
+        {
+            var zoneId = string.IsNullOrEmpty(timeZoneId) ? "Central Standard Time" : timeZoneId;
+            var tzi = TimeZoneInfo.FindSystemTimeZoneById(zoneId);
+            return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tzi);
+        }
+        catch 
+        {
+            return DateTime.Now; // Final fallback
+        }
     }
 
     private string GetIngredientList(PPP_Recipe r)
@@ -165,8 +186,5 @@
         return (nCals, nProt, nFat, nCarb, nFib, Math.Max(0, Math.Round(nCarb - nFib, 1)));
     }
 
-    public void Dispose()
-    {
-        timer?.Dispose();
-    }
+    public void Dispose() => timer?.Dispose();
 }
