@@ -15,38 +15,58 @@
     {
         @* STICKY HEADER *@
         <div class="sticky top-0 z-[100] bg-[#050505]/80 backdrop-blur-xl border-b border-white/10 px-8 py-6">
-            <header class="flex flex-col md:row justify-between items-start md:items-center gap-6">
+            <header class="flex flex-row justify-between items-center gap-6">
                 <div>
                     <h1 class="text-4xl font-black uppercase italic tracking-tighter text-white">@owner.BusinessName</h1>
                     <p class="text-slate-400 uppercase tracking-widest text-sm mt-2 font-bold">Available Menu Schedule</p>
                 </div>
                 
-                <div class="flex items-center gap-6">
+                <div class="flex items-center gap-6 ml-auto">
                     @if (currentUser != null)
                     {
-                        <div class="flex items-center gap-4 bg-white/5 p-2 pr-6 rounded-full border border-white/10">
-                            @if (currentUser.AvatarId.HasValue)
-                            {
-                                <div class="w-10 h-10 rounded-full overflow-hidden shadow-lg border border-white/10 shrink-0">
-                                    <img src="/db-images-ppp/@currentUser.AvatarId" class="w-full h-full object-cover" />
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center font-black text-sm text-white shadow-lg shrink-0">
-                                    @currentUser.FirstName?[0]@currentUser.LastName?[0]
-                                </div>
-                            }
-                            <div class="flex flex-col leading-tight">
-                                <span class="text-sm font-black uppercase tracking-tight text-white">@currentUser.FirstName @currentUser.LastName</span>
-                                @if (isImpersonating)
+                        @* Avatar with Dropdown Menu *@
+                        <div class="relative group">
+                            <div class="flex items-center gap-4 bg-white/5 p-2 pr-6 rounded-full border border-white/10 cursor-pointer hover:bg-white/10 transition-all">
+                                @if (currentUser.AvatarId.HasValue)
                                 {
-                                    <span class="text-[10px] font-black uppercase text-amber-500 animate-pulse">🕵️ Admin Impersonating</span>
+                                    <div class="w-10 h-10 rounded-full overflow-hidden shadow-lg border border-white/10 shrink-0">
+                                        <img src="/db-images-ppp/@currentUser.AvatarId" class="w-full h-full object-cover" />
+                                    </div>
                                 }
                                 else
                                 {
-                                    <span class="text-[10px] font-black uppercase text-slate-500 font-bold">Customer Session</span>
+                                    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center font-black text-sm text-white shadow-lg shrink-0">
+                                        @currentUser.FirstName?[0]@currentUser.LastName?[0]
+                                    </div>
                                 }
+                                <div class="flex flex-col leading-tight">
+                                    <span class="text-sm font-black uppercase tracking-tight text-white">@currentUser.FirstName @currentUser.LastName</span>
+                                    @if (isImpersonating)
+                                    {
+                                        <span class="text-[10px] font-black uppercase text-amber-500 animate-pulse">🕵️ Impersonating</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-[10px] font-black uppercase text-slate-500 font-bold">Customer</span>
+                                    }
+                                </div>
+                            </div>
+
+                            @* Dropdown Content *@
+                            <div class="absolute right-0 mt-2 w-64 bg-[#111] border border-white/10 rounded-2xl shadow-2xl py-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-[110]">
+                                <div class="px-4 py-3 border-b border-white/5 mb-2">
+                                    <p class="text-[10px] font-black text-slate-500 uppercase">Logged in as</p>
+                                    <p class="text-xs font-bold text-white truncate">@currentUser.Email</p>
+                                </div>
+                                @if (isImpersonating)
+                                {
+                                    <button @onclick="EndImpersonation" class="w-full text-left px-4 py-3 text-xs font-black uppercase text-rose-500 hover:bg-rose-500/10 transition-colors flex items-center gap-3">
+                                        <span>🚫</span> Stop Impersonating
+                                    </button>
+                                }
+                                <button class="w-full text-left px-4 py-3 text-xs font-black uppercase text-slate-400 hover:bg-white/5 transition-colors">
+                                    Logout
+                                </button>
                             </div>
                         </div>
                     }
@@ -95,9 +115,9 @@
                                     @if (showUrgencyBadge)
                                     {
                                         <div class="mb-6 p-4 bg-white/5 border border-white/10 rounded-2xl inline-flex flex-wrap items-center gap-3">
-                                            <div class="flex flex-col">
+                                            <div class="flex flex-col text-sm">
                                                 <span class="text-[10px] font-black text-slate-500 uppercase font-bold">Order Deadline</span>
-                                                <span class="text-sm font-bold text-slate-300">@cutoff.ToString("ddd MMM d") @@ @cutoff.ToString("h:mm tt")</span>
+                                                <span class="font-bold text-slate-300">@cutoff.ToString("ddd MMM d") @@ @cutoff.ToString("h:mm tt")</span>
                                             </div>
                                             <span class="h-8 w-px bg-white/10 hidden sm:block"></span>
                                             <div class="flex flex-col">
@@ -144,6 +164,7 @@
     private List<PPP_Menu> activeMenus = new();
     private Timer? timer;
     private PPP_User? currentUser;
+    private PPP_User? sessionUser;
     private bool isImpersonating = false;
 
     protected override async Task OnInitializedAsync()
@@ -176,7 +197,7 @@
             var token = await JS.InvokeAsync<string>("eval", "document.cookie.split('; ').find(row => row.startsWith('ppp_token='))?.split('=')[1]");
             if (!string.IsNullOrEmpty(token)) {
                 await using var db = await DbFactory.CreateDbContextAsync();
-                var sessionUser = await db.PPP_Users.FirstOrDefaultAsync(u => u.MagicToken == token && u.TokenExpiresAt > DateTime.UtcNow);
+                sessionUser = await db.PPP_Users.FirstOrDefaultAsync(u => u.MagicToken == token && u.TokenExpiresAt > DateTime.UtcNow);
                 if (sessionUser != null) {
                     if (!string.IsNullOrEmpty(sessionUser.ImpersonatingEmail)) {
                         currentUser = await db.PPP_Users.FirstOrDefaultAsync(u => u.Email == sessionUser.ImpersonatingEmail);
@@ -185,6 +206,21 @@
                 }
             }
         } catch (Exception ex) { Console.WriteLine(ex.Message); }
+    }
+
+    private async Task EndImpersonation()
+    {
+        if (sessionUser != null)
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var dbUser = await db.PPP_Users.FindAsync(sessionUser.Id);
+            if (dbUser != null)
+            {
+                dbUser.ImpersonatingEmail = null;
+                await db.SaveChangesAsync();
+                Nav.NavigateTo(Nav.Uri, forceLoad: true);
+            }
+        }
     }
 
     private void NavigateToItem(int id) => Nav.NavigateTo($"/ppp-store/{OwnerId}/item/{id}");
