@@ -10,6 +10,13 @@ namespace Dashboard.Pages
 {
     public partial class PPPStore : ComponentBase
     {
+        // MANUALLY MAPPING INJECTED SERVICES
+        [Inject] protected IDbContextFactory<AppDbContext> DbFactory { get; set; } = default!;
+        [Inject] protected NavigationManager Nav { get; set; } = default!;
+        [Inject] protected IJSRuntime JS { get; set; } = default!;
+        [Inject] protected GeocodingService GeoService { get; set; } = default!;
+        [Inject] protected PPPStoreService StoreService { get; set; } = default!;
+
         [Parameter] public int OwnerId { get; set; }
 
         protected PPP_Owner? owner;
