@@ -1,5 +1,6 @@
 @page "/ppp-store/{OwnerId:int}/item/{MenuItemId:int}"
 @using Dashboard
+@using Dashboard.Services
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.JSInterop
@@ -7,70 +8,149 @@
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject GeocodingService GeoService
 
-<div class="min-h-screen w-full bg-[#050505] text-slate-200 p-8 font-sans antialiased">
+<div class="min-h-screen w-full bg-[#050505] text-slate-200 font-sans antialiased">
     @if (owner != null)
     {
-        <header class="mb-12 border-b border-white/10 pb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-            <div class="cursor-pointer group" @onclick="GoBack">
-                <h1 class="text-4xl font-black uppercase italic tracking-tighter text-white group-hover:text-emerald-500 transition-colors">@owner.BusinessName</h1>
-                <p class="text-emerald-500 uppercase tracking-widest text-sm mt-2 font-bold flex items-center gap-2">
-                    <span class="text-xl">←</span> Back to Menu
-                </p>
-            </div>
-            
-            <div class="flex items-center gap-6">
-                @if (currentUser != null)
-                {
-                    <div class="flex items-center gap-4 bg-white/5 p-2 pr-6 rounded-full border border-white/10">
-                        @if (currentUser.AvatarId.HasValue)
-                        {
-                            <div class="w-10 h-10 rounded-full overflow-hidden shadow-lg border border-white/10 shrink-0">
-                                <img src="/db-images-ppp/@currentUser.AvatarId" class="w-full h-full object-cover" />
+        @* STICKY HEADER *@
+        <div class="sticky top-0 z-[100] bg-[#050505]/80 backdrop-blur-xl border-b border-white/10 px-8 py-6">
+            <header class="flex flex-col md:row justify-between items-start md:items-center gap-6">
+                <div class="cursor-pointer group" @onclick="GoBack">
+                    <h1 class="text-4xl font-black uppercase italic tracking-tighter text-white group-hover:text-emerald-500 transition-colors">@owner.BusinessName</h1>
+                    <p class="text-emerald-500 uppercase tracking-widest text-sm mt-2 font-bold flex items-center gap-2">
+                        <span class="text-xl">←</span> Back to Menu
+                    </p>
+                </div>
+                
+                <div class="flex items-center gap-6">
+                    @if (currentUser != null)
+                    {
+                        <div class="flex items-center gap-4 bg-white/5 p-2 pr-6 rounded-full border border-white/10">
+                            @if (currentUser.AvatarId.HasValue)
+                            {
+                                <div class="w-10 h-10 rounded-full overflow-hidden border border-white/10">
+                                    <img src="/db-images-ppp/@currentUser.AvatarId" class="w-full h-full object-cover" />
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="w-10 h-10 rounded-full bg-emerald-600 flex items-center justify-center font-black text-sm text-white">
+                                    @currentUser.FirstName?[0]@currentUser.LastName?[0]
+                                </div>
+                            }
+                            <div class="flex flex-col leading-tight">
+                                <span class="text-sm font-black uppercase text-white">@currentUser.FirstName @currentUser.LastName</span>
+                                @if (isImpersonating) { <span class="text-[10px] font-black uppercase text-amber-500">🕵️ Admin Impersonating</span> }
+                                else { <span class="text-[10px] font-black uppercase text-slate-500 font-bold">Customer Session</span> }
                             </div>
-                        }
-                        else
-                        {
-                            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center font-black text-sm text-white shadow-lg shrink-0">
-                                @currentUser.FirstName?[0]@currentUser.LastName?[0]
-                            </div>
-                        }
+                        </div>
+                    }
+
+                    <div class="bg-emerald-500/10 border border-emerald-500/20 px-6 py-3 rounded-2xl flex items-center gap-4">
+                        <span class="text-2xl">🛒</span>
                         <div class="flex flex-col">
-                            <span class="text-sm font-black uppercase tracking-tight text-white">@currentUser.FirstName @currentUser.LastName</span>
-                            @if (isImpersonating) { <span class="text-[10px] font-black uppercase text-amber-500 animate-pulse">🕵️ Admin Impersonating</span> }
-                            else { <span class="text-[10px] font-black uppercase text-slate-500 font-bold">Customer Session</span> }
+                            <span class="text-[10px] font-black uppercase text-emerald-500 tracking-widest font-bold">Your Cart</span>
+                            <span class="text-sm font-bold text-white">0 Items</span>
                         </div>
                     </div>
-                }
-
-                <div class="bg-emerald-500/10 border border-emerald-500/20 px-6 py-3 rounded-2xl flex items-center gap-4">
-                    <span class="text-2xl">🛒</span>
-                    <div class="flex flex-col">
-                        <span class="text-[10px] font-black uppercase text-emerald-500 tracking-widest font-bold">Your Cart</span>
-                        <span class="text-sm font-bold text-white">0 Items</span>
-                    </div>
                 </div>
-            </div>
-        </header>
+            </header>
+        </div>
 
         @if (item != null)
         {
-            <div class="max-w-3xl mx-auto space-y-12">
+            <div class="p-8 max-w-4xl mx-auto space-y-12 pb-40">
                 <div class="bg-[#111] border border-slate-800 rounded-[3rem] overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-500">
-                    <div class="p-12 border-b border-white/5 bg-gradient-to-b from-white/[0.02] to-transparent">
-                        <span class="text-[10px] font-black uppercase text-emerald-500 tracking-[0.4em] font-bold">Selection Preview</span>
-                        <h2 class="text-5xl font-black text-white uppercase italic tracking-tighter mt-2">@item.Recipe?.Name</h2>
+                    <div class="p-12 border-b border-white/5 bg-gradient-to-b from-white/[0.02] to-transparent flex flex-col md:flex-row gap-10">
+                        @if (item.Recipe?.ImageId != null)
+                        {
+                            <div class="w-64 h-64 rounded-[2rem] overflow-hidden bg-black shadow-2xl border border-white/10 shrink-0">
+                                <img src="/db-images-ppp/@item.Recipe.ImageId" class="w-full h-full object-cover" />
+                            </div>
+                        }
+                        <div class="flex-1">
+                            <span class="text-[10px] font-black uppercase text-emerald-500 tracking-[0.4em] font-bold">Selection Preview</span>
+                            <h2 class="text-5xl font-black text-white uppercase italic tracking-tighter mt-2">@item.Recipe?.Name</h2>
+                            <p class="text-lg text-slate-300 leading-relaxed font-medium mt-6">@item.Recipe?.LongDescription</p>
+                        </div>
                     </div>
-                    <div class="p-12 space-y-10">
-                        <p class="text-lg text-slate-300 leading-relaxed font-medium">@item.Recipe?.LongDescription</p>
-                        <div class="border-2 border-dashed border-white/10 rounded-[2.5rem] p-12 text-center bg-black/20">
-                            <p class="text-sm font-black uppercase text-slate-500 tracking-[0.2em] font-bold">Options & Customizations Coming Soon</p>
-                        </div>
-                        <div class="flex flex-col gap-4">
-                            <button type="button" @onclick="SimulateAddToCart" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-6 rounded-[2rem] font-black text-sm uppercase tracking-[0.4em] shadow-[0_20px_50px_rgba(16,185,129,0.2)] transition-all active:scale-[0.98]">
-                                Add to Cart & Continue
-                            </button>
-                        </div>
+
+                    <div class="p-12 space-y-12">
+                        @* FULFILLMENT SECTION *@
+                        <section class="space-y-6">
+                            <h3 class="text-xl font-black text-white uppercase italic tracking-tight">Fulfillment Method</h3>
+                            
+                            @if (owner.OffersPickup && owner.OffersDelivery)
+                            {
+                                <div class="grid grid-cols-2 gap-4 bg-black p-2 rounded-[2rem] border border-white/5">
+                                    <button @onclick='() => selFulfillment = "Pickup"' class='py-4 rounded-[1.5rem] font-black uppercase text-sm transition-all @(selFulfillment == "Pickup" ? "bg-white text-black shadow-xl" : "text-slate-500 hover:text-slate-300")'>🏢 Pickup</button>
+                                    <button @onclick='() => selFulfillment = "Delivery"' class='py-4 rounded-[1.5rem] font-black uppercase text-sm transition-all @(selFulfillment == "Delivery" ? "bg-blue-600 text-white shadow-xl" : "text-slate-500 hover:text-slate-300")'>🚚 Delivery</button>
+                                </div>
+                            }
+
+                            @if (selFulfillment == "Delivery")
+                            {
+                                <div class="space-y-6 animate-in slide-in-from-top duration-300">
+                                    @if (currentUser?.Addresses != null && currentUser.Addresses.Any())
+                                    {
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            @foreach (var addr in currentUser.Addresses)
+                                            {
+                                                <div @onclick="() => SelectAddress(addr)" class='p-6 rounded-[2rem] border-2 cursor-pointer transition-all @(selectedAddress?.Id == addr.Id ? "border-blue-500 bg-blue-500/10" : "border-white/5 bg-white/[0.02] hover:border-white/20")'>
+                                                    <p class="text-[10px] font-black uppercase text-blue-500 mb-1">@addr.Label</p>
+                                                    <p class="text-sm font-bold text-white">@addr.Street</p>
+                                                    <p class="text-xs text-slate-500">@addr.City, @addr.State @addr.ZipCode</p>
+                                                </div>
+                                            }
+                                            <div @onclick="AddNewAddressMode" class="p-6 rounded-[2rem] border-2 border-dashed border-white/10 flex items-center justify-center cursor-pointer hover:border-white/40 group">
+                                                <span class="text-xs font-black uppercase text-slate-500 group-hover:text-white">+ Add New Address</span>
+                                            </div>
+                                        </div>
+                                    }
+
+                                    @if (showNewAddressForm || currentUser?.Addresses?.Any() != true)
+                                    {
+                                        <div class="bg-black/40 border border-white/5 rounded-[2.5rem] p-8 space-y-4 shadow-inner">
+                                            <div class="grid grid-cols-2 gap-4">
+                                                <input @bind="tempAddress.Label" placeholder="Address Label (Home, Office)" class="bg-[#0a0a0a] border border-white/10 rounded-xl p-4 text-sm text-white outline-none focus:border-blue-500" />
+                                                <input @bind="tempAddress.ZipCode" @oninput="HandleZipInput" maxlength="5" placeholder="Zip Code" class="bg-[#0a0a0a] border border-white/10 rounded-xl p-4 text-sm text-white outline-none focus:border-blue-500 font-mono" />
+                                            </div>
+                                            <input @bind="tempAddress.Street" placeholder="Street Address" class="w-full bg-[#0a0a0a] border border-white/10 rounded-xl p-4 text-sm text-white outline-none focus:border-blue-500" />
+                                            <div class="grid grid-cols-2 gap-4">
+                                                <input @bind="tempAddress.City" placeholder="City" class="bg-[#0a0a0a] border border-white/10 rounded-xl p-4 text-sm text-white outline-none focus:border-blue-500" />
+                                                <input @bind="tempAddress.State" maxlength="2" placeholder="State" class="bg-[#0a0a0a] border border-white/10 rounded-xl p-4 text-sm text-white outline-none focus:border-blue-500" />
+                                            </div>
+                                        </div>
+                                    }
+
+                                    @* Delivery Fee & Warning Badge *@
+                                    @{ var feeInfo = GetDeliveryFeeInfo(); }
+                                    <div class="p-6 rounded-[2rem] flex flex-col md:flex-row justify-between items-center gap-4 @(feeInfo.IsOutOfArea ? "bg-amber-500/10 border-2 border-amber-500/20" : "bg-blue-600 text-white shadow-xl")">
+                                        <div class="text-center md:text-left">
+                                            <p class="text-[10px] font-black uppercase @(feeInfo.IsOutOfArea ? "text-amber-500" : "text-blue-200") tracking-widest">Delivery Status</p>
+                                            <p class="text-sm font-bold">@feeInfo.Label</p>
+                                            @if(currentDistance > 0) { <p class="text-[10px] opacity-70 font-bold">Distance: @Math.Round(currentDistance, 1) miles away</p> }
+                                        </div>
+                                        <div class="text-3xl font-black font-mono">$@feeInfo.Fee.ToString("N2")</div>
+                                    </div>
+                                    
+                                    @if (feeInfo.IsOutOfArea)
+                                    {
+                                        <div class="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-start gap-4">
+                                            <span class="text-xl">⚠️</span>
+                                            <p class="text-xs font-bold text-rose-400 leading-tight">
+                                                Notice: This address is outside the standard delivery area. The owner may contact you or cancel the order if the distance is too great.
+                                            </p>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </section>
+
+                        <button type="button" @onclick="SimulateAddToCart" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-8 rounded-[2rem] font-black text-lg uppercase tracking-[0.4em] shadow-[0_20px_50px_rgba(16,185,129,0.2)] transition-all active:scale-[0.98]">
+                            Add to Cart & Continue
+                        </button>
                     </div>
                 </div>
             </div>
@@ -86,14 +166,37 @@
     private PPP_User? currentUser;
     private bool isImpersonating = false;
 
+    private string selFulfillment = "Pickup";
+    private PPP_Address? selectedAddress;
+    private PPP_Address tempAddress = new() { Label = "Home" };
+    private bool showNewAddressForm = false;
+    private double currentDistance = 0;
+    private (double Lat, double Lon)? ownerCoords;
+
+    private List<PPP_DeliveryZipCode> ownerZips = new();
+    private List<PPP_DeliveryRadiusRule> ownerRadiusRules = new();
+
     protected override async Task OnInitializedAsync() {
         await using var db = await DbFactory.CreateDbContextAsync();
-        owner = await db.PPP_Owners.AsNoTracking().FirstOrDefaultAsync(o => o.Id == OwnerId);
+        owner = await db.PPP_Owners.Include(o => o.Address).AsNoTracking().FirstOrDefaultAsync(o => o.Id == OwnerId);
         item = await db.Set<PPP_MenuItem>().Include(i => i.Recipe).FirstOrDefaultAsync(i => i.Id == MenuItemId);
+        
+        if (owner != null) {
+            ownerZips = await db.Set<PPP_DeliveryZipCode>().Where(z => z.OwnerId == OwnerId).ToListAsync();
+            ownerRadiusRules = await db.Set<PPP_DeliveryRadiusRule>().Where(r => r.OwnerId == OwnerId && r.Enabled).OrderBy(r => r.MaxMiles).ToListAsync();
+            if (!owner.OffersPickup && owner.OffersDelivery) selFulfillment = "Delivery";
+            
+            if (owner.Address != null)
+                ownerCoords = await GeoService.GetCoordinatesAsync(owner.Address.Street, owner.Address.City, owner.Address.State, owner.Address.ZipCode);
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender) {
-        if (firstRender) { await LoadSessionIdentity(); StateHasChanged(); }
+        if (firstRender) { 
+            await LoadSessionIdentity(); 
+            if (currentUser?.Addresses?.Any() == true) SelectAddress(currentUser.Addresses.First(a => a.IsDefault) ?? currentUser.Addresses.First());
+            StateHasChanged(); 
+        }
     }
 
     private async Task LoadSessionIdentity() {
@@ -101,15 +204,53 @@
             var token = await JS.InvokeAsync<string>("eval", "document.cookie.split('; ').find(row => row.startsWith('ppp_token='))?.split('=')[1]");
             if (!string.IsNullOrEmpty(token)) {
                 await using var db = await DbFactory.CreateDbContextAsync();
-                var sessionUser = await db.PPP_Users.FirstOrDefaultAsync(u => u.MagicToken == token && u.TokenExpiresAt > DateTime.UtcNow);
+                var sessionUser = await db.PPP_Users.Include(u => u.Addresses).FirstOrDefaultAsync(u => u.MagicToken == token && u.TokenExpiresAt > DateTime.UtcNow);
                 if (sessionUser != null) {
                     if (!string.IsNullOrEmpty(sessionUser.ImpersonatingEmail)) {
-                        currentUser = await db.PPP_Users.FirstOrDefaultAsync(u => u.Email == sessionUser.ImpersonatingEmail);
+                        currentUser = await db.PPP_Users.Include(u => u.Addresses).FirstOrDefaultAsync(u => u.Email == sessionUser.ImpersonatingEmail);
                         isImpersonating = true;
-                    } else { currentUser = sessionUser; isImpersonating = false; }
+                    } else { currentUser = sessionUser; }
                 }
             }
         } catch (Exception ex) { Console.WriteLine(ex.Message); }
+    }
+
+    private async Task SelectAddress(PPP_Address addr) {
+        selectedAddress = addr;
+        showNewAddressForm = false;
+        await UpdateDistance(addr.Street, addr.City, addr.State, addr.ZipCode);
+    }
+
+    private void AddNewAddressMode() {
+        selectedAddress = null;
+        showNewAddressForm = true;
+        currentDistance = 0;
+    }
+
+    private async Task HandleZipInput(ChangeEventArgs e) {
+        tempAddress.ZipCode = e.Value?.ToString() ?? "";
+        if (tempAddress.ZipCode.Length == 5) await UpdateDistance(tempAddress.Street, tempAddress.City, tempAddress.State, tempAddress.ZipCode);
+    }
+
+    private async Task UpdateDistance(string s, string c, string st, string z) {
+        if (ownerCoords.HasValue && !string.IsNullOrEmpty(z)) {
+            var coords = await GeoService.GetCoordinatesAsync(s, c, st, z);
+            if (coords.HasValue) currentDistance = GeoService.CalculateDistance(ownerCoords.Value.Lat, ownerCoords.Value.Lon, coords.Value.Lat, coords.Value.Lon);
+        }
+        StateHasChanged();
+    }
+
+    private (double Fee, bool IsOutOfArea, string Label) GetDeliveryFeeInfo() {
+        var zip = selectedAddress?.ZipCode ?? tempAddress.ZipCode;
+        if (string.IsNullOrWhiteSpace(zip)) return (0, false, "Select or Enter Address");
+        
+        var zipMatch = ownerZips.FirstOrDefault(z => z.ZipCode == zip.Trim());
+        if (zipMatch != null) return (zipMatch.Fee, false, "Standard Zip Delivery");
+
+        var radiusMatch = ownerRadiusRules.FirstOrDefault(r => currentDistance <= r.MaxMiles);
+        if (radiusMatch != null) return (radiusMatch.Fee, false, $"Within {radiusMatch.MaxMiles}mi Radius");
+
+        return (ownerRadiusRules.OrderByDescending(r => r.MaxMiles).FirstOrDefault()?.Fee ?? 10.00, true, "Extended Area / Manual Review");
     }
 
     private void SimulateAddToCart() => Nav.NavigateTo($"/ppp-store/{OwnerId}");
