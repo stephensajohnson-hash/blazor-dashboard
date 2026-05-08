@@ -811,6 +811,7 @@ public class PPP_Owner
     public int? LogoId { get; set; }
     public int? AddressId { get; set; }
     public PPP_Address? Address { get; set; }
+    public string? TimeZoneId { get; set; } = "Central Standard Time";
     
     // ADD THESE TWO LINES:
     public bool OffersPickup { get; set; } = true;

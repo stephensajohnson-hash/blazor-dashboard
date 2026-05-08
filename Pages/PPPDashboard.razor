@@ -137,18 +137,36 @@
         {
             await using var db = await DbFactory.CreateDbContextAsync();
 
-            // Inside InitializePPP() in PPPDashboard.razor
+            // 1. COLUMN INJECTION BLOCK
             await db.Database.ExecuteSqlRawAsync(@"
                 DO $$ 
                 BEGIN 
+                    -- Add ImpersonatingEmail to PPP_Users
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Users' AND column_name='ImpersonatingEmail') THEN
                         ALTER TABLE ""PPP_Users"" ADD COLUMN ""ImpersonatingEmail"" text NULL;
                     END IF;
+
+                    -- Add TimeZoneId to PPP_Owners
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Owners' AND column_name='TimeZoneId') THEN
+                        ALTER TABLE ""PPP_Owners"" ADD COLUMN ""TimeZoneId"" text NULL;
+                    END IF;
                 END $$;
             ");
-            logs.Add("Added ImpersonatingEmail to PPP_User - if needed.");
+            logs.Add("Database schema verified (Impersonation & TimeZone fields).");
 
-            // 2. ADMIN RESCUE BLOCK
+            // 2. DATA INITIALIZATION (Optional: Set defaults for existing owners)
+            var ownersToFix = await db.PPP_Owners.Where(o => o.TimeZoneId == null).ToListAsync();
+            if (ownersToFix.Any())
+            {
+                foreach (var o in ownersToFix)
+                {
+                    o.TimeZoneId = "Central Standard Time";
+                }
+                await db.SaveChangesAsync();
+                logs.Add($"Initialized TimeZone for {ownersToFix.Count} owner records.");
+            }
+
+            // 3. ADMIN RESCUE BLOCK
             var adminEmail = "stephensallenjohnson@gmail.com"; 
             var adminUser = await db.PPP_Users.FirstOrDefaultAsync(u => u.Email.ToLower() == adminEmail.ToLower());
             
