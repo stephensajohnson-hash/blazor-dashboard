@@ -14,20 +14,39 @@
 
 <div class="h-screen w-full bg-[#050505] text-slate-200 font-sans antialiased overflow-hidden flex flex-col">
     
+    @* IN-PAGE ADMIN SAFETY ROPE *@
+    @if (sessionUser?.Role == "Admin" && !string.IsNullOrEmpty(sessionUser.ImpersonatingEmail))
+    {
+        <div class="fixed bottom-10 left-10 z-[9999] flex flex-col gap-4 items-start">
+            <button type="button" @onclick="EndImpersonation" class="bg-rose-600 hover:bg-rose-500 text-white px-6 py-4 rounded-2xl shadow-[0_0_40px_rgba(225,29,72,0.4)] border-2 border-white/20 flex items-center gap-4 transition-all active:scale-95 group">
+                <span class="text-2xl group-hover:rotate-[-15deg] transition-transform">🔙</span>
+                <div class="text-left">
+                    <p class="text-[9px] font-black uppercase tracking-[0.2em] leading-none opacity-60 mb-1">Testing Mode</p>
+                    <p class="text-xs font-black uppercase leading-tight">Exit Impersonation</p>
+                </div>
+            </button>
+        </div>
+    }
+
     @* Notification Stack *@
     <div class="fixed top-6 right-6 z-[900] flex flex-col gap-3">
         @foreach (var toast in toasts)
         {
-            <div class="p-4 rounded-2xl border shadow-2xl animate-in slide-in-from-right @(toast.IsError ? "bg-red-950 border-red-500 text-red-200" : "bg-emerald-950 border-emerald-500 text-emerald-200") backdrop-blur-md">
-                <span class="text-[10px] font-black uppercase tracking-widest">@toast.Message</span>
+            <div class="p-4 rounded-2xl border shadow-2xl animate-in slide-in-from-right duration-300 @(toast.IsError ? "bg-red-950 border-red-500 text-red-200" : "bg-emerald-950 border-emerald-500 text-emerald-200") backdrop-blur-md">
+                <div class="flex items-center gap-3">
+                    <span class="text-lg">@(toast.IsError ? "✕" : "✓")</span>
+                    <span class="text-[10px] font-black uppercase tracking-widest">@toast.Message</span>
+                </div>
             </div>
         }
     </div>
 
+    @* Scrollable Content Area *@
     <div class="flex-1 overflow-y-auto pb-40">
         @if (owner != null)
         {
             <PPPStoreHeader Owner="owner" />
+            
             <div class="max-w-3xl mx-auto px-4 mt-12">
                 @foreach (var menu in activeMenus)
                 {
@@ -38,11 +57,14 @@
                                 @dayGroup.Key.ToString("dddd, MMM d") 
                                 <span class="h-[1px] flex-1 bg-white/5"></span>
                             </h3>
+
                             <div class="grid grid-cols-1 gap-4">
                                 @foreach (var item in dayGroup)
                                 {
+                                    bool soldOut = IsItemSoldOut(item);
                                     bool pastCutoff = IsPastCutoff(item);
-                                    <div @onclick="() => SelectItem(item)" class="bg-[#111] border border-slate-800 rounded-[2.5rem] overflow-hidden flex flex-col md:flex-row cursor-pointer transition-all group shadow-xl @(pastCutoff ? "opacity-50 grayscale pointer-events-none" : "hover:border-emerald-500/40")">
+
+                                    <div @onclick="() => SelectItem(item)" class="bg-[#111] border border-slate-800 rounded-[2.5rem] overflow-hidden flex flex-col md:flex-row cursor-pointer transition-all group shadow-xl @(soldOut || pastCutoff ? "opacity-50 grayscale pointer-events-none" : "hover:border-emerald-500/40")">
                                         @if (item.Recipe?.ImageId != null)
                                         {
                                             <div class="w-full md:w-44 aspect-square bg-black overflow-hidden shrink-0">
@@ -50,13 +72,32 @@
                                             </div>
                                         }
                                         <div class="p-6 flex-1 flex flex-col">
-                                            <h4 class="text-xl font-black text-white uppercase italic tracking-tight">@item.Recipe?.Name</h4>
-                                            <p class="text-xs text-slate-300 line-clamp-3 mb-2">@item.Recipe?.LongDescription</p>
-                                            <div class="mt-auto pt-4 border-t border-white/5 flex flex-wrap gap-2">
-                                                @{ var m = StoreService.GetMacros(item.Recipe); }
-                                                <span class="bg-white/5 px-2 py-1 rounded-lg text-[10px] font-bold text-slate-300">🔥 @m.Cals cal</span>
-                                                <span class="bg-blue-500/10 px-2 py-1 rounded-lg text-[10px] font-bold text-blue-400">🥩 @m.Prot pro</span>
-                                                <span class="bg-emerald-500/10 px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-400">🥦 @m.Net net</span>
+                                            <div class="flex justify-between items-start mb-2">
+                                                <h4 class="text-xl font-black text-white uppercase italic tracking-tight">@item.Recipe?.Name</h4>
+                                            </div>
+                                            
+                                            @if (!string.IsNullOrEmpty(item.Recipe?.LongDescription))
+                                            {
+                                                <p class="text-xs text-slate-300 leading-relaxed line-clamp-3 mb-2 font-medium">@item.Recipe.LongDescription</p>
+                                            }
+                                            
+                                            @if (owner.ShowIngredientsToCustomer && item.Recipe != null)
+                                            {
+                                                <p class="text-[10px] text-slate-500 leading-relaxed line-clamp-2 mb-4 italic">
+                                                    <span class="font-black uppercase text-[8px] text-slate-600 not-italic mr-1">Ingredients:</span>
+                                                    @StoreService.GetSimplifiedIngredients(item.Recipe)
+                                                </p>
+                                            }
+                                            
+                                            <div class="mt-auto pt-4 border-t border-white/5 flex flex-wrap gap-2 items-center">
+                                                @if (owner.ShowMacrosToCustomer)
+                                                {
+                                                    var m = StoreService.GetMacros(item.Recipe);
+                                                    <span class="bg-white/5 border border-white/10 px-2 py-1 rounded-lg text-[10px] font-bold text-slate-300">🔥 @m.Cals cal</span>
+                                                    <span class="bg-blue-500/10 border border-blue-500/20 px-2 py-1 rounded-lg text-[10px] font-bold text-blue-400">🥩 @m.Prot pro</span>
+                                                    <span class="bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-lg text-[10px] font-bold text-amber-400">🥑 @m.Fat fat</span>
+                                                    <span class="bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-400">🥦 @m.Net net carbs</span>
+                                                }
                                             </div>
                                         </div>
                                     </div>
@@ -68,12 +109,11 @@
             </div>
         }
     </div>
-
     @* Persistent Cart Floating Bar *@
     @if (cart != null && cart.Items != null && cart.Items.Any())
     {
         <div class="fixed bottom-8 left-1/2 -translate-x-1/2 z-[150] w-full max-w-lg px-4">
-            <button @onclick="OpenCart" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white p-6 rounded-[2rem] flex justify-between items-center shadow-2xl border border-emerald-400/20 active:scale-95 transition-all">
+            <button @onclick="OpenCart" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white p-6 rounded-[2rem] flex justify-between items-center shadow-2xl transition-all active:scale-95 border border-emerald-400/20">
                 <div class="flex items-center gap-4">
                     <span class="bg-white/20 px-3 py-1 rounded-lg font-black text-xs">@cart.Items.Count</span>
                     <span class="text-xs font-black uppercase tracking-widest">Review & Checkout</span>
@@ -89,9 +129,12 @@
         <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[600] flex items-end justify-center" @onmousedown="() => showCart = false">
             <div @onmousedown:stopPropagation="true" class="bg-[#0f0f0f] w-full max-w-2xl rounded-t-[3rem] border-t border-slate-800 p-10 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[92vh] flex flex-col">
                 <div class="flex justify-between items-start mb-8 shrink-0">
-                    <h2 class="text-3xl font-black text-white uppercase italic tracking-tighter">Your Cart</h2>
-                    <button @onclick="() => showCart = false" class="bg-white/5 w-12 h-12 rounded-2xl text-slate-400 text-2xl transition-all">&times;</button>
+                    <div>
+                        <h2 class="text-3xl font-black text-white uppercase italic tracking-tighter">Your Cart</h2>
+                    </div>
+                    <button @onclick="() => showCart = false" class="bg-white/5 w-12 h-12 rounded-2xl text-slate-400 hover:text-white flex items-center justify-center text-2xl transition-all">&times;</button>
                 </div>
+
                 <div class="flex-1 overflow-y-auto space-y-4 pr-2">
                     @foreach (var item in cart.Items.OrderBy(i => i.ScheduledDate))
                     {
@@ -101,16 +144,32 @@
                                 <button @onclick="() => RemoveFromCart(item.Id)" class="text-slate-600 hover:text-red-500 text-xs">✕</button>
                             </div>
                             <h4 class="text-lg font-black text-white uppercase italic">@item.RecipeName</h4>
+                            
+                            @* Address Summary *@
                             <div class="mt-2 flex gap-2 items-center opacity-60">
                                 <span class="text-[10px]">@(item.FulfillmentMethod == "Delivery" ? "🚚" : "🏢")</span>
                                 <span class="text-[8px] font-black uppercase tracking-widest">
                                     @(item.FulfillmentMethod == "Delivery" ? item.DeliveryAddressSummary : GetPickupLocationName(item.PickupLocationId))
                                 </span>
                             </div>
+
+                            <div class="flex justify-between items-center mt-2">
+                                <span class="text-[9px] text-slate-400 font-bold uppercase">@item.SizeName</span>
+                                <span class="text-xs font-mono">$@item.BasePrice.ToString("N2")</span>
+                            </div>
+
+                            @if (item.FulfillmentMethod == "Delivery" && item.DeliveryFee > 0)
+                            {
+                                <div class="flex justify-between items-center mt-2 p-3 bg-blue-500/10 rounded-2xl border border-blue-500/20 text-blue-400 font-bold text-[10px]">
+                                    <span>Delivery Service Fee</span>
+                                    <span>+$@item.DeliveryFee.ToString("N2")</span>
+                                </div>
+                            }
                         </div>
                     }
                     <textarea @bind="cart.Notes" placeholder="Notes for owner..." class="w-full bg-black border border-slate-800 rounded-2xl p-4 text-sm text-slate-300 mt-6"></textarea>
                 </div>
+
                 <div class="mt-8 pt-8 border-t border-white/10 shrink-0">
                     <div class="flex justify-between items-end mb-8">
                         <span class="text-[10px] font-black uppercase text-slate-500">Order Total</span>
@@ -122,7 +181,7 @@
         </div>
     }
 
-    @* Selection Modal *@
+    @* Configuration Modal *@
     @if (selectedItem != null && currentSize != null)
     {
         <div class="fixed inset-0 bg-black/95 backdrop-blur-md z-[400] flex flex-col items-center justify-end" @onmousedown="() => selectedItem = null">
@@ -174,7 +233,7 @@
                         {
                             var index = i;
                             <div class="bg-black border border-slate-800 rounded-[2rem] p-6 shadow-inner mb-4">
-                                <input @bind="tempServingConfigs[index].LabelName" placeholder="Recipient Name" class="w-full bg-[#0a0a0a] border border-slate-800 rounded-xl p-4 text-sm text-white font-bold italic outline-none focus:border-emerald-500" />
+                                <input @bind="tempServingConfigs[index].LabelName" placeholder="Recipient Name (e.g. Dad, Guest)" class="w-full bg-[#0a0a0a] border border-slate-800 rounded-xl p-4 text-sm text-white font-bold italic outline-none focus:border-emerald-500 transition-all" />
                             </div>
                         }
                     </section>
@@ -188,6 +247,7 @@
             </div>
         </div>
     }
+
     @* Final Manifest Modal *@
     @if (showContactForm)
     {
@@ -232,7 +292,6 @@
         </div>
     }
 </div>
-
 @code {
     [Parameter] public int OwnerId { get; set; }
     private PPP_Owner? owner;
@@ -360,7 +419,6 @@
     private double GetDeliveryFee(string zip) => GetDeliveryFeeInfo(zip).Fee;
     private string GetPickupLocationName(int? id) => pickupLocations.FirstOrDefault(l => l.Id == id)?.Name ?? "Pickup";
     private double GetCartTotal() => cart?.Items?.Sum(i => i.BasePrice + i.DeliveryFee + (i.Servings?.Sum(s => s.SelectedOptions?.Sum(o => o.AddOnPrice) ?? 0) ?? 0)) ?? 0;
-    private string GetSimplifiedIngredients(PPP_Recipe? r) => StoreService.GetSimplifiedIngredients(r);
     private bool IsPastCutoff(PPP_MenuItem i) => DateTime.Now > i.StartDate.Date.AddDays(-1).Add(i.CutoffTime.ToTimeSpan());
     private bool IsItemSoldOut(PPP_MenuItem i) => false;
     private class ToastItem { public string Message { get; set; } = ""; public bool IsError { get; set; } }
