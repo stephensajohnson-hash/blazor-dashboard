@@ -2,27 +2,52 @@
 @using Dashboard
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
 @using System.Timers
 @implements IDisposable
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <div class="min-h-screen w-full bg-[#050505] text-slate-200 p-8 font-sans antialiased">
     @if (owner != null)
     {
-        <header class="mb-12 border-b border-white/10 pb-8 flex justify-between items-end">
+        <header class="mb-12 border-b border-white/10 pb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
             <div>
                 <h1 class="text-4xl font-black uppercase italic tracking-tighter text-white">@owner.BusinessName</h1>
                 <p class="text-slate-400 uppercase tracking-widest text-sm mt-2">Available Menu Schedule</p>
             </div>
             
-            @* Simple Cart Display *@
-            <div class="bg-emerald-500/10 border border-emerald-500/20 px-6 py-3 rounded-2xl flex items-center gap-4">
-                <span class="text-2xl">🛒</span>
-                <div class="flex flex-col">
-                    <span class="text-[10px] font-black uppercase text-emerald-500 tracking-widest">Your Cart</span>
-                    <span class="text-sm font-bold text-white">0 Items</span>
+            <div class="flex items-center gap-4">
+                @* User Identity Avatar *@
+                @if (currentUser != null)
+                {
+                    <div class="flex items-center gap-4 bg-white/5 p-2 pr-6 rounded-full border border-white/10">
+                        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center font-black text-white shadow-lg">
+                            @currentUser.FirstName?[0]@currentUser.LastName?[0]
+                        </div>
+                        <div class="flex flex-col">
+                            <span class="text-xs font-black uppercase tracking-tight text-white">@currentUser.FirstName @currentUser.LastName</span>
+                            @if (isImpersonating)
+                            {
+                                <span class="text-[9px] font-black uppercase text-amber-500 animate-pulse">🕵️ Admin Impersonating</span>
+                            }
+                            else
+                            {
+                                <span class="text-[9px] font-black uppercase text-slate-500">Customer Session</span>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @* Simple Cart Display *@
+                <div class="bg-emerald-500/10 border border-emerald-500/20 px-6 py-3 rounded-2xl flex items-center gap-4">
+                    <span class="text-2xl">🛒</span>
+                    <div class="flex flex-col">
+                        <span class="text-[10px] font-black uppercase text-emerald-500 tracking-widest">Your Cart</span>
+                        <span class="text-sm font-bold text-white">0 Items</span>
+                    </div>
                 </div>
             </div>
         </header>
@@ -42,11 +67,9 @@
                             var businessTimeNow = GetLocalTime(owner.TimeZoneId);
                             var cutoff = item.StartDate.Date.AddDays(-1).Add(item.CutoffTime.ToTimeSpan());
                             var timeRemaining = cutoff - businessTimeNow;
-                            
                             bool pastCutoff = businessTimeNow > cutoff;
                             bool showUrgencyBadge = !pastCutoff && timeRemaining.TotalHours < 24;
 
-                            @* Added NavigateTo on click *@
                             <div @onclick="() => NavigateToItem(item.Id)" class="bg-[#111] border border-slate-800 p-8 rounded-[2.5rem] flex flex-col md:flex-row gap-8 transition-all @(pastCutoff ? "opacity-40 grayscale pointer-events-none" : "hover:border-emerald-500/50 cursor-pointer shadow-xl")">
                                 
                                 @if (item.Recipe?.ImageId != null)
@@ -68,9 +91,9 @@
                                     @if (showUrgencyBadge)
                                     {
                                         <div class="mb-6 p-4 bg-white/5 border border-white/10 rounded-2xl inline-flex flex-wrap items-center gap-3">
-                                            <div class="flex flex-col">
+                                            <div class="flex flex-col text-sm">
                                                 <span class="text-[10px] font-black text-slate-500 uppercase">Order Deadline</span>
-                                                <span class="text-sm font-bold text-slate-300">@cutoff.ToString("ddd MMM d") @@ @cutoff.ToString("h:mm tt")</span>
+                                                <span class="font-bold text-slate-300">@cutoff.ToString("ddd MMM d") @@ @cutoff.ToString("h:mm tt")</span>
                                             </div>
                                             <span class="h-8 w-px bg-white/10 hidden sm:block"></span>
                                             <div class="flex flex-col">
@@ -120,6 +143,9 @@
     private List<PPP_Menu> activeMenus = new();
     private Timer? timer;
 
+    private PPP_User? currentUser;
+    private bool isImpersonating = false;
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -144,10 +170,44 @@
         catch (Exception ex) { Console.WriteLine(ex.Message); }
     }
 
-    private void NavigateToItem(int menuItemId)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        Nav.NavigateTo($"/ppp-store/{OwnerId}/item/{menuItemId}");
+        if (firstRender)
+        {
+            await LoadSessionIdentity();
+            StateHasChanged();
+        }
     }
+
+    private async Task LoadSessionIdentity()
+    {
+        try
+        {
+            var token = await JS.InvokeAsync<string>("eval", "document.cookie.split('; ').find(row => row.startsWith('ppp_token='))?.split('=')[1]");
+            if (!string.IsNullOrEmpty(token))
+            {
+                await using var db = await DbFactory.CreateDbContextAsync();
+                var sessionUser = await db.PPP_Users.FirstOrDefaultAsync(u => u.MagicToken == token && u.TokenExpiresAt > DateTime.UtcNow);
+                
+                if (sessionUser != null)
+                {
+                    if (!string.IsNullOrEmpty(sessionUser.ImpersonatingEmail))
+                    {
+                        currentUser = await db.PPP_Users.FirstOrDefaultAsync(u => u.Email == sessionUser.ImpersonatingEmail);
+                        isImpersonating = true;
+                    }
+                    else
+                    {
+                        currentUser = sessionUser;
+                        isImpersonating = false;
+                    }
+                }
+            }
+        }
+        catch (Exception ex) { Console.WriteLine($"Identity Load Error: {ex.Message}"); }
+    }
+
+    private void NavigateToItem(int menuItemId) => Nav.NavigateTo($"/ppp-store/{OwnerId}/item/{menuItemId}");
 
     private DateTime GetLocalTime(string? timeZoneId)
     {

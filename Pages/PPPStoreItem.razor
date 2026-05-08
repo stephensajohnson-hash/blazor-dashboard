@@ -2,18 +2,33 @@
 @using Dashboard
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <div class="min-h-screen w-full bg-[#050505] text-slate-200 p-8 font-sans antialiased">
     
-    @* Navigation Header *@
-    <div class="max-w-2xl mx-auto mb-10">
+    @* Identity & Navigation Header *@
+    <div class="max-w-2xl mx-auto mb-10 flex justify-between items-center">
         <button type="button" @onclick="GoBack" class="text-sm font-black uppercase text-emerald-500 hover:text-emerald-400 flex items-center gap-3 transition-all group">
             <span class="text-xl group-hover:-translate-x-1 transition-transform">←</span> 
             Back to Menu
         </button>
+
+        @if (currentUser != null)
+        {
+            <div class="flex items-center gap-3 bg-white/5 p-1.5 pr-4 rounded-full border border-white/10 scale-90 origin-right">
+                <div class="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center font-black text-[10px]">
+                    @currentUser.FirstName?[0]@currentUser.LastName?[0]
+                </div>
+                <div class="flex flex-col leading-none">
+                    <span class="text-[10px] font-black uppercase text-white">@currentUser.FirstName</span>
+                    @if (isImpersonating) { <span class="text-[7px] font-black text-amber-500 uppercase">Impersonating</span> }
+                </div>
+            </div>
+        }
     </div>
 
     @if (item != null)
@@ -28,14 +43,11 @@
                 @if (!string.IsNullOrEmpty(item.Recipe?.LongDescription))
                 {
                     <div class="p-8 bg-white/[0.02] border border-white/5 rounded-[2rem]">
-                        <p class="text-base text-slate-300 leading-relaxed font-medium">
-                            @item.Recipe.LongDescription
-                        </p>
+                        <p class="text-base text-slate-300 leading-relaxed font-medium">@item.Recipe.LongDescription</p>
                     </div>
                 }
                 
                 <div class="border-2 border-dashed border-white/10 rounded-[2.5rem] p-12 text-center bg-black/20">
-                    <div class="text-3xl mb-4 opacity-20">⚙️</div>
                     <p class="text-sm font-black uppercase text-slate-500 tracking-[0.2em]">Personalization options are being wired up</p>
                 </div>
             </div>
@@ -44,18 +56,7 @@
                 <button type="button" @onclick="SimulateAddToCart" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-6 rounded-[2rem] font-black text-sm uppercase tracking-[0.4em] shadow-[0_20px_50px_rgba(16,185,129,0.2)] transition-all active:scale-[0.98]">
                     Add to Cart & Continue
                 </button>
-                
-                <button type="button" @onclick="GoBack" class="w-full bg-white/5 hover:bg-white/10 text-slate-400 py-4 rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest transition-all">
-                    Cancel and Return
-                </button>
             </div>
-        </div>
-    }
-    else
-    {
-        <div class="flex flex-col items-center justify-center min-h-[50vh] gap-6">
-            <div class="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
-            <p class="text-slate-500 font-black uppercase text-xs tracking-[0.4em] animate-pulse">Initializing Component...</p>
         </div>
     }
 </div>
@@ -64,30 +65,38 @@
     [Parameter] public int OwnerId { get; set; }
     [Parameter] public int MenuItemId { get; set; }
     private PPP_MenuItem? item;
+    private PPP_User? currentUser;
+    private bool isImpersonating = false;
 
     protected override async Task OnInitializedAsync()
     {
-        try 
+        await using var db = await DbFactory.CreateDbContextAsync();
+        item = await db.Set<PPP_MenuItem>().Include(i => i.Recipe).FirstOrDefaultAsync(i => i.Id == MenuItemId);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
         {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            item = await db.Set<PPP_MenuItem>()
-                .Include(i => i.Recipe)
-                .FirstOrDefaultAsync(i => i.Id == MenuItemId);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error loading item {MenuItemId}: {ex.Message}");
+            var token = await JS.InvokeAsync<string>("eval", "document.cookie.split('; ').find(row => row.startsWith('ppp_token='))?.split('=')[1]");
+            if (!string.IsNullOrEmpty(token))
+            {
+                await using var db = await DbFactory.CreateDbContextAsync();
+                var sessionUser = await db.PPP_Users.FirstOrDefaultAsync(u => u.MagicToken == token && u.TokenExpiresAt > DateTime.UtcNow);
+                if (sessionUser != null)
+                {
+                    if (!string.IsNullOrEmpty(sessionUser.ImpersonatingEmail)) {
+                        currentUser = await db.PPP_Users.FirstOrDefaultAsync(u => u.Email == sessionUser.ImpersonatingEmail);
+                        isImpersonating = true;
+                    } else {
+                        currentUser = sessionUser;
+                    }
+                    StateHasChanged();
+                }
+            }
         }
     }
 
-    private void SimulateAddToCart()
-    {
-        // Simple return to store for now
-        Nav.NavigateTo($"/ppp-store/{OwnerId}");
-    }
-
-    private void GoBack()
-    {
-        Nav.NavigateTo($"/ppp-store/{OwnerId}");
-    }
+    private void SimulateAddToCart() => Nav.NavigateTo($"/ppp-store/{OwnerId}");
+    private void GoBack() => Nav.NavigateTo($"/ppp-store/{OwnerId}");
 }
