@@ -2,6 +2,8 @@
 @using Dashboard
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.AspNetCore.Components.Web
+@using System.Timers
+@implements IDisposable
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject IDbContextFactory<AppDbContext> DbFactory
 
@@ -32,7 +34,6 @@
 
                             <div class="bg-[#111] border border-slate-800 p-8 rounded-[2.5rem] flex flex-col md:flex-row gap-8 transition-all @(pastCutoff ? "opacity-40 grayscale pointer-events-none" : "hover:border-emerald-500/50 cursor-pointer")">
                                 
-                                @* 2"x2" approximate image (w-48 h-48 is roughly 192px) *@
                                 @if (item.Recipe?.ImageId != null)
                                 {
                                     <div class="w-48 h-48 rounded-[2rem] overflow-hidden shrink-0 bg-black shadow-2xl">
@@ -51,17 +52,24 @@
 
                                     @if (showUrgencyBadge)
                                     {
-                                        <div class="mb-6 p-3 bg-white/5 border border-white/10 rounded-2xl inline-flex items-center gap-2">
-                                            <span class="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Order by @cutoff.ToString("dddd MMM d") at @cutoff.ToString("h:mm tt")</span>
-                                            <span class="h-4 w-px bg-white/10"></span>
-                                            <span class="text-[10px] font-black uppercase text-yellow-400">@((int)timeRemaining.TotalHours) hours @timeRemaining.Minutes minutes remaining</span>
+                                        <div class="mb-6 p-4 bg-white/5 border border-white/10 rounded-2xl inline-flex flex-wrap items-center gap-3">
+                                            <div class="flex flex-col">
+                                                <span class="text-[8px] font-black text-slate-500 uppercase">Order Deadline</span>
+                                                <span class="text-[10px] font-bold text-slate-300">@cutoff.ToString("ddd MMM d") @@ @cutoff.ToString("h:mm tt")</span>
+                                            </div>
+                                            <span class="h-8 w-px bg-white/10 hidden sm:block"></span>
+                                            <div class="flex flex-col">
+                                                <span class="text-[8px] font-black text-yellow-500/50 uppercase italic">Time Remaining</span>
+                                                <span class="text-xs font-mono font-black text-yellow-400 tabular-nums">
+                                                    @($"{ (int)timeRemaining.TotalHours:D2}h {timeRemaining.Minutes:D2}m {timeRemaining.Seconds:D2}s")
+                                                </span>
+                                            </div>
                                         </div>
                                     }
 
-                                    @* Long Description - No truncation *@
                                     <p class="text-sm text-slate-300 leading-relaxed mb-6">@item.Recipe?.LongDescription</p>
 
-                                    @if (owner.ShowIngredientsToCustomer && item.Recipe?.IngredientGroups != null)
+                                    @if (owner.ShowIngredientsToCustomer && item.Recipe != null)
                                     {
                                         <div class="mb-6">
                                             <h5 class="text-[8px] font-black uppercase text-slate-500 tracking-[0.2em] mb-2">Ingredients</h5>
@@ -95,6 +103,7 @@
     [Parameter] public int OwnerId { get; set; }
     private PPP_Owner? owner;
     private List<PPP_Menu> activeMenus = new();
+    private Timer? timer;
 
     protected override async Task OnInitializedAsync()
     {
@@ -110,19 +119,24 @@
                 .Where(m => m.OwnerId == OwnerId && m.IsPublished && m.EndDate >= today)
                 .AsNoTracking()
                 .ToListAsync();
+
+            // Start the countdown timer
+            timer = new Timer(1000);
+            timer.Elapsed += async (s, e) => await InvokeAsync(StateHasChanged);
+            timer.AutoReset = true;
+            timer.Enabled = true;
         }
         catch (Exception ex) { Console.WriteLine(ex.Message); }
     }
 
-    private string GetIngredientList(PPP_Recipe? r)
+    private string GetIngredientList(PPP_Recipe r)
     {
-        if (r?.IngredientGroups == null) return "";
-        var names = r.IngredientGroups
+        if (r.IngredientGroups == null) return "";
+        return string.Join(", ", r.IngredientGroups
             .SelectMany(g => g.Ingredients ?? new List<PPP_RecipeIngredientMapping>())
             .Where(m => m.Ingredient != null)
             .Select(m => m.Ingredient!.Name.ToLower().Trim())
-            .Distinct();
-        return string.Join(", ", names);
+            .Distinct());
     }
 
     private (double Cals, double Prot, double Fat, double Carb, double Fib, double Net) CalculateMacros(PPP_Recipe? r)
@@ -149,5 +163,10 @@
         double nCarb = Math.Round(carb / r.Servings, 1);
         double nFib = Math.Round(fib / r.Servings, 1);
         return (nCals, nProt, nFat, nCarb, nFib, Math.Max(0, Math.Round(nCarb - nFib, 1)));
+    }
+
+    public void Dispose()
+    {
+        timer?.Dispose();
     }
 }
