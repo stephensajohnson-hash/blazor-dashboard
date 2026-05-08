@@ -5,7 +5,7 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject IDbContextFactory<AppDbContext> DbFactory
 
-<div class="min-h-screen w-full bg-[#050505] text-slate-200 p-8">
+<div class="min-h-screen w-full bg-[#050505] text-slate-200 p-8 font-sans">
     @if (owner != null)
     {
         <header class="mb-12 border-b border-white/10 pb-8">
@@ -14,67 +14,79 @@
         </header>
 
         <div class="max-w-4xl mx-auto space-y-12">
-            @if (activeMenus == null || !activeMenus.Any())
+            @foreach (var dayGroup in activeMenus.SelectMany(m => m.Items).OrderBy(i => i.StartDate).GroupBy(i => i.StartDate.Date))
             {
-                <div class="text-center py-20 border-2 border-dashed border-white/5 rounded-[3rem]">
-                    <p class="text-slate-500 uppercase font-black text-xs tracking-widest">No active menus found for this location.</p>
-                </div>
-            }
-            else
-            {
-                @foreach (var dayGroup in activeMenus.SelectMany(m => m.Items).OrderBy(i => i.StartDate).GroupBy(i => i.StartDate.Date))
-                {
-                    <section>
-                        <h3 class="text-emerald-500 font-black uppercase tracking-[0.3em] text-xs mb-6 flex items-center gap-4">
-                            @dayGroup.Key.ToString("dddd, MMM d")
-                            <span class="h-px flex-1 bg-white/5"></span>
-                        </h3>
+                <section>
+                    <h3 class="text-emerald-500 font-black uppercase tracking-[0.3em] text-xs mb-6 flex items-center gap-4">
+                        @dayGroup.Key.ToString("dddd, MMM d")
+                        <span class="h-px flex-1 bg-white/5"></span>
+                    </h3>
 
-                        <div class="grid grid-cols-1 gap-6">
-                            @foreach (var item in dayGroup)
-                            {
-                                @* Logic: Cutoff is typically the day before at a specific time. 
-                                   Change the logic below if your cutoff rules are different.
-                                *@
-                                bool pastCutoff = DateTime.Now > item.StartDate.Date.AddDays(-1).Add(item.CutoffTime.ToTimeSpan());
+                    <div class="grid grid-cols-1 gap-8">
+                        @foreach (var item in dayGroup)
+                        {
+                            var cutoff = item.StartDate.Date.AddDays(-1).Add(item.CutoffTime.ToTimeSpan());
+                            bool pastCutoff = DateTime.Now > cutoff;
+                            var timeRemaining = cutoff - DateTime.Now;
+                            bool showUrgencyBadge = !pastCutoff && timeRemaining.TotalHours < 24;
 
-                                <div class="bg-[#111] border border-slate-800 p-6 rounded-[2rem] flex items-center gap-6 group transition-all @(pastCutoff ? "opacity-40 grayscale pointer-events-none" : "hover:border-emerald-500/50 cursor-pointer")">
-                                    @if (item.Recipe?.ImageId != null)
+                            <div class="bg-[#111] border border-slate-800 p-8 rounded-[2.5rem] flex flex-col md:flex-row gap-8 transition-all @(pastCutoff ? "opacity-40 grayscale pointer-events-none" : "hover:border-emerald-500/50 cursor-pointer")">
+                                
+                                @* 2"x2" approximate image (w-48 h-48 is roughly 192px) *@
+                                @if (item.Recipe?.ImageId != null)
+                                {
+                                    <div class="w-48 h-48 rounded-[2rem] overflow-hidden shrink-0 bg-black shadow-2xl">
+                                        <img src="/db-images-ppp/@item.Recipe.ImageId" class="w-full h-full object-cover" />
+                                    </div>
+                                }
+
+                                <div class="flex-1 flex flex-col justify-start">
+                                    <div class="flex justify-between items-start mb-4">
+                                        <h4 class="text-2xl font-black text-white uppercase italic tracking-tight">@item.Recipe?.Name</h4>
+                                        @if (pastCutoff)
+                                        {
+                                            <span class="text-[9px] font-black uppercase bg-rose-500 text-white px-3 py-1 rounded-full">Ordering Closed</span>
+                                        }
+                                    </div>
+
+                                    @if (showUrgencyBadge)
                                     {
-                                        <div class="w-24 h-24 rounded-2xl overflow-hidden shrink-0 bg-black">
-                                            <img src="/db-images-ppp/@item.Recipe.ImageId" class="w-full h-full object-cover" />
+                                        <div class="mb-6 p-3 bg-white/5 border border-white/10 rounded-2xl inline-flex items-center gap-2">
+                                            <span class="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Order by @cutoff.ToString("dddd MMM d") at @cutoff.ToString("h:mm tt")</span>
+                                            <span class="h-4 w-px bg-white/10"></span>
+                                            <span class="text-[10px] font-black uppercase text-yellow-400">@((int)timeRemaining.TotalHours) hours @timeRemaining.Minutes minutes remaining</span>
                                         </div>
                                     }
-                                    <div class="flex-1">
-                                        <div class="flex justify-between items-start">
-                                            <h4 class="text-xl font-bold text-white uppercase italic">@item.Recipe?.Name</h4>
-                                            @if (pastCutoff)
-                                            {
-                                                <span class="text-[8px] font-black uppercase bg-rose-500/20 text-rose-500 px-2 py-1 rounded border border-rose-500/20">Ordering Closed</span>
-                                            }
+
+                                    @* Long Description - No truncation *@
+                                    <p class="text-sm text-slate-300 leading-relaxed mb-6">@item.Recipe?.LongDescription</p>
+
+                                    @if (owner.ShowIngredientsToCustomer && item.Recipe?.IngredientGroups != null)
+                                    {
+                                        <div class="mb-6">
+                                            <h5 class="text-[8px] font-black uppercase text-slate-500 tracking-[0.2em] mb-2">Ingredients</h5>
+                                            <p class="text-xs text-slate-400 italic">@GetIngredientList(item.Recipe)</p>
                                         </div>
-                                        <p class="text-slate-400 text-xs line-clamp-2 mt-1">@item.Recipe?.LongDescription</p>
-                                        
-                                        <div class="mt-4 flex gap-3">
+                                    }
+
+                                    @if (owner.ShowMacrosToCustomer)
+                                    {
+                                        <div class="mt-auto pt-6 border-t border-white/5 grid grid-cols-3 sm:grid-cols-6 gap-4">
                                             @{ var m = CalculateMacros(item.Recipe); }
-                                            <span class="text-[10px] font-bold text-slate-500 uppercase bg-white/5 px-2 py-1 rounded">🔥 @m.Cals Cal</span>
-                                            <span class="text-[10px] font-bold text-slate-500 uppercase bg-white/5 px-2 py-1 rounded">🥩 @m.Prot P</span>
-                                            <span class="text-[10px] font-bold text-slate-500 uppercase bg-white/5 px-2 py-1 rounded">🥦 @m.Net Net</span>
+                                            <div class="flex flex-col"><span class="text-[8px] font-black text-slate-500 uppercase mb-1">Calories</span><span class="text-xs font-bold text-white">🔥 @m.Cals</span></div>
+                                            <div class="flex flex-col"><span class="text-[8px] font-black text-slate-500 uppercase mb-1">Protein</span><span class="text-xs font-bold text-blue-400">🥩 @m.Prot g</span></div>
+                                            <div class="flex flex-col"><span class="text-[8px] font-black text-slate-500 uppercase mb-1">Fat</span><span class="text-xs font-bold text-amber-500">🥑 @m.Fat g</span></div>
+                                            <div class="flex flex-col"><span class="text-[8px] font-black text-slate-500 uppercase mb-1">Carbs</span><span class="text-xs font-bold text-slate-300">🍞 @m.Carb g</span></div>
+                                            <div class="flex flex-col"><span class="text-[8px] font-black text-slate-500 uppercase mb-1">Fiber</span><span class="text-xs font-bold text-emerald-600">🌿 @m.Fib g</span></div>
+                                            <div class="flex flex-col"><span class="text-[8px] font-black text-emerald-400 uppercase mb-1 font-black">Net Carbs</span><span class="text-xs font-black text-emerald-400">🥦 @m.Net g</span></div>
                                         </div>
-                                    </div>
+                                    }
                                 </div>
-                            }
-                        </div>
-                    </section>
-                }
+                            </div>
+                        }
+                    </div>
+                </section>
             }
-        </div>
-    }
-    else
-    {
-        <div class="flex flex-col items-center justify-center h-64 text-slate-500 uppercase font-black text-xs tracking-[0.5em] gap-4">
-            <div class="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
-            Loading Storefront...
         </div>
     }
 </div>
@@ -89,12 +101,7 @@
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
-            
-            owner = await db.PPP_Owners
-                .Include(o => o.Address)
-                .AsNoTracking()
-                .FirstOrDefaultAsync(o => o.Id == OwnerId);
-
+            owner = await db.PPP_Owners.Include(o => o.Address).AsNoTracking().FirstOrDefaultAsync(o => o.Id == OwnerId);
             var today = DateTime.Today.ToUniversalTime();
             activeMenus = await db.Set<PPP_Menu>()
                 .Include(m => m.Items).ThenInclude(i => i.Recipe).ThenInclude(r => r.IngredientGroups).ThenInclude(g => g.Ingredients).ThenInclude(ing => ing.Ingredient)
@@ -104,16 +111,24 @@
                 .AsNoTracking()
                 .ToListAsync();
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Shell Load Error: {ex.Message}");
-        }
+        catch (Exception ex) { Console.WriteLine(ex.Message); }
     }
 
-    private (double Cals, double Prot, double Fat, double Net) CalculateMacros(PPP_Recipe? r)
+    private string GetIngredientList(PPP_Recipe? r)
     {
-        if (r == null || r.Servings <= 0 || r.IngredientGroups == null) return (0, 0, 0, 0);
-        double cals = 0, prot = 0, fat = 0, net = 0;
+        if (r?.IngredientGroups == null) return "";
+        var names = r.IngredientGroups
+            .SelectMany(g => g.Ingredients ?? new List<PPP_RecipeIngredientMapping>())
+            .Where(m => m.Ingredient != null)
+            .Select(m => m.Ingredient!.Name.ToLower().Trim())
+            .Distinct();
+        return string.Join(", ", names);
+    }
+
+    private (double Cals, double Prot, double Fat, double Carb, double Fib, double Net) CalculateMacros(PPP_Recipe? r)
+    {
+        if (r == null || r.Servings <= 0 || r.IngredientGroups == null) return (0, 0, 0, 0, 0, 0);
+        double cals = 0, prot = 0, fat = 0, carb = 0, fib = 0;
         foreach (var group in r.IngredientGroups)
         {
             foreach (var mapping in group.Ingredients ?? new List<PPP_RecipeIngredientMapping>())
@@ -123,10 +138,16 @@
                     cals += mapping.Ingredient.Calories * mapping.Quantity;
                     prot += mapping.Ingredient.Protein * mapping.Quantity;
                     fat += mapping.Ingredient.Fat * mapping.Quantity;
-                    net += (mapping.Ingredient.Carbs - mapping.Ingredient.Fiber) * mapping.Quantity;
+                    carb += mapping.Ingredient.Carbs * mapping.Quantity;
+                    fib += mapping.Ingredient.Fiber * mapping.Quantity;
                 }
             }
         }
-        return (Math.Round(cals / r.Servings, 0), Math.Round(prot / r.Servings, 1), Math.Round(fat / r.Servings, 1), Math.Round(net / r.Servings, 1));
+        double nCals = Math.Round(cals / r.Servings, 0);
+        double nProt = Math.Round(prot / r.Servings, 1);
+        double nFat = Math.Round(fat / r.Servings, 1);
+        double nCarb = Math.Round(carb / r.Servings, 1);
+        double nFib = Math.Round(fib / r.Servings, 1);
+        return (nCals, nProt, nFat, nCarb, nFib, Math.Max(0, Math.Round(nCarb - nFib, 1)));
     }
 }
