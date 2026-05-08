@@ -13,7 +13,6 @@
 <div class="min-h-screen w-full bg-[#050505] text-slate-200 p-8 font-sans antialiased">
     @if (owner != null)
     {
-        @* HEADER: SHARED ACROSS BOTH PAGES *@
         <header class="mb-12 border-b border-white/10 pb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
             <div>
                 <h1 class="text-4xl font-black uppercase italic tracking-tighter text-white">@owner.BusinessName</h1>
@@ -24,9 +23,18 @@
                 @if (currentUser != null)
                 {
                     <div class="flex items-center gap-4 bg-white/5 p-2 pr-6 rounded-full border border-white/10">
-                        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center font-black text-sm text-white shadow-lg">
-                            @currentUser.FirstName?[0]@currentUser.LastName?[0]
-                        </div>
+                        @if (currentUser.AvatarId.HasValue)
+                        {
+                            <div class="w-10 h-10 rounded-full overflow-hidden shadow-lg border border-white/10 shrink-0">
+                                <img src="/db-images-ppp/@currentUser.AvatarId" class="w-full h-full object-cover" />
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center font-black text-sm text-white shadow-lg shrink-0">
+                                @currentUser.FirstName?[0]@currentUser.LastName?[0]
+                            </div>
+                        }
                         <div class="flex flex-col">
                             <span class="text-sm font-black uppercase tracking-tight text-white">@currentUser.FirstName @currentUser.LastName</span>
                             @if (isImpersonating)
@@ -70,23 +78,17 @@
                             bool showUrgencyBadge = !pastCutoff && timeRemaining.TotalHours < 24;
 
                             <div @onclick="() => NavigateToItem(item.Id)" class="bg-[#111] border border-slate-800 p-8 rounded-[2.5rem] flex flex-col md:flex-row gap-8 transition-all @(pastCutoff ? "opacity-40 grayscale pointer-events-none" : "hover:border-emerald-500/50 cursor-pointer shadow-xl")">
-                                
                                 @if (item.Recipe?.ImageId != null)
                                 {
                                     <div class="w-48 h-48 rounded-[2rem] overflow-hidden shrink-0 bg-black shadow-2xl border border-white/5">
                                         <img src="/db-images-ppp/@item.Recipe.ImageId" class="w-full h-full object-cover" />
                                     </div>
                                 }
-
                                 <div class="flex-1 flex flex-col justify-start">
                                     <div class="flex justify-between items-start mb-4">
                                         <h4 class="text-2xl font-black text-white uppercase italic tracking-tight">@item.Recipe?.Name</h4>
-                                        @if (pastCutoff)
-                                        {
-                                            <span class="text-sm font-black uppercase bg-rose-500 text-white px-3 py-1 rounded-full">Ordering Closed</span>
-                                        }
+                                        @if (pastCutoff) { <span class="text-sm font-black uppercase bg-rose-500 text-white px-3 py-1 rounded-full">Ordering Closed</span> }
                                     </div>
-
                                     @if (showUrgencyBadge)
                                     {
                                         <div class="mb-6 p-4 bg-white/5 border border-white/10 rounded-2xl inline-flex flex-wrap items-center gap-3">
@@ -103,9 +105,7 @@
                                             </div>
                                         </div>
                                     }
-
                                     <p class="text-base text-slate-300 leading-relaxed mb-6 font-medium">@item.Recipe?.LongDescription</p>
-
                                     @if (owner.ShowIngredientsToCustomer && item.Recipe != null)
                                     {
                                         <div class="mb-6">
@@ -113,7 +113,6 @@
                                             <p class="text-sm text-slate-400 italic">@GetIngredientList(item.Recipe)</p>
                                         </div>
                                     }
-
                                     @if (owner.ShowMacrosToCustomer)
                                     {
                                         <div class="mt-auto pt-6 border-t border-white/5 grid grid-cols-3 sm:grid-cols-6 gap-4">
@@ -146,26 +145,21 @@
 
     protected override async Task OnInitializedAsync()
     {
-        try
-        {
+        try {
             await using var db = await DbFactory.CreateDbContextAsync();
             owner = await db.PPP_Owners.Include(o => o.Address).AsNoTracking().FirstOrDefaultAsync(o => o.Id == OwnerId);
-            
             var today = DateTime.Today.ToUniversalTime();
             activeMenus = await db.Set<PPP_Menu>()
                 .Include(m => m.Items).ThenInclude(i => i.Recipe).ThenInclude(r => r.IngredientGroups).ThenInclude(g => g.Ingredients).ThenInclude(ing => ing.Ingredient)
                 .Include(m => m.Items).ThenInclude(i => i.Timeframes)
                 .Include(m => m.Items).ThenInclude(i => i.Sizes)
                 .Where(m => m.OwnerId == OwnerId && m.IsPublished && m.EndDate >= today)
-                .AsNoTracking()
-                .ToListAsync();
-
+                .AsNoTracking().ToListAsync();
             timer = new Timer(1000);
             timer.Elapsed += async (s, e) => await InvokeAsync(StateHasChanged);
             timer.AutoReset = true;
             timer.Enabled = true;
-        }
-        catch (Exception ex) { Console.WriteLine(ex.Message); }
+        } catch (Exception ex) { Console.WriteLine(ex.Message); }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -184,22 +178,16 @@
                     if (!string.IsNullOrEmpty(sessionUser.ImpersonatingEmail)) {
                         currentUser = await db.PPP_Users.FirstOrDefaultAsync(u => u.Email == sessionUser.ImpersonatingEmail);
                         isImpersonating = true;
-                    } else {
-                        currentUser = sessionUser;
-                        isImpersonating = false;
-                    }
+                    } else { currentUser = sessionUser; isImpersonating = false; }
                 }
             }
         } catch (Exception ex) { Console.WriteLine(ex.Message); }
     }
 
     private void NavigateToItem(int id) => Nav.NavigateTo($"/ppp-store/{OwnerId}/item/{id}");
-    private DateTime GetLocalTime(string? timeZoneId) {
-        try {
-            var zoneId = string.IsNullOrEmpty(timeZoneId) ? "Central Standard Time" : timeZoneId;
-            var tzi = TimeZoneInfo.FindSystemTimeZoneById(zoneId);
-            return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tzi);
-        } catch { return DateTime.Now; }
+    private DateTime GetLocalTime(string? tzid) {
+        try { var zi = string.IsNullOrEmpty(tzid) ? "Central Standard Time" : tzid; var tzi = TimeZoneInfo.FindSystemTimeZoneById(zi); return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tzi); }
+        catch { return DateTime.Now; }
     }
     private string GetIngredientList(PPP_Recipe r) => string.Join(", ", r.IngredientGroups?.SelectMany(g => g.Ingredients ?? new List<PPP_RecipeIngredientMapping>()).Where(m => m.Ingredient != null).Select(m => m.Ingredient!.Name.ToLower().Trim()).Distinct() ?? new List<string>());
     private (double Cals, double Prot, double Fat, double Carb, double Fib, double Net) CalculateMacros(PPP_Recipe? r) {
@@ -216,11 +204,7 @@
                 }
             }
         }
-        double nCals = Math.Round(cals / r.Servings, 0);
-        double nProt = Math.Round(prot / r.Servings, 1);
-        double nFat = Math.Round(fat / r.Servings, 1);
-        double nCarb = Math.Round(carb / r.Servings, 1);
-        double nFib = Math.Round(fib / r.Servings, 1);
+        double nCals = Math.Round(cals / r.Servings, 0), nProt = Math.Round(prot / r.Servings, 1), nFat = Math.Round(fat / r.Servings, 1), nCarb = Math.Round(carb / r.Servings, 1), nFib = Math.Round(fib / r.Servings, 1);
         return (nCals, nProt, nFat, nCarb, nFib, Math.Max(0, Math.Round(nCarb - nFib, 1)));
     }
     public void Dispose() => timer?.Dispose();

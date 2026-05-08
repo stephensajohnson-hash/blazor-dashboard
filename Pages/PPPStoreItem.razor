@@ -11,7 +11,6 @@
 <div class="min-h-screen w-full bg-[#050505] text-slate-200 p-8 font-sans antialiased">
     @if (owner != null)
     {
-        @* HEADER: IDENTICAL TO STORE PAGE *@
         <header class="mb-12 border-b border-white/10 pb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
             <div class="cursor-pointer group" @onclick="GoBack">
                 <h1 class="text-4xl font-black uppercase italic tracking-tighter text-white group-hover:text-emerald-500 transition-colors">@owner.BusinessName</h1>
@@ -24,9 +23,18 @@
                 @if (currentUser != null)
                 {
                     <div class="flex items-center gap-4 bg-white/5 p-2 pr-6 rounded-full border border-white/10">
-                        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center font-black text-sm text-white shadow-lg">
-                            @currentUser.FirstName?[0]@currentUser.LastName?[0]
-                        </div>
+                        @if (currentUser.AvatarId.HasValue)
+                        {
+                            <div class="w-10 h-10 rounded-full overflow-hidden shadow-lg border border-white/10 shrink-0">
+                                <img src="/db-images-ppp/@currentUser.AvatarId" class="w-full h-full object-cover" />
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center font-black text-sm text-white shadow-lg shrink-0">
+                                @currentUser.FirstName?[0]@currentUser.LastName?[0]
+                            </div>
+                        }
                         <div class="flex flex-col">
                             <span class="text-sm font-black uppercase tracking-tight text-white">@currentUser.FirstName @currentUser.LastName</span>
                             @if (isImpersonating) { <span class="text-[10px] font-black uppercase text-amber-500 animate-pulse">🕵️ Admin Impersonating</span> }
@@ -49,20 +57,15 @@
         {
             <div class="max-w-3xl mx-auto space-y-12">
                 <div class="bg-[#111] border border-slate-800 rounded-[3rem] overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-500">
-                    
-                    @* Hero Image or Header Section *@
                     <div class="p-12 border-b border-white/5 bg-gradient-to-b from-white/[0.02] to-transparent">
                         <span class="text-[10px] font-black uppercase text-emerald-500 tracking-[0.4em] font-bold">Selection Preview</span>
                         <h2 class="text-5xl font-black text-white uppercase italic tracking-tighter mt-2">@item.Recipe?.Name</h2>
                     </div>
-
                     <div class="p-12 space-y-10">
                         <p class="text-lg text-slate-300 leading-relaxed font-medium">@item.Recipe?.LongDescription</p>
-                        
                         <div class="border-2 border-dashed border-white/10 rounded-[2.5rem] p-12 text-center bg-black/20">
                             <p class="text-sm font-black uppercase text-slate-500 tracking-[0.2em] font-bold">Options & Customizations Coming Soon</p>
                         </div>
-
                         <div class="flex flex-col gap-4">
                             <button type="button" @onclick="SimulateAddToCart" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-6 rounded-[2rem] font-black text-sm uppercase tracking-[0.4em] shadow-[0_20px_50px_rgba(16,185,129,0.2)] transition-all active:scale-[0.98]">
                                 Add to Cart & Continue
@@ -83,20 +86,17 @@
     private PPP_User? currentUser;
     private bool isImpersonating = false;
 
-    protected override async Task OnInitializedAsync()
-    {
+    protected override async Task OnInitializedAsync() {
         await using var db = await DbFactory.CreateDbContextAsync();
         owner = await db.PPP_Owners.AsNoTracking().FirstOrDefaultAsync(o => o.Id == OwnerId);
         item = await db.Set<PPP_MenuItem>().Include(i => i.Recipe).FirstOrDefaultAsync(i => i.Id == MenuItemId);
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
         if (firstRender) { await LoadSessionIdentity(); StateHasChanged(); }
     }
 
-    private async Task LoadSessionIdentity()
-    {
+    private async Task LoadSessionIdentity() {
         try {
             var token = await JS.InvokeAsync<string>("eval", "document.cookie.split('; ').find(row => row.startsWith('ppp_token='))?.split('=')[1]");
             if (!string.IsNullOrEmpty(token)) {
@@ -106,7 +106,7 @@
                     if (!string.IsNullOrEmpty(sessionUser.ImpersonatingEmail)) {
                         currentUser = await db.PPP_Users.FirstOrDefaultAsync(u => u.Email == sessionUser.ImpersonatingEmail);
                         isImpersonating = true;
-                    } else { currentUser = sessionUser; }
+                    } else { currentUser = sessionUser; isImpersonating = false; }
                 }
             }
         } catch (Exception ex) { Console.WriteLine(ex.Message); }
