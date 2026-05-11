@@ -820,6 +820,7 @@ public class PPP_Owner
     // NEW: Batch Display Preferences
     public bool ShowMacrosToCustomer { get; set; } = true;
     public bool ShowIngredientsToCustomer { get; set; } = true;
+    public bool AllowCustomServingNotes { get; set; } = false;
 }
 
 public class PPP_Ingredient

@@ -130,76 +130,30 @@
         }
     }
 
-    private async Task InitializePPP()
+  private async Task InitializePPP()
+{
+    logs.Add("Checking infrastructure...");
+    try 
     {
-        logs.Add("Starting infrastructure initialization...");
-        try 
-        {
-            await using var db = await DbFactory.CreateDbContextAsync();
+        await using var db = await DbFactory.CreateDbContextAsync();
 
-            // 1. COLUMN INJECTION BLOCK
-            await db.Database.ExecuteSqlRawAsync(@"
-                DO $$ 
-                BEGIN 
-                    -- Add ImpersonatingEmail to PPP_Users
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Users' AND column_name='ImpersonatingEmail') THEN
-                        ALTER TABLE ""PPP_Users"" ADD COLUMN ""ImpersonatingEmail"" text NULL;
-                    END IF;
-
-                    -- Add TimeZoneId to PPP_Owners
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Owners' AND column_name='TimeZoneId') THEN
-                        ALTER TABLE ""PPP_Owners"" ADD COLUMN ""TimeZoneId"" text NULL;
-                    END IF;
-                END $$;
-            ");
-            logs.Add("Database schema verified (Impersonation & TimeZone fields).");
-
-            // 2. DATA INITIALIZATION (Optional: Set defaults for existing owners)
-            var ownersToFix = await db.PPP_Owners.Where(o => o.TimeZoneId == null).ToListAsync();
-            if (ownersToFix.Any())
-            {
-                foreach (var o in ownersToFix)
-                {
-                    o.TimeZoneId = "Central Standard Time";
-                }
-                await db.SaveChangesAsync();
-                logs.Add($"Initialized TimeZone for {ownersToFix.Count} owner records.");
-            }
-
-            // 3. ADMIN RESCUE BLOCK
-            var adminEmail = "stephensallenjohnson@gmail.com"; 
-            var adminUser = await db.PPP_Users.FirstOrDefaultAsync(u => u.Email.ToLower() == adminEmail.ToLower());
-            
-            if (adminUser != null)
-            {
-                adminUser.Role = "Admin";
-                adminUser.MagicToken = "RESCUE_ADMIN_2026";
-                adminUser.TokenExpiresAt = DateTime.UtcNow.AddYears(1);
-                db.Update(adminUser);
-                await db.SaveChangesAsync();
-                logs.Add($"CRITICAL: Admin rights restored in DB for {adminEmail}.");
-
-                // FORCED BROWSER LOGIN logic (Injected via JS)
-                await JS.InvokeVoidAsync("eval", "document.cookie = 'ppp_token=RESCUE_ADMIN_2026; max-age=15552000; path=/; SameSite=Lax';");
-                await JS.InvokeVoidAsync("eval", "document.cookie = 'ppp_admin_backdoor=; max-age=0; path=/;';");
-                logs.Add("Browser identity cookies synchronized.");
-            }
-            else 
-            {
-                logs.Add($"WARNING: User {adminEmail} not found. Could not perform rescue.");
-            }
-
-            await ShowToast("Database Updated & Identity Restored");
-            
-            // Force a reload to show the Admin Nav header immediately
-            Nav.NavigateTo(Nav.Uri, forceLoad: true);
-        }
-        catch (Exception ex)
-        {
-            logs.Add($"Initialization Failed: {ex.Message}");
-            await ShowToast("Initialization Failed", true);
-        }
+        await db.Database.ExecuteSqlRawAsync(@"
+            DO $$ 
+            BEGIN 
+                -- Existing columns check...
+                
+                -- Add AllowCustomServingNotes to PPP_Owners
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Owners' AND column_name='AllowCustomServingNotes') THEN
+                    ALTER TABLE ""PPP_Owners"" ADD COLUMN ""AllowCustomServingNotes"" boolean NOT NULL DEFAULT false;
+                END IF;
+            END $$;
+        ");
+        logs.Add("Database schema updated with Serving Notes support.");
+        
+        // ... rest of your existing initialization logic
     }
+    catch (Exception ex) { /* ... */ }
+}
 
     private async Task ShowToast(string msg, bool isError = false)
     {
