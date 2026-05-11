@@ -986,11 +986,11 @@ public class PPP_OrderItemServing
     [ForeignKey("OrderItemId")]
     public virtual PPP_OrderItem? ParentItem { get; set; }
 
-    public int ServingNumber { get; set; } // 1, 2, 3...
+    public int ServingNumber { get; set; } 
     public string? LabelName { get; set; }
+    public string? Notes { get; set; } // <--- ADD THIS LINE
     public bool IsReady { get; set; }
 
-    // This is the CRITICAL change: Options move here!
     public virtual List<PPP_OrderItemOption> SelectedOptions { get; set; } = new();
 }
 

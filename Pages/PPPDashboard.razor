@@ -130,7 +130,7 @@
         }
     }
 
-  private async Task InitializePPP()
+ private async Task InitializePPP()
 {
     logs.Add("Checking infrastructure...");
     try 
@@ -140,21 +140,32 @@
         await db.Database.ExecuteSqlRawAsync(@"
             DO $$ 
             BEGIN 
-                -- Existing columns check...
-                
-                -- Add AllowCustomServingNotes to PPP_Owners
+                -- 1. Ensure AllowCustomServingNotes exists on PPP_Owners
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Owners' AND column_name='AllowCustomServingNotes') THEN
                     ALTER TABLE ""PPP_Owners"" ADD COLUMN ""AllowCustomServingNotes"" boolean NOT NULL DEFAULT false;
                 END IF;
+
+                -- 2. Ensure Notes exists on PPP_OrderItemServings
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_OrderItemServings' AND column_name='Notes') THEN
+                    ALTER TABLE ""PPP_OrderItemServings"" ADD COLUMN ""Notes"" text;
+                END IF;
+
+                -- 3. Ensure ServingsPerUnit exists on PPP_MenuItemSizes (just in case)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_MenuItemSizes' AND column_name='ServingsPerUnit') THEN
+                    ALTER TABLE ""PPP_MenuItemSizes"" ADD COLUMN ""ServingsPerUnit"" integer NOT NULL DEFAULT 1;
+                END IF;
             END $$;
         ");
-        logs.Add("Database schema updated with Serving Notes support.");
         
-        // ... rest of your existing initialization logic
+        logs.Add("Database schema updated: Serving Notes and Unit Servings verified.");
+        
+        // ... (rest of your initialization logic)
     }
-    catch (Exception ex) { /* ... */ }
+    catch (Exception ex) 
+    { 
+        logs.Add($"Infrastructure Error: {ex.Message}");
+    }
 }
-
     private async Task ShowToast(string msg, bool isError = false)
     {
         var toast = new ToastItem { Message = msg, IsError = isError };
