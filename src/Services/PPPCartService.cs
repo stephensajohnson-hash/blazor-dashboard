@@ -42,8 +42,8 @@ namespace Dashboard.Services
         public string Fulfillment { get; set; } = "Pickup";
         public string TimeSlot { get; set; } = "Dinner";
         public double DeliveryFee { get; set; }
+        public double CalculatedDistance { get; set; } // Added to fix CS0117
         
-        // Detailed serving info
         public List<ServingConfig> Servings { get; set; } = new();
     }
 
@@ -52,5 +52,6 @@ namespace Dashboard.Services
         public string Label { get; set; } = "";
         public string Notes { get; set; } = "";
         public List<string> SelectedOptionNames { get; set; } = new();
+        public List<double> SelectedOptionPrices { get; set; } = new(); // Added to fix CS0117
     }
 }
