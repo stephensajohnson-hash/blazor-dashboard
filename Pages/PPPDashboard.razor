@@ -137,41 +137,31 @@
     {
         await using var db = await DbFactory.CreateDbContextAsync();
 
-        // Inside the DO $$ block in your InitializePPP method:
         await db.Database.ExecuteSqlRawAsync(@"
-            DO $$ 
-            BEGIN 
-                -- ... existing checks ...
+        DO $$ 
+        BEGIN 
+            -- Ensure DeliveryAddressSummary exists
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_OrderItems' AND column_name='DeliveryAddressSummary') THEN
+                ALTER TABLE ""PPP_OrderItems"" ADD COLUMN ""DeliveryAddressSummary"" text;
+            END IF;
 
-                -- Add CalculatedDistanceMiles to PPP_OrderItems
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_OrderItems' AND column_name='CalculatedDistanceMiles') THEN
-                    ALTER TABLE ""PPP_OrderItems"" ADD COLUMN ""CalculatedDistanceMiles"" double precision NOT NULL DEFAULT 0;
-                END IF;
+            -- Ensure Latitude exists
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_OrderItems' AND column_name='Latitude') THEN
+                ALTER TABLE ""PPP_OrderItems"" ADD COLUMN ""Latitude"" double precision;
+            END IF;
 
-            END $$;
-        ");
+            -- Ensure Longitude exists
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_OrderItems' AND column_name='Longitude') THEN
+                ALTER TABLE ""PPP_OrderItems"" ADD COLUMN ""Longitude"" double precision;
+            END IF;
 
-        await db.Database.ExecuteSqlRawAsync(@"
-            DO $$ 
-            BEGIN 
-                -- 1. Ensure AllowCustomServingNotes exists on PPP_Owners
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_Owners' AND column_name='AllowCustomServingNotes') THEN
-                    ALTER TABLE ""PPP_Owners"" ADD COLUMN ""AllowCustomServingNotes"" boolean NOT NULL DEFAULT false;
-                END IF;
+            -- Ensure CalculatedDistanceMiles exists
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_OrderItems' AND column_name='CalculatedDistanceMiles') THEN
+                ALTER TABLE ""PPP_OrderItems"" ADD COLUMN ""CalculatedDistanceMiles"" double precision NOT NULL DEFAULT 0;
+            END IF;
+        END $$;
+    ");
 
-                -- 2. Ensure Notes exists on PPP_OrderItemServings
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_OrderItemServings' AND column_name='Notes') THEN
-                    ALTER TABLE ""PPP_OrderItemServings"" ADD COLUMN ""Notes"" text;
-                END IF;
-
-                -- 3. Ensure ServingsPerUnit exists on PPP_MenuItemSizes (just in case)
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='PPP_MenuItemSizes' AND column_name='ServingsPerUnit') THEN
-                    ALTER TABLE ""PPP_MenuItemSizes"" ADD COLUMN ""ServingsPerUnit"" integer NOT NULL DEFAULT 1;
-                END IF;
-            END $$;
-        ");
-        
-        logs.Add("Database schema updated: Serving Notes and Unit Servings verified.");
         
         // ... (rest of your initialization logic)
     }
