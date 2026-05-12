@@ -42,7 +42,8 @@ namespace Dashboard.Services
         public string Fulfillment { get; set; } = "Pickup";
         public string TimeSlot { get; set; } = "Dinner";
         public double DeliveryFee { get; set; }
-        public double CalculatedDistance { get; set; } // Added to fix CS0117
+        public string? DeliveryAddressSummary { get; set; } // NEW
+        public double CalculatedDistance { get; set; }
         
         public List<ServingConfig> Servings { get; set; } = new();
     }
