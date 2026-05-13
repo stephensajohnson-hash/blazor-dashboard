@@ -5,7 +5,7 @@
 @inject IJSRuntime JS
 
 <div class="min-h-screen w-full bg-[#050505] text-slate-200 flex items-center justify-center p-6 font-sans antialiased">
-    <div class="max-w-md w-full bg-[#111] border border-slate-800 rounded-[3rem] p-12 text-center shadow-2xl animate-in fade-in zoom-in duration-500">
+    <div class="max-w-md w-full bg-[#111] border border-slate-800 rounded-[3rem] p-12 text-center shadow-2xl">
         
         <div class="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-8">
             <span class="text-3xl">✅</span>
@@ -22,30 +22,22 @@
         @if (!string.IsNullOrEmpty(targetUrl))
         {
             <div class="space-y-4">
-                @* A single dynamic button that swaps its link based on device detection *@
                 <a href="@targetUrl" 
                    target="@(isMobile ? "_self" : "_blank")"
                    class="w-full bg-[#008CFF] hover:bg-[#0074D9] text-white py-6 rounded-2xl font-black text-lg uppercase tracking-widest transition-all shadow-[0_15px_40px_rgba(0,140,255,0.3)] active:scale-95 flex items-center justify-center gap-3 no-underline">
                     Pay with Venmo
                 </a>
-                
                 <p class="text-[9px] text-slate-500 font-black uppercase tracking-tight">
-                    @if (isMobile) { <span>Launching Venmo App...</span> }
-                    else { <span>Opening Venmo Web...</span> }
+                    @(isMobile ? "Launching Venmo App..." : "Opening Venmo Web...")
                 </p>
             </div>
         }
-        else
-        {
-            <div class="p-6 bg-amber-500/10 border border-amber-500/20 rounded-2xl">
-                <p class="text-xs font-bold text-amber-500 uppercase italic">Manual Payment Required</p>
-                <p class="text-[9px] text-slate-400 mt-2 uppercase font-black">Venmo handle not set by owner.</p>
-            </div>
-        }
 
-        <button @onclick="GoHome" class="mt-12 text-slate-600 hover:text-white text-[10px] font-black uppercase tracking-[0.2em] transition-colors">
+        @* Button is now a standard link to be extra safe *@
+        <a href="/ppp-store/@returnOwnerId" 
+           class="mt-12 inline-block text-slate-600 hover:text-white text-[10px] font-black uppercase tracking-[0.2em] transition-colors no-underline border-b border-transparent hover:border-white/20 pb-1">
             ← Back to Storefront
-        </button>
+        </a>
     </div>
 </div>
 
@@ -56,7 +48,7 @@
     private string? WebUrl { get; set; }
     private string? targetUrl { get; set; }
     private double TotalAmount { get; set; }
-    private int returnOwnerId { get; set; } = 1;
+    private int returnOwnerId { get; set; } = 1; // Default fallback
     private bool isMobile = false;
 
     protected override void OnInitialized()
@@ -68,8 +60,12 @@
         if (query.TryGetValue("webUrl", out var web)) WebUrl = web;
         if (query.TryGetValue("total", out var totalStr) && double.TryParse(totalStr, out var total)) TotalAmount = total;
         
-        // FIXED: Corrected variable name from ownerId to val (result of TryGetValue)
-        if (query.TryGetValue("ownerId", out var val) && int.TryParse(val, out var oid)) 
+        // Case-Insensitive check for OwnerId
+        string rawId = "";
+        if (query.TryGetValue("ownerId", out var v1)) rawId = v1;
+        else if (query.TryGetValue("OwnerId", out var v2)) rawId = v2;
+
+        if (!string.IsNullOrEmpty(rawId) && int.TryParse(rawId, out var oid)) 
         {
             returnOwnerId = oid;
         }
@@ -81,23 +77,14 @@
     {
         if (firstRender)
         {
-            // Check User Agent for Mobile
             var ua = await JS.InvokeAsync<string>("eval", "navigator.userAgent.toLowerCase()");
             isMobile = ua.Contains("android") || ua.Contains("iphone") || ua.Contains("ipad");
-
-            // Swap the button link if they are on mobile
-            if (isMobile && !string.IsNullOrEmpty(AppUrl))
-            {
-                targetUrl = AppUrl;
-            }
-            else
-            {
-                targetUrl = WebUrl;
-            }
-
+            targetUrl = isMobile && !string.IsNullOrEmpty(AppUrl) ? AppUrl : WebUrl;
+            
+            // Console log so you can debug in F12 if it still fails
+            await JS.InvokeVoidAsync("console.log", "Return Owner ID Set to: " + returnOwnerId);
+            
             StateHasChanged();
         }
     }
-
-    private void GoHome() => Nav.NavigateTo($"/ppp-store/{returnOwnerId}"); 
 }
