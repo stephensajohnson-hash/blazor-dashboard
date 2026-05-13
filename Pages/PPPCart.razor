@@ -141,14 +141,22 @@
             var sessionUser = await db.PPP_Users.FirstOrDefaultAsync(u => u.MagicToken == token && u.TokenExpiresAt > DateTime.UtcNow);
             if (sessionUser == null) { Nav.NavigateTo("/ppp-login"); return; }
 
-            // IMPERSONATION LOGIC: Use the target customer's ID if currently impersonating
+            // Identify correct customer (impersonation check)
             string finalCustomerId = sessionUser.Id.ToString();
+            string finalCustomerName = sessionUser.FirstName;
             if (!string.IsNullOrEmpty(sessionUser.ImpersonatingEmail))
             {
                 var targetUser = await db.PPP_Users.FirstOrDefaultAsync(u => u.Email == sessionUser.ImpersonatingEmail);
-                if (targetUser != null) finalCustomerId = targetUser.Id.ToString();
+                if (targetUser != null) 
+                {
+                    finalCustomerId = targetUser.Id.ToString();
+                    finalCustomerName = targetUser.FirstName;
+                }
             }
 
+            var owner = await db.PPP_Owners.FindAsync(OwnerId);
+
+            // 1. Create the Order Header
             var order = new PPP_Order
             {
                 OwnerId = OwnerId,
@@ -160,6 +168,7 @@
             db.Set<PPP_Order>().Add(order);
             await db.SaveChangesAsync();
 
+            // 2. Create Order Items
             foreach (var cartItem in CartService.Items)
             {
                 var orderItem = new PPP_OrderItem
@@ -172,7 +181,7 @@
                     FulfillmentMethod = cartItem.Fulfillment,
                     TimeframeName = cartItem.TimeSlot,
                     DeliveryFee = cartItem.DeliveryFee,
-                    DeliveryAddressSummary = cartItem.DeliveryAddressSummary, // Storing address context
+                    DeliveryAddressSummary = cartItem.DeliveryAddressSummary,
                     CalculatedDistanceMiles = cartItem.CalculatedDistance,
                     ScheduledDate = DateTime.Today.AddDays(1) 
                 };
@@ -182,31 +191,40 @@
                 for (int i = 0; i < cartItem.Servings.Count; i++)
                 {
                     var serving = cartItem.Servings[i];
-                    var orderServing = new PPP_OrderItemServing
-                    {
-                        OrderItemId = orderItem.Id,
-                        ServingNumber = i + 1,
-                        LabelName = serving.Label,
-                        Notes = serving.Notes 
-                    };
+                    var orderServing = new PPP_OrderItemServing { OrderItemId = orderItem.Id, ServingNumber = i + 1, LabelName = serving.Label, Notes = serving.Notes };
                     db.Set<PPP_OrderItemServing>().Add(orderServing);
                     await db.SaveChangesAsync();
 
                     for (int j = 0; j < serving.SelectedOptionNames.Count; j++)
                     {
-                        db.Set<PPP_OrderItemOption>().Add(new PPP_OrderItemOption
-                        {
-                            OrderItemServingId = orderServing.Id,
-                            OptionName = serving.SelectedOptionNames[j],
-                            AddOnPrice = serving.SelectedOptionPrices[j]
+                        db.Set<PPP_OrderItemOption>().Add(new PPP_OrderItemOption { 
+                            OrderItemServingId = orderServing.Id, 
+                            OptionName = serving.SelectedOptionNames[j], 
+                            AddOnPrice = serving.SelectedOptionPrices[j] 
                         });
                     }
                 }
             }
 
             await db.SaveChangesAsync();
+            
+            // Generate Venmo Links
+            string venmoAppUrl = "";
+            string venmoWebUrl = "";
+            double orderTotal = CartService.Items.Sum(i => i.Price + i.DeliveryFee);
+
+            if (owner != null && !string.IsNullOrEmpty(owner.VenmoHandle))
+            {
+                var handle = owner.VenmoHandle.Replace("@", "");
+                var note = Uri.EscapeDataString($"Order #{order.Id} for {finalCustomerName}");
+                venmoAppUrl = $"venmo://paycharge?txn=pay&recipients={handle}&amount={orderTotal}&note={note}";
+                venmoWebUrl = $"https://venmo.com/{handle}?txn=pay&amount={orderTotal}&note={note}";
+            }
+
             CartService.ClearCart();
-            Nav.NavigateTo($"/ppp-store/{OwnerId}");
+            
+            // Redirect to Success Page with Venmo data in QueryString
+            Nav.NavigateTo($"/ppp-order-success/{order.Id}?appUrl={Uri.EscapeDataString(venmoAppUrl)}&webUrl={Uri.EscapeDataString(venmoWebUrl)}&total={orderTotal}");
         }
         catch (Exception ex)
         {
@@ -219,8 +237,5 @@
         }
     }
 
-    public void Dispose()
-    {
-        CartService.OnChange -= StateHasChanged;
-    }
+    public void Dispose() => CartService.OnChange -= StateHasChanged;
 }

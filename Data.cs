@@ -821,6 +821,8 @@ public class PPP_Owner
     public bool ShowMacrosToCustomer { get; set; } = true;
     public bool ShowIngredientsToCustomer { get; set; } = true;
     public bool AllowCustomServingNotes { get; set; } = false;
+
+    public string? VenmoHandle { get; set; }
 }
 
 public class PPP_Ingredient
