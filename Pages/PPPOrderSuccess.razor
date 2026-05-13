@@ -1,5 +1,6 @@
 @page "/ppp-order-success/{OrderId:int}"
 @using Microsoft.AspNetCore.WebUtilities
+@using Microsoft.JSInterop
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
@@ -54,19 +55,23 @@
     protected override void OnInitialized()
     {
         var uri = Nav.ToAbsoluteUri(Nav.Uri);
-        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("appUrl", out var app)) AppUrl = app;
-        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("webUrl", out var web)) WebUrl = web;
-        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("total", out var totalStr) && double.TryParse(totalStr, out var total)) TotalAmount = total;
+        var query = QueryHelpers.ParseQuery(uri.Query);
+
+        if (query.TryGetValue("appUrl", out var app)) AppUrl = app;
+        if (query.TryGetValue("webUrl", out var web)) WebUrl = web;
+        if (query.TryGetValue("total", out var totalStr) && double.TryParse(totalStr, out var total)) TotalAmount = total;
     }
 
     private async Task LaunchVenmo()
     {
         // Logic: Try to open the app link. 
-        // We use a small JS delay—if the app link fails, we redirect to the web link.
+        // If app link fails or user is on desktop, redirect to web link after timeout.
         await JS.InvokeVoidAsync("eval", $@"
             (function() {{
                 const appUrl = '{AppUrl}';
                 const webUrl = '{WebUrl}';
+                
+                // Attempt to open Venmo App
                 window.location.href = appUrl;
                 
                 // Fallback for desktop or if app isn't installed
@@ -79,5 +84,5 @@
         ");
     }
 
-    private void GoHome() => Nav.NavigateTo("/ppp-store/1"); // Replace with actual OwnerId if needed
+    private void GoHome() => Nav.NavigateTo("/ppp-owner-admin"); 
 }
