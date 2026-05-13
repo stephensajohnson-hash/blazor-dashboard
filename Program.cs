@@ -76,6 +76,7 @@ builder.Services.AddScoped<NETHStateService>();
 
 // PPP Services
 builder.Services.AddScoped<PPPCartService>();
+builder.Services.AddScoped<LabelService>();
 
 // --- DATABASE REGISTRATION ---
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
