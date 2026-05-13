@@ -1,0 +1,83 @@
+@page "/ppp-order-success/{OrderId:int}"
+@using Microsoft.AspNetCore.WebUtilities
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<div class="min-h-screen w-full bg-[#050505] text-slate-200 flex items-center justify-center p-6 font-sans antialiased">
+    <div class="max-w-md w-full bg-[#111] border border-slate-800 rounded-[3rem] p-12 text-center shadow-2xl animate-in fade-in zoom-in duration-500">
+        
+        <div class="w-24 h-24 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-8">
+            <span class="text-4xl">🎉</span>
+        </div>
+
+        <h1 class="text-4xl font-black text-white uppercase italic tracking-tighter mb-2">Order Received!</h1>
+        <p class="text-slate-500 font-bold uppercase tracking-widest text-xs mb-8">Order #@OrderId</p>
+
+        <div class="bg-black/50 border border-white/5 rounded-3xl p-6 mb-10">
+            <p class="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Total Amount Due</p>
+            <p class="text-4xl font-black text-white italic">$@TotalAmount.ToString("N2")</p>
+        </div>
+
+        @if (!string.IsNullOrEmpty(AppUrl))
+        {
+            <div class="space-y-4">
+                <button @onclick="LaunchVenmo" 
+                        class="w-full bg-[#008CFF] hover:bg-[#0074D9] text-white py-6 rounded-2xl font-black text-lg uppercase tracking-widest transition-all shadow-[0_15px_40px_rgba(0,140,255,0.3)] active:scale-95 flex items-center justify-center gap-3">
+                    <span>Pay with Venmo</span>
+                </button>
+                <p class="text-[10px] text-slate-600 font-bold uppercase px-4">
+                    Clicking above will open Venmo to pre-fill your payment details.
+                </p>
+            </div>
+        }
+        else
+        {
+            <div class="p-6 bg-amber-500/10 border border-amber-500/20 rounded-2xl">
+                <p class="text-xs font-bold text-amber-500 uppercase italic">Venmo payment not configured by owner.</p>
+                <p class="text-[10px] text-slate-400 mt-2">Please contact the store for payment instructions.</p>
+            </div>
+        }
+
+        <button @onclick="GoHome" class="mt-12 text-slate-500 hover:text-white text-xs font-black uppercase tracking-[0.2em] transition-colors">
+            Return to Store
+        </button>
+    </div>
+</div>
+
+@code {
+    [Parameter] public int OrderId { get; set; }
+    
+    private string? AppUrl { get; set; }
+    private string? WebUrl { get; set; }
+    private double TotalAmount { get; set; }
+
+    protected override void OnInitialized()
+    {
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("appUrl", out var app)) AppUrl = app;
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("webUrl", out var web)) WebUrl = web;
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("total", out var totalStr) && double.TryParse(totalStr, out var total)) TotalAmount = total;
+    }
+
+    private async Task LaunchVenmo()
+    {
+        // Logic: Try to open the app link. 
+        // We use a small JS delay—if the app link fails, we redirect to the web link.
+        await JS.InvokeVoidAsync("eval", $@"
+            (function() {{
+                const appUrl = '{AppUrl}';
+                const webUrl = '{WebUrl}';
+                window.location.href = appUrl;
+                
+                // Fallback for desktop or if app isn't installed
+                setTimeout(function() {{
+                    if (document.hasFocus()) {{
+                        window.location.href = webUrl;
+                    }}
+                }}, 2500);
+            }})()
+        ");
+    }
+
+    private void GoHome() => Nav.NavigateTo("/ppp-store/1"); // Replace with actual OwnerId if needed
+}
