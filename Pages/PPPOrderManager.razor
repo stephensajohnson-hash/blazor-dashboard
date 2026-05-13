@@ -15,7 +15,7 @@
 <div class="h-screen w-full bg-[#050505] text-slate-200 font-sans antialiased overflow-hidden flex flex-col">
     
     <div class="p-8">
-        <+PPPAdminNav CurrentPage="Orders" />
+        <PPPAdminNav CurrentPage="Orders" />
     </div>
 
     @* Scrollable Content Area *@
@@ -82,7 +82,7 @@
                                     @foreach (var lineItem in timeBucket)
                                     {
                                         <div class="p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 group hover:bg-white/[0.02] transition-all">
-                                            <div class="flex items-center gap-6">
+                                            <div class="flex items-center gap-6 flex-1">
                                                 <div class="w-20 h-20 rounded-2xl overflow-hidden bg-black border border-slate-800 shrink-0 shadow-inner">
                                                     @if (lineItem.MenuItem?.Recipe?.ImageId != null)
                                                     {
@@ -94,17 +94,29 @@
                                                     }
                                                 </div>
 
-                                                <div>
+                                                <div class="flex-1">
                                                     <div class="flex items-center gap-3 mb-1">
                                                         <p class="text-white font-black uppercase text-base @(lineItem.IsReady ? "line-through opacity-40" : "")">@lineItem.RecipeName</p>
-                                                        
                                                         <span class="text-[9px] font-mono text-slate-600">ID: @lineItem.Id</span>
                                                         @if (lineItem.IsReady)
                                                         {
                                                             <span class="bg-blue-500/20 text-blue-400 text-[8px] px-2 py-0.5 rounded font-black uppercase tracking-tighter">Ready</span>
                                                         }
                                                     </div>
-                                                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">@lineItem.SizeName</p>
+                                                    
+                                                    @* Fulfillment & Address Display *@
+                                                    <div class="flex flex-wrap items-center gap-3 mb-2">
+                                                        <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">@lineItem.SizeName</p>
+                                                        <span class="h-1 w-1 bg-slate-700 rounded-full"></span>
+                                                        <span class="text-[10px] font-black uppercase @(lineItem.FulfillmentMethod == "Delivery" ? "text-blue-400" : "text-amber-500")">
+                                                            @(lineItem.FulfillmentMethod == "Delivery" ? "🚚 Delivery" : "🏢 Pickup")
+                                                        </span>
+                                                        @if(!string.IsNullOrEmpty(lineItem.DeliveryAddressSummary))
+                                                        {
+                                                            <span class="h-1 w-1 bg-slate-700 rounded-full"></span>
+                                                            <span class="text-[10px] font-bold text-slate-300 italic">📍 @lineItem.DeliveryAddressSummary</span>
+                                                        }
+                                                    </div>
                                                     
                                                     <div class="mt-2 space-y-1">
                                                         @foreach(var serving in lineItem.Servings)
@@ -115,6 +127,10 @@
                                                                 @if(serving.SelectedOptions != null && serving.SelectedOptions.Any())
                                                                 {
                                                                     <span class="text-[9px] text-blue-400 font-bold">+ @string.Join(", ", serving.SelectedOptions.Select(o => o.OptionName))</span>
+                                                                }
+                                                                @if(!string.IsNullOrEmpty(serving.Notes))
+                                                                {
+                                                                    <span class="text-[10px] text-amber-500 bg-amber-500/5 px-2 py-0.5 rounded border border-amber-500/10">💬 @serving.Notes</span>
                                                                 }
                                                             </div>
                                                         }
@@ -163,7 +179,6 @@
             <div @onmousedown:stopPropagation="true" class="bg-[#111] border border-slate-800 w-full max-w-sm rounded-[3rem] p-10 shadow-2xl animate-in zoom-in-95">
                 <h2 class="text-2xl font-black text-white uppercase italic tracking-tighter mb-6 text-center">Label Settings</h2>
                 
-                @* Workflow Toggles *@
                 <div class="space-y-3 mb-8">
                     <div @onclick="() => { printOrderLabels = !printOrderLabels; StateHasChanged(); }" 
                          class="cursor-pointer flex items-center justify-between p-4 rounded-2xl border-2 transition-all @(printOrderLabels ? "border-emerald-500 bg-emerald-500/5" : "border-slate-800 opacity-50")">
@@ -183,7 +198,6 @@
                         <div class="w-4 h-4 rounded-full border border-white/20 @(printContainerLabels ? "bg-emerald-500" : "")"></div>
                     </div>
 
-                    @* Global Macro Toggle *@
                     <div @onclick="() => { includeMacros = !includeMacros; StateHasChanged(); }" 
                          class="cursor-pointer flex items-center justify-between p-4 rounded-2xl border-2 transition-all @(includeMacros ? "border-blue-500 bg-blue-500/5" : "border-slate-800 opacity-50")">
                         <div class="flex items-center gap-3">
@@ -297,7 +311,6 @@
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         
-        // RESTORED DEEP INCLUDE: Critical for macro data
         var query = db.Set<PPP_OrderItem>()
             .Include(i => i.ParentOrderContainer).ThenInclude(o => o.Address) 
             .Include(i => i.MenuItem)
@@ -335,16 +348,6 @@
         return total;
     }
 
-    private string GetPageString()
-    {
-        int totalNeeded = CalculateTotalLabels();
-        if (totalNeeded == 0) return "0 Pages";
-        int firstPageCapacity = 10 - (labelStartPos - 1);
-        int remaining = Math.Max(0, totalNeeded - firstPageCapacity);
-        int totalPages = 1 + (int)Math.Ceiling(remaining / 10.0);
-        return totalPages == 1 ? "1 Page" : $"{totalPages} Pages";
-    }
-
     private async Task GeneratePdf(int startPos)
     {
         if (!printOrderLabels && !printContainerLabels) return;
@@ -364,11 +367,18 @@
         var customerData = new Dictionary<string, (string Name, string Phone)>();
         foreach(var item in itemsToPrint)
         {
-            var email = item.ParentOrderContainer?.CustomerIdentifier;
-            if (string.IsNullOrEmpty(email) || customerData.ContainsKey(email)) continue;
+            var cid = item.ParentOrderContainer?.CustomerIdentifier;
+            if (string.IsNullOrEmpty(cid) || customerData.ContainsKey(cid)) continue;
 
-            var user = await db.PPP_Users.FirstOrDefaultAsync(u => u.Email == email);
-            customerData[email] = user != null ? ($"{user.FirstName} {user.LastName}", FormatPhoneNumber(user.Phone)) : (email, "");
+            if (int.TryParse(cid, out int userId))
+            {
+                var user = await db.PPP_Users.FindAsync(userId);
+                customerData[cid] = user != null ? ($"{user.FirstName} {user.LastName}", FormatPhoneNumber(user.Phone)) : ("Guest", "");
+            }
+            else
+            {
+                customerData[cid] = ("Guest", "");
+            }
         }
 
         var pdfBytes = await LabelService.CreateAveryLabels(owner, logoBytes, itemsToPrint, startPos, customerData, printOrderLabels, printContainerLabels, includeMacros);
@@ -421,7 +431,6 @@
         var dbItem = await db.Set<PPP_OrderItem>().FindAsync(editingItem.Id);
         if (dbItem != null)
         {
-            // RESTORED: These assignments were dropped in the previous refactor
             dbItem.ScheduledDate = editingItem.ScheduledDate.ToUniversalTime();
             dbItem.TimeframeName = editingItem.TimeframeName;
             dbItem.FulfillmentMethod = editingItem.FulfillmentMethod;
