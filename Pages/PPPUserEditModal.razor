@@ -76,7 +76,7 @@
                                         </div>
                                         <div class="flex items-center gap-2 opacity-0 group-hover/addr:opacity-100 transition-opacity">
                                             @if(!addr.IsDefault) { <button @onclick="() => SetPrimary(addr)" class="text-[8px] font-black text-gray-500 hover:text-emerald-500 uppercase">Set Primary</button> }
-                                            <button @onclick="() => editingUser.Addresses.Remove(addr)" class="text-rose-500 text-xs">✕</button>
+                                            <button @onclick="() => RemoveAddress(addr)" class="text-rose-500 text-xs">✕</button>
                                         </div>
                                     </div>
                                     <div class="space-y-2">
@@ -137,6 +137,11 @@
         editingUser.Addresses.Add(new PPP_Address { Label = "Home", IsDefault = !editingUser.Addresses.Any(), UserId = editingUser.Id });
     }
 
+    private void RemoveAddress(PPP_Address addr)
+    {
+        editingUser.Addresses.Remove(addr);
+    }
+
     private void SetPrimary(PPP_Address target) 
     { 
         foreach(var a in editingUser.Addresses) a.IsDefault = false; 
@@ -172,10 +177,17 @@
             dbUser.Phone = editingUser.Phone;
             dbUser.AvatarId = editingUser.AvatarId;
 
-            // FIXED: Avoided RemoveAll lambda to bypass build error CS1660
+            // Robust address syncing without RemoveAll lambda
             var incomingIds = editingUser.Addresses.Select(a => a.Id).ToList();
-            var toRemove = dbUser.Addresses.Where(a => a.Id != 0 && !incomingIds.Contains(a.Id)).ToList();
-            foreach (var r in toRemove) dbUser.Addresses.Remove(r);
+            var currentAddresses = dbUser.Addresses.ToList();
+            
+            foreach (var current in currentAddresses)
+            {
+                if (current.Id != 0 && !incomingIds.Contains(current.Id))
+                {
+                    dbUser.Addresses.Remove(current);
+                }
+            }
             
             foreach (var inc in editingUser.Addresses) {
                 var ex = dbUser.Addresses.FirstOrDefault(a => a.Id == inc.Id && a.Id != 0);
