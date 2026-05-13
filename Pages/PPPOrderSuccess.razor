@@ -2,7 +2,6 @@
 @using Microsoft.AspNetCore.WebUtilities
 @using Microsoft.JSInterop
 @inject NavigationManager Nav
-@inject IJSRuntime JS
 
 <div class="min-h-screen w-full bg-[#050505] text-slate-200 flex items-center justify-center p-6 font-sans antialiased">
     <div class="max-w-md w-full bg-[#111] border border-slate-800 rounded-[3rem] p-12 text-center shadow-2xl">
@@ -22,13 +21,20 @@
         @if (!string.IsNullOrEmpty(WebUrl))
         {
             <div class="space-y-4">
-                <button @onclick="LaunchVenmo" 
-                        class="w-full bg-[#008CFF] hover:bg-[#0074D9] text-white py-6 rounded-2xl font-black text-lg uppercase tracking-widest transition-all shadow-[0_15px_40px_rgba(0,140,255,0.3)] active:scale-95 flex items-center justify-center gap-3">
-                    <span>Pay with Venmo</span>
-                </button>
-                <div class="px-4 text-[9px] text-slate-500 font-black uppercase leading-tight">
-                    @if (isMobile) { <span>Opening Venmo App...</span> }
-                    else { <span>Redirecting to Venmo Web...</span> }
+                @* Primary Button: Try App Link (Mobile Only) *@
+                <a href="@AppUrl" class="w-full bg-[#008CFF] hover:bg-[#0074D9] text-white py-6 rounded-2xl font-black text-lg uppercase tracking-widest transition-all shadow-[0_15px_40px_rgba(0,140,255,0.3)] active:scale-95 flex items-center justify-center gap-3 no-underline">
+                    Pay with Venmo App
+                </a>
+
+                @* Fallback Link: Direct Web URL *@
+                <a href="@WebUrl" target="_blank" class="block text-[10px] text-emerald-500 font-black uppercase tracking-widest hover:text-white transition-colors py-2">
+                    Open Venmo Web / Desktop ↗
+                </a>
+
+                <div class="px-4 mt-4">
+                    <p class="text-[8px] text-slate-600 font-black uppercase leading-tight italic">
+                        Note: Desktop users must enter amount ($@TotalAmount.ToString("N2")) manually.
+                    </p>
                 </div>
             </div>
         }
@@ -50,57 +56,21 @@
     private string? AppUrl { get; set; }
     private string? WebUrl { get; set; }
     private double TotalAmount { get; set; }
-    private bool isMobile = false;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         var uri = Nav.ToAbsoluteUri(Nav.Uri);
         var query = QueryHelpers.ParseQuery(uri.Query);
 
+        // Fetch values from query string
         if (query.TryGetValue("appUrl", out var app)) AppUrl = app;
         if (query.TryGetValue("webUrl", out var web)) WebUrl = web;
         if (query.TryGetValue("total", out var totalStr) && double.TryParse(totalStr, out var total)) TotalAmount = total;
-    }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
+        // Ensure the AppUrl isn't empty if WebUrl exists for the links to render
+        if (string.IsNullOrEmpty(AppUrl) && !string.IsNullOrEmpty(WebUrl)) 
         {
-            // Simple mobile detection
-            var ua = await JS.InvokeAsync<string>("eval", "navigator.userAgent");
-            isMobile = ua.Contains("Android") || ua.Contains("iPhone") || ua.Contains("iPad");
-            StateHasChanged();
-        }
-    }
-
-    private async Task LaunchVenmo()
-    {
-        if (string.IsNullOrEmpty(WebUrl)) return;
-
-        if (!isMobile)
-        {
-            // Desktop: Skip the deep link attempt entirely
-            Nav.NavigateTo(WebUrl, forceLoad: true);
-        }
-        else
-        {
-            // Mobile: Try the app, fallback to web
-            await JS.InvokeVoidAsync("eval", $@"
-                (function() {{
-                    const appUrl = '{AppUrl}';
-                    const webUrl = '{WebUrl}';
-                    
-                    // Attempt app
-                    window.location.href = appUrl;
-                    
-                    // If page is still visible after 1.5s, app failed
-                    setTimeout(function() {{
-                        if (!document.hidden) {{
-                            window.location.href = webUrl;
-                        }}
-                    }}, 1500);
-                }})()
-            ");
+            AppUrl = WebUrl;
         }
     }
 
