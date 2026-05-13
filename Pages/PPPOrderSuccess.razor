@@ -22,7 +22,6 @@
         @if (!string.IsNullOrEmpty(targetUrl))
         {
             <div class="space-y-4">
-                @* A single dynamic button that swaps its link based on device detection *@
                 <a href="@targetUrl" 
                    target="@(isMobile ? "_self" : "_blank")"
                    class="w-full bg-[#008CFF] hover:bg-[#0074D9] text-white py-6 rounded-2xl font-black text-lg uppercase tracking-widest transition-all shadow-[0_15px_40px_rgba(0,140,255,0.3)] active:scale-95 flex items-center justify-center gap-3 no-underline">
@@ -35,14 +34,8 @@
                 </p>
             </div>
         }
-        else
-        {
-            <div class="p-6 bg-amber-500/10 border border-amber-500/20 rounded-2xl">
-                <p class="text-xs font-bold text-amber-500 uppercase italic">Manual Payment Required</p>
-                <p class="text-[9px] text-slate-400 mt-2 uppercase font-black">Venmo handle not set by owner.</p>
-            </div>
-        }
 
+        @* Corrected: Uses the dynamic returnOwnerId *@
         <button @onclick="GoHome" class="mt-12 text-slate-600 hover:text-white text-[10px] font-black uppercase tracking-[0.2em] transition-colors">
             ← Back to Storefront
         </button>
@@ -56,6 +49,7 @@
     private string? WebUrl { get; set; }
     private string? targetUrl { get; set; }
     private double TotalAmount { get; set; }
+    private int returnOwnerId { get; set; } = 1; // Default fallback
     private bool isMobile = false;
 
     protected override void OnInitialized()
@@ -67,7 +61,12 @@
         if (query.TryGetValue("webUrl", out var web)) WebUrl = web;
         if (query.TryGetValue("total", out var totalStr) && double.TryParse(totalStr, out var total)) TotalAmount = total;
         
-        // Default to WebUrl until we confirm mobile status
+        // Capture the OwnerId from query string
+        if (query.TryGetValue("ownerId", out var oidStr) && int.TryParse(ownerId, out var oid)) 
+        {
+            returnOwnerId = oid;
+        }
+        
         targetUrl = WebUrl;
     }
 
@@ -75,23 +74,12 @@
     {
         if (firstRender)
         {
-            // Check User Agent for Mobile
             var ua = await JS.InvokeAsync<string>("eval", "navigator.userAgent.toLowerCase()");
             isMobile = ua.Contains("android") || ua.Contains("iphone") || ua.Contains("ipad");
-
-            // Swap the button link if they are on mobile
-            if (isMobile && !string.IsNullOrEmpty(AppUrl))
-            {
-                targetUrl = AppUrl;
-            }
-            else
-            {
-                targetUrl = WebUrl;
-            }
-
+            targetUrl = isMobile && !string.IsNullOrEmpty(AppUrl) ? AppUrl : WebUrl;
             StateHasChanged();
         }
     }
 
-    private void GoHome() => Nav.NavigateTo("/ppp-owner-admin"); 
+    private void GoHome() => Nav.NavigateTo($"/ppp-store/{returnOwnerId}"); 
 }
