@@ -127,7 +127,7 @@
         CartService.OnChange += StateHasChanged;
     }
 
-    private async Task ProcessCheckout()
+private async Task ProcessCheckout()
     {
         if (isProcessing) return;
         isProcessing = true;
@@ -141,7 +141,7 @@
             var sessionUser = await db.PPP_Users.FirstOrDefaultAsync(u => u.MagicToken == token && u.TokenExpiresAt > DateTime.UtcNow);
             if (sessionUser == null) { Nav.NavigateTo("/ppp-login"); return; }
 
-            // Identify correct customer (impersonation check)
+            // 1. Identify Correct Customer (Impersonation Check)
             string finalCustomerId = sessionUser.Id.ToString();
             string finalCustomerName = sessionUser.FirstName;
             if (!string.IsNullOrEmpty(sessionUser.ImpersonatingEmail))
@@ -156,7 +156,7 @@
 
             var owner = await db.PPP_Owners.FindAsync(OwnerId);
 
-            // 1. Create the Order Header
+            // 2. Create the Order Header
             var order = new PPP_Order
             {
                 OwnerId = OwnerId,
@@ -168,7 +168,7 @@
             db.Set<PPP_Order>().Add(order);
             await db.SaveChangesAsync();
 
-            // 2. Create Order Items
+            // 3. Create Order Items & Detail Records
             foreach (var cartItem in CartService.Items)
             {
                 var orderItem = new PPP_OrderItem
@@ -191,13 +191,20 @@
                 for (int i = 0; i < cartItem.Servings.Count; i++)
                 {
                     var serving = cartItem.Servings[i];
-                    var orderServing = new PPP_OrderItemServing { OrderItemId = orderItem.Id, ServingNumber = i + 1, LabelName = serving.Label, Notes = serving.Notes };
+                    var orderServing = new PPP_OrderItemServing 
+                    { 
+                        OrderItemId = orderItem.Id, 
+                        ServingNumber = i + 1, 
+                        LabelName = serving.Label, 
+                        Notes = serving.Notes 
+                    };
                     db.Set<PPP_OrderItemServing>().Add(orderServing);
                     await db.SaveChangesAsync();
 
                     for (int j = 0; j < serving.SelectedOptionNames.Count; j++)
                     {
-                        db.Set<PPP_OrderItemOption>().Add(new PPP_OrderItemOption { 
+                        db.Set<PPP_OrderItemOption>().Add(new PPP_OrderItemOption 
+                        { 
                             OrderItemServingId = orderServing.Id, 
                             OptionName = serving.SelectedOptionNames[j], 
                             AddOnPrice = serving.SelectedOptionPrices[j] 
@@ -208,22 +215,37 @@
 
             await db.SaveChangesAsync();
             
-            // Generate Venmo Links
+            // 4. Build the Bulletproof Description String
+            // Format: Order #57 - Lunch: Tacos (Family), Dinner: Salad (Individual)
+            var itemSummaries = CartService.Items
+                .Select(i => $"{i.TimeSlot}: {i.RecipeName} ({i.SizeName})")
+                .Distinct();
+
+            string rawNote = $"Order #{order.Id} - {string.Join(", ", itemSummaries)}";
+            
+            // Safety Truncation: 200 character limit for URL stability
+            if (rawNote.Length > 200) rawNote = rawNote.Substring(0, 197) + "...";
+            
+            string note = Uri.EscapeDataString(rawNote);
+
+            // 5. Generate Venmo Links
             string venmoAppUrl = "";
             string venmoWebUrl = "";
             double orderTotal = CartService.Items.Sum(i => i.Price + i.DeliveryFee);
 
             if (owner != null && !string.IsNullOrEmpty(owner.VenmoHandle))
             {
-                var handle = owner.VenmoHandle.Replace("@", "");
-                var note = Uri.EscapeDataString($"Order #{order.Id} for {finalCustomerName}");
+                var handle = owner.VenmoHandle.Replace("@", "").Trim();
+                
+                // Deep link for Mobile App
                 venmoAppUrl = $"venmo://paycharge?txn=pay&recipients={handle}&amount={orderTotal}&note={note}";
+                
+                // Web link for Desktop
                 venmoWebUrl = $"https://venmo.com/{handle}?txn=pay&amount={orderTotal}&note={note}";
             }
 
+            // 6. Finalize & Redirect
             CartService.ClearCart();
-            
-            // Redirect to Success Page with Venmo data in QueryString
             Nav.NavigateTo($"/ppp-order-success/{order.Id}?appUrl={Uri.EscapeDataString(venmoAppUrl)}&webUrl={Uri.EscapeDataString(venmoWebUrl)}&total={orderTotal}");
         }
         catch (Exception ex)
