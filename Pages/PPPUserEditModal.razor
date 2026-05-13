@@ -1,0 +1,169 @@
+@using Dashboard
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Forms
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject IJSRuntime JS
+
+@if (IsOpen)
+{
+    <div class="fixed inset-0 bg-black/90 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
+        <div class="bg-[#111] w-full max-w-4xl rounded-3xl border border-gray-800 shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden animate-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+            <div class="p-6 bg-gray-900/50 border-b border-gray-800 flex justify-between items-center shrink-0">
+                <h3 class="text-lg uppercase tracking-widest font-black text-blue-400">Update Your Profile</h3>
+                <button @onclick="Close" class="text-gray-500 hover:text-white text-2xl font-light">&times;</button>
+            </div>
+            
+            <div class="p-8 grid grid-cols-1 md:grid-cols-2 gap-10 overflow-y-auto">
+                @* LEFT COLUMN: Account Details *@
+                <div class="space-y-6">
+                    <h4 class="text-[10px] uppercase tracking-[0.2em] text-blue-500 font-black mb-4">Account Details</h4>
+                    
+                    <div class="flex items-center gap-6 bg-black/30 p-4 rounded-2xl border border-gray-800">
+                        @if (editingUser.AvatarId.HasValue)
+                        {
+                            <img src="/db-images-ppp/@editingUser.AvatarId" class="w-20 h-20 rounded-2xl object-cover border-2 border-blue-500/50" />
+                        }
+                        else
+                        {
+                            <div class="w-20 h-20 rounded-2xl bg-gray-900 border-2 border-dashed border-gray-700 flex items-center justify-center text-2xl">👤</div>
+                        }
+                        <div class="flex-1">
+                            <label class="text-[9px] uppercase text-gray-500 tracking-widest mb-2 block">Profile Image</label>
+                            <InputFile OnChange="HandleImageUpload" class="text-xs text-gray-400 file:bg-blue-600 file:text-white file:border-0 file:px-3 file:py-1 file:rounded-lg file:mr-4 file:font-black file:uppercase file:text-[9px] cursor-pointer" />
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="text-[9px] uppercase text-gray-500 tracking-widest mb-2 block">First Name</label>
+                            <input @bind="editingUser.FirstName" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm focus:border-blue-500 outline-none transition font-black uppercase text-white" />
+                        </div>
+                        <div>
+                            <label class="text-[9px] uppercase text-gray-500 tracking-widest mb-2 block">Last Name</label>
+                            <input @bind="editingUser.LastName" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm focus:border-blue-500 outline-none transition font-black uppercase text-white" />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="text-[9px] uppercase text-gray-500 tracking-widest mb-2 block">Email / Username</label>
+                        <input @bind="editingUser.Email" disabled class="w-full bg-black/50 border border-gray-800 rounded-xl p-3 text-sm text-gray-500 outline-none font-mono" />
+                    </div>
+
+                    <div>
+                        <label class="text-[9px] uppercase text-gray-500 tracking-widest mb-2 block">Phone</label>
+                        <input value="@editingUser.Phone" @onchange="@(e => editingUser.Phone = PPPUtils.FormatPhoneNumber(e.Value?.ToString()))" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm focus:border-blue-500 outline-none transition font-mono text-white" />
+                    </div>
+                </div>
+
+                @* RIGHT COLUMN: Address Maintenance *@
+                <div class="space-y-6">
+                    <div class="flex justify-between items-end">
+                        <h4 class="text-[10px] uppercase tracking-[0.2em] text-emerald-500 font-black">My Addresses</h4>
+                        <button @onclick="AddNewAddress" class="text-[9px] font-black uppercase text-emerald-500 hover:text-white transition">＋ New Address</button>
+                    </div>
+
+                    <div class="space-y-4">
+                        @foreach (var addr in editingUser.Addresses)
+                        {
+                            <div class="bg-black/30 border @(addr.IsDefault ? "border-emerald-500/50" : "border-gray-800") p-5 rounded-2xl relative group/addr transition-all">
+                                <div class="flex justify-between items-start mb-3">
+                                    <div class="flex items-center gap-2">
+                                        <input @bind="addr.Label" placeholder="Label" class="bg-transparent border-none text-[10px] font-black uppercase text-white outline-none p-0 w-32" />
+                                        @if (addr.IsDefault) { <span class="bg-emerald-500 text-black text-[7px] px-1.5 py-0.5 rounded-full font-black">PRIMARY</span> }
+                                    </div>
+                                    <div class="flex items-center gap-2 opacity-0 group-hover/addr:opacity-100 transition-opacity">
+                                        @if(!addr.IsDefault) { <button @onclick="() => SetPrimary(addr)" class="text-[8px] font-black text-gray-500 hover:text-emerald-500 uppercase">Set Primary</button> }
+                                        <button @onclick="() => editingUser.Addresses.Remove(addr)" class="text-rose-500 text-xs">✕</button>
+                                    </div>
+                                </div>
+                                <div class="space-y-2">
+                                    <input @bind="addr.Street" placeholder="Street" class="w-full bg-black/50 border border-gray-800 rounded-lg p-2 text-xs text-slate-300 outline-none" />
+                                    <div class="grid grid-cols-3 gap-2">
+                                        <input @bind="addr.City" placeholder="City" class="bg-black/50 border border-gray-800 rounded-lg p-2 text-xs text-slate-300 outline-none" />
+                                        <input @bind="addr.State" placeholder="ST" maxlength="2" class="bg-black/50 border border-gray-800 rounded-lg p-2 text-xs text-slate-300 outline-none text-center uppercase" />
+                                        <input @bind="addr.ZipCode" placeholder="Zip" class="bg-black/50 border border-gray-800 rounded-lg p-2 text-xs text-slate-300 outline-none font-mono" />
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-6 bg-gray-900/50 border-t border-gray-800 flex justify-end gap-4 shrink-0">
+                <button @onclick="Close" class="text-[10px] text-gray-500 uppercase tracking-widest font-black px-6">Cancel</button>
+                <button @onclick="HandleSave" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] uppercase tracking-widest font-black px-8 py-3 rounded-xl shadow-lg transition">Save Changes</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+    [Parameter] public PPP_User User { get; set; } = new();
+
+    private PPP_User editingUser = new();
+
+    protected override void OnParametersSet()
+    {
+        if (IsOpen)
+        {
+            // Deep clone
+            editingUser = new PPP_User {
+                Id = User.Id, FirstName = User.FirstName, LastName = User.LastName, Email = User.Email,
+                Phone = User.Phone, Role = User.Role, AvatarId = User.AvatarId,
+                Addresses = User.Addresses.Select(a => new PPP_Address {
+                    Id = a.Id, Street = a.Street, City = a.City, State = a.State, ZipCode = a.ZipCode,
+                    Label = a.Label, IsDefault = a.IsDefault, UserId = a.UserId
+                }).ToList()
+            };
+        }
+    }
+
+    private void AddNewAddress() => editingUser.Addresses.Add(new PPP_Address { Label = "Home", IsDefault = !editingUser.Addresses.Any(), UserId = editingUser.Id });
+    private void SetPrimary(PPP_Address target) { foreach(var a in editingUser.Addresses) a.IsDefault = false; target.IsDefault = true; }
+    private async Task Close() => await OnClose.InvokeAsync();
+
+    private async Task HandleImageUpload(InputFileChangeEventArgs e)
+    {
+        try {
+            var file = e.File;
+            if (file == null) return;
+            await using var db = await DbFactory.CreateDbContextAsync();
+            using var ms = new System.IO.MemoryStream();
+            await file.OpenReadStream(maxAllowedSize: 1024 * 1024 * 2).CopyToAsync(ms);
+            var newImage = new PPP_StoredImage { Data = ms.ToArray(), ContentType = file.ContentType, FileName = file.Name, UploadedAt = DateTime.UtcNow };
+            db.PPP_StoredImages.Add(newImage);
+            await db.SaveChangesAsync();
+            editingUser.AvatarId = newImage.Id;
+        } catch {}
+    }
+
+    private async Task HandleSave()
+    {
+        try {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var dbUser = await db.PPP_Users.Include(u => u.Addresses).FirstOrDefaultAsync(u => u.Id == editingUser.Id);
+            if (dbUser == null) return;
+
+            dbUser.FirstName = editingUser.FirstName;
+            dbUser.LastName = editingUser.LastName;
+            dbUser.Phone = editingUser.Phone;
+            dbUser.AvatarId = editingUser.AvatarId;
+
+            var incomingIds = editingUser.Addresses.Select(a => a.Id).ToList();
+            dbUser.Addresses.RemoveAll(a => !incomingIds.Contains(a.Id));
+            foreach (var inc in editingUser.Addresses) {
+                var ex = dbUser.Addresses.FirstOrDefault(a => a.Id == inc.Id && a.Id != 0);
+                if (ex != null) { ex.Street = inc.Street; ex.City = inc.City; ex.State = inc.State; ex.ZipCode = inc.ZipCode; ex.Label = inc.Label; ex.IsDefault = inc.IsDefault; }
+                else { inc.UserId = dbUser.Id; dbUser.Addresses.Add(inc); }
+            }
+
+            await db.SaveChangesAsync();
+            await OnSaved.InvokeAsync();
+            await OnClose.InvokeAsync();
+        } catch (Exception ex) { await JS.InvokeVoidAsync("alert", "Error: " + ex.Message); }
+    }
+}

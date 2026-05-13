@@ -1,6 +1,7 @@
 @page "/ppp-store/{OwnerId:int}"
 @using Dashboard
 @using Dashboard.Services
+@using Dashboard.Components
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.JSInterop
@@ -51,11 +52,18 @@
                                 </div>
                             </div>
 
+                            @* Avatar Dropdown Menu *@
                             <div class="absolute right-0 mt-2 w-64 bg-[#111] border border-white/10 rounded-2xl shadow-2xl py-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-[110]">
                                 <div class="px-4 py-3 border-b border-white/5 mb-2">
                                     <p class="text-[10px] font-black text-slate-500 uppercase">Logged in as</p>
                                     <p class="text-xs font-bold text-white truncate">@currentUser.Email</p>
                                 </div>
+                                
+                                @* Trigger for User Edit Modal *@
+                                <button @onclick="() => showProfileModal = true" class="w-full text-left px-4 py-3 text-xs font-black uppercase text-slate-400 hover:bg-white/5 transition-colors flex items-center gap-3">
+                                    <span>👤</span> Edit My Profile
+                                </button>
+
                                 @if (isImpersonating)
                                 {
                                     <button @onclick="EndImpersonation" class="w-full text-left px-4 py-3 text-xs font-black uppercase text-rose-500 hover:bg-rose-500/10 transition-colors flex items-center gap-3">
@@ -167,6 +175,15 @@
     }
 </div>
 
+@* Shared Profile Edit Modal *@
+@if(currentUser != null)
+{
+    <PPPUserEditModal IsOpen="showProfileModal" 
+                      User="currentUser" 
+                      OnClose="() => showProfileModal = false" 
+                      OnSaved="LoadSessionIdentity" />
+}
+
 @code {
     [Parameter] public int OwnerId { get; set; }
     private PPP_Owner? owner;
@@ -176,6 +193,7 @@
     private PPP_User? currentUser;
     private PPP_User? sessionUser;
     private bool isImpersonating = false;
+    private bool showProfileModal = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -219,13 +237,13 @@
             if (!string.IsNullOrEmpty(token))
             {
                 await using var db = await DbFactory.CreateDbContextAsync();
-                sessionUser = await db.PPP_Users.FirstOrDefaultAsync(u => u.MagicToken == token && u.TokenExpiresAt > DateTime.UtcNow);
+                sessionUser = await db.PPP_Users.Include(u => u.Addresses).FirstOrDefaultAsync(u => u.MagicToken == token && u.TokenExpiresAt > DateTime.UtcNow);
                 
                 if (sessionUser != null)
                 {
                     if (!string.IsNullOrEmpty(sessionUser.ImpersonatingEmail))
                     {
-                        currentUser = await db.PPP_Users.FirstOrDefaultAsync(u => u.Email == sessionUser.ImpersonatingEmail);
+                        currentUser = await db.PPP_Users.Include(u => u.Addresses).FirstOrDefaultAsync(u => u.Email == sessionUser.ImpersonatingEmail);
                         isImpersonating = true;
                     }
                     else
