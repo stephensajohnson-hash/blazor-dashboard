@@ -59,7 +59,7 @@
                                     <p class="text-xs font-bold text-white truncate">@currentUser.Email</p>
                                 </div>
                                 
-                                <button @onclick="() => editModal.Open(currentUser)" class="w-full text-left px-4 py-3 text-xs font-black uppercase text-slate-400 hover:bg-white/5 transition-colors flex items-center gap-3">
+                                <button @onclick="() => showProfileModal = true" class="w-full text-left px-4 py-3 text-xs font-black uppercase text-slate-400 hover:bg-white/5 transition-colors flex items-center gap-3">
                                     <span>👤</span> Edit My Profile
                                 </button>
 
@@ -174,7 +174,12 @@
     }
 </div>
 
-<PPPUserEditModal @ref="editModal" OnSaved="HandleProfileSaved" />
+@if (showProfileModal && currentUser != null)
+{
+    <PPPUserEditModal UserId="currentUser.Id" 
+                      OnClose="CloseProfileModal" 
+                      OnSaved="HandleProfileSaved" />
+}
 
 @code {
     [Parameter] public int OwnerId { get; set; }
@@ -185,7 +190,7 @@
     private PPP_User? currentUser;
     private PPP_User? sessionUser;
     private bool isImpersonating = false;
-    private PPPUserEditModal editModal = default!;
+    private bool showProfileModal = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -225,7 +230,8 @@
     {
         try
         {
-            var token = await JS.InvokeAsync<string>("eval", "(() => { try { var m = document.cookie.split('; ').find(row => row.startsWith('ppp_token=')); return m ? m.split('=')[1] : null; } catch(e) { return null; } })()");
+            // Restored original safe JS interop cookie fetcher
+            var token = await JS.InvokeAsync<string>("eval", "document.cookie.split('; ').find(row => row.startsWith('ppp_token='))?.split('=')[1]");
             
             if (!string.IsNullOrEmpty(token))
             {
@@ -257,8 +263,14 @@
         catch (Exception ex) { Console.WriteLine(ex.Message); }
     }
 
+    private void CloseProfileModal()
+    {
+        showProfileModal = false;
+    }
+
     private async Task HandleProfileSaved()
     {
+        showProfileModal = false;
         await LoadSessionIdentity();
         StateHasChanged();
     }

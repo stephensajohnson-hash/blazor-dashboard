@@ -6,11 +6,18 @@
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject IJSRuntime JS
 
-@if (IsOpen)
-{
-    <div class="fixed inset-0 bg-black/90 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
-        <div class="bg-[#111] w-full max-w-4xl rounded-3xl border border-gray-800 shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden animate-in zoom-in duration-200 flex flex-col max-h-[90vh]">
-            
+<div class="fixed inset-0 bg-black/90 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
+    <div class="bg-[#111] w-full max-w-4xl rounded-3xl border border-gray-800 shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden animate-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+        
+        @if (isLoading)
+        {
+            <div class="p-20 flex flex-col items-center justify-center">
+                <div class="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                <div class="text-xs text-slate-500 font-black tracking-widest mt-4 uppercase">Loading Data...</div>
+            </div>
+        }
+        else
+        {
             <div class="p-6 bg-gray-900/50 border-b border-gray-800 flex justify-between items-center shrink-0">
                 <h3 class="text-lg uppercase tracking-widest font-black text-blue-400">
                     @(editingUser.Id == 0 ? "Register New User" : "Update Profile")
@@ -121,59 +128,66 @@
                 <button @onclick="Close" class="text-[10px] text-gray-500 uppercase tracking-widest font-black px-6">Cancel</button>
                 <button @onclick="HandleSave" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] uppercase tracking-widest font-black px-8 py-3 rounded-xl shadow-lg transition">Commit Changes</button>
             </div>
-        </div>
+        }
     </div>
-}
+</div>
 
 @code {
+    [Parameter] public int UserId { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback OnSaved { get; set; }
 
-    public bool IsOpen { get; private set; }
     private PPP_User editingUser = new();
+    private bool isLoading = true;
 
-    // IMPERATIVE PATTERN: The parent calls this method directly and injects the data
-    public void Open(PPP_User? user = null)
+    protected override async Task OnInitializedAsync()
     {
-        if (user == null || user.Id == 0)
+        isLoading = true;
+        try 
         {
-            editingUser = new PPP_User { CreatedAt = DateTime.UtcNow, Role = "Customer", Addresses = new List<PPP_Address>() };
-        }
-        else
-        {
-            editingUser = new PPP_User
+            await using var db = await DbFactory.CreateDbContextAsync();
+            
+            if (UserId == 0)
             {
-                Id = user.Id,
-                FirstName = user.FirstName,
-                LastName = user.LastName,
-                Email = user.Email,
-                Phone = user.Phone,
-                Role = user.Role ?? "Customer",
-                AvatarId = user.AvatarId,
-                CreatedAt = user.CreatedAt == default ? DateTime.UtcNow : user.CreatedAt,
-                Addresses = new List<PPP_Address>()
-            };
-
-            if (user.Addresses != null)
+                editingUser = new PPP_User { CreatedAt = DateTime.UtcNow, Role = "Customer", Addresses = new List<PPP_Address>() };
+            }
+            else
             {
-                foreach (var a in user.Addresses)
+                var dbUser = await db.PPP_Users
+                    .AsNoTracking()
+                    .Include(u => u.Addresses)
+                    .FirstOrDefaultAsync(u => u.Id == UserId);
+                    
+                if (dbUser != null)
                 {
-                    editingUser.Addresses.Add(new PPP_Address
+                    // Map to a pure POCO that Blazor can bind to freely
+                    editingUser = new PPP_User
                     {
-                        Id = a.Id, Street = a.Street, City = a.City, State = a.State, ZipCode = a.ZipCode,
-                        Label = a.Label, IsDefault = a.IsDefault, UserId = a.UserId
-                    });
+                        Id = dbUser.Id,
+                        FirstName = dbUser.FirstName,
+                        LastName = dbUser.LastName,
+                        Email = dbUser.Email,
+                        Phone = dbUser.Phone,
+                        Role = dbUser.Role ?? "Customer",
+                        AvatarId = dbUser.AvatarId,
+                        CreatedAt = dbUser.CreatedAt,
+                        Addresses = dbUser.Addresses?.Select(a => new PPP_Address
+                        {
+                            Id = a.Id, Street = a.Street, City = a.City, State = a.State, ZipCode = a.ZipCode,
+                            Label = a.Label, IsDefault = a.IsDefault, UserId = a.UserId
+                        }).ToList() ?? new List<PPP_Address>()
+                    };
                 }
             }
         }
-        
-        IsOpen = true;
-        InvokeAsync(StateHasChanged);
-    }
-
-    public void Close()
-    {
-        IsOpen = false;
-        InvokeAsync(StateHasChanged);
+        catch (Exception ex)
+        {
+            Console.WriteLine("Load error: " + ex.Message);
+        }
+        finally
+        {
+            isLoading = false;
+        }
     }
 
     private void AddNewAddress() 
@@ -197,6 +211,8 @@
         target.IsDefault = true; 
     }
 
+    private async Task Close() => await OnClose.InvokeAsync();
+
     private async Task HandleImageUpload(InputFileChangeEventArgs e)
     {
         try {
@@ -210,7 +226,7 @@
             await db.SaveChangesAsync();
             editingUser.AvatarId = newImage.Id;
         } catch (Exception ex) {
-            await JS.InvokeVoidAsync("console.error", "Image upload failed: " + ex.Message);
+            Console.WriteLine("Image upload failed: " + ex.Message);
         }
     }
 
@@ -219,7 +235,7 @@
         try {
             if (!string.IsNullOrEmpty(editingUser.Phone))
             {
-                editingUser.Phone = Dashboard.Services.PPPUtils.FormatPhoneNumber(editingUser.Phone);
+                editingUser.Phone = PPPUtils.FormatPhoneNumber(editingUser.Phone);
             }
 
             if (string.IsNullOrWhiteSpace(editingUser.FirstName) || string.IsNullOrWhiteSpace(editingUser.Email))
@@ -241,7 +257,6 @@
 
                 dbUser.FirstName = editingUser.FirstName;
                 dbUser.LastName = editingUser.LastName;
-                dbUser.Email = editingUser.Email; 
                 dbUser.Phone = editingUser.Phone;
                 dbUser.Role = editingUser.Role;
                 dbUser.AvatarId = editingUser.AvatarId;
@@ -276,7 +291,6 @@
 
             await db.SaveChangesAsync();
             await OnSaved.InvokeAsync();
-            Close();
         } catch (Exception ex) { 
             await JS.InvokeVoidAsync("alert", "Error saving: " + ex.Message); 
         }
