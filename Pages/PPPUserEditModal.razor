@@ -65,7 +65,7 @@
                     </div>
 
                     <div class="space-y-4">
-                        @if (editingUser.Addresses != null)
+                        @if(editingUser.Addresses != null)
                         {
                             @foreach (var addr in editingUser.Addresses)
                             {
@@ -78,7 +78,7 @@
                                             @if (localAddr.IsDefault) { <span class="bg-emerald-500 text-black text-[7px] px-1.5 py-0.5 rounded-full font-black">PRIMARY</span> }
                                         </div>
                                         <div class="flex items-center gap-2 opacity-0 group-hover/addr:opacity-100 transition-opacity">
-                                            @if (!localAddr.IsDefault) { <button @onclick="() => SetPrimary(localAddr)" class="text-[8px] font-black text-gray-500 hover:text-emerald-500 uppercase">Set Primary</button> }
+                                            @if(!localAddr.IsDefault) { <button @onclick="() => SetPrimary(localAddr)" class="text-[8px] font-black text-gray-500 hover:text-emerald-500 uppercase">Set Primary</button> }
                                             <button @onclick="() => RemoveAddress(localAddr)" class="text-rose-500 text-xs">✕</button>
                                         </div>
                                     </div>
@@ -112,51 +112,41 @@
     [Parameter] public PPP_User User { get; set; } = new();
 
     private PPP_User editingUser = new();
-    private int _lastLoadedId = -1;
+    private bool _wasOpen = false;
 
     protected override void OnParametersSet()
     {
-        if (IsOpen)
+        // Only run the clone logic when the modal transitions from Closed to Open
+        if (IsOpen && !_wasOpen)
         {
-            // Force a reload if we haven't loaded data for this specific open cycle
-            if (_lastLoadedId == -1 || _lastLoadedId != User.Id || editingUser.Id == 0)
+            editingUser = new PPP_User {
+                Id = User.Id, 
+                FirstName = User.FirstName, 
+                LastName = User.LastName, 
+                Email = User.Email,
+                Phone = User.Phone, 
+                Role = User.Role, 
+                AvatarId = User.AvatarId,
+                Addresses = new List<PPP_Address>()
+            };
+
+            if (User.Addresses != null)
             {
-                LoadDataFromUser();
+                foreach (var a in User.Addresses)
+                {
+                    editingUser.Addresses.Add(new PPP_Address {
+                        Id = a.Id, Street = a.Street, City = a.City, State = a.State, ZipCode = a.ZipCode,
+                        Label = a.Label, IsDefault = a.IsDefault, UserId = a.UserId
+                    });
+                }
             }
+            
+            _wasOpen = true; // Lock it so the storefront timer doesn't wipe it
         }
-        else
+        else if (!IsOpen)
         {
-            // Reset the lock when closed so it loads fresh next time you click edit
-            _lastLoadedId = -1;
+            _wasOpen = false; // Reset lock when modal is closed
         }
-    }
-
-    private void LoadDataFromUser()
-    {
-        editingUser = new PPP_User {
-            Id = User.Id, 
-            FirstName = User.FirstName, 
-            LastName = User.LastName, 
-            Email = User.Email,
-            Phone = User.Phone, 
-            Role = User.Role, 
-            AvatarId = User.AvatarId,
-            Addresses = new List<PPP_Address>()
-        };
-
-        if (User.Addresses != null)
-        {
-            foreach (var a in User.Addresses)
-            {
-                editingUser.Addresses.Add(new PPP_Address {
-                    Id = a.Id, Street = a.Street, City = a.City, State = a.State, ZipCode = a.ZipCode,
-                    Label = a.Label, IsDefault = a.IsDefault, UserId = a.UserId
-                });
-            }
-        }
-
-        // Lock it in
-        _lastLoadedId = User.Id == 0 ? 0 : User.Id;
     }
 
     private void AddNewAddress() 
