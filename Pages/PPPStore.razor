@@ -176,7 +176,7 @@
 
 @if (showProfileModal && currentUser != null)
 {
-    <PPPUserEditModal UserId="currentUser.Id" 
+    <PPPUserEditModal User="currentUser" 
                       OnClose="() => showProfileModal = false" 
                       OnSaved="HandleProfileSaved" />
 }
@@ -230,14 +230,12 @@
     {
         try
         {
-            // Bulletproof JS eval so it never throws an unhandled JS error
             var token = await JS.InvokeAsync<string>("eval", "(() => { try { var m = document.cookie.split('; ').find(row => row.startsWith('ppp_token=')); return m ? m.split('=')[1] : null; } catch(e) { return null; } })()");
             
             if (!string.IsNullOrEmpty(token))
             {
                 await using var db = await DbFactory.CreateDbContextAsync();
                 
-                // CRITICAL FIX: AsNoTracking prevents timer-based ObjectDisposedExceptions
                 sessionUser = await db.PPP_Users
                     .AsNoTracking() 
                     .Include(u => u.Addresses)
@@ -248,7 +246,7 @@
                     if (!string.IsNullOrEmpty(sessionUser.ImpersonatingEmail))
                     {
                         currentUser = await db.PPP_Users
-                            .AsNoTracking() // CRITICAL FIX
+                            .AsNoTracking()
                             .Include(u => u.Addresses)
                             .FirstOrDefaultAsync(u => u.Email == sessionUser.ImpersonatingEmail);
                         isImpersonating = true;
