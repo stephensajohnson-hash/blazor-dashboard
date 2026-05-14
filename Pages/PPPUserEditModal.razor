@@ -133,18 +133,39 @@
 
     private void AddNewAddress() 
     {
-        if (editingUser.Addresses == null) editingUser.Addresses = new List<PPP_Address>();
-        editingUser.Addresses.Add(new PPP_Address { Label = "Home", IsDefault = !editingUser.Addresses.Any(), UserId = editingUser.Id });
+        if (editingUser.Addresses == null) 
+        {
+            editingUser.Addresses = new List<PPP_Address>();
+        }
+        
+        // Removed the inline .Any() call that confused the compiler
+        bool isFirst = editingUser.Addresses.Count == 0;
+        
+        editingUser.Addresses.Add(new PPP_Address 
+        { 
+            Label = "Home", 
+            IsDefault = isFirst, 
+            UserId = editingUser.Id 
+        });
     }
 
     private void RemoveAddress(PPP_Address addr)
     {
-        editingUser.Addresses.Remove(addr);
+        if (editingUser.Addresses != null)
+        {
+            editingUser.Addresses.Remove(addr);
+        }
     }
 
     private void SetPrimary(PPP_Address target) 
     { 
-        foreach(var a in editingUser.Addresses) a.IsDefault = false; 
+        if (editingUser.Addresses != null)
+        {
+            foreach(var a in editingUser.Addresses) 
+            {
+                a.IsDefault = false; 
+            }
+        }
         target.IsDefault = true; 
     }
 
@@ -177,27 +198,29 @@
             dbUser.Phone = editingUser.Phone;
             dbUser.AvatarId = editingUser.AvatarId;
 
-            // Robust address syncing without RemoveAll lambda
-            var incomingIds = editingUser.Addresses.Select(a => a.Id).ToList();
-            var currentAddresses = dbUser.Addresses.ToList();
-            
-            foreach (var current in currentAddresses)
+            if (editingUser.Addresses != null)
             {
-                if (current.Id != 0 && !incomingIds.Contains(current.Id))
+                var incomingIds = editingUser.Addresses.Select(a => a.Id).ToList();
+                var currentAddresses = dbUser.Addresses.ToList();
+                
+                foreach (var current in currentAddresses)
                 {
-                    dbUser.Addresses.Remove(current);
+                    if (current.Id != 0 && !incomingIds.Contains(current.Id))
+                    {
+                        dbUser.Addresses.Remove(current);
+                    }
                 }
-            }
-            
-            foreach (var inc in editingUser.Addresses) {
-                var ex = dbUser.Addresses.FirstOrDefault(a => a.Id == inc.Id && a.Id != 0);
-                if (ex != null) { 
-                    ex.Street = inc.Street; ex.City = inc.City; ex.State = inc.State; 
-                    ex.ZipCode = inc.ZipCode; ex.Label = inc.Label; ex.IsDefault = inc.IsDefault; 
-                }
-                else { 
-                    inc.UserId = dbUser.Id; 
-                    dbUser.Addresses.Add(inc); 
+                
+                foreach (var inc in editingUser.Addresses) {
+                    var ex = dbUser.Addresses.FirstOrDefault(a => a.Id == inc.Id && a.Id != 0);
+                    if (ex != null) { 
+                        ex.Street = inc.Street; ex.City = inc.City; ex.State = inc.State; 
+                        ex.ZipCode = inc.ZipCode; ex.Label = inc.Label; ex.IsDefault = inc.IsDefault; 
+                    }
+                    else { 
+                        inc.UserId = dbUser.Id; 
+                        dbUser.Addresses.Add(inc); 
+                    }
                 }
             }
 
