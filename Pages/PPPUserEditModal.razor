@@ -9,23 +9,42 @@
 <div class="fixed inset-0 bg-black/90 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
     <div class="bg-[#111] w-full max-w-4xl rounded-3xl border border-gray-800 shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden animate-in zoom-in duration-200 flex flex-col max-h-[90vh]">
         
+        <div class="p-6 bg-gray-900/50 border-b border-gray-800 flex justify-between items-center shrink-0">
+            <h3 class="text-lg uppercase tracking-widest font-black text-blue-400">
+                @(editingUser.Id == 0 ? "Register New User" : "Update Profile")
+            </h3>
+            <button @onclick="Close" class="text-gray-500 hover:text-white text-2xl font-light">&times;</button>
+        </div>
+
         @if (isLoading)
         {
             <div class="p-20 flex flex-col items-center justify-center">
                 <div class="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                 <div class="text-xs text-slate-500 font-black tracking-widest mt-4 uppercase">Loading Data...</div>
+                
+                @* DEBUG PANEL (LOADING STATE) *@
+                <div class="mt-8 bg-yellow-500/10 border border-yellow-500/50 text-yellow-500 p-4 rounded-xl font-mono text-xs text-left w-full max-w-md">
+                    <b>[DEBUGGING - LOADING]</b><br/>
+                    Expected UserId Parameter: @UserId <br/>
+                    Currently Locked UserId: @_loadedUserId
+                </div>
             </div>
         }
         else
         {
-            <div class="p-6 bg-gray-900/50 border-b border-gray-800 flex justify-between items-center shrink-0">
-                <h3 class="text-lg uppercase tracking-widest font-black text-blue-400">
-                    @(editingUser.Id == 0 ? "Register New User" : "Update Profile")
-                </h3>
-                <button @onclick="Close" class="text-gray-500 hover:text-white text-2xl font-light">&times;</button>
-            </div>
-            
             <div class="p-8 grid grid-cols-1 md:grid-cols-2 gap-10 overflow-y-auto">
+                
+                @* DEBUG PANEL (LOADED STATE) - Visible to help us track this down *@
+                <div class="col-span-1 md:col-span-2 bg-yellow-500/10 border border-yellow-500/50 text-yellow-500 p-4 rounded-xl font-mono text-xs text-left w-full">
+                    <b>[DEBUGGING - DATA LOADED]</b><br/>
+                    Passed Parameter UserId: @UserId <br/>
+                    Internal Locked UserId: @_loadedUserId <br/>
+                    EditingUser.Id: @editingUser.Id <br/>
+                    EditingUser.Email: @(string.IsNullOrEmpty(editingUser.Email) ? "NULL/EMPTY" : editingUser.Email) <br/>
+                    EditingUser.FirstName: @(string.IsNullOrEmpty(editingUser.FirstName) ? "NULL/EMPTY" : editingUser.FirstName) <br/>
+                    Address Count: @(editingUser.Addresses?.Count ?? 0)
+                </div>
+
                 @* LEFT COLUMN: Account Details *@
                 <div class="space-y-6">
                     <h4 class="text-[10px] uppercase tracking-[0.2em] text-blue-500 font-black mb-4">Account Security</h4>
@@ -58,7 +77,7 @@
 
                     <div>
                         <label class="text-[9px] uppercase text-gray-500 tracking-widest mb-2 block">Email / Username</label>
-                        <input @bind="editingUser.Email" class="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm focus:border-blue-500 outline-none transition font-mono text-white" />
+                        <input @bind="editingUser.Email" disabled class="w-full bg-black/50 border border-gray-800 rounded-xl p-3 text-sm text-gray-500 outline-none font-mono" />
                     </div>
 
                     <div class="grid grid-cols-2 gap-4">
@@ -139,25 +158,38 @@
 
     private PPP_User editingUser = new();
     private bool isLoading = true;
+    private int _loadedUserId = -1; // Lock variable to stop infinite re-renders
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnParametersSetAsync()
     {
-        await LoadData();
+        Console.WriteLine($"[MODAL DEBUG] OnParametersSetAsync fired. Parameter UserId: {UserId} | Currently locked UserId: {_loadedUserId}");
+
+        // Only load if the ID passed in is different from what we already have loaded.
+        if (UserId != _loadedUserId)
+        {
+            _loadedUserId = UserId; // Immediately lock it
+            await LoadDataSafely();
+        }
     }
 
-    private async Task LoadData()
+    private async Task LoadDataSafely()
     {
+        Console.WriteLine($"[MODAL DEBUG] LoadDataSafely started for UserId: {UserId}");
         isLoading = true;
+        StateHasChanged(); // Force the UI to show the spinner
+
         try 
         {
             await using var db = await DbFactory.CreateDbContextAsync();
             
             if (UserId == 0)
             {
+                Console.WriteLine("[MODAL DEBUG] UserId is 0. Creating brand new blank user.");
                 editingUser = new PPP_User { CreatedAt = DateTime.UtcNow, Role = "Customer", Addresses = new List<PPP_Address>() };
             }
             else
             {
+                Console.WriteLine($"[MODAL DEBUG] Querying database for UserId: {UserId}...");
                 var dbUser = await db.PPP_Users
                     .AsNoTracking()
                     .Include(u => u.Addresses)
@@ -165,6 +197,9 @@
                     
                 if (dbUser != null)
                 {
+                    Console.WriteLine($"[MODAL DEBUG] User found in DB! Email: {dbUser.Email}, Addresses Count: {dbUser.Addresses?.Count ?? 0}");
+                    
+                    // Map to a pure POCO
                     editingUser = new PPP_User
                     {
                         Id = dbUser.Id,
@@ -181,16 +216,25 @@
                             Label = a.Label, IsDefault = a.IsDefault, UserId = a.UserId
                         }).ToList() ?? new List<PPP_Address>()
                     };
+
+                    Console.WriteLine($"[MODAL DEBUG] Mapping successful. EditingUser.Email is now: {editingUser.Email}");
+                }
+                else
+                {
+                    Console.WriteLine($"[MODAL DEBUG] ERROR! User with ID {UserId} was not found in the database!");
                 }
             }
         }
         catch (Exception ex)
         {
+            Console.WriteLine($"[MODAL DEBUG] EXCEPTION CAUGHT: {ex.Message}");
             await JS.InvokeVoidAsync("console.error", "Load error: " + ex.Message);
         }
         finally
         {
+            Console.WriteLine("[MODAL DEBUG] LoadDataSafely finished. Setting isLoading to false.");
             isLoading = false;
+            StateHasChanged(); // Force the UI to redraw with the loaded data
         }
     }
 
@@ -230,16 +274,18 @@
             await db.SaveChangesAsync();
             editingUser.AvatarId = newImage.Id;
         } catch (Exception ex) {
+            Console.WriteLine($"[MODAL DEBUG] Image upload failed: {ex.Message}");
             await JS.InvokeVoidAsync("console.error", "Image upload failed: " + ex.Message);
         }
     }
 
     private async Task HandleSave()
     {
+        Console.WriteLine("[MODAL DEBUG] HandleSave triggered.");
         try {
             if (!string.IsNullOrEmpty(editingUser.Phone))
             {
-                editingUser.Phone = Dashboard.Services.PPPUtils.FormatPhoneNumber(editingUser.Phone);
+                editingUser.Phone = PPPUtils.FormatPhoneNumber(editingUser.Phone);
             }
 
             if (string.IsNullOrWhiteSpace(editingUser.FirstName) || string.IsNullOrWhiteSpace(editingUser.Email))
@@ -262,7 +308,6 @@
 
                 dbUser.FirstName = editingUser.FirstName;
                 dbUser.LastName = editingUser.LastName;
-                dbUser.Email = editingUser.Email;
                 dbUser.Phone = editingUser.Phone;
                 dbUser.Role = editingUser.Role;
                 dbUser.AvatarId = editingUser.AvatarId;
@@ -296,9 +341,11 @@
             }
 
             await db.SaveChangesAsync();
+            Console.WriteLine("[MODAL DEBUG] Database Save changes completed successfully.");
             await OnSaved.InvokeAsync();
             await OnClose.InvokeAsync();
         } catch (Exception ex) { 
+            Console.WriteLine($"[MODAL DEBUG] Save Error: {ex.Message}");
             await JS.InvokeVoidAsync("alert", "Error saving: " + ex.Message); 
         }
     }
