@@ -1,168 +1,23 @@
 @page "/export-data"
-@using Dashboard
 @using Dashboard.Components.Bullet
-@using Microsoft.EntityFrameworkCore
-@using Microsoft.Extensions.DependencyInjection
-@using System.Text.Json
-@using System.Text.Json.Serialization
-@using Microsoft.JSInterop
-@inject IServiceScopeFactory ScopeFactory
-@inject IJSRuntime JS
 
 <div class="min-h-screen bg-[#050505] text-white p-6 font-sans">
-    <BulletHeader ShowControls="false" CustomDateText="Migration Hub" />
+    <BulletHeader />
 
     <div class="max-w-5xl mx-auto mt-8">
         <h1 class="text-3xl font-black uppercase italic tracking-tighter text-emerald-400 mb-2">Data Export Hub</h1>
-        <p class="text-slate-400 text-sm font-bold tracking-widest uppercase mb-8">Export Flat Bullet Items for Replit</p>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        
+        <div class="bg-[#111] border border-gray-800 rounded-2xl p-8 shadow-xl">
             
-            @* MEDIA EXPORT CARD *@
-            <div class="bg-[#111] border border-gray-800 rounded-2xl p-6 flex flex-col gap-4 shadow-xl hover:border-emerald-500/50 transition-colors">
-                <div class="flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center text-2xl">🎬</div>
-                    <div>
-                        <h2 class="text-lg font-black uppercase text-white">Media Export</h2>
-                        <p class="text-[10px] font-mono text-gray-500">JSON Format</p>
-                    </div>
-                </div>
-                <p class="text-xs text-gray-400 flex-1">Exports all media tracking records.</p>
-                <button @onclick='() => RunExport("Media")' disabled="@isExporting" class="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-widest py-3 rounded-xl transition">
-                    @(isExporting ? "RUNNING..." : "DOWNLOAD JSON")
-                </button>
-            </div>
-
-            @* TASK EXPORT CARD *@
-            <div class="bg-[#111] border border-gray-800 rounded-2xl p-6 flex flex-col gap-4 shadow-xl hover:border-blue-500/50 transition-colors">
-                <div class="flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center text-2xl">✅</div>
-                    <div>
-                        <h2 class="text-lg font-black uppercase text-white">Tasks Export</h2>
-                        <p class="text-[10px] font-mono text-gray-500">JSON Format</p>
-                    </div>
-                </div>
-                <p class="text-xs text-gray-400 flex-1">Exports all tasks and todo list history.</p>
-                <button @onclick='() => RunExport("Task")' disabled="@isExporting" class="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-widest py-3 rounded-xl transition">
-                    @(isExporting ? "RUNNING..." : "DOWNLOAD JSON")
-                </button>
-            </div>
-
-        </div>
-
-        @* REAL-TIME DIAGNOSTIC CONSOLE *@
-        <div class="mt-8 bg-black border border-gray-800 rounded-2xl p-6 shadow-2xl">
-            <h3 class="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Diagnostic Console</h3>
-            <div class="p-4 bg-[#050505] border border-gray-900 rounded-xl h-48 overflow-y-auto font-mono text-[10px] text-emerald-400">
-                @foreach (var line in consoleLogs)
-                {
-                    <div class="mb-1">@line</div>
-                }
-            </div>
+            @* target="_top" FORCES Blazor to let the browser handle the click natively *@
+            <a href="/api/export/media" target="_top"
+               class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-widest px-8 py-4 rounded-xl transition inline-block">
+                DOWNLOAD MEDIA JSON
+            </a>
+            
+            <p class="mt-4 text-[10px] text-gray-500">
+                Direct GET request. Bypasses Blazor completely.
+            </p>
         </div>
     </div>
 </div>
-
-@code {
-    private bool isExporting = false;
-    private List<string> consoleLogs = new() { "System ready for extraction." };
-
-    private void Log(string msg)
-    {
-        consoleLogs.Add($"[{DateTime.Now:HH:mm:ss}] {msg}");
-        StateHasChanged();
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            // Inject the link download fallback script directly into the headless DOM container safely
-            var jsSnippet = @"
-                window.pppDownloadJson = function(filename, content) {
-                    const blob = new Blob([content], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const anchor = document.createElement('a');
-                    anchor.href = url;
-                    anchor.download = filename;
-                    document.body.appendChild(anchor);
-                    anchor.click();
-                    document.body.removeChild(anchor);
-                    URL.revokeObjectURL(url);
-                };
-            ";
-            try
-            {
-                await JS.InvokeVoidAsync("eval", jsSnippet);
-                Log("Browser script runtime initialized successfully.");
-            }
-            catch (Exception ex)
-            {
-                Log($"Script Initialization Warning: {ex.Message}");
-            }
-        }
-    }
-
-    private async Task RunExport(string targetType)
-    {
-        isExporting = true;
-        Log($"Initiating extraction routine for type: {targetType}...");
-
-        try
-        {
-            // Match the exact Service Scope implementation used by BulletHeader
-            using (var scope = ScopeFactory.CreateScope())
-            {
-                Log("Opening isolated DbContext transaction scope...");
-                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-                Log($"Querying database for tracking properties matching Type = '{targetType}'...");
-                
-                var items = await db.BulletItems
-                    .AsNoTracking()
-                    .Where(i => i.Type.ToLower() == targetType.ToLower())
-                    .Include(i => i.DbMediaDetail)
-                    .Include(i => i.DbTaskDetail)
-                    .Include(i => i.Notes)
-                    .Include(i => i.Todos)
-                    .OrderByDescending(i => i.Date)
-                    .ToListAsync();
-
-                Log($"Query completed successfully. Retrieved {items.Count} database records.");
-
-                if (!items.Any())
-                {
-                    Log("Warning: Zero records found matching criteria. File generation aborted.");
-                    return;
-                }
-
-                Log("Formatting data graph to plaintext JSON payload (Handling cyclical constraints)...");
-                var options = new JsonSerializerOptions 
-                { 
-                    WriteIndented = true,
-                    ReferenceHandler = ReferenceHandler.IgnoreCycles 
-                };
-                
-                var jsonString = JsonSerializer.Serialize(items, options);
-                var fileName = $"PPP_{targetType}Export_{DateTime.Now:yyyyMMdd}.json";
-
-                Log($"Invoking user download pipeline for file: {fileName} ({jsonString.Length} bytes)...");
-                await JS.InvokeVoidAsync("window.pppDownloadJson", fileName, jsonString);
-                Log("Download signal emitted to browser engine.");
-            }
-        }
-        catch (Exception ex)
-        {
-            Log($"CRITICAL FAULT: [{ex.GetType().Name}] - {ex.Message}");
-            if (ex.InnerException != null)
-            {
-                Log($"INNER EXCEPTION: {ex.InnerException.Message}");
-            }
-        }
-        finally
-        {
-            isExporting = false;
-            StateHasChanged();
-        }
-    }
-}

@@ -9,8 +9,6 @@ namespace Dashboard.Services
 {
     [Route("api/[controller]")]
     [ApiController]
-    // --- CRITICAL BYPASS: Allows Render forms to hit the endpoint without an antiforgery token ---
-    [IgnoreAntiforgeryToken]
     public class ExportController : ControllerBase
     {
         private readonly IDbContextFactory<AppDbContext> _dbFactory;
@@ -20,7 +18,8 @@ namespace Dashboard.Services
             _dbFactory = dbFactory;
         }
 
-        [HttpPost("media")]
+        // CHANGED TO HTTP GET
+        [HttpGet("media")]
         public async Task<IActionResult> ExportMedia()
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
