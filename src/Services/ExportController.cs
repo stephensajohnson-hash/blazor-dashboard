@@ -9,6 +9,7 @@ namespace Dashboard.Services
 {
     [Route("api/[controller]")]
     [ApiController]
+    [IgnoreAntiforgeryToken]
     public class ExportController : ControllerBase
     {
         private readonly IDbContextFactory<AppDbContext> _dbFactory;
@@ -18,7 +19,6 @@ namespace Dashboard.Services
             _dbFactory = dbFactory;
         }
 
-        // CHANGED TO HTTP GET
         [HttpGet("media")]
         public async Task<IActionResult> ExportMedia()
         {
@@ -39,6 +39,28 @@ namespace Dashboard.Services
             
             var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(items, options));
             return File(bytes, "application/json", "BulletMediaExport.json");
+        }
+
+        [HttpGet("meetings")]
+        public async Task<IActionResult> ExportMeetings()
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            
+            var items = await db.BulletItems
+                .AsNoTracking()
+                .Where(i => i.Type == "meeting" || i.Type == "Meeting")
+                .Include(i => i.DbMeetingDetail)
+                .Include(i => i.Notes)
+                .ToListAsync();
+
+            var options = new JsonSerializerOptions 
+            { 
+                WriteIndented = true, 
+                ReferenceHandler = ReferenceHandler.IgnoreCycles 
+            };
+            
+            var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(items, options));
+            return File(bytes, "application/json", "BulletMeetingExport.json");
         }
     }
 }
