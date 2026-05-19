@@ -2,13 +2,15 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Dashboard; // Explicitly imports the root project namespace
+using Dashboard; 
 using Dashboard.Services;
 
 namespace Dashboard.Services
 {
     [Route("api/[controller]")]
     [ApiController]
+    // --- CRITICAL BYPASS: Allows Render forms to hit the endpoint without an antiforgery token ---
+    [IgnoreAntiforgeryToken]
     public class ExportController : ControllerBase
     {
         private readonly IDbContextFactory<AppDbContext> _dbFactory;
