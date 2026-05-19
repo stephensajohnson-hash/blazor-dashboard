@@ -4,7 +4,6 @@
 @using Microsoft.EntityFrameworkCore
 @using System.Text.Json
 @using System.Text.Json.Serialization
-@using Microsoft.JSInterop
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject IJSRuntime JS
 
@@ -13,119 +12,60 @@
 
     <div class="max-w-5xl mx-auto mt-8">
         <h1 class="text-3xl font-black uppercase italic tracking-tighter text-emerald-400 mb-2">Data Export Hub</h1>
-        <p class="text-slate-400 text-sm font-bold tracking-widest uppercase mb-8">Migrate your data to Replit</p>
+        <p class="text-slate-400 text-sm font-bold tracking-widest uppercase mb-8">Export Bullet Items (Flat Format)</p>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             
             @* MEDIA EXPORT CARD *@
-            <div class="bg-[#111] border border-gray-800 rounded-2xl p-6 flex flex-col gap-4 shadow-xl hover:border-emerald-500/50 transition-colors">
-                <div class="flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center text-2xl">
-                        🎬
-                    </div>
-                    <div>
-                        <h2 class="text-lg font-black uppercase text-white">Media & Movies</h2>
-                        <p class="text-[10px] font-mono text-gray-500">JSON Format</p>
-                    </div>
-                </div>
-                
-                <p class="text-xs text-gray-400 flex-1">
-                    Exports all movies, shows, and media tracking records from the database.
-                </p>
-
-                <button @onclick="ExportMedia" disabled="@isExporting" class="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-black uppercase tracking-widest py-3 rounded-xl transition flex items-center justify-center gap-2">
-                    @if (isExporting && currentExport == "Media")
-                    {
-                        <span class="animate-spin text-lg">⚙️</span> <span>Exporting...</span>
-                    }
-                    else
-                    {
-                        <span>📥</span> <span>Download JSON</span>
-                    }
+            <div class="bg-[#111] border border-gray-800 rounded-2xl p-6 flex flex-col gap-4 shadow-xl">
+                <h2 class="text-lg font-black uppercase text-white">Media Export</h2>
+                <button @onclick="() => ExportItemsByType(new[] { "" })" class="w-full bg-emerald-600 py-3 rounded-xl text-xs font-black uppercase">
+                    Export Media Items
                 </button>
             </div>
 
-            @* TEMPLATE CARD FOR FUTURE EXPORTS (Tasks, Health, etc) *@
-            <div class="bg-[#111] border border-gray-800 rounded-2xl p-6 flex flex-col gap-4 shadow-xl opacity-50 grayscale">
-                <div class="flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center text-2xl">
-                        ✅
-                    </div>
-                    <div>
-                        <h2 class="text-lg font-black uppercase text-white">Tasks & Todos</h2>
-                        <p class="text-[10px] font-mono text-gray-500">Coming Soon</p>
-                    </div>
-                </div>
-                <p class="text-xs text-gray-400 flex-1">Placeholder for your next export module.</p>
-                <button disabled class="w-full bg-gray-800 text-gray-500 text-xs font-black uppercase tracking-widest py-3 rounded-xl">Pending</button>
+            @* TASKS EXPORT CARD *@
+            <div class="bg-[#111] border border-gray-800 rounded-2xl p-6 flex flex-col gap-4 shadow-xl">
+                <h2 class="text-lg font-black uppercase text-white">Tasks Export</h2>
+                <button @onclick="() => ExportItemsByType(new[] { "" })" class="w-full bg-blue-600 py-3 rounded-xl text-xs font-black uppercase">
+                    Export Tasks
+                </button>
             </div>
-
         </div>
     </div>
 </div>
 
 @code {
-    private bool isExporting = false;
-    private string currentExport = "";
-
-    protected override async Task OnInitializedAsync()
+    private async Task ExportItemsByType(string[] types)
     {
-        // 1. Inject the download function into the browser safely ONCE when the page loads.
-        // This avoids dangerous string interpolation with JSON data later.
-        var jsSnippet = @"
-            window.blazorDownloadJson = function(filename, content) {
-                const blob = new Blob([content], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const anchor = document.createElement('a');
-                anchor.href = url;
-                anchor.download = filename;
-                document.body.appendChild(anchor);
-                anchor.click();
-                document.body.removeChild(anchor);
-                URL.revokeObjectURL(url);
-            };
-        ";
-        await JS.InvokeVoidAsync("eval", jsSnippet);
-    }
-
-    private async Task ExportMedia()
-    {
-        isExporting = true;
-        currentExport = "Media";
-        StateHasChanged(); // Show loading spinner on button
-
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
-            
-            // TODO: Ensure this matches your actual DB table (e.g., db.Movies, db.BulletItems.Where(...))
-            var mediaItems = await db.Movies.AsNoTracking().ToListAsync(); 
 
-            // 2. CRITICAL FIX: Ignore cycles! EF Core navigation properties will crash the serializer otherwise.
+            // 1. PROJECT: Select ONLY what we need to avoid circular references/bloat
+            // We use .Include() to bring in the specific details based on the item type
+            var items = await db.BulletItems
+                .AsNoTracking()
+                .Include(i => i.DbMediaDetail)
+                .Include(i => i.DbTaskDetail)
+                .Include(i => i.Notes)
+                .Include(i => i.Todos)
+                .OrderByDescending(i => i.Date)
+                .ToListAsync();
+
+            // 2. SERIALIZE: Use IgnoreCycles to be absolutely safe
             var options = new JsonSerializerOptions 
             { 
                 WriteIndented = true,
                 ReferenceHandler = ReferenceHandler.IgnoreCycles 
             };
             
-            var jsonString = JsonSerializer.Serialize(mediaItems, options);
-
-            // Generate filename with timestamp
-            var fileName = $"PPP_MediaExport_{DateTime.Now:yyyyMMdd_HHmmss}.json";
-
-            // 3. Call the pre-registered JS function, letting Blazor handle passing the massive string safely
-            await JS.InvokeVoidAsync("window.blazorDownloadJson", fileName, jsonString);
+            var jsonString = JsonSerializer.Serialize(items, options);
+            await JS.InvokeVoidAsync("window.blazorDownloadJson", "BulletItems_Export.json", jsonString);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Export Error: {ex.Message}");
-            await JS.InvokeVoidAsync("alert", $"Export failed: Check server logs. ({ex.Message})");
-        }
-        finally
-        {
-            isExporting = false;
-            currentExport = "";
-            StateHasChanged();
+            await JS.InvokeVoidAsync("alert", $"Export Error: {ex.Message}");
         }
     }
 }
