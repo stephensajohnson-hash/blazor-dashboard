@@ -4,71 +4,80 @@
 @using Microsoft.EntityFrameworkCore
 @using System.Text.Json
 @using System.Text.Json.Serialization
-@using Microsoft.JSInterop @* ADDED THIS MISSING REFERENCE *@
-@inject IJSRuntime JS
+@using Microsoft.JSInterop
 @inject IDbContextFactory<AppDbContext> DbFactory
+@inject IJSRuntime JS
 
 <div class="min-h-screen bg-[#050505] text-white p-6 font-sans">
     <BulletHeader />
 
     <div class="max-w-5xl mx-auto mt-8">
         <h1 class="text-3xl font-black uppercase italic tracking-tighter text-emerald-400 mb-2">Data Export Hub</h1>
-        <p class="text-slate-400 text-sm font-bold tracking-widest uppercase mb-8">Migrate your data to Replit</p>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        
+        <div class="bg-[#111] border border-gray-800 rounded-2xl p-8 shadow-xl">
+            <button @onclick="ExportMedia" 
+                    disabled="@isExporting" 
+                    class="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-widest px-8 py-4 rounded-xl transition">
+                @(isExporting ? "GENERATING FILE..." : "DOWNLOAD MEDIA JSON")
+            </button>
             
-            <div class="bg-[#111] border border-gray-800 rounded-2xl p-6 flex flex-col gap-4 shadow-xl hover:border-emerald-500/50 transition-colors">
-                <div class="flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center text-2xl">🎬</div>
-                    <div>
-                        <h2 class="text-lg font-black uppercase text-white">Media Export</h2>
-                        <p class="text-[10px] font-mono text-gray-500">JSON Format</p>
-                    </div>
+            @if (!string.IsNullOrEmpty(debugMessage))
+            {
+                <div class="mt-4 p-4 bg-gray-900 border border-gray-700 text-xs text-gray-400 font-mono">
+                    @debugMessage
                 </div>
-                <p class="text-xs text-gray-400 flex-1">Exports all media tracking records.</p>
-                <button @onclick="ExportMedia" disabled="@isExporting" class="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-widest py-3 rounded-xl transition">
-                    @(isExporting ? "Exporting..." : "Download JSON")
-                </button>
-            </div>
+            }
         </div>
     </div>
 </div>
 
 @code {
     private bool isExporting = false;
-
-    protected override async Task OnInitializedAsync()
-    {
-        var jsSnippet = @"
-            window.blazorDownloadJson = function(filename, content) {
-                const blob = new Blob([content], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const anchor = document.createElement('a');
-                anchor.href = url;
-                anchor.download = filename;
-                document.body.appendChild(anchor);
-                anchor.click();
-                document.body.removeChild(anchor);
-                URL.revokeObjectURL(url);
-            };
-        ";
-        await JS.InvokeVoidAsync("eval", jsSnippet);
-    }
+    private string debugMessage = "";
 
     private async Task ExportMedia()
     {
         isExporting = true;
+        debugMessage = "Fetching data from database...";
+        StateHasChanged();
+
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
-            // Using a generic list to ensure it builds. Replace 'MediaItems' with your DbSet.
-            var items = await db.BulletItems.Where(i => i.Type == "Media").AsNoTracking().ToListAsync(); 
             
-            var options = new JsonSerializerOptions { WriteIndented = true, ReferenceHandler = ReferenceHandler.IgnoreCycles };
+            // 1. Fetch data
+            var items = await db.BulletItems
+                .AsNoTracking()
+                .Where(i => i.Type == "Media")
+                .Include(i => i.DbMediaDetail)
+                .ToListAsync();
+
+            debugMessage = $"Fetched {items.Count} items. Serializing...";
+            StateHasChanged();
+
+            // 2. Serialize
+            var options = new JsonSerializerOptions 
+            { 
+                WriteIndented = true,
+                ReferenceHandler = ReferenceHandler.IgnoreCycles 
+            };
             var jsonString = JsonSerializer.Serialize(items, options);
-            await JS.InvokeVoidAsync("window.blazorDownloadJson", $"MediaExport_{DateTime.Now:yyyyMMdd}.json", jsonString);
+
+            // 3. Force download using a pure JS trigger
+            // We pass the string directly into the JS function
+            debugMessage = "Triggering download...";
+            await JS.InvokeVoidAsync("downloadFile", "MediaExport.json", jsonString);
+            
+            debugMessage = "Download triggered successfully.";
         }
-        catch (Exception ex) { Console.WriteLine(ex.Message); }
-        finally { isExporting = false; }
+        catch (Exception ex)
+        {
+            debugMessage = $"ERROR: {ex.Message}";
+        }
+        finally
+        {
+            isExporting = false;
+            StateHasChanged();
+        }
     }
 }
