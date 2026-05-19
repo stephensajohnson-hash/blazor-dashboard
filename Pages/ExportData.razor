@@ -13,68 +13,63 @@
         <h1 class="text-3xl font-black uppercase italic tracking-tighter text-emerald-400 mb-2">Data Export Hub</h1>
         
         <div class="bg-[#111] border border-gray-800 rounded-2xl p-8 shadow-xl">
-            @if (string.IsNullOrEmpty(downloadUrl))
-            {
-                <button @onclick="GenerateExport" disabled="@isExporting" 
-                        class="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-widest px-8 py-4 rounded-xl transition">
-                    @(isExporting ? "PREPARING JSON..." : "GENERATE MEDIA DATA")
-                </button>
-            }
-            else
-            {
-                @* NATIVE DOWNLOAD LINK *@
-                <a href="@downloadUrl" 
-                   download="BulletMediaExport.json" 
-                   class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase tracking-widest px-8 py-4 rounded-xl transition inline-block">
-                    CLICK TO SAVE: BulletMediaExport.json
-                </a>
-                <button @onclick="Reset" class="ml-4 text-gray-500 underline text-xs">Reset</button>
-            }
+            <button @onclick="RunExport" 
+                    class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-widest px-8 py-4 rounded-xl transition">
+                RUN MEDIA EXPORT
+            </button>
+
+            @* CONSOLE AREA FOR DEBUGGING *@
+            <div class="mt-6 p-4 bg-black border border-gray-700 rounded-lg h-64 overflow-y-auto font-mono text-[10px] text-emerald-400">
+                @foreach (var line in debugLogs)
+                {
+                    <div class="mb-1">@line</div>
+                }
+            </div>
         </div>
     </div>
 </div>
 
 @code {
-    private bool isExporting = false;
-    private string downloadUrl = "";
+    private List<string> debugLogs = new() { "System ready." };
 
-    private async Task GenerateExport()
+    private void Log(string msg)
     {
-        isExporting = true;
+        debugLogs.Add($"[{DateTime.Now:HH:mm:ss}] {msg}");
+        StateHasChanged();
+    }
+
+    private async Task RunExport()
+    {
+        Log("Starting export...");
         try
         {
+            Log("Connecting to Database...");
             await using var db = await DbFactory.CreateDbContextAsync();
             
-            // 1. Fetch using the correct table (BulletItems)
+            Log("Querying BulletItems...");
             var items = await db.BulletItems
                 .AsNoTracking()
-                .Where(i => i.Type == "media" || i.Type == "Media") 
+                .Where(i => i.Type == "media" || i.Type == "Media")
                 .Include(i => i.DbMediaDetail)
                 .Include(i => i.Notes)
                 .ToListAsync();
 
-            // 2. Serialize
-            var options = new JsonSerializerOptions 
-            { 
-                WriteIndented = true,
-                ReferenceHandler = ReferenceHandler.IgnoreCycles 
-            };
-            
+            Log($"Fetched {items.Count} items.");
+
+            var options = new JsonSerializerOptions { WriteIndented = true, ReferenceHandler = ReferenceHandler.IgnoreCycles };
             var jsonString = JsonSerializer.Serialize(items, options);
             
-            // 3. Create a Data URI for the browser to download directly
-            var base64Data = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(jsonString));
-            downloadUrl = $"data:application/json;base64,{base64Data}";
+            Log("Export complete. Size: " + jsonString.Length + " chars.");
+            
+            // FINAL ATTEMPT AT DOWNLOAD: 
+            // We cannot reliably trigger download from C# in Blazor Server without JS.
+            // Since JS isn't working, copy the JSON to this console area so you can manually copy it.
+            debugLogs.Add("--- COPY JSON BELOW ---");
+            debugLogs.Add(jsonString);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Export Failed: {ex.Message}");
-        }
-        finally
-        {
-            isExporting = false;
+            Log($"ERROR: {ex.GetType().Name} - {ex.Message}");
         }
     }
-
-    private void Reset() => downloadUrl = "";
 }
