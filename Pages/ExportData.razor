@@ -3,6 +3,7 @@
 @using Dashboard.Components.Bullet
 @using Microsoft.EntityFrameworkCore
 @using System.Text.Json
+@using System.Text.Json.Serialization
 @using Microsoft.JSInterop
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject IJSRuntime JS
@@ -67,52 +68,12 @@
     private bool isExporting = false;
     private string currentExport = "";
 
-    private async Task ExportMedia()
+    protected override async Task OnInitializedAsync()
     {
-        isExporting = true;
-        currentExport = "Media";
-        StateHasChanged();
-
-        try
-        {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            
-            // CRITICAL COMPILER FIX:
-            // I used a dummy list here so the compiler passes. 
-            // TODO: Swap 'new List<object>()' with your actual DB query once it builds.
-            // Example: var mediaItems = await db.BulletItems.Where(i => i.Type == "Media").AsNoTracking().ToListAsync();
-            var mediaItems = new List<object>(); 
-
-            // Format nicely so it's readable
-            var options = new JsonSerializerOptions { WriteIndented = true };
-            var jsonString = JsonSerializer.Serialize(mediaItems, options);
-
-            // Generate filename with timestamp
-            var fileName = $"PPP_MediaExport_{DateTime.Now:yyyyMMdd_HHmmss}.json";
-
-            // Trigger Browser Download via injected JS
-            await TriggerFileDownload(fileName, jsonString);
-        }
-        catch (Exception ex)
-        {
-            await JS.InvokeVoidAsync("alert", $"Export failed: {ex.Message}");
-        }
-        finally
-        {
-            isExporting = false;
-            currentExport = "";
-            StateHasChanged();
-        }
-    }
-
-    /// <summary>
-    /// Executes a dynamic JavaScript snippet to create a Blob and force the browser to download it.
-    /// This avoids needing to add scripts to _Host.cshtml.
-    /// </summary>
-    private async Task TriggerFileDownload(string filename, string fileContent)
-    {
+        // 1. Inject the download function into the browser safely ONCE when the page loads.
+        // This avoids dangerous string interpolation with JSON data later.
         var jsSnippet = @"
-            (function(filename, content) {
+            window.blazorDownloadJson = function(filename, content) {
                 const blob = new Blob([content], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const anchor = document.createElement('a');
@@ -122,15 +83,49 @@
                 anchor.click();
                 document.body.removeChild(anchor);
                 URL.revokeObjectURL(url);
-            })";
-
-        await JS.InvokeVoidAsync("eval", $"{jsSnippet}('{JSStringEscape(filename)}', `{JSStringEscape(fileContent)}`)");
+            };
+        ";
+        await JS.InvokeVoidAsync("eval", jsSnippet);
     }
 
-    // Helper to safely pass strings into the eval function
-    private string JSStringEscape(string text)
+    private async Task ExportMedia()
     {
-        if (string.IsNullOrEmpty(text)) return text;
-        return text.Replace("\\", "\\\\").Replace("`", "\\`").Replace("$", "\\$");
+        isExporting = true;
+        currentExport = "Media";
+        StateHasChanged(); // Show loading spinner on button
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            
+            // TODO: Ensure this matches your actual DB table (e.g., db.Movies, db.BulletItems.Where(...))
+            var mediaItems = await db.Movies.AsNoTracking().ToListAsync(); 
+
+            // 2. CRITICAL FIX: Ignore cycles! EF Core navigation properties will crash the serializer otherwise.
+            var options = new JsonSerializerOptions 
+            { 
+                WriteIndented = true,
+                ReferenceHandler = ReferenceHandler.IgnoreCycles 
+            };
+            
+            var jsonString = JsonSerializer.Serialize(mediaItems, options);
+
+            // Generate filename with timestamp
+            var fileName = $"PPP_MediaExport_{DateTime.Now:yyyyMMdd_HHmmss}.json";
+
+            // 3. Call the pre-registered JS function, letting Blazor handle passing the massive string safely
+            await JS.InvokeVoidAsync("window.blazorDownloadJson", fileName, jsonString);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Export Error: {ex.Message}");
+            await JS.InvokeVoidAsync("alert", $"Export failed: Check server logs. ({ex.Message})");
+        }
+        finally
+        {
+            isExporting = false;
+            currentExport = "";
+            StateHasChanged();
+        }
     }
 }
