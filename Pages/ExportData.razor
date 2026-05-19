@@ -1,10 +1,5 @@
 @page "/export-data"
-@using Dashboard
 @using Dashboard.Components.Bullet
-@using Microsoft.EntityFrameworkCore
-@using System.Text.Json
-@using System.Text.Json.Serialization
-@inject IDbContextFactory<AppDbContext> DbFactory
 
 <div class="min-h-screen bg-[#050505] text-white p-6 font-sans">
     <BulletHeader />
@@ -13,63 +8,17 @@
         <h1 class="text-3xl font-black uppercase italic tracking-tighter text-emerald-400 mb-2">Data Export Hub</h1>
         
         <div class="bg-[#111] border border-gray-800 rounded-2xl p-8 shadow-xl">
-            <button @onclick="RunExport" 
-                    class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-widest px-8 py-4 rounded-xl transition">
-                RUN MEDIA EXPORT
-            </button>
-
-            @* CONSOLE AREA FOR DEBUGGING *@
-            <div class="mt-6 p-4 bg-black border border-gray-700 rounded-lg h-64 overflow-y-auto font-mono text-[10px] text-emerald-400">
-                @foreach (var line in debugLogs)
-                {
-                    <div class="mb-1">@line</div>
-                }
-            </div>
+            @* The most reliable way: A standard HTML Form *@
+            <form action="/api/export/media" method="post">
+                <button type="submit" 
+                        class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-widest px-8 py-4 rounded-xl transition">
+                    DOWNLOAD MEDIA JSON (DIRECT)
+                </button>
+            </form>
+            
+            <p class="mt-4 text-[10px] text-gray-500">
+                This uses a direct server-side post. If this doesn't trigger a download, the issue is your browser's popup blocker.
+            </p>
         </div>
     </div>
 </div>
-
-@code {
-    private List<string> debugLogs = new() { "System ready." };
-
-    private void Log(string msg)
-    {
-        debugLogs.Add($"[{DateTime.Now:HH:mm:ss}] {msg}");
-        StateHasChanged();
-    }
-
-    private async Task RunExport()
-    {
-        Log("Starting export...");
-        try
-        {
-            Log("Connecting to Database...");
-            await using var db = await DbFactory.CreateDbContextAsync();
-            
-            Log("Querying BulletItems...");
-            var items = await db.BulletItems
-                .AsNoTracking()
-                .Where(i => i.Type == "media" || i.Type == "Media")
-                .Include(i => i.DbMediaDetail)
-                .Include(i => i.Notes)
-                .ToListAsync();
-
-            Log($"Fetched {items.Count} items.");
-
-            var options = new JsonSerializerOptions { WriteIndented = true, ReferenceHandler = ReferenceHandler.IgnoreCycles };
-            var jsonString = JsonSerializer.Serialize(items, options);
-            
-            Log("Export complete. Size: " + jsonString.Length + " chars.");
-            
-            // FINAL ATTEMPT AT DOWNLOAD: 
-            // We cannot reliably trigger download from C# in Blazor Server without JS.
-            // Since JS isn't working, copy the JSON to this console area so you can manually copy it.
-            debugLogs.Add("--- COPY JSON BELOW ---");
-            debugLogs.Add(jsonString);
-        }
-        catch (Exception ex)
-        {
-            Log($"ERROR: {ex.GetType().Name} - {ex.Message}");
-        }
-    }
-}
