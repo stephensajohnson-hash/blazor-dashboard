@@ -4,9 +4,7 @@
 @using Microsoft.EntityFrameworkCore
 @using System.Text.Json
 @using System.Text.Json.Serialization
-@using Microsoft.JSInterop
 @inject IDbContextFactory<AppDbContext> DbFactory
-@inject IJSRuntime JS
 
 <div class="min-h-screen bg-[#050505] text-white p-6 font-sans">
     <BulletHeader />
@@ -15,17 +13,22 @@
         <h1 class="text-3xl font-black uppercase italic tracking-tighter text-emerald-400 mb-2">Data Export Hub</h1>
         
         <div class="bg-[#111] border border-gray-800 rounded-2xl p-8 shadow-xl">
-            <button @onclick="ExportMedia" 
-                    disabled="@isExporting" 
-                    class="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-widest px-8 py-4 rounded-xl transition">
-                @(isExporting ? "GENERATING FILE..." : "DOWNLOAD MEDIA JSON")
-            </button>
-            
-            @if (!string.IsNullOrEmpty(debugMessage))
+            @if (string.IsNullOrEmpty(downloadUrl))
             {
-                <div class="mt-4 p-4 bg-gray-900 border border-gray-700 text-xs text-gray-400 font-mono">
-                    @debugMessage
-                </div>
+                <button @onclick="GenerateExport" disabled="@isExporting" 
+                        class="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-widest px-8 py-4 rounded-xl transition">
+                    @(isExporting ? "PREPARING JSON..." : "GENERATE MEDIA DATA")
+                </button>
+            }
+            else
+            {
+                @* NATIVE DOWNLOAD LINK *@
+                <a href="@downloadUrl" 
+                   download="BulletMediaExport.json" 
+                   class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase tracking-widest px-8 py-4 rounded-xl transition inline-block">
+                    CLICK TO SAVE: BulletMediaExport.json
+                </a>
+                <button @onclick="Reset" class="ml-4 text-gray-500 underline text-xs">Reset</button>
             }
         </div>
     </div>
@@ -33,27 +36,22 @@
 
 @code {
     private bool isExporting = false;
-    private string debugMessage = "";
+    private string downloadUrl = "";
 
-    private async Task ExportMedia()
+    private async Task GenerateExport()
     {
         isExporting = true;
-        debugMessage = "Fetching data from database...";
-        StateHasChanged();
-
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
             
-            // 1. Fetch data
+            // 1. Fetch using the correct table (BulletItems)
             var items = await db.BulletItems
                 .AsNoTracking()
-                .Where(i => i.Type == "Media")
+                .Where(i => i.Type == "media" || i.Type == "Media") 
                 .Include(i => i.DbMediaDetail)
+                .Include(i => i.Notes)
                 .ToListAsync();
-
-            debugMessage = $"Fetched {items.Count} items. Serializing...";
-            StateHasChanged();
 
             // 2. Serialize
             var options = new JsonSerializerOptions 
@@ -61,23 +59,22 @@
                 WriteIndented = true,
                 ReferenceHandler = ReferenceHandler.IgnoreCycles 
             };
-            var jsonString = JsonSerializer.Serialize(items, options);
-
-            // 3. Force download using a pure JS trigger
-            // We pass the string directly into the JS function
-            debugMessage = "Triggering download...";
-            await JS.InvokeVoidAsync("downloadFile", "MediaExport.json", jsonString);
             
-            debugMessage = "Download triggered successfully.";
+            var jsonString = JsonSerializer.Serialize(items, options);
+            
+            // 3. Create a Data URI for the browser to download directly
+            var base64Data = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(jsonString));
+            downloadUrl = $"data:application/json;base64,{base64Data}";
         }
         catch (Exception ex)
         {
-            debugMessage = $"ERROR: {ex.Message}";
+            Console.WriteLine($"Export Failed: {ex.Message}");
         }
         finally
         {
             isExporting = false;
-            StateHasChanged();
         }
     }
+
+    private void Reset() => downloadUrl = "";
 }
