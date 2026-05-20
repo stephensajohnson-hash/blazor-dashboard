@@ -62,5 +62,29 @@ namespace Dashboard.Services
             var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(items, options));
             return File(bytes, "application/json", "BulletMeetingExport.json");
         }
+
+        // NEW TASK EXPORT
+        [HttpGet("tasks")]
+        public async Task<IActionResult> ExportTasks()
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            
+            var items = await db.BulletItems
+                .AsNoTracking()
+                .Where(i => i.Type == "task" || i.Type == "Task")
+                .Include(i => i.DbTaskDetail) // Brings in status, priority, due date
+                .Include(i => i.Todos)        // Brings in sub-checklist items
+                .Include(i => i.Notes)
+                .ToListAsync();
+
+            var options = new JsonSerializerOptions 
+            { 
+                WriteIndented = true, 
+                ReferenceHandler = ReferenceHandler.IgnoreCycles 
+            };
+            
+            var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(items, options));
+            return File(bytes, "application/json", "BulletTaskExport.json");
+        }
     }
 }
