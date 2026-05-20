@@ -86,7 +86,6 @@ namespace Dashboard.Services
             return File(bytes, "application/json", "BulletTaskExport.json");
         }
 
-        // NEW HABIT EXPORT
         [HttpGet("habits")]
         public async Task<IActionResult> ExportHabits()
         {
@@ -95,7 +94,7 @@ namespace Dashboard.Services
             var items = await db.BulletItems
                 .AsNoTracking()
                 .Where(i => i.Type == "habit" || i.Type == "Habit")
-                .Include(i => i.DbHabitDetail) // Brings in StreakCount, Status, IsCompleted
+                .Include(i => i.DbHabitDetail)
                 .Include(i => i.Notes)
                 .ToListAsync();
 
@@ -107,6 +106,33 @@ namespace Dashboard.Services
             
             var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(items, options));
             return File(bytes, "application/json", "BulletHabitExport.json");
+        }
+
+        [HttpGet("events")]
+        public async Task<IActionResult> ExportEvents()
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            
+            var eventTypes = new[] { "holiday", "birthday", "anniversary", "vacation" };
+
+            var items = await db.BulletItems
+                .AsNoTracking()
+                .Where(i => eventTypes.Contains(i.Type.ToLower()))
+                .Include(i => i.DbHolidayDetail)
+                .Include(i => i.DbBirthdayDetail)
+                .Include(i => i.DbAnniversaryDetail)
+                .Include(i => i.DbVacationDetail)
+                .Include(i => i.Notes)
+                .ToListAsync();
+
+            var options = new JsonSerializerOptions 
+            { 
+                WriteIndented = true, 
+                ReferenceHandler = ReferenceHandler.IgnoreCycles 
+            };
+            
+            var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(items, options));
+            return File(bytes, "application/json", "BulletEventsExport.json");
         }
     }
 }
