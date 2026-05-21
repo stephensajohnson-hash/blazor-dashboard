@@ -142,7 +142,6 @@ namespace Dashboard.Services
             
             var sportsTypes = new[] { "game", "sports", "match" };
 
-            // 1. Fetch the calendar events
             var events = await db.BulletItems
                 .AsNoTracking()
                 .Where(i => sportsTypes.Contains(i.Type.ToLower()))
@@ -150,12 +149,10 @@ namespace Dashboard.Services
                 .Include(i => i.Notes)
                 .ToListAsync();
 
-            // 2. Fetch the master tables
             var leagues = await db.Leagues.AsNoTracking().ToListAsync();
             var seasons = await db.Seasons.AsNoTracking().ToListAsync();
             var teams = await db.Teams.AsNoTracking().ToListAsync();
 
-            // 3. Package them into a single comprehensive object
             var payload = new 
             {
                 Events = events,
@@ -172,6 +169,31 @@ namespace Dashboard.Services
             
             var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, options));
             return File(bytes, "application/json", "BulletSportsExport.json");
+        }
+
+        // NEW HEALTH EXPORT
+        [HttpGet("health")]
+        public async Task<IActionResult> ExportHealth()
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            
+            var items = await db.BulletItems
+                .AsNoTracking()
+                .Where(i => i.Type == "health" || i.Type == "Health")
+                .Include(i => i.DbHealthDetail)
+                .Include(i => i.Meals)
+                .Include(i => i.Workouts)
+                .Include(i => i.Notes)
+                .ToListAsync();
+
+            var options = new JsonSerializerOptions 
+            { 
+                WriteIndented = true, 
+                ReferenceHandler = ReferenceHandler.IgnoreCycles 
+            };
+            
+            var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(items, options));
+            return File(bytes, "application/json", "BulletHealthExport.json");
         }
     }
 }
