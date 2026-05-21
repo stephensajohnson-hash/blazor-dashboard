@@ -135,7 +135,6 @@ namespace Dashboard.Services
             return File(bytes, "application/json", "BulletEventsExport.json");
         }
 
-        // NEW SPORTS EXPORT
         [HttpGet("sports")]
         public async Task<IActionResult> ExportSports()
         {
@@ -143,8 +142,7 @@ namespace Dashboard.Services
             
             var sportsTypes = new[] { "game", "sports", "match" };
 
-            // Fetch the BulletItems along with the DbSportsDetail 
-            // (Which contains LeagueId, SeasonId, HomeTeamId, AwayTeamId, etc.)
+            // 1. Fetch the calendar events
             var events = await db.BulletItems
                 .AsNoTracking()
                 .Where(i => sportsTypes.Contains(i.Type.ToLower()))
@@ -152,18 +150,19 @@ namespace Dashboard.Services
                 .Include(i => i.Notes)
                 .ToListAsync();
 
-            /* NOTE: If you also want to dump the raw Master tables into this same file 
-               and you know your exact DbSet names, you can wrap them in an anonymous object like this:
-               
-               var payload = new {
-                   Games = events,
-                   Leagues = await db.Leagues.ToListAsync(),
-                   Seasons = await db.Seasons.ToListAsync(),
-                   Teams = await db.Teams.ToListAsync()
-               };
-               
-               For now, returning the 'events' array guarantees the build won't fail.
-            */
+            // 2. Fetch the master tables
+            var leagues = await db.Leagues.AsNoTracking().ToListAsync();
+            var seasons = await db.Seasons.AsNoTracking().ToListAsync();
+            var teams = await db.Teams.AsNoTracking().ToListAsync();
+
+            // 3. Package them into a single comprehensive object
+            var payload = new 
+            {
+                Events = events,
+                Leagues = leagues,
+                Seasons = seasons,
+                Teams = teams
+            };
 
             var options = new JsonSerializerOptions 
             { 
@@ -171,7 +170,7 @@ namespace Dashboard.Services
                 ReferenceHandler = ReferenceHandler.IgnoreCycles 
             };
             
-            var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(events, options));
+            var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, options));
             return File(bytes, "application/json", "BulletSportsExport.json");
         }
     }
