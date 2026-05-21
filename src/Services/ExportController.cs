@@ -134,5 +134,45 @@ namespace Dashboard.Services
             var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(items, options));
             return File(bytes, "application/json", "BulletEventsExport.json");
         }
+
+        // NEW SPORTS EXPORT
+        [HttpGet("sports")]
+        public async Task<IActionResult> ExportSports()
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            
+            var sportsTypes = new[] { "game", "sports", "match" };
+
+            // Fetch the BulletItems along with the DbSportsDetail 
+            // (Which contains LeagueId, SeasonId, HomeTeamId, AwayTeamId, etc.)
+            var events = await db.BulletItems
+                .AsNoTracking()
+                .Where(i => sportsTypes.Contains(i.Type.ToLower()))
+                .Include(i => i.DbSportsDetail)
+                .Include(i => i.Notes)
+                .ToListAsync();
+
+            /* NOTE: If you also want to dump the raw Master tables into this same file 
+               and you know your exact DbSet names, you can wrap them in an anonymous object like this:
+               
+               var payload = new {
+                   Games = events,
+                   Leagues = await db.Leagues.ToListAsync(),
+                   Seasons = await db.Seasons.ToListAsync(),
+                   Teams = await db.Teams.ToListAsync()
+               };
+               
+               For now, returning the 'events' array guarantees the build won't fail.
+            */
+
+            var options = new JsonSerializerOptions 
+            { 
+                WriteIndented = true, 
+                ReferenceHandler = ReferenceHandler.IgnoreCycles 
+            };
+            
+            var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(events, options));
+            return File(bytes, "application/json", "BulletSportsExport.json");
+        }
     }
 }
