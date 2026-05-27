@@ -195,7 +195,6 @@ namespace Dashboard.Services
             return File(bytes, "application/json", "BulletHealthExport.json");
         }
 
-        // NEW DASHBOARD EXPORT
         [HttpGet("dashboard")]
         public async Task<IActionResult> ExportDashboard()
         {
@@ -220,6 +219,38 @@ namespace Dashboard.Services
             
             var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, options));
             return File(bytes, "application/json", "DashboardExport.json");
+        }
+
+        // NEW RECIPE EXPORT
+        [HttpGet("recipes")]
+        public async Task<IActionResult> ExportRecipes()
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            
+            var recipes = await db.Recipes
+                .AsNoTracking()
+                .Include(r => r.Ingredients)
+                .Include(r => r.Instructions)
+                .ToListAsync();
+
+            var categories = await db.RecipeCategories
+                .AsNoTracking()
+                .ToListAsync();
+
+            var payload = new 
+            {
+                Recipes = recipes,
+                Categories = categories
+            };
+
+            var options = new JsonSerializerOptions 
+            { 
+                WriteIndented = true, 
+                ReferenceHandler = ReferenceHandler.IgnoreCycles 
+            };
+            
+            var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, options));
+            return File(bytes, "application/json", "BulletRecipeExport.json");
         }
     }
 }
