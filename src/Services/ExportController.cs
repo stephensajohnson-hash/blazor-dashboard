@@ -221,7 +221,6 @@ namespace Dashboard.Services
             return File(bytes, "application/json", "DashboardExport.json");
         }
 
-        // NEW RECIPE EXPORT
         [HttpGet("recipes")]
         public async Task<IActionResult> ExportRecipes()
         {
@@ -251,6 +250,42 @@ namespace Dashboard.Services
             
             var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, options));
             return File(bytes, "application/json", "BulletRecipeExport.json");
+        }
+
+        // NEW BUDGET EXPORT
+        [HttpGet("budget")]
+        public async Task<IActionResult> ExportBudget()
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            
+            // Deep load the relational structure of the budget tables
+            var periods = await db.BudgetPeriods
+                .AsNoTracking()
+                .Include(p => p.Cycles).ThenInclude(c => c.Items)
+                .Include(p => p.Transactions).ThenInclude(t => t.Splits)
+                .Include(p => p.Transfers)
+                .Include(p => p.ExpectedIncome)
+                .Include(p => p.WatchList)
+                .ToListAsync();
+
+            var incomeSources = await db.BudgetIncomeSources
+                .AsNoTracking()
+                .ToListAsync();
+
+            var payload = new 
+            {
+                Periods = periods,
+                IncomeSources = incomeSources
+            };
+
+            var options = new JsonSerializerOptions 
+            { 
+                WriteIndented = true, 
+                ReferenceHandler = ReferenceHandler.IgnoreCycles 
+            };
+            
+            var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, options));
+            return File(bytes, "application/json", "BulletBudgetExport.json");
         }
     }
 }
