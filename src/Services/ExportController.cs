@@ -252,13 +252,13 @@ namespace Dashboard.Services
             return File(bytes, "application/json", "BulletRecipeExport.json");
         }
 
-        // NEW BUDGET EXPORT
         [HttpGet("budget")]
         public async Task<IActionResult> ExportBudget()
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
             
-            // Deep load the relational structure of the budget tables
+            // Adding .AsSplitQuery() forces EF Core to grab these highly nested lists
+            // sequentially instead of joining them into a memory-crashing mega table.
             var periods = await db.BudgetPeriods
                 .AsNoTracking()
                 .Include(p => p.Cycles).ThenInclude(c => c.Items)
@@ -266,6 +266,7 @@ namespace Dashboard.Services
                 .Include(p => p.Transfers)
                 .Include(p => p.ExpectedIncome)
                 .Include(p => p.WatchList)
+                .AsSplitQuery() 
                 .ToListAsync();
 
             var incomeSources = await db.BudgetIncomeSources
