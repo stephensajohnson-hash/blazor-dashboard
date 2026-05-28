@@ -257,8 +257,10 @@ namespace Dashboard.Services
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
             
-            // Adding .AsSplitQuery() forces EF Core to grab these highly nested lists
-            // sequentially instead of joining them into a memory-crashing mega table.
+            var incomeSources = await db.BudgetIncomeSources
+                .AsNoTracking()
+                .ToListAsync();
+
             var periods = await db.BudgetPeriods
                 .AsNoTracking()
                 .Include(p => p.Cycles).ThenInclude(c => c.Items)
@@ -269,13 +271,80 @@ namespace Dashboard.Services
                 .AsSplitQuery() 
                 .ToListAsync();
 
-            var incomeSources = await db.BudgetIncomeSources
-                .AsNoTracking()
-                .ToListAsync();
+            // Explicitly project the data to map names to the IDs so Replit can link them
+            var projectedPeriods = periods.Select(p => new 
+            {
+                p.Id,
+                p.DisplayName,
+                p.StartDate,
+                p.InitialBankBalance,
+                Cycles = p.Cycles.Select(c => new 
+                {
+                    c.Id,
+                    c.Label,
+                    c.CycleNumber,
+                    Items = c.Items.Select(i => new 
+                    {
+                        i.Id,
+                        i.Name,
+                        i.ImgUrl,
+                        i.PlannedAmount,
+                        i.CarriedOver
+                    }).ToList()
+                }).ToList(),
+                
+                Transactions = p.Transactions.Select(t => new 
+                {
+                    t.Id,
+                    t.Date,
+                    t.Description,
+                    t.Amount,
+                    t.SourceStringId,
+                    SourceName = incomeSources.FirstOrDefault(s => s.StringId == t.SourceStringId)?.Name,
+                    t.ResolvedBudgetItemId,
+                    LinkedBudgetItemName = p.Cycles.SelectMany(c => c.Items).FirstOrDefault(i => i.Id == t.ResolvedBudgetItemId)?.Name,
+                    Splits = t.Splits.Select(s => new 
+                    {
+                        s.Amount,
+                        s.ResolvedBudgetItemId,
+                        LinkedBudgetItemName = p.Cycles.SelectMany(c => c.Items).FirstOrDefault(i => i.Id == s.ResolvedBudgetItemId)?.Name
+                    }).ToList()
+                }).ToList(),
+
+                Transfers = p.Transfers.Select(tr => new 
+                {
+                    tr.Date,
+                    tr.Amount,
+                    tr.ResolvedFromId,
+                    LinkedFromItemName = p.Cycles.SelectMany(c => c.Items).FirstOrDefault(i => i.Id == tr.ResolvedFromId)?.Name,
+                    tr.ResolvedToId,
+                    LinkedToItemName = p.Cycles.SelectMany(c => c.Items).FirstOrDefault(i => i.Id == tr.ResolvedToId)?.Name,
+                    tr.Note
+                }).ToList(),
+
+                ExpectedIncome = p.ExpectedIncome.Select(e => new 
+                {
+                    e.Id,
+                    e.Date,
+                    e.Amount,
+                    e.SourceStringId,
+                    SourceName = incomeSources.FirstOrDefault(s => s.StringId == e.SourceStringId)?.Name
+                }).ToList(),
+
+                WatchList = p.WatchList.Select(w => new 
+                {
+                    w.Id,
+                    w.Description,
+                    w.Amount,
+                    w.DueDate,
+                    w.ResolvedBudgetItemId,
+                    LinkedBudgetItemName = p.Cycles.SelectMany(c => c.Items).FirstOrDefault(i => i.Id == w.ResolvedBudgetItemId)?.Name
+                }).ToList()
+            }).ToList();
 
             var payload = new 
             {
-                Periods = periods,
+                Periods = projectedPeriods,
                 IncomeSources = incomeSources
             };
 
