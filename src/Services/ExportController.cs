@@ -307,7 +307,6 @@ namespace Dashboard.Services
             return File(bytes, "application/json", "BulletBudgetExport.json");
         }
 
-        // NEW PTO EXPORT
         [HttpGet("pto")]
         public async Task<IActionResult> ExportPto()
         {
@@ -318,13 +317,31 @@ namespace Dashboard.Services
                 .Include(p => p.Entries)
                 .ToListAsync();
 
+            // Dynamically reflect the Enums to generate a legend for the JSON
+            var typeLegend = Enum.GetValues<PtoEntryType>()
+                .ToDictionary(e => (int)e, e => e.ToString());
+
+            var statusLegend = Enum.GetValues<PtoEntryStatus>()
+                .ToDictionary(e => (int)e, e => e.ToString());
+
+            var payload = new 
+            {
+                Legend = new 
+                {
+                    Note = "Entity Framework ignores the circular 'Policy' back-reference to prevent infinite loops.",
+                    EntryTypes = typeLegend,
+                    Statuses = statusLegend
+                },
+                Policies = policies
+            };
+
             var options = new JsonSerializerOptions 
             { 
                 WriteIndented = true, 
                 ReferenceHandler = ReferenceHandler.IgnoreCycles 
             };
             
-            var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(policies, options));
+            var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, options));
             return File(bytes, "application/json", "BulletPtoExport.json");
         }
 
