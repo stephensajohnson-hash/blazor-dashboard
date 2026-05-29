@@ -257,10 +257,7 @@ namespace Dashboard.Services
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
             
-            var incomeSources = await db.BudgetIncomeSources
-                .AsNoTracking()
-                .ToListAsync();
-
+            var incomeSources = await db.BudgetIncomeSources.AsNoTracking().ToListAsync();
             var periods = await db.BudgetPeriods
                 .AsNoTracking()
                 .Include(p => p.Cycles).ThenInclude(c => c.Items)
@@ -271,91 +268,105 @@ namespace Dashboard.Services
                 .AsSplitQuery() 
                 .ToListAsync();
 
-            // Explicitly project the data to map names to the IDs so Replit can link them
             var projectedPeriods = periods.Select(p => new 
             {
-                p.Id,
-                p.DisplayName,
-                p.StartDate,
-                p.InitialBankBalance,
-                Cycles = p.Cycles.Select(c => new 
-                {
-                    c.Id,
-                    c.Label,
-                    c.CycleNumber,
-                    Items = c.Items.Select(i => new 
-                    {
-                        i.Id,
-                        i.Name,
-                        i.ImgUrl,
-                        i.PlannedAmount,
-                        i.CarriedOver
-                    }).ToList()
+                p.Id, p.DisplayName, p.StartDate, p.InitialBankBalance,
+                Cycles = p.Cycles.Select(c => new {
+                    c.Id, c.Label, c.CycleNumber,
+                    Items = c.Items.Select(i => new { i.Id, i.Name, i.ImgUrl, i.PlannedAmount, i.CarriedOver }).ToList()
                 }).ToList(),
-                
-                Transactions = p.Transactions.Select(t => new 
-                {
-                    t.Id,
-                    t.Date,
-                    t.Description,
-                    t.Amount,
-                    t.SourceStringId,
+                Transactions = p.Transactions.Select(t => new {
+                    t.Id, t.Date, t.Description, t.Amount, t.SourceStringId,
                     SourceName = incomeSources.FirstOrDefault(s => s.StringId == t.SourceStringId)?.Name,
                     t.ResolvedBudgetItemId,
                     LinkedBudgetItemName = p.Cycles.SelectMany(c => c.Items).FirstOrDefault(i => i.Id == t.ResolvedBudgetItemId)?.Name,
-                    Splits = t.Splits.Select(s => new 
-                    {
-                        s.Amount,
-                        s.ResolvedBudgetItemId,
+                    Splits = t.Splits.Select(s => new {
+                        s.Amount, s.ResolvedBudgetItemId,
                         LinkedBudgetItemName = p.Cycles.SelectMany(c => c.Items).FirstOrDefault(i => i.Id == s.ResolvedBudgetItemId)?.Name
                     }).ToList()
                 }).ToList(),
-
-                Transfers = p.Transfers.Select(tr => new 
-                {
-                    tr.Date,
-                    tr.Amount,
-                    tr.ResolvedFromId,
+                Transfers = p.Transfers.Select(tr => new {
+                    tr.Date, tr.Amount, tr.ResolvedFromId,
                     LinkedFromItemName = p.Cycles.SelectMany(c => c.Items).FirstOrDefault(i => i.Id == tr.ResolvedFromId)?.Name,
                     tr.ResolvedToId,
-                    LinkedToItemName = p.Cycles.SelectMany(c => c.Items).FirstOrDefault(i => i.Id == tr.ResolvedToId)?.Name,
-                    tr.Note
+                    LinkedToItemName = p.Cycles.SelectMany(c => c.Items).FirstOrDefault(i => i.Id == tr.ResolvedToId)?.Name, tr.Note
                 }).ToList(),
-
-                ExpectedIncome = p.ExpectedIncome.Select(e => new 
-                {
-                    e.Id,
-                    e.Date,
-                    e.Amount,
-                    e.SourceStringId,
+                ExpectedIncome = p.ExpectedIncome.Select(e => new {
+                    e.Id, e.Date, e.Amount, e.SourceStringId,
                     SourceName = incomeSources.FirstOrDefault(s => s.StringId == e.SourceStringId)?.Name
                 }).ToList(),
-
-                WatchList = p.WatchList.Select(w => new 
-                {
-                    w.Id,
-                    w.Description,
-                    w.Amount,
-                    w.DueDate,
-                    w.ResolvedBudgetItemId,
+                WatchList = p.WatchList.Select(w => new {
+                    w.Id, w.Description, w.Amount, w.DueDate, w.ResolvedBudgetItemId,
                     LinkedBudgetItemName = p.Cycles.SelectMany(c => c.Items).FirstOrDefault(i => i.Id == w.ResolvedBudgetItemId)?.Name
                 }).ToList()
             }).ToList();
 
-            var payload = new 
-            {
-                Periods = projectedPeriods,
-                IncomeSources = incomeSources
-            };
-
-            var options = new JsonSerializerOptions 
-            { 
-                WriteIndented = true, 
-                ReferenceHandler = ReferenceHandler.IgnoreCycles 
-            };
-            
+            var payload = new { Periods = projectedPeriods, IncomeSources = incomeSources };
+            var options = new JsonSerializerOptions { WriteIndented = true, ReferenceHandler = ReferenceHandler.IgnoreCycles };
             var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, options));
             return File(bytes, "application/json", "BulletBudgetExport.json");
+        }
+
+        // NEW HSA LEDGER EXPORT
+        [HttpGet("hsa")]
+        public async Task<IActionResult> ExportHsa()
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            
+            var disbursements = await db.HsaDisbursements.AsNoTracking().ToListAsync();
+            
+            // Explicitly map out the receipts, intentionally excluding the raw FileData bytes 
+            // so we don't nuke the server memory. We provide the Download URL instead.
+            var receipts = await db.HsaReceipts
+                .AsNoTracking()
+                .Select(r => new 
+                {
+                    r.Id,
+                    r.ServiceDate,
+                    r.Patient,
+                    r.Provider,
+                    r.Type,
+                    r.Amount,
+                    r.Note,
+                    r.TaxYear,
+                    r.DisbursementId,
+                    // Look up the actual TransactionKey name to make linking on Replit foolproof
+                    LinkedDisbursementKey = db.HsaDisbursements.FirstOrDefault(d => d.Id == r.DisbursementId).TransactionKey,
+                    r.FileName,
+                    r.ContentType,
+                    HasAttachedFile = r.FileData != null && r.FileData.Length > 0,
+                    // Inject a direct API link your new app can use to fetch the file
+                    FileDownloadUrl = r.FileData != null && r.FileData.Length > 0 
+                        ? $"/api/export/hsa/receipt/{r.Id}/file" 
+                        : null
+                })
+                .ToListAsync();
+
+            var payload = new 
+            {
+                Disbursements = disbursements,
+                Receipts = receipts
+            };
+
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, options));
+            return File(bytes, "application/json", "BulletHsaExport.json");
+        }
+
+        // ENDPOINT TO SERVE THE RAW HSA FILES
+        [HttpGet("hsa/receipt/{id}/file")]
+        public async Task<IActionResult> DownloadHsaReceiptFile(int id)
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            
+            var receipt = await db.HsaReceipts.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id);
+            
+            if (receipt == null || receipt.FileData == null || receipt.FileData.Length == 0)
+            {
+                return NotFound("No file attached to this receipt.");
+            }
+
+            return File(receipt.FileData, receipt.ContentType ?? "application/octet-stream", receipt.FileName ?? $"receipt_{id}");
         }
     }
 }
