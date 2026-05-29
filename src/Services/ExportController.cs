@@ -307,7 +307,27 @@ namespace Dashboard.Services
             return File(bytes, "application/json", "BulletBudgetExport.json");
         }
 
-        // NEW HSA LEDGER EXPORT
+        // NEW PTO EXPORT
+        [HttpGet("pto")]
+        public async Task<IActionResult> ExportPto()
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            
+            var policies = await db.PtoPolicies
+                .AsNoTracking()
+                .Include(p => p.Entries)
+                .ToListAsync();
+
+            var options = new JsonSerializerOptions 
+            { 
+                WriteIndented = true, 
+                ReferenceHandler = ReferenceHandler.IgnoreCycles 
+            };
+            
+            var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(policies, options));
+            return File(bytes, "application/json", "BulletPtoExport.json");
+        }
+
         [HttpGet("hsa")]
         public async Task<IActionResult> ExportHsa()
         {
@@ -315,8 +335,6 @@ namespace Dashboard.Services
             
             var disbursements = await db.HsaDisbursements.AsNoTracking().ToListAsync();
             
-            // Explicitly map out the receipts, intentionally excluding the raw FileData bytes 
-            // so we don't nuke the server memory. We provide the Download URL instead.
             var receipts = await db.HsaReceipts
                 .AsNoTracking()
                 .Select(r => new 
@@ -330,12 +348,10 @@ namespace Dashboard.Services
                     r.Note,
                     r.TaxYear,
                     r.DisbursementId,
-                    // Look up the actual TransactionKey name to make linking on Replit foolproof
                     LinkedDisbursementKey = db.HsaDisbursements.FirstOrDefault(d => d.Id == r.DisbursementId).TransactionKey,
                     r.FileName,
                     r.ContentType,
                     HasAttachedFile = r.FileData != null && r.FileData.Length > 0,
-                    // Inject a direct API link your new app can use to fetch the file
                     FileDownloadUrl = r.FileData != null && r.FileData.Length > 0 
                         ? $"/api/export/hsa/receipt/{r.Id}/file" 
                         : null
@@ -353,7 +369,6 @@ namespace Dashboard.Services
             return File(bytes, "application/json", "BulletHsaExport.json");
         }
 
-        // ENDPOINT TO SERVE THE RAW HSA FILES
         [HttpGet("hsa/receipt/{id}/file")]
         public async Task<IActionResult> DownloadHsaReceiptFile(int id)
         {
